@@ -45,6 +45,14 @@ jobs:
             echo "::error::The production Firebase project must be comunica-salvador."
             exit 1
           fi
+      - name: Authenticate Firebase deployment
+        if: vars.FIREBASE_DEPLOY_ENABLED == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
+      - name: Deploy Firebase Storage rules
+        if: vars.FIREBASE_DEPLOY_ENABLED == 'true'
+        run: npx firebase-tools@15.34.0 deploy --project comunica-salvador --only storage
       - name: Deploy Firebase Hosting
         if: vars.FIREBASE_DEPLOY_ENABLED == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
