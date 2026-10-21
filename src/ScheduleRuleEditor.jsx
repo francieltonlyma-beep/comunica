@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { newDayRule } from './scheduleDayRules';
 
 const days = [[1, 'Seg'], [2, 'Ter'], [3, 'Qua'], [4, 'Qui'], [5, 'Sex'], [6, 'Sáb'], [0, 'Dom']];
 const field = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800';
 const button = 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50';
 const toggle = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
+const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+const userDepartmentIds = user => [...new Set([...(user?.depts || user?.departments || []), user?.dept, user?.department].filter(Boolean).map(String))];
 
-export default function ScheduleRuleEditor({ groups, employees, onChange, initialGroupId = '', initialRuleId = '' }) {
+export default function ScheduleRuleEditor({ groups, employees, departments = [], onChange, initialGroupId = '', initialRuleId = '' }) {
   const [selectedId, setSelectedId] = useState(initialGroupId);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberDepartment, setMemberDepartment] = useState('all');
+  const [memberAssignment, setMemberAssignment] = useState('all');
   const selected = groups.find(group => group.id === selectedId) || groups[0];
   const updateGroup = changes => onChange(groups.map(group => group.id === selected.id ? { ...group, ...changes } : group));
   const updateRule = (id, changes) => updateGroup({ dayRules: selected.dayRules.map(rule => rule.id === id ? { ...rule, ...changes } : rule) });
@@ -17,13 +22,36 @@ export default function ScheduleRuleEditor({ groups, employees, onChange, initia
     setSelectedId(id);
   };
   const assign = (userId, checked) => onChange(groups.map(group => ({ ...group, userIds: group.id === selected.id && checked ? [...new Set([...group.userIds, userId])] : group.userIds.filter(id => id !== userId) })));
+  const assignedGroupByUser = useMemo(() => new Map(groups.flatMap(group => (group.userIds || []).map(userId => [String(userId), group]))), [groups]);
+  const visibleEmployees = useMemo(() => employees.filter(user => {
+    const userId = String(user.id);
+    const assignedGroup = assignedGroupByUser.get(userId);
+    const matchesSearch = !memberSearch.trim() || normalizedText(`${user.name} ${user.role || ''}`).includes(normalizedText(memberSearch));
+    const matchesDepartment = memberDepartment === 'all' || userDepartmentIds(user).includes(memberDepartment);
+    const matchesAssignment = memberAssignment === 'all'
+      || (memberAssignment === 'selected' && assignedGroup?.id === selected?.id)
+      || (memberAssignment === 'unassigned' && !assignedGroup)
+      || (memberAssignment === 'other' && assignedGroup && assignedGroup.id !== selected?.id);
+    return matchesSearch && matchesDepartment && matchesAssignment;
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' })), [assignedGroupByUser, employees, memberAssignment, memberDepartment, memberSearch, selected?.id]);
+  const assignVisible = checked => {
+    const visibleIds = new Set(visibleEmployees.map(user => String(user.id)));
+    onChange(groups.map(group => {
+      const currentIds = (group.userIds || []).map(String);
+      if (group.id === selected.id) {
+        return { ...group, userIds: checked ? [...new Set([...currentIds, ...visibleIds])] : currentIds.filter(userId => !visibleIds.has(userId)) };
+      }
+      return checked ? { ...group, userIds: currentIds.filter(userId => !visibleIds.has(userId)) } : group;
+    }));
+  };
+  const departmentLabel = user => userDepartmentIds(user).map(id => departments.find(department => String(department.id) === id)?.name).filter(Boolean).join(', ');
 
   return <section className="space-y-4 rounded-2xl border border-cyan-200 bg-cyan-50/40 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h5 className="text-sm font-extrabold text-slate-900">Conjuntos de regras</h5><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Organize pessoas que seguem o mesmo padrão. Cada conjunto herda a jornada padrão abaixo e pode mudar qualquer dia, horário ou folga.</p></div><button type="button" onClick={addGroup} className={button}>+ Novo conjunto</button></div>
     {!selected ? <div className="rounded-xl border border-dashed border-cyan-200 bg-white p-4 text-xs leading-5 text-slate-500">Crie um conjunto, selecione os colaboradores e adicione regras de sábado, domingos, feriados ou qualquer outro dia. Quem ficar sem conjunto continua usando a regra padrão.</div> : <>
       <div className="flex flex-wrap gap-2">{groups.map(group => <button key={group.id} type="button" onClick={() => setSelectedId(group.id)} className={`${button} ${selected.id === group.id ? '!border-cyan-700 !bg-cyan-800 !text-white' : ''}`}>{group.name} · {group.userIds.length} pessoa(s)</button>)}</div>
       <div className="flex items-end gap-3"><label className="flex-1 text-xs font-bold text-slate-600">Nome do conjunto<input maxLength="80" value={selected.name} onChange={event => updateGroup({ name: event.target.value })} className={field} /></label><button type="button" className={button} onClick={() => onChange(groups.filter(group => group.id !== selected.id))}>Remover conjunto</button></div>
-      <details className="rounded-xl border border-slate-200 bg-white p-3"><summary className="cursor-pointer text-xs font-bold text-slate-700">Colaboradores deste conjunto ({selected.userIds.length})</summary><p className="my-2 text-[11px] text-slate-500">Ao selecionar alguém de outro conjunto, a pessoa será transferida para este.</p><div className="grid max-h-52 gap-2 overflow-auto sm:grid-cols-2 lg:grid-cols-3">{employees.map(user => <label key={user.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={selected.userIds.includes(String(user.id))} onChange={event => assign(String(user.id), event.target.checked)} />{user.name}</label>)}</div></details>
+      <details className="rounded-xl border border-slate-200 bg-white p-3" open><summary className="cursor-pointer text-xs font-bold text-slate-700">Colaboradores deste conjunto ({selected.userIds.length})</summary><p className="my-2 text-[11px] text-slate-500">Busque e filtre antes de selecionar. Ao escolher alguém de outro conjunto, a pessoa será transferida para este.</p><div className="grid gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2 sm:grid-cols-3"><label className="text-[9px] font-bold uppercase text-slate-500">Buscar<input value={memberSearch} onChange={event => setMemberSearch(event.target.value)} placeholder="Nome ou cargo" className={field} /></label><label className="text-[9px] font-bold uppercase text-slate-500">Setor<select value={memberDepartment} onChange={event => setMemberDepartment(event.target.value)} className={field}><option value="all">Todos os setores</option>{departments.map(department => <option key={department.id} value={String(department.id)}>{department.name}</option>)}</select></label><label className="text-[9px] font-bold uppercase text-slate-500">Vínculo<select value={memberAssignment} onChange={event => setMemberAssignment(event.target.value)} className={field}><option value="all">Todos</option><option value="selected">Neste conjunto</option><option value="unassigned">Sem conjunto</option><option value="other">Em outro conjunto</option></select></label></div><div className="my-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] font-semibold text-slate-500">{visibleEmployees.length} pessoa(s) visível(is)</span><div className="flex flex-wrap gap-2"><button type="button" disabled={!visibleEmployees.length} onClick={() => assignVisible(true)} className={`${button} disabled:opacity-40`}>Selecionar visíveis</button><button type="button" disabled={!visibleEmployees.length} onClick={() => assignVisible(false)} className={`${button} !text-rose-700 disabled:opacity-40`}>Desmarcar visíveis</button></div></div><div className="grid max-h-72 gap-1.5 overflow-auto sm:grid-cols-2 lg:grid-cols-3">{visibleEmployees.map(user => { const userId = String(user.id); const assignedGroup = assignedGroupByUser.get(userId); const isSelected = assignedGroup?.id === selected.id; return <label key={user.id} className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs transition ${isSelected ? 'border-cyan-200 bg-cyan-50 text-cyan-950' : 'border-transparent text-slate-700 hover:border-slate-200 hover:bg-white'}`}><input className="mt-0.5 h-4 w-4 shrink-0 accent-cyan-700" type="checkbox" checked={isSelected} onChange={event => assign(userId, event.target.checked)} /><span className="min-w-0"><strong className="block break-words font-semibold">{user.name}</strong><small className="mt-0.5 block break-words text-[9px] text-slate-500">{[user.role, departmentLabel(user)].filter(Boolean).join(' · ') || 'Sem cargo ou setor'}</small>{assignedGroup && assignedGroup.id !== selected.id && <small className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[8px] font-bold text-amber-800">Em {assignedGroup.name}</small>}</span></label>; })}{visibleEmployees.length === 0 && <p className="p-4 text-center text-xs text-slate-500 sm:col-span-2 lg:col-span-3">Nenhum colaborador encontrado com esses filtros.</p>}</div></details>
       <div className="rounded-xl bg-white p-3 text-[11px] leading-5 text-slate-600"><strong>Prioridade:</strong> data específica → regra individual → feriado → regra recorrente do conjunto → jornada padrão. Dentro do mesmo nível, a maior prioridade vence. Regras incompatíveis empatadas bloqueiam a publicação.</div>
       {selected.dayRules.map((rule, index) => <details key={rule.id} ref={element => { if (element && !element.dataset.initialized) { element.open = rule.id === initialRuleId || !rule.name; element.dataset.initialized = 'true'; } }} className="group rounded-xl border border-slate-200 bg-white p-3">
         <summary className="cursor-pointer text-xs font-bold text-slate-800">{rule.enabled === false ? 'Pausada · ' : ''}{rule.name || `Nova regra ${index + 1}`} <span className="font-normal text-slate-500">· {({ weekday: 'Semanal', alternating: 'Alternada', monthly: 'Ocorrências do mês', holiday: 'Feriados', date: 'Data ou período' })[rule.kind]} · {rule.action === 'rest' ? 'Folga' : `${rule.shiftStart}–${rule.shiftEnd}`}</span></summary>
