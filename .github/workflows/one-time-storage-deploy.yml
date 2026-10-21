@@ -24,11 +24,12 @@ jobs:
       - name: Install Firebase Admin SDK
         run: npm --prefix functions ci --omit=dev
       - name: Publish verified Storage rules to the configured bucket
+        working-directory: functions
         run: |
           node <<'NODE'
           const { readFileSync } = require('node:fs');
-          const { initializeApp } = require('./functions/node_modules/firebase-admin/app');
-          const { getSecurityRules } = require('./functions/node_modules/firebase-admin/security-rules');
+          const { initializeApp } = require('firebase-admin/app');
+          const { getSecurityRules } = require('firebase-admin/security-rules');
 
           async function publish() {
             initializeApp({
@@ -36,7 +37,7 @@ jobs:
               storageBucket: 'comunica-salvador.firebasestorage.app',
             });
 
-            const source = readFileSync('storage.rules', 'utf8');
+            const source = readFileSync('../storage.rules', 'utf8');
             const ruleset = await getSecurityRules().releaseStorageRulesetFromSource(
               source,
               'comunica-salvador.firebasestorage.app',
