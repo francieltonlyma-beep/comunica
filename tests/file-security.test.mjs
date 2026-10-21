@@ -24,9 +24,16 @@ test('uploads carry owner and record identifiers used by storage authorization',
 });
 
 test('restricted files are downloaded through authenticated storage reads', () => {
-  assert.match(appSource, /getBlob\(ref\(storage, file\.storagePath \|\| fileUrl\)\)/);
+  assert.match(appSource, /const fileRef = ref\(storage, file\.storagePath \|\| fileUrl\)/);
+  assert.match(appSource, /getBlob\(fileRef\)/);
   assert.match(appSource, /handleDownload\(item\.file, item\.file\?\.name\)/);
   assert.match(appSource, /handleDownload\(msg\.attachment, msg\.attachment\.name\)/);
+});
+
+test('mobile PDF previews avoid cross-context blob URLs', () => {
+  assert.match(appSource, /expectsInlinePreview && !isMobileBrowser/);
+  assert.match(appSource, /const authenticatedUrl = await getDownloadURL\(fileRef\)/);
+  assert.match(appSource, /window\.location\.assign\(authenticatedUrl\)/);
 });
 
 test('document deletion also removes its physical object', () => {
