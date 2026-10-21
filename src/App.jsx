@@ -517,6 +517,7 @@ export default function App() {
 };
 
 const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
+  let previewWindow = null;
   try {
     const file = typeof fileOrUrl === 'string' ? { data: fileOrUrl, name: fallbackName } : (fileOrUrl || {});
     const fileUrl = file.data || file.url || '';
@@ -527,16 +528,60 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     // regras do Storage em cada abertura, inclusive após mudança de permissão.
     const isFirebaseFile = Boolean(file.storagePath) || /firebasestorage\.googleapis\.com|storage\.googleapis\.com/i.test(fileUrl);
     if (storage && isFirebaseFile) {
+      // Abre a aba ainda durante o gesto do usuário. Em navegadores móveis e
+      // PWAs, uma nova janela criada somente depois do download assíncrono pode
+      // ser bloqueada silenciosamente.
+      const expectsInlinePreview = /\.pdf(?:$|[?#])/i.test(fileName) || file.type === 'application/pdf';
+      if (expectsInlinePreview) {
+        previewWindow = window.open('about:blank', '_blank');
+        if (previewWindow) {
+          previewWindow.opener = null;
+          try {
+            previewWindow.document.title = 'Abrindo arquivo';
+            previewWindow.document.body.style.cssText = 'margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f8fafc;color:#334155';
+            previewWindow.document.body.textContent = 'Carregando arquivo…';
+          } catch {
+            // Alguns WebViews não permitem personalizar a aba intermediária.
+          }
+        }
+      }
+
       const blob = await getBlob(ref(storage, file.storagePath || fileUrl));
       const objectUrl = window.URL.createObjectURL(blob);
+      const canPreviewInline = expectsInlinePreview || blob.type === 'application/pdf' || blob.type.startsWith('image/');
+
+      if (previewWindow && canPreviewInline) {
+        previewWindow.location.replace(objectUrl);
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
+        return;
+      }
+
+      if (previewWindow) {
+        previewWindow.close();
+        previewWindow = null;
+      }
+
+      // Em WebViews/PWAs móveis que bloqueiam a aba intermediária, navega na
+      // própria janela. O botão Voltar retorna ao Comunica.
+      if (canPreviewInline && /Mobi|Android/i.test(navigator.userAgent)) {
+        window.location.assign(objectUrl);
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
+        return;
+      }
+
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = fileName;
-      link.target = '_blank';
+      if (canPreviewInline) {
+        link.target = '_blank';
+        link.rel = 'noopener';
+      } else {
+        link.download = fileName;
+      }
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
       return;
     }
 
@@ -558,6 +603,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     }, 100);
 
   } catch (error) {
+    if (previewWindow && !previewWindow.closed) previewWindow.close();
     console.error("Erro ao abrir o arquivo:", error);
     triggerNotification(error?.code === 'storage/unauthorized'
       ? 'Você não possui mais permissão para abrir este arquivo.'
