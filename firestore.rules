@@ -50,6 +50,11 @@ service cloud.firestore {
       return manages(app, company) || (member(company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageCalendar', true) == true);
     }
+    function canManageScheduleRules(app, company) {
+      return manages(app, company) || (member(company)
+        && canManageCalendar(app, company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageScheduleRules', true) == true);
+    }
     function canPublishAbsenceForOthers(app, company) {
       return member(company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canPublishAbsenceForOthers', false) == true;
@@ -159,7 +164,7 @@ service cloud.firestore {
         allow write: if kind == 'settings' && id == 'whistleblowing-poster' && member(company)
           && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('tabs', {}).get('whistleblowing', false) == true;
         allow create, update: if kind == 'settings' && id == 'schedule-rules'
-          && scheduleManager(app, company) && canManageCalendar(app, company);
+          && scheduleManager(app, company) && canManageScheduleRules(app, company);
         allow create, update, delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
         allow update: if kind == 'applications' && (support() || careerManager(app, company))
