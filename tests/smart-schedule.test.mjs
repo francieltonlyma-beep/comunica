@@ -3,12 +3,27 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const editor = readFileSync(new URL('../src/ScheduleRuleEditor.jsx', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
 
 test('regras da escala são persistidas por empresa e recarregadas em tempo real', () => {
   assert.match(app, /onSnapshot\(doc\(getTenantCollection\('settings'\), 'schedule-rules'\)/);
   assert.match(app, /saveDoc\('settings', 'schedule-rules'/);
-  assert.match(rules, /id == 'schedule-rules'[\s\S]*scheduleManager\(app, company\)[\s\S]*canManageCalendar\(app, company\)/);
+  assert.match(rules, /id == 'schedule-rules'[\s\S]*scheduleManager\(app, company\)[\s\S]*canManageScheduleRules\(app, company\)/);
+});
+
+test('filtros da escala funcionam em todos os tamanhos de tela', () => {
+  for (const term of ['memberSearch', 'memberDepartment', 'memberAssignment', 'Selecionar visíveis', 'Desmarcar visíveis']) assert.match(editor, new RegExp(term));
+  for (const term of ["role: 'Todos'", "selectionFilter: 'Todos'", 'Não selecionados', 'Limpar seleção']) assert.match(app, new RegExp(term));
+  assert.match(editor, /sm:grid-cols-3/);
+  assert.match(app, /sm:grid-cols-2 lg:grid-cols-4/);
+});
+
+test('configuração das regras inteligentes possui permissão própria', () => {
+  assert.match(app, /canManageScheduleRules: true/);
+  assert.match(app, /Configurar regras da escala inteligente/);
+  assert.match(app, /canConfigureScheduleRules/);
+  assert.match(rules, /function canManageScheduleRules\(app, company\)/);
 });
 
 test('intervalo possui início e fim próprios e é salvo na escala', () => {
