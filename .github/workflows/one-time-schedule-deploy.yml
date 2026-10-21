@@ -41,5 +41,10 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
+      - name: Verify deployment identity and IAM
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,'utf8'));console.log('Authenticated as '+c.client_email)"
+          gcloud projects get-iam-policy comunica-salvador --flatten='bindings[].members' --filter='bindings.members:github-action-1283306892@comunica-salvador.iam.gserviceaccount.com' --format='value(bindings.role)'
       - name: Deploy Firestore rules
         run: npx --yes firebase-tools deploy --only firestore:rules --project comunica-salvador --non-interactive
