@@ -1,0 +1,10345 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { isCompanyEmployee } from './teamMembership';
+import { loginErrorMessage } from './loginError';
+import { isLoginCompanyIdentified } from './loginCompany';
+import { commitAtomicRecords } from './atomicRecords';
+import { eventAnnouncementTitle, eventAnnouncementContent, linkedEventAnnouncementIds } from './calendarEventLinks';
+import { PLATFORM_SUPPORT, withPlatformSupport } from './platformSupportContact';
+import { DEFAULT_DOCUMENT_FOLDER, normalizeDocumentFolder, documentFileType, documentFolders, documentReviewStatus, filterDocuments, canAccessDocument } from './documentOrganization';
+import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion, normalizePollQuestions, pollTimelineItems } from './pollInsights';
+import FeatureTutorial from './FeatureTutorial';
+import ScheduleRuleEditor from './ScheduleRuleEditor';
+import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
+import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
+import PlatformUpdates from './PlatformUpdates.jsx';
+import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
+import { createMessageActivity, findMentionedParticipantIds, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
+import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
+import { createPortal } from 'react-dom';
+import { 
+  Bell, Users, Megaphone, Layers, Calendar, Clock, Plus, Search, Heart, Smile,
+  Share2, UserCheck, Briefcase, Sparkles, Filter, CheckCircle2, BookOpen, 
+  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Menu, X, Coffee, Building, Send, Edit2, 
+  Trash2, MapPin, FileText, ImageIcon, LogOut, Lock, KeyRound,
+  PhoneCall, User, Activity, TrendingUp, TrendingDown, MessageSquare, 
+  Paperclip, File, Download, UserPlus, Upload, Database, LoaderCircle, Check, CheckCheck, Moon, Sun, Settings2,
+  Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp
+} from 'lucide-react';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
+import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath } from 'firebase/firestore';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
+import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import EmojiPicker, { Emoji, EmojiStyle, emojiByUnified } from 'emoji-picker-react';
+import emojiDataPt from 'emoji-picker-react/dist/data/emojis-pt.json';
+let notificationDispatcher = null;
+const DEFAULT_AVATAR = '/assets/comunica-avatar-neutral.png';
+const DEPLOY_ENV = import.meta.env.VITE_DEPLOY_ENV || 'production';
+const IS_STAGING = DEPLOY_ENV === 'staging';
+const BUSINESS_FILE_MIME_BY_EXTENSION = {
+  pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  csv: 'text/csv', txt: 'text/plain',
+};
+const IMAGE_FILE_MIME_BY_EXTENSION = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+  bmp: 'image/bmp', svg: 'image/svg+xml', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif',
+};
+const DOCUMENT_FILE_MAX_BYTES = 50 * 1024 * 1024;
+const IMAGE_FILE_MAX_BYTES = 25 * 1024 * 1024;
+const DOCUMENT_FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,image/*,audio/*,video/*';
+const resolveUploadContentType = file => {
+  if (file?.type && file.type !== 'application/octet-stream') return file.type;
+  const extension = String(file?.name || '').toLocaleLowerCase('pt-BR').split('.').pop();
+  return IMAGE_FILE_MIME_BY_EXTENSION[extension] || BUSINESS_FILE_MIME_BY_EXTENSION[extension] || 'application/octet-stream';
+};
+const isSupportedBusinessFile = file => {
+  const contentType = resolveUploadContentType(file);
+  return /^(image|audio|video|text)\//.test(contentType) || Object.values(BUSINESS_FILE_MIME_BY_EXTENSION).includes(contentType);
+};
+const ACCESS_MODULES = [
+  { id: 'dashboard', label: 'Visão geral' },
+  { id: 'announcements', label: 'Avisos e políticas' },
+  { id: 'sectors', label: 'Canais de setores' },
+  { id: 'polls', label: 'Enquetes e clima' },
+  { id: 'documents', label: 'Documentos' },
+  { id: 'services', label: 'Central de serviços' },
+  { id: 'scale', label: 'Escalas e calendário' },
+  { id: 'productivity', label: 'Produtividade' },
+  { id: 'careers', label: 'Banco de talentos' },
+  { id: 'whistleblowing', label: 'Central de Denúncias' },
+  { id: 'updates', label: 'Novidades do Comunica' },
+];
+const fullAccessProfile = () => ({ tabs: Object.fromEntries(ACCESS_MODULES.map(item => [item.id, item.id !== 'whistleblowing'])), canEdit: true, canManageCalendar: true, canPublishAbsenceForOthers: false, canViewEngagement: false });
+const DEFAULT_AUTOMATIC_SCHEDULE_RULES = {
+  name: 'Regra padrão da empresa',
+  workDaysPerWeek: 5,
+  hoursPerWeek: 40,
+  restEveryDays: 7,
+  shiftStart: '08:00',
+  shiftEnd: '21:00',
+  breakStart: '12:00',
+  breakEnd: '13:00',
+  allowedWeekdays: [0, 1, 2, 3, 4, 5, 6],
+  employeeOverrides: {},
+  ruleGroups: [],
+  holidaysCountAsRest: true,
+  reuseLastSchedule: true,
+  calculateExtraAutomatically: true,
+};
+const SCHEDULE_WEEKDAYS = [
+  { value: 1, label: 'Seg' }, { value: 2, label: 'Ter' }, { value: 3, label: 'Qua' },
+  { value: 4, label: 'Qui' }, { value: 5, label: 'Sex' }, { value: 6, label: 'Sáb' },
+  { value: 0, label: 'Dom' },
+];
+const sanitizeAutomaticScheduleRules = (value = {}) => ({
+  ...DEFAULT_AUTOMATIC_SCHEDULE_RULES,
+  ...value,
+  ruleGroups: normalizeRuleGroups(value.ruleGroups),
+  name: String(value.name || DEFAULT_AUTOMATIC_SCHEDULE_RULES.name).slice(0, 80),
+  workDaysPerWeek: Math.max(1, Math.min(7, Number(value.workDaysPerWeek) || 5)),
+  hoursPerWeek: Math.max(1, Math.min(84, Number(value.hoursPerWeek) || 40)),
+  restEveryDays: Math.max(2, Math.min(14, Number(value.restEveryDays) || 7)),
+  shiftStart: /^\d{2}:\d{2}$/.test(String(value.shiftStart || '')) ? value.shiftStart : '08:00',
+  shiftEnd: /^\d{2}:\d{2}$/.test(String(value.shiftEnd || '')) ? value.shiftEnd : '21:00',
+  breakStart: /^\d{2}:\d{2}$/.test(String(value.breakStart || '')) ? value.breakStart : '12:00',
+  breakEnd: /^\d{2}:\d{2}$/.test(String(value.breakEnd || '')) ? value.breakEnd : '13:00',
+  allowedWeekdays: Array.isArray(value.allowedWeekdays)
+    ? [...new Set(value.allowedWeekdays.map(Number).filter(day => day >= 0 && day <= 6))].sort()
+    : [0, 1, 2, 3, 4, 5, 6],
+  employeeOverrides: Object.fromEntries(Object.entries(value.employeeOverrides || {}).map(([userId, override]) => [userId, {
+    shiftStart: /^\d{2}:\d{2}$/.test(String(override?.shiftStart || '')) ? override.shiftStart : '',
+    shiftEnd: /^\d{2}:\d{2}$/.test(String(override?.shiftEnd || '')) ? override.shiftEnd : '',
+    saturdayEnd: /^\d{2}:\d{2}$/.test(String(override?.saturdayEnd || '')) ? override.saturdayEnd : '',
+  }])),
+  holidaysCountAsRest: value.holidaysCountAsRest !== false,
+  reuseLastSchedule: value.reuseLastSchedule !== false,
+  calculateExtraAutomatically: value.calculateExtraAutomatically !== false,
+});
+const normalizeAccessProfile = (profile = {}) => ({
+  ...fullAccessProfile(),
+  ...profile,
+  canPublishAbsenceForOthers: profile.canPublishAbsenceForOthers === true,
+  tabs: { ...fullAccessProfile().tabs, ...(profile.tabs || {}) },
+});
+const SERVICE_TONE_CLASSES = {
+  blue: 'border-blue-100 bg-blue-50 text-blue-800',
+  cyan: 'border-cyan-100 bg-cyan-50 text-cyan-800',
+  amber: 'border-amber-100 bg-amber-50 text-amber-800',
+  orange: 'border-orange-100 bg-orange-50 text-orange-800',
+  violet: 'border-violet-100 bg-violet-50 text-violet-800',
+  emerald: 'border-emerald-100 bg-emerald-50 text-emerald-800',
+  rose: 'border-rose-100 bg-rose-50 text-rose-800',
+  indigo: 'border-indigo-100 bg-indigo-50 text-indigo-800',
+};
+const SERVICE_STATUS_CLASSES = {
+  open: 'border-blue-200 bg-blue-50 text-blue-800',
+  in_progress: 'border-cyan-200 bg-cyan-50 text-cyan-800',
+  waiting_requester: 'border-violet-200 bg-violet-50 text-violet-800',
+  approval: 'border-amber-200 bg-amber-50 text-amber-800',
+  approved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  rejected: 'border-rose-200 bg-rose-50 text-rose-800',
+  overdue: 'border-red-200 bg-red-50 text-red-800',
+  completed: 'border-slate-200 bg-slate-100 text-slate-700',
+};
+const triggerNotification = (message, type = 'success') => {
+  if (notificationDispatcher) {
+    notificationDispatcher(message, type);
+    return;
+  }
+  console.log(`[Notificação]: ${message}`);
+};
+const fileUploadErrorMessage = (error) => {
+  const code = String(error?.code || '');
+  if (code.includes('unauthorized')) return 'Seu acesso expirou ou não possui permissão para enviar este arquivo. Entre novamente e tente mais uma vez.';
+  if (code.includes('unauthenticated')) return 'Entre novamente para enviar o arquivo.';
+  if (code.includes('permission-denied')) return 'Seu cadastro atual não possui permissão para enviar documentos nesta empresa.';
+  if (code.includes('canceled')) return 'O envio do arquivo foi cancelado.';
+  if (code.includes('retry-limit') || code.includes('network')) return 'A conexão falhou durante o envio. Verifique sua internet e tente novamente.';
+  if (code.includes('quota-exceeded')) return 'O armazenamento da empresa atingiu o limite disponível.';
+  if (code.includes('object-not-found')) return 'Não foi possível preparar o local de armazenamento do arquivo.';
+  return 'Não foi possível enviar o arquivo para a nuvem. Tente novamente.';
+};
+const NotificationToast = ({ notification }) => {
+  if (!notification) return null;
+  const isError = notification.type === 'error';
+  return (
+    <div role="status" aria-live="polite" className={`fixed top-4 right-4 z-[10001] max-w-sm rounded-xl border px-4 py-3 shadow-xl flex items-center gap-2 text-xs font-semibold animate-in slide-in-from-top-3 duration-300 ${isError ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-slate-900 border-slate-700 text-white'}`}>
+      <CheckCircle2 className={`h-4 w-4 flex-shrink-0 ${isError ? 'text-rose-500' : 'text-emerald-400'}`} />
+      <span>{notification.message}</span>
+    </div>
+  );
+};
+const CloudActivityIndicator = ({ activity }) => {
+  if (!activity?.count) return null;
+  return (
+    <div role="status" aria-live="polite" className="fixed left-1/2 top-3 z-[10002] -translate-x-1/2">
+      <div className="flex items-center gap-2 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-[11px] font-bold text-slate-700 shadow-xl backdrop-blur">
+        <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" />
+        <span>{activity.label || 'Processando na nuvem...'}</span>
+      </div>
+      <span className="absolute -bottom-0.5 left-3 right-3 h-0.5 overflow-hidden rounded-full bg-blue-100"><span className="block h-full w-1/2 animate-pulse rounded-full bg-blue-600" /></span>
+    </div>
+  );
+};
+const EnvironmentBadge = () => IS_STAGING ? (
+  <div className="fixed left-1/2 top-[max(.5rem,env(safe-area-inset-top))] z-[10050] -translate-x-1/2 rounded-full border border-amber-200 bg-amber-300 px-3 py-1 text-[9px] font-black uppercase tracking-[.16em] text-amber-950 shadow-lg">
+    Ambiente de homologação
+  </div>
+) : null;
+const InstallAppDialog = ({ open, onClose }) => {
+  if (!open) return null;
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  return (
+    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-950/75 p-4" role="presentation">
+      <section role="dialog" aria-modal="true" aria-labelledby="install-app-title" className="w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl">
+        <div className="bg-gradient-to-br from-[#071a36] via-blue-950 to-cyan-900 px-6 py-5 text-white">
+          <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><img src="/pwa/icon-192.png" alt="" className="h-12 w-12 rounded-2xl border border-white/15 shadow-lg" /><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-200">Aplicativo</span><h2 id="install-app-title" className="mt-0.5 text-lg font-black">Instalar o Comunica</h2></div></div><button type="button" onClick={onClose} className="rounded-xl p-2 text-blue-100 hover:bg-white/10 hover:text-white" aria-label="Fechar instruções"><X className="h-5 w-5" /></button></div>
+        </div>
+        <div className="p-6 text-sm leading-6 text-slate-600">
+          {isIos ? <><p>No Safari, toque no botão <strong className="text-slate-900">Compartilhar</strong> e escolha <strong className="text-slate-900">Adicionar à Tela de Início</strong>.</p><div className="mt-4 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-blue-900"><Share2 className="h-5 w-5 shrink-0" /><span className="text-xs font-semibold">Depois confirme em “Adicionar”. O Comunica abrirá como um aplicativo.</span></div></> : <><p>Abra o menu do navegador e escolha <strong className="text-slate-900">Instalar aplicativo</strong> ou <strong className="text-slate-900">Adicionar à tela inicial</strong>.</p><div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-900"><Download className="h-5 w-5 shrink-0" /><span className="text-xs font-semibold">No Chrome, essa opção fica no menu de três pontos.</span></div></>}
+          <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-bold text-white">Entendi</button>
+        </div>
+      </section>
+    </div>
+  );
+};
+const emojiDataComunica = {
+  ...emojiDataPt,
+  categories: {
+    ...emojiDataPt.categories,
+    flags: { ...emojiDataPt.categories.flags, name: 'bandeiras' },
+  },
+};
+const emojiSegmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter('pt-BR', { granularity: 'grapheme' })
+  : null;
+const isEmojiGrapheme = (value) => /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(value);
+const emojiUnified = (value) => [...value].map(char => char.codePointAt(0).toString(16)).join('-');
+const CAREER_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const careerDateMs = value => Number(value) || Number(value?.seconds || 0) * 1000 || value?.toMillis?.() || 0;
+const applicationRetentionMs = application => careerDateMs(application.retentionUntil) || (careerDateMs(application.createdAt) || Date.now()) + CAREER_RETENTION_MS;
+const formatCareerDate = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date(value)) : 'Prazo não definido';
+const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
+const isVacationAbsence = absence => normalizedText(absence?.reason) === 'ferias';
+const civilDateShift = (value, { days = 0, months = 0 } = {}) => {
+  const matched = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!matched) return value;
+  const date = new Date(Date.UTC(Number(matched[1]), Number(matched[2]) - 1, Number(matched[3])));
+  if (months) date.setUTCMonth(date.getUTCMonth() + months);
+  if (days) date.setUTCDate(date.getUTCDate() + days);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+};
+const civilDateDaysInclusive = (startDate, endDate) => {
+  const start = new Date(`${startDate}T12:00:00`).getTime();
+  const end = new Date(`${endDate}T12:00:00`).getTime();
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start ? Math.floor((end - start) / 86400000) + 1 : 0;
+};
+const formatDate = (value) => {
+  if (!value) return '';
+  const civilDate = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (civilDate) return `${civilDate[3]}/${civilDate[2]}/${civilDate[1]}`;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR');
+};
+const VACANCY_QUESTION_TYPES = {
+  single: { label: 'Escolha única', hint: 'O candidato escolhe uma alternativa.', options: ['', ''] },
+  yesNo: { label: 'Sim ou não', hint: 'Resposta objetiva para requisitos básicos.', options: ['Sim', 'Não'] },
+  scale: { label: 'Escala de 1 a 5', hint: 'Ajuda a entender preferência ou percepção.', options: ['1 — Discordo totalmente', '2 — Discordo', '3 — Neutro', '4 — Concordo', '5 — Concordo totalmente'] },
+};
+const POLL_QUESTION_TYPES = {
+  single: { label: 'Escolha única', hint: 'Crie alternativas personalizadas.', options: ['', ''] },
+  yesNo: { label: 'Sim ou não', hint: 'Ideal para perguntas objetivas.', options: ['Sim', 'Não'] },
+  scale: { label: 'Escala de 1 a 5', hint: 'Meça concordância ou satisfação.', options: ['1 — Muito baixo', '2 — Baixo', '3 — Regular', '4 — Bom', '5 — Excelente'] },
+  mood: { label: 'Clima com emojis', hint: 'Uma leitura rápida da percepção da equipe.', options: ['😞 Muito ruim', '😕 Ruim', '😐 Neutro', '🙂 Bom', '🤩 Excelente'] },
+};
+const createPollQuestion = (type = 'single') => ({ type, question: '', options: [...(POLL_QUESTION_TYPES[type]?.options || POLL_QUESTION_TYPES.single.options)] });
+const createVacancyQuestion = (type = 'single') => ({ type, question: '', options: [...(VACANCY_QUESTION_TYPES[type]?.options || VACANCY_QUESTION_TYPES.single.options)] });
+const normalizeVacancyQuiz = questions => {
+  if (!Array.isArray(questions) || !questions.length) return [];
+  if (questions.length > 10) throw new Error('Use no máximo 10 perguntas no questionário.');
+  return questions.map((item, index) => {
+    const type = VACANCY_QUESTION_TYPES[item.type] ? item.type : 'single';
+    const question = String(item.question || '').trim();
+    const options = type === 'single'
+      ? (item.options || []).map(option => String(option || '').trim()).filter(Boolean)
+      : [...VACANCY_QUESTION_TYPES[type].options];
+    if (!question) throw new Error(`Escreva o enunciado da pergunta ${index + 1}.`);
+    if (options.length < 2 || options.length > 8) throw new Error(`A pergunta ${index + 1} precisa ter de 2 a 8 opções.`);
+    return { question, type, options };
+  });
+};
+
+const TextoComEmojis = ({ texto }) => {
+  if (typeof texto !== 'string' || !emojiSegmenter) return texto;
+  const pieces = [];
+  let plainText = '';
+  for (const { segment } of emojiSegmenter.segment(texto)) {
+    const unified = emojiUnified(segment);
+    const normalized = emojiByUnified(unified) ? unified : unified.replace(/-fe0f/g, '');
+    if (!isEmojiGrapheme(segment) || !emojiByUnified(normalized)) {
+      plainText += segment;
+      continue;
+    }
+    if (plainText) {
+      pieces.push(plainText);
+      plainText = '';
+    }
+    pieces.push(<span key={pieces.length} className="inline-flex align-[-0.2em] mx-px" title={segment}><Emoji unified={normalized} emojiStyle={EmojiStyle.TWITTER} size={19} /></span>);
+  }
+  if (plainText) pieces.push(plainText);
+  return pieces;
+};
+
+const PreviaEmojis = ({ texto }) => {
+  if (!emojiSegmenter || !texto) return null;
+  const selected = [...emojiSegmenter.segment(texto)].map(part => part.segment).filter(isEmojiGrapheme);
+  if (!selected.length) return null;
+  return <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50/80 border border-emerald-100 px-3 py-2 text-xs text-slate-600"><span className="font-medium shrink-0">Prévia:</span><span className="flex flex-wrap items-center gap-1"><TextoComEmojis texto={[...new Set(selected)].join(' ')} /></span></div>;
+};
+
+const BotaoEmoji = ({ aoSelecionar }) => {
+  const [aberto, setAberto] = useState(false);
+  const [posicao, setPosicao] = useState({ top: 8, left: 8, width: 340, height: 460 });
+  const botaoRef = useRef(null);
+  const painelRef = useRef(null);
+
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const fecharFora = (event) => {
+      if (!painelRef.current?.contains(event.target) && !botaoRef.current?.contains(event.target)) setAberto(false);
+    };
+    const fecharEscape = (event) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setAberto(false);
+      }
+    };
+    document.addEventListener('pointerdown', fecharFora, true);
+    document.addEventListener('keydown', fecharEscape, true);
+    return () => {
+      document.removeEventListener('pointerdown', fecharFora, true);
+      document.removeEventListener('keydown', fecharEscape, true);
+    };
+  }, [aberto]);
+
+  const alternarPicker = () => {
+    if (!aberto && botaoRef.current) {
+      const rect = botaoRef.current.getBoundingClientRect();
+      const pickerWidth = Math.min(352, window.innerWidth - 16);
+      const pickerHeight = Math.min(492, window.innerHeight - 16);
+      setPosicao({
+        top: Math.max(8, rect.top > pickerHeight ? rect.top - pickerHeight - 8 : Math.min(Math.max(8, window.innerHeight - pickerHeight - 8), rect.bottom + 8)),
+        left: Math.max(8, Math.min(window.innerWidth - pickerWidth - 8, rect.right - pickerWidth)),
+        width: pickerWidth,
+        height: pickerHeight,
+      });
+    }
+    setAberto(value => !value);
+  };
+
+  const obterEmojiSelecionado = (dadosEmoji) => {
+    if (typeof dadosEmoji?.emoji === 'string' && dadosEmoji.emoji) return dadosEmoji.emoji;
+    if (typeof dadosEmoji?.native === 'string' && dadosEmoji.native) return dadosEmoji.native;
+    if (typeof dadosEmoji?.unified === 'string' && dadosEmoji.unified) {
+      try {
+        return String.fromCodePoint(...dadosEmoji.unified.split('-').map(codigo => parseInt(codigo, 16)));
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  };
+
+  return (
+    <div className="relative inline-block mt-1">
+      <button
+        ref={botaoRef}
+        type="button"
+        onClick={alternarPicker}
+        className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-200 transition-colors"
+        title="Inserir emoji"
+        aria-label="Abrir seletor de emojis"
+        aria-expanded={aberto}
+      >
+        <Smile className="h-5 w-5 text-slate-500" />
+      </button>
+
+      {aberto && createPortal(
+        <div ref={painelRef} data-comunica-emoji-picker="true" className="comunica-emoji-panel fixed z-[10000] shadow-2xl border border-slate-200 bg-white rounded-2xl overflow-hidden" style={{ top: posicao.top, left: posicao.left, width: posicao.width, height: posicao.height }}>
+          <div className="h-12 flex items-center justify-between px-4 border-b border-slate-100"><span className="text-sm font-semibold text-slate-800">Emojis</span><button type="button" onClick={() => setAberto(false)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Fechar emojis"><X className="h-4 w-4" /></button></div>
+          <EmojiPicker 
+            emojiData={emojiDataComunica}
+            emojiStyle={EmojiStyle.TWITTER}
+            theme="light"
+            width="100%"
+            height={posicao.height - 48}
+            lazyLoadEmojis
+            searchPlaceholder="Pesquisar emoji"
+            searchClearButtonLabel="Limpar pesquisa"
+            previewConfig={{ showPreview: false }}
+            onEmojiClick={(emojiObject) => {
+              const emoji = obterEmojiSelecionado(emojiObject);
+              if (emoji) aoSelecionar(emoji);
+              setAberto(false);
+            }} 
+          />
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+};
+const SECTOR_COLORS = [];
+const DOCUMENT_CATEGORIES = ['Geral', 'RH', 'Políticas', 'Segurança', 'Produção', 'Financeiro', 'Treinamentos', 'Manuais', 'Qualidade', 'Outros'];
+
+const INITIAL_DEPARTMENTS = [];
+
+const INITIAL_USERS = [];
+
+const INITIAL_ROLES = [];
+
+const INITIAL_ANNOUNCEMENTS = [];
+
+const INITIAL_SECTOR_POSTS = [];
+
+const INITIAL_CALENDAR_EVENTS = [];
+
+const INITIAL_ABSENCES = [];
+
+const INITIAL_PRESENCE = [];
+
+const INITIAL_PRODUCTIVITY = [];
+const INITIAL_MESSAGES = [];
+
+let app, auth, db, storage, functionsClient, appId;
+let authPersistenceReady = Promise.resolve();
+let isFirebaseAvailable = false;
+  // --- CONFIGURAÇÃO CORRETA ---
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+};
+const firebaseEnvironmentError = IS_STAGING && firebaseConfig.projectId === 'comunica-salvador'
+  ? 'A homologação tentou usar o projeto de produção e foi bloqueada.'
+  : '';
+
+try {
+  if (firebaseEnvironmentError) throw new Error(firebaseEnvironmentError);
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch(error => {
+    console.error('Não foi possível ativar a permanência da sessão neste dispositivo.', error);
+  });
+  db = getFirestore(app);
+  storage = getStorage(app);
+  // Conexões móveis e Wi-Fi instável podem interromper arquivos maiores. O envio
+  // retomável usa esta janela para continuar do ponto em que parou.
+  storage.maxUploadRetryTime = 30 * 60 * 1000;
+  functionsClient = getFunctions(app, 'us-central1');
+  appId = import.meta.env.VITE_APP_DATA_ID || "comunica-salvador";
+  isFirebaseAvailable = true;
+} catch (e) {
+  console.warn("Firebase não disponível. Usando LocalStorage.", e);
+}
+
+const getLocalStorageItem = (key, defaultValue) => {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : defaultValue;
+  } catch (e) {
+    return defaultValue;
+  }
+};
+
+const setLocalStorageSafe = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`Quota excedida ao tentar salvar no LocalStorage: ${key}`);
+  }
+};
+
+const getUserDepts = (user) => {
+  if (!user) return [];
+  if (user.departments && Array.isArray(user.departments) && user.departments.length > 0) return user.departments;
+  if (user.depts && Array.isArray(user.depts) && user.depts.length > 0) return user.depts;
+  if (user.department) return [user.department];
+  if (user.dept) return [user.dept];
+  return [];
+};
+const getRoleDepts = (role) => {
+  if (!role) return [];
+  if (Array.isArray(role.depts) && role.depts.length) return [...new Set(role.depts.filter(Boolean))];
+  if (role.dept) return [role.dept];
+  return [];
+};
+const isCareerManagerUser = user => {
+  if (!user) return false;
+  if (user.isAdmin || user.isDeveloper) return true;
+  const values = [user.role, ...getUserDepts(user)].map(value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR'));
+  return values.some(value => value === 'rh' || value.includes('recursos humanos') || /(^|[^a-z])rh([^a-z]|$)/.test(value));
+};
+
+const callGemini = async (prompt, sysInstruction) => {
+  try {
+    if (!functionsClient) throw new Error('Serviço de IA indisponível.');
+    const generateAiText = httpsCallable(functionsClient, 'generateAiText');
+    const response = await generateAiText({ prompt, systemInstruction: sysInstruction });
+    return response.data?.text || '';
+  } catch (error) {
+    console.error("Erro na chamada do Gemini:", error);
+    return "Tive um problema temporário para processar sua mensagem. Pode tentar novamente?";
+  }
+};
+
+const formatAIText = (text) => String(text || '')
+  .replace(/```[\s\S]*?```/g, '')
+  .replace(/[*#`]/g, '')
+  .replace(/^\s*\d+[.)]\s+/gm, '• ')
+  .replace(/^\s*[-•]\s*/gm, '• ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+export default function App() {
+  const getRelativeDate = (dateString) => {
+  return dateString;
+};
+
+const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
+  try {
+    const file = typeof fileOrUrl === 'string' ? { data: fileOrUrl, name: fallbackName } : (fileOrUrl || {});
+    const fileUrl = file.data || file.url || '';
+    const fileName = file.name || fallbackName;
+    if (!fileUrl) return;
+
+    // Arquivos internos são sempre lidos pelo SDK autenticado. Isso revalida as
+    // regras do Storage em cada abertura, inclusive após mudança de permissão.
+    const isFirebaseFile = Boolean(file.storagePath) || /firebasestorage\.googleapis\.com|storage\.googleapis\.com/i.test(fileUrl);
+    if (storage && isFirebaseFile) {
+      const blob = await getBlob(ref(storage, file.storagePath || fileUrl));
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = fileName;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+      return;
+    }
+
+    // Links externos continuam usando o fluxo normal do navegador/aplicativo.
+    if (window.cordova || window.Capacitor) {
+      window.open(fileUrl, '_system');
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.target = "_blank";
+    link.download = fileName;
+    
+    // Pequeno atraso para garantir que o WebView processe o clique
+    setTimeout(() => {
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }, 100);
+
+  } catch (error) {
+    console.error("Erro ao abrir o arquivo:", error);
+    triggerNotification(error?.code === 'storage/unauthorized'
+      ? 'Você não possui mais permissão para abrir este arquivo.'
+      : 'Não foi possível abrir o arquivo. Verifique a conexão e tente novamente.', 'error');
+  }
+};
+  const [departmentsList, setDepartmentsList] = useState(() => getLocalStorageItem('comunica_departments', INITIAL_DEPARTMENTS));
+  const [usersList, setUsersList] = useState(() => getLocalStorageItem('comunica_users', INITIAL_USERS));
+  const employeesList = usersList.filter(isCompanyEmployee);
+  const messageContacts = withPlatformSupport(usersList);
+  const [supportRequests, setSupportRequests] = useState({});
+  const [supportLoadError, setSupportLoadError] = useState(false);
+  const [supportTicketSearch, setSupportTicketSearch] = useState('');
+  const [supportTicketFilter, setSupportTicketFilter] = useState('all');
+  const [supportCompanySearch, setSupportCompanySearch] = useState('');
+  const [supportCompanyHealth, setSupportCompanyHealth] = useState({ generatedAt: 0, companies: [] });
+  const [supportHealthLoading, setSupportHealthLoading] = useState(false);
+  const [supportHealthError, setSupportHealthError] = useState('');
+  const [rolesList, setRolesList] = useState(() => getLocalStorageItem('comunica_roles', INITIAL_ROLES));
+  const [announcements, setAnnouncements] = useState(() => getLocalStorageItem('comunica_announcements', INITIAL_ANNOUNCEMENTS));
+  const [sectorPosts, setSectorPosts] = useState(() => getLocalStorageItem('comunica_sector_posts', INITIAL_SECTOR_POSTS));
+  const [productivityLogs, setProductivityLogs] = useState(() => getLocalStorageItem('comunica_productivity', INITIAL_PRODUCTIVITY));
+  const [privateMessages, setPrivateMessages] = useState(() => getLocalStorageItem('comunica_messages', INITIAL_MESSAGES));
+  const [presenceList, setPresenceList] = useState(() => getLocalStorageItem('comunica_presence', INITIAL_PRESENCE));
+  const [calendarEvents, setCalendarEvents] = useState(() => getLocalStorageItem('comunica_calendar_events', INITIAL_CALENDAR_EVENTS));
+  const [absences, setAbsences] = useState(() => getLocalStorageItem('comunica_absences', INITIAL_ABSENCES));
+  const [workSchedules, setWorkSchedules] = useState(() => getLocalStorageItem('comunica_work_schedules', []));
+  const [deletingScheduleId, setDeletingScheduleId] = useState('');
+  const [documentsList, setDocumentsList] = useState(() => getLocalStorageItem('comunica_documents', []));
+  const [pollsList, setPollsList] = useState(() => getLocalStorageItem('comunica_polls', []));
+  const [vacanciesList, setVacanciesList] = useState([]);
+  const [careerApplications, setCareerApplications] = useState([]);
+  const [careerVacancyFilter, setCareerVacancyFilter] = useState('all');
+  const [careerSourceFilter, setCareerSourceFilter] = useState('all');
+  const [careerCandidateSearch, setCareerCandidateSearch] = useState('');
+  const [careerStageFilter, setCareerStageFilter] = useState('all');
+  const [careerFitFilter, setCareerFitFilter] = useState('all');
+  const [careerCityFilter, setCareerCityFilter] = useState('all');
+  const [careerSort, setCareerSort] = useState('recent');
+  const [careerViewMode, setCareerViewMode] = useState('pipeline');
+  const [careerComparisonIds, setCareerComparisonIds] = useState([]);
+  const [careerInterviewDraft, setCareerInterviewDraft] = useState(null);
+  const [careerDecisionDraft, setCareerDecisionDraft] = useState(null);
+  const [careerAiAnalyzingId, setCareerAiAnalyzingId] = useState('');
+  const [careerAnalysisSelectedId, setCareerAnalysisSelectedId] = useState('');
+  const [showArchivedVacancies, setShowArchivedVacancies] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [accessControl, setAccessControl] = useState({ sectorPermissions: {} });
+  const [showControlCenter, setShowControlCenter] = useState(false);
+  const [controlCenterTab, setControlCenterTab] = useState('permissions');
+  const [permissionScope, setPermissionScope] = useState('user');
+  const [permissionTargetId, setPermissionTargetId] = useState('');
+  const [permissionDraft, setPermissionDraft] = useState(fullAccessProfile());
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditPersonFilter, setAuditPersonFilter] = useState('all');
+  const [auditAreaFilter, setAuditAreaFilter] = useState('all');
+  const [auditActionFilter, setAuditActionFilter] = useState('all');
+  const [conversationAuditPeriod, setConversationAuditPeriod] = useState('30');
+  const [conversationAuditStatus, setConversationAuditStatus] = useState('all');
+  const [conversationAuditPerson, setConversationAuditPerson] = useState('all');
+
+  // Sessão de usuário com persistência local
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('comunica_current_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
+  const [mgmtSubTab, setMgmtSubTab] = useState('employees'); 
+  const [dashboardDetail, setDashboardDetail] = useState(null);
+  const [companies, setCompanies] = useState([]);
+  const [activeCompany, setActiveCompany] = useState(() => {
+    const saved = localStorage.getItem('comunica_active_company');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [companyCode, setCompanyCode] = useState('');
+  // Impede que uma consulta antiga (por exemplo, "082") apague o resultado
+  // correto de uma digitação posterior ("082026").
+  const companyLookupRequestRef = useRef(0);
+  const [showDeveloperLogin, setShowDeveloperLogin] = useState(false);
+  const [developerPin, setDeveloperPin] = useState('');
+  const [showCompanyRegistration, setShowCompanyRegistration] = useState(false);
+  const [companyForm, setCompanyForm] = useState({ name: '', code: '', adminName: '', adminPin: '' });
+  
+  // Estados para login e segurança
+  const [loginSelectedUserId, setLoginSelectedUserId] = useState('');
+  const [loginSearchText, setLoginSearchText] = useState('');
+  const [showLoginSuggestions, setShowLoginSuggestions] = useState(false);
+  const [loginPin, setLoginPin] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const [showChangePinModal, setShowChangePinModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  
+  const [showPinFieldsInProfile, setShowPinFieldsInProfile] = useState(false);
+  
+  const [currentPinInput, setCurrentPinInput] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [confirmNewPinInput, setConfirmNewPinInput] = useState('');
+  const [forcePinChange, setForcePinChange] = useState(false);
+  const [isChangingPin, setIsChangingPin] = useState(false);
+  const pinChangeInFlight = useRef(null);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [isStandaloneApp, setIsStandaloneApp] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
+  const [browserPushGranted, setBrowserPushGranted] = useState(() => 'Notification' in window && Notification.permission === 'granted');
+  
+  const [announcementFilter, setAnnouncementFilter] = useState('Todos');
+  const [sectorFilter, setSectorFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [presenceSearchText, setPresenceSearchText] = useState('');
+  const [showAllPresence, setShowAllPresence] = useState(false);
+  
+  const [showAnnModal, setShowAnnModal] = useState(false);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [showVacancyModal, setShowVacancyModal] = useState(false);
+  const [activeTutorial, setActiveTutorial] = useState(null);
+  const [confirmCareerCleanup, setConfirmCareerCleanup] = useState(false);
+  const careerRetentionCompanyRef = useRef('');
+  const careerExpiryNoticeRef = useRef('');
+  const careerCandidateUpdateNoticeRef = useRef('');
+  const [newVacancy, setNewVacancy] = useState({ roleId: '', title: '', description: '', location: '', mode: 'Presencial', skills: '', quiz: [], closesAt: '' });
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [showProdModal, setShowProdModal] = useState(false);
+  const [showPresenceModal, setShowPresenceModal] = useState(false);
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+  const [showBulkScheduleModal, setShowBulkScheduleModal] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [pendingUserRemoval, setPendingUserRemoval] = useState(null);
+  const [isRemovingUser, setIsRemovingUser] = useState(false);
+  const userSaveInFlight = useRef(false);
+  const [pinResetTarget, setPinResetTarget] = useState(null);
+  const [adminNewPin, setAdminNewPin] = useState('');
+  const [adminConfirmPin, setAdminConfirmPin] = useState('');
+  const [pinResetSaving, setPinResetSaving] = useState(false);
+  const [showMessagesModal, setShowMessagesModal] = useState(false);
+  
+  // Novos Estados para o Chat com Suporte a Grupos e Anexos
+  const [isComposingMsg, setIsComposingMsg] = useState(false);
+  const [activeThreadId, setActiveThreadId] = useState(null);
+  const [threadHeaderExpanded, setThreadHeaderExpanded] = useState(false);
+  const [pendingThreadDueDate, setPendingThreadDueDate] = useState('');
+  const [showResolutionEvaluation, setShowResolutionEvaluation] = useState(false);
+  const [resolutionRating, setResolutionRating] = useState(0);
+  const [resolutionFeedback, setResolutionFeedback] = useState('');
+  const [messageOrganization, setMessageOrganization] = useState('person');
+  const [inboxSearch, setInboxSearch] = useState('');
+  const [inboxStatusFilter, setInboxStatusFilter] = useState('all');
+  const [showArchivedThreads, setShowArchivedThreads] = useState(false);
+  const [msgRecipientIds, setMsgRecipientIds] = useState([]);
+  const [conversationDraftThreadId, setConversationDraftThreadId] = useState('');
+  const [msgSearchText, setMsgSearchText] = useState('');
+  const [showMsgSuggestions, setShowMsgSuggestions] = useState(false);
+  const [msgSubject, setMsgSubject] = useState('');
+  const [msgDueDate, setMsgDueDate] = useState('');
+  const [msgText, setMsgText] = useState('');
+  const [msgAttachment, setMsgAttachment] = useState(null);
+  const [replyingToMessage, setReplyingToMessage] = useState(null);
+  const [checklistDrafts, setChecklistDrafts] = useState({});
+  const [messageFocusFilter, setMessageFocusFilter] = useState('all');
+  const [isUploadingMessageAttachment, setIsUploadingMessageAttachment] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const messageUploadInFlight = useRef(false);
+  const messageSendInFlight = useRef(false);
+  const [pendingMessageNavigation, setPendingMessageNavigation] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const companyId = params.get('messageCompany');
+    const threadId = params.get('messageThread');
+    return companyId && threadId ? {companyId, threadId} : null;
+  });
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [newParticipantId, setNewParticipantId] = useState('');
+  const [participantSearch, setParticipantSearch] = useState('');
+  const [serviceDraft, setServiceDraft] = useState(() => emptyServiceRequest());
+  const [serviceFormOpen, setServiceFormOpen] = useState(false);
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all');
+  const [serviceStatusFilter, setServiceStatusFilter] = useState('active');
+  const [serviceAssigneeFilter, setServiceAssigneeFilter] = useState('all');
+  const [isCreatingServiceRequest, setIsCreatingServiceRequest] = useState(false);
+  const [serviceCatalogSettings, setServiceCatalogSettings] = useState(() => sanitizeServiceCatalogSettings({}));
+  const [serviceSettingsDraft, setServiceSettingsDraft] = useState(() => sanitizeServiceCatalogSettings({}));
+  const [serviceSettingsOpen, setServiceSettingsOpen] = useState(false);
+  const [isSavingServiceSettings, setIsSavingServiceSettings] = useState(false);
+  const [serviceRecipientSearch, setServiceRecipientSearch] = useState('');
+  const [serviceDeliveryDraft, setServiceDeliveryDraft] = useState('');
+  const [serviceProgressDraft, setServiceProgressDraft] = useState(0);
+  const [serviceProgressNoteDraft, setServiceProgressNoteDraft] = useState('');
+  
+  const [editingUser, setEditingUser] = useState(null);
+
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const [platformUpdates, setPlatformUpdates] = useState([]);
+  const [platformUpdateReadIds, setPlatformUpdateReadIds] = useState(() => new Set());
+
+  const todayObj = new Date();
+  const todayYYYY = todayObj.getFullYear();
+  const todayMM = String(todayObj.getMonth() + 1).padStart(2, '0');
+  const todayDD = String(todayObj.getDate()).padStart(2, '0');
+  const todayStr = `${todayYYYY}-${todayMM}-${todayDD}`;
+
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState(todayStr);
+  const [currentCalYear, setCurrentCalYear] = useState(todayYYYY);
+  const [currentCalMonth, setCurrentCalMonth] = useState(todayObj.getMonth());
+
+  const [newAnn, setNewAnn] = useState({ title: '', content: '', category: 'Aviso Geral', image: '' });
+  const [newDocument, setNewDocument] = useState({ id: '', title: '', description: '', dept: 'all', accessMode: 'company', allowedUserIds: [], category: 'Geral', folder: '', tags: '', version: '1.0', reviewDate: '', requiredRead: false, file: null });
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [documentUploadProgress, setDocumentUploadProgress] = useState(0);
+  const [isSavingDocument, setIsSavingDocument] = useState(false);
+  const documentSaveInFlight = useRef(false);
+  const documentUploadTask = useRef(null);
+  const [documentSearch, setDocumentSearch] = useState('');
+  const [documentCategoryFilter, setDocumentCategoryFilter] = useState('Todos');
+  const [documentFolderFilter, setDocumentFolderFilter] = useState('Todas as pastas');
+  const [documentDepartmentFilter, setDocumentDepartmentFilter] = useState('Todos os setores');
+  const [documentTypeFilter, setDocumentTypeFilter] = useState('Todos os tipos');
+  const [documentReadingFilter, setDocumentReadingFilter] = useState('Todos');
+  const [documentReviewFilter, setDocumentReviewFilter] = useState('Todas');
+  const [documentSort, setDocumentSort] = useState('recentes');
+  const [showDocumentFilters, setShowDocumentFilters] = useState(false);
+  const [editingDocumentFolderId, setEditingDocumentFolderId] = useState(null);
+  const [editingDocumentFolder, setEditingDocumentFolder] = useState('');
+  const [editingDocumentReviewId, setEditingDocumentReviewId] = useState(null);
+  const [editingDocumentReviewDate, setEditingDocumentReviewDate] = useState('');
+  const [newPoll, setNewPoll] = useState({ category: 'Pulso da equipe', question: '', type: 'single', options: ['', ''], expiresAt: '' });
+  const [pollCreationMode, setPollCreationMode] = useState('enquete');
+  const [newPollForm, setNewPollForm] = useState({ title: '', description: '', category: 'Pesquisa de clima', questions: [createPollQuestion('scale')], expiresAt: '' });
+  const [pollViewFilter, setPollViewFilter] = useState('Todas');
+  const [pollSearch, setPollSearch] = useState('');
+  const [supportForm, setSupportForm] = useState({ subject: '', description: '' });
+  const [newPost, setNewPost] = useState({ title: '', content: '', depts: [], tags: '', image: '' });
+const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todayStr, targetDate: todayStr, targetQuantity: '', prizeValue: '' });
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [newProdLog, setNewProdLog] = useState({
+    group: 'Máquina 1',
+    date: todayStr,
+    quantity: '',
+    defects: '',
+    productDescription: '',
+    notes: '',
+    image: ''
+  });
+  const [editingProdId, setEditingProdId] = useState(null);
+  const [newPresence, setNewPresence] = useState({ name: '', dept: 'rh', status: 'Presencial', notes: '', startDate: todayStr, endDate: todayStr });
+  const [newAbsence, setNewAbsence] = useState({ targetUserId: '', startDate: todayStr, endDate: todayStr, startTime: '09:00', endTime: '12:00', reason: '' });
+  const [bulkSchedule, setBulkSchedule] = useState({
+    startDate: todayStr, endDate: todayStr, status: 'Folga', dept: 'Todos', userIds: [], notes: '',
+    employeeSearch: '', shift: 'Integral', customShiftStart: '', customShiftEnd: '',
+    repeatCount: 1, repeatInterval: 'semanal'
+  });
+  const [bulkScheduleMode, setBulkScheduleMode] = useState('smart');
+  const [automaticScheduleRules, setAutomaticScheduleRules] = useState(() => sanitizeAutomaticScheduleRules({}));
+  const [automaticScheduleWeeklyHoursText, setAutomaticScheduleWeeklyHoursText] = useState('40:00');
+  const [automaticScheduleRuleTab, setAutomaticScheduleRuleTab] = useState('rules');
+  const [isSavingScheduleRules, setIsSavingScheduleRules] = useState(false);
+  const [automaticScheduleProposal, setAutomaticScheduleProposal] = useState([]);
+  const [automaticScheduleProposalInput, setAutomaticScheduleProposalInput] = useState('');
+  const [automaticScheduleEditorFocus, setAutomaticScheduleEditorFocus] = useState(null);
+  const automaticScheduleInput = JSON.stringify({ rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
+  const [automaticSchedulePreviewDate, setAutomaticSchedulePreviewDate] = useState('');
+  const [newEvent, setNewEvent] = useState({ title: '', date: todayStr, type: 'Confraternização', location: '', description: '' });
+  
+  // Atualizado com campos separados de contato de emergência
+  const [userForm, setUserForm] = useState({ 
+    name: '', 
+    role: '', 
+    depts: [], 
+    avatar: DEFAULT_AVATAR, 
+    isAdmin: false, 
+    pin: '1234', 
+    emergencyName: '', 
+    emergencyPhone: '', 
+    emergencyRelationship: '',
+    prodGroup: '',
+    managerId: '',
+    birthDate: '',
+    hireDate: ''
+  });
+  const [myProfileForm, setMyProfileForm] = useState({ 
+    avatar: '', 
+    emergencyName: '', 
+    emergencyPhone: '', 
+    emergencyRelationship: ''
+  });
+  const [prodFilterStart, setProdFilterStart] = useState(todayStr);
+  const [prodFilterEnd, setProdFilterEnd] = useState(todayStr);
+  const [prodFilterGroup, setProdFilterGroup] = useState('Todos');
+  const [prodFilterDescription, setProdFilterDescription] = useState('');
+  const [prodFilterAuthor, setProdFilterAuthor] = useState('Todos');
+
+  const [empSearchText, setEmpSearchText] = useState('');
+  const [empSectorFilter, setEmpSectorFilter] = useState('Todos');
+  const [empRoleFilter, setEmpRoleFilter] = useState('Todos');
+  const [empProdGroupFilter, setEmpProdGroupFilter] = useState('Todos');
+
+  const [newSectorName, setNewSectorName] = useState('');
+  const [newSectorColor, setNewSectorColor] = useState('bg-slate-900 text-white border-slate-800');
+  const [editingSectorId, setEditingSectorId] = useState(null);
+  const [editingSectorName, setEditingSectorName] = useState('');
+  const [editingSectorColor, setEditingSectorColor] = useState('bg-slate-900 text-white border-slate-800');
+  
+  const [newRoleValue, setNewRoleValue] = useState('');
+  const [newRoleDepts, setNewRoleDepts] = useState([]);
+  const [newRoleDescription, setNewRoleDescription] = useState('');
+  const [editingRoleIdx, setEditingRoleIdx] = useState(null);
+  const [editingRoleValue, setEditingRoleValue] = useState('');
+  const [editingRoleDepts, setEditingRoleDepts] = useState([]);
+  const [editingRoleDescription, setEditingRoleDescription] = useState('');
+  const [engagementDetail, setEngagementDetail] = useState(null);
+
+  const [commentText, setCommentText] = useState({});
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [customNotification, setCustomNotification] = useState(null);
+  const notificationTimerRef = useRef(null);
+
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'assistant', text: 'Olá! Sou o ComunicaAI. Estou aqui para ajudar você a encontrar informações sobre ausências, escalas de trabalho, cargos dos setores, comunicados internos do RH e eventos da Comunica. Em que posso ajudar hoje?' }
+  ]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('comunica-dark', isDarkMode);
+    localStorage.setItem('comunica_theme', isDarkMode ? 'dark' : 'light');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isDarkMode ? '#0b1220' : '#071a36');
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeTab]);
+
+  useEffect(() => {
+    const validIds = new Set(departmentsList.map(dept => dept.id));
+    setNewRoleDepts(previous => previous.filter(id => validIds.has(id)));
+    setEditingRoleDepts(previous => previous.filter(id => validIds.has(id)));
+  }, [departmentsList]);
+  useEffect(() => {
+    setThreadHeaderExpanded(false);
+    setShowAddParticipant(false);
+  }, [activeThreadId]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const [selectedTone, setSelectedTone] = useState('profissional');
+  const [isImprovingAnn, setIsImprovingAnn] = useState(false);
+  const [isImprovingPost, setIsImprovingPost] = useState(false);
+  const [copilotWarning, setCopilotWarning] = useState('');
+
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [summaryContent, setSummaryContent] = useState('');
+
+  const [dbUser, setDbUser] = useState(null);
+  const [dbLoading, setDbLoading] = useState(isFirebaseAvailable);
+
+  useEffect(() => {
+    if (dbLoading || !currentUser?.id || !activeCompany?.id || forcePinChange || activeTutorial) return undefined;
+    const onboardingKey = `comunica_guided_onboarding_20261020_v1_${currentUser.id}`;
+    if (localStorage.getItem(onboardingKey)) return undefined;
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(onboardingKey, new Date().toISOString());
+      setActiveTab('dashboard');
+      setActiveTutorial('platform');
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [activeCompany?.id, activeTutorial, currentUser?.id, dbLoading, forcePinChange]);
+  const [authReady, setAuthReady] = useState(!isFirebaseAvailable);
+  const [authScope, setAuthScope] = useState({ companyId: '', isDeveloper: false });
+  const [pushToken, setPushToken] = useState('');
+  const cloudActivityCountRef = useRef(0);
+  const [cloudActivity, setCloudActivity] = useState({ count: 0, label: '' });
+  const beginCloudActivity = (label) => {
+    cloudActivityCountRef.current += 1;
+    setCloudActivity({ count: cloudActivityCountRef.current, label });
+  };
+  const endCloudActivity = () => {
+    cloudActivityCountRef.current = Math.max(0, cloudActivityCountRef.current - 1);
+    setCloudActivity(previous => ({ count: cloudActivityCountRef.current, label: cloudActivityCountRef.current ? previous.label : '' }));
+  };
+
+  const loadSupportCompanyHealth = async (forceRefresh = false) => {
+    if (!functionsClient || !dbUser || !currentUser?.isDeveloper || supportHealthLoading) return;
+    setSupportHealthLoading(true);
+    setSupportHealthError('');
+    beginCloudActivity('Atualizando indicadores das empresas...');
+    try {
+      const response = await httpsCallable(functionsClient, 'platformCompanyHealth')({ forceRefresh });
+      const payload = response.data && typeof response.data === 'object' ? response.data : {};
+      setSupportCompanyHealth({
+        generatedAt: Number(payload.generatedAt || Date.now()),
+        companies: Array.isArray(payload.companies) ? payload.companies : [],
+      });
+    } catch (error) {
+      console.error('Não foi possível carregar a saúde das empresas.', error);
+      setSupportHealthError('Não foi possível atualizar os indicadores das empresas. Tente novamente.');
+      if (forceRefresh) triggerNotification('Não foi possível atualizar os indicadores das empresas.', 'error');
+    } finally {
+      setSupportHealthLoading(false);
+      endCloudActivity();
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'support' || !dbUser || !currentUser?.isDeveloper || supportCompanyHealth.generatedAt) return;
+    loadSupportCompanyHealth(false);
+  }, [activeTab, dbUser, currentUser?.isDeveloper, supportCompanyHealth.generatedAt]);
+
+  useEffect(() => {
+    if (!isFirebaseAvailable || !authReady || !dbUser || currentUser?.id !== dbUser.uid) {
+      setPlatformUpdates([]);
+      setPlatformUpdateReadIds(new Set());
+      return undefined;
+    }
+    const updatesPath = ['artifacts', appId, 'public', 'data'];
+    const updatesRef = collection(db, ...updatesPath, 'platformUpdates');
+    const readsRef = collection(db, ...updatesPath, 'platformUpdateReads', dbUser.uid, 'updates');
+    const unsubscribeUpdates = onSnapshot(updatesRef, snapshot => {
+      setPlatformUpdates(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+        .filter(item => item.published !== false)
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)));
+    }, error => console.error('Não foi possível carregar as novidades da plataforma.', error));
+    const unsubscribeReads = onSnapshot(readsRef, snapshot => {
+      setPlatformUpdateReadIds(new Set(snapshot.docs.map(item => item.id)));
+    }, error => console.error('Não foi possível carregar as leituras das novidades.', error));
+    return () => { unsubscribeUpdates(); unsubscribeReads(); };
+  }, [authReady, dbUser, currentUser?.id]);
+
+  const handlePlatformUpdateRead = async (updateId, destination) => {
+    try {
+      if (!platformUpdateReadIds.has(updateId) && isFirebaseAvailable && dbUser) {
+        const readRef = doc(db, 'artifacts', appId, 'public', 'data', 'platformUpdateReads', dbUser.uid, 'updates', updateId);
+        await setDoc(readRef, { userId: dbUser.uid, updateId, readAt: Date.now() });
+        setPlatformUpdateReadIds(previous => new Set([...previous, updateId]));
+      }
+      if (destination) setActiveTab(destination);
+    } catch (error) {
+      console.error('Não foi possível registrar a leitura da novidade.', error);
+      triggerNotification('Não foi possível registrar a leitura. Tente novamente.', 'error');
+    }
+  };
+
+  const handleImprovePlatformUpdate = async (draft, tone) => {
+    const instruction = 'Você é redator de produto de uma plataforma corporativa brasileira. Aprimore os textos para que sejam claros, convidativos e fáceis de ler. Não invente funcionalidades, prazos ou promessas; preserve o sentido. Escreva em português natural, sem Markdown, asteriscos, hashtags ou emojis em excesso. Retorne somente JSON válido com as propriedades titulo, resumo e conteudo.';
+    const prompt = `Reescreva este aviso de novidade no tom ${tone}. Preserve o nome da ferramenta escolhida, se houver.\n\nTítulo: ${draft.title}\nResumo: ${draft.summary}\nConteúdo: ${draft.content}`;
+    const response = await callGemini(prompt, instruction);
+    const parsed = JSON.parse(String(response).replace(/```json/gi, '').replace(/```/g, '').trim());
+    return {
+      title: formatAIText(parsed.titulo || draft.title).replace(/\n/g, ' ').trim(),
+      summary: formatAIText(parsed.resumo || draft.summary).replace(/\n/g, ' ').trim(),
+      content: formatAIText(parsed.conteudo || draft.content),
+    };
+  };
+
+  const handlePublishPlatformUpdate = async update => {
+    if (!currentUser?.isDeveloper || !dbUser || !isFirebaseAvailable) throw new Error('A publicação está disponível somente para o suporte conectado à nuvem.');
+    const updateRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'platformUpdates'));
+    await setDoc(updateRef, { ...update, id: updateRef.id, authorId: dbUser.uid, authorName: currentUser.name || 'Suporte do Comunica', createdAt: Date.now(), published: true, targetCompanies: [] });
+    triggerNotification('Novidade publicada para as empresas do Comunica.');
+  };
+
+  const handleArchivePlatformUpdate = async updateId => {
+    if (!currentUser?.isDeveloper || !dbUser) return;
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platformUpdates', updateId), { published: false, archivedAt: Date.now() });
+      triggerNotification('Novidade arquivada.');
+    } catch (error) {
+      console.error('Não foi possível arquivar a novidade.', error);
+      triggerNotification('Não foi possível arquivar a novidade.', 'error');
+    }
+  };
+
+  useEffect(() => {
+    notificationDispatcher = (message, type) => {
+      if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
+      setCustomNotification({ message, type });
+      notificationTimerRef.current = setTimeout(() => setCustomNotification(null), 4200);
+    };
+    return () => {
+      notificationDispatcher = null;
+      if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      if (showAddParticipant) return setShowAddParticipant(false);
+      if (showMsgSuggestions) return setShowMsgSuggestions(false);
+      if (showMessagesModal) {
+        if (isComposingMsg) return setIsComposingMsg(false);
+        if (activeThreadId) return setActiveThreadId(null);
+        return setShowMessagesModal(false);
+      }
+      if (showSummaryModal) return setShowSummaryModal(false);
+      if (serviceFormOpen) return setServiceFormOpen(false);
+      if (showChangePinModal) return forcePinChange ? undefined : setShowChangePinModal(false);
+      if (showControlCenter) return setShowControlCenter(false);
+      if (showProfileModal) return setShowProfileModal(false);
+      if (showProdModal) return setShowProdModal(false);
+      if (showPresenceModal) return setShowPresenceModal(false);
+      if (showAbsenceModal) return setShowAbsenceModal(false);
+      if (showEventModal) return setShowEventModal(false);
+      if (pendingUserRemoval && !isRemovingUser) return setPendingUserRemoval(null);
+      if (showUserModal) return setShowUserModal(false);
+      if (showAnnModal) return setShowAnnModal(false);
+      if (showDocumentModal) return setShowDocumentModal(false);
+      if (engagementDetail) return setEngagementDetail(null);
+      if (showPollModal) return setShowPollModal(false);
+      if (showVacancyModal) return setShowVacancyModal(false);
+      if (showPostModal) return setShowPostModal(false);
+      if (showGoalModal) return setShowGoalModal(false);
+      if (showCompanyRegistration) return setShowCompanyRegistration(false);
+      if (isChatOpen) return setIsChatOpen(false);
+      if (showNotificationsDropdown) return setShowNotificationsDropdown(false);
+      if (mobileMenuOpen) setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingUserRemoval, isRemovingUser, showUserModal, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
+
+  // Refs para controle de Notificações em Segundo Plano
+  const sessionStartTime = useRef(Date.now());
+  const knownAnnIds = useRef(new Set());
+  const knownPostIds = useRef(new Set());
+  const isFirstRunNotif = useRef(true);
+  const seenPushEventIds = useRef(new Set());
+
+  const shouldDisplayPush = (eventId) => {
+    if (!eventId) return true;
+    if (seenPushEventIds.current.has(eventId)) return false;
+    seenPushEventIds.current.add(eventId);
+    if (seenPushEventIds.current.size > 100) {
+      const [oldestEventId] = seenPushEventIds.current;
+      seenPushEventIds.current.delete(oldestEventId);
+    }
+    return true;
+  };
+
+  const sendNativeNotification = async (title, body) => {
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/favicon.png' });
+      }
+
+      // Solicita permissão do usuário (Obrigatório no Android 13+)
+      const permStatus = await LocalNotifications.requestPermissions();
+      
+      if (permStatus.display === 'granted') {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title: title,
+              body: body,
+              id: Math.floor(Math.random() * 100000), // Gera um ID único para não sobrepor avisos
+              schedule: { at: new Date(Date.now() + 1000) }, // Dispara em 1 segundo
+            }
+          ]
+        });
+      }
+    } catch (e) {
+      // O navegador não possui o plugin Capacitor; a notificação web acima continua funcionando.
+      console.warn("Notificação nativa indisponível:", e);
+    }
+  };
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' })
+      .catch(error => console.error('Não foi possível preparar a instalação do Comunica.', error));
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    const standaloneQuery = window.matchMedia?.('(display-mode: standalone)');
+    const updateStandalone = () => setIsStandaloneApp(Boolean(standaloneQuery?.matches || window.navigator.standalone === true));
+    const captureInstallPrompt = event => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const confirmInstallation = () => {
+      setInstallPrompt(null);
+      setIsStandaloneApp(true);
+      setShowInstallHelp(false);
+      triggerNotification('Comunica instalado com sucesso!');
+    };
+    window.addEventListener('beforeinstallprompt', captureInstallPrompt);
+    window.addEventListener('appinstalled', confirmInstallation);
+    standaloneQuery?.addEventListener?.('change', updateStandalone);
+    updateStandalone();
+    return () => {
+      window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
+      window.removeEventListener('appinstalled', confirmInstallation);
+      standaloneQuery?.removeEventListener?.('change', updateStandalone);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (isStandaloneApp) {
+      triggerNotification('O Comunica já está instalado neste dispositivo.');
+      return;
+    }
+    if (!installPrompt) {
+      setShowInstallHelp(true);
+      return;
+    }
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      setInstallPrompt(null);
+      if (choice?.outcome !== 'accepted') setShowInstallHelp(true);
+    } catch (error) {
+      console.error('Não foi possível abrir a instalação do aplicativo.', error);
+      setShowInstallHelp(true);
+    }
+  };
+
+  const handleEnablePushNotifications = async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      triggerNotification('Este navegador não oferece notificações para o Comunica.', 'error');
+      return;
+    }
+    const appleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (appleMobile && !window.navigator.standalone && !window.matchMedia?.('(display-mode: standalone)').matches) {
+      triggerNotification('No iPhone, adicione o Comunica à Tela de Início e abra pelo ícone antes de ativar as notificações.', 'error');
+      setShowInstallHelp(true);
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        triggerNotification('Permissão não concedida. Você pode ativá-la depois nas configurações de notificações do aparelho.', 'error');
+        return;
+      }
+      setBrowserPushGranted(true);
+      const messaging = getMessaging();
+      const serviceWorkerRegistration = await navigator.serviceWorker.ready;
+      const token = await getToken(messaging, {
+        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration,
+      });
+      if (!token) throw new Error('O navegador não forneceu um token de notificação.');
+      setPushToken(token);
+      triggerNotification('Notificações ativadas neste dispositivo.');
+    } catch (error) {
+      console.error('Não foi possível ativar notificações neste dispositivo.', error);
+      triggerNotification('Não foi possível ativar notificações. Confira a instalação, a permissão e tente novamente.', 'error');
+    }
+  };
+// 1. Pede permissão e configura o Firebase Messaging (web e APK)
+  useEffect(() => {
+    let nativeListeners = [];
+    let unsubscribeWebMessage = () => {};
+
+    const configureNativeMessaging = async () => {
+      try {
+        const permission = await FirebaseMessaging.requestPermissions();
+        if (permission.receive !== 'granted') return;
+
+        const { token } = await FirebaseMessaging.getToken();
+        if (token) setPushToken(token);
+
+        nativeListeners = await Promise.all([
+          FirebaseMessaging.addListener('tokenReceived', ({ token: renewedToken }) => {
+            if (renewedToken) setPushToken(renewedToken);
+          }),
+          FirebaseMessaging.addListener('notificationReceived', ({ notification }) => {
+            // No Android, a própria mensagem FCM já é exibida pelo sistema.
+            // Não criamos uma segunda notificação dentro do aplicativo.
+            const eventId = notification?.data?.eventId;
+            if (shouldDisplayPush(eventId) && notification?.data?.type === 'message_deadline') {
+              sendNativeNotification(notification.title || 'Prazo de conversa', notification.body || 'Uma conversa exige sua atenção.');
+            }
+          }),
+          FirebaseMessaging.addListener('notificationActionPerformed', ({ notification }) => {
+            const type = notification?.data?.type;
+            if (type === 'announcement') setActiveTab('announcements');
+            if (type === 'sector_post') setActiveTab('sectors');
+            if (type === 'message' || type === 'message_deadline') {
+              setPendingMessageNavigation({
+                companyId: notification?.data?.companyId,
+                threadId: notification?.data?.threadId,
+              });
+            }
+          }),
+        ]);
+      } catch (err) {
+        console.warn('Não foi possível configurar as notificações nativas.', err);
+      }
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      configureNativeMessaging();
+      return () => nativeListeners.forEach((listener) => listener.remove());
+    }
+
+    if ('Notification' in window) {
+      const configureWebMessaging = async () => {
+        if (Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return;
+        try {
+          const messaging = getMessaging();
+          const serviceWorkerRegistration = await navigator.serviceWorker.ready;
+          const currentToken = await getToken(messaging, {
+            vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+            serviceWorkerRegistration,
+          });
+          if (currentToken) setPushToken(currentToken);
+          unsubscribeWebMessage = onMessage(messaging, (payload) => {
+            const eventId = payload.data?.eventId || payload.messageId;
+            if (shouldDisplayPush(eventId)) {
+              triggerNotification(payload.notification?.title || 'Você recebeu uma nova notificação.', "success");
+              if (payload.data?.type === 'message_deadline' && 'Notification' in window && Notification.permission === 'granted') {
+                const desktopNotification = new Notification(payload.notification?.title || 'Prazo de conversa', {
+                  body: payload.notification?.body || 'Uma conversa exige sua atenção.',
+                  icon: '/pwa/icon-192.png',
+                  tag: eventId || `comunica-deadline-${payload.data?.threadId || 'conversation'}`,
+                });
+                desktopNotification.onclick = () => {
+                  window.focus();
+                  setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId});
+                  desktopNotification.close();
+                };
+              }
+            }
+          });
+        } catch (error) {
+          console.error('Erro ao configurar notificações do navegador.', error);
+          triggerNotification('Não foi possível ativar notificações do navegador. Confira a permissão do site.', 'error');
+        }
+      };
+      configureWebMessaging();
+      }
+    return () => {
+      unsubscribeWebMessage();
+      nativeListeners.forEach(listener => listener.remove());
+    };
+  }, [browserPushGranted]);
+
+  useEffect(() => {
+    if (!navigator.serviceWorker) return;
+    const onWorkerMessage = event => {
+      if (event.data?.type === 'comunica-open-message') {
+        setPendingMessageNavigation({companyId: event.data.companyId, threadId: event.data.threadId});
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onWorkerMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingMessageNavigation || !dbUser || !currentUser) return;
+    const {companyId, threadId} = pendingMessageNavigation;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId || '') || !/^[a-zA-Z0-9_-]+$/.test(threadId || '')) {
+      setPendingMessageNavigation(null);
+      return;
+    }
+    let cancelled = false;
+    const openMessage = async () => {
+      try {
+        const companySnapshot = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId));
+        if (!companySnapshot.exists() || cancelled) return;
+        setActiveCompany({id: companySnapshot.id, ...companySnapshot.data()});
+        setIsComposingMsg(false);
+        setActiveThreadId(threadId);
+        setShowMessagesModal(true);
+      } catch (error) {
+        console.error('Não foi possível abrir a conversa da notificação', error);
+      } finally {
+        if (!cancelled) {
+          setPendingMessageNavigation(null);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('messageCompany');
+          url.searchParams.delete('messageThread');
+          window.history.replaceState(window.history.state, '', url);
+        }
+      }
+    };
+    openMessage();
+    return () => { cancelled = true; };
+  }, [pendingMessageNavigation, dbUser, currentUser?.id]);
+
+  // Associa o dispositivo à conta autenticada sem recriar o suporte na equipe.
+  const pushRegistrationInFlight = useRef(null);
+  useEffect(() => {
+    if (!pushToken || !currentUser || !isFirebaseAvailable || !dbUser) return;
+    if (!currentUser.isDeveloper && !activeCompany) return;
+
+    const savedTokens = Array.isArray(currentUser.pushTokens) ? currentUser.pushTokens : [];
+    if (savedTokens.includes(pushToken)) return;
+    if (pushRegistrationInFlight.current === pushToken) return;
+    pushRegistrationInFlight.current = pushToken;
+    const accountId = currentUser.id;
+    const register = async () => {
+      try {
+        const saved = currentUser.isDeveloper
+          ? Boolean((await httpsCallable(functionsClient, 'registerSupportPushToken')({token: pushToken})).data?.registered)
+          : await updateDocField('users', accountId, {pushTokens: [...new Set([...savedTokens, pushToken])]});
+        if (saved) setCurrentUser(previous => previous?.id === accountId
+          ? {...previous, pushTokens: [...new Set([...(previous.pushTokens || []), pushToken])]}
+          : previous);
+      } catch (error) {
+        console.error('Não foi possível registrar notificações neste dispositivo', error);
+        triggerNotification('Não foi possível ativar notificações neste dispositivo.', 'error');
+      } finally {
+        if (pushRegistrationInFlight.current === pushToken) pushRegistrationInFlight.current = null;
+      }
+    };
+    register();
+  }, [pushToken, currentUser, activeCompany, dbUser, functionsClient]);
+
+// 2. Monitora as coleções para disparar notificações apenas de itens NOVOS
+  useEffect(() => {
+    const canListenForNotifications = authReady && dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
+    if (!canListenForNotifications) {
+      knownAnnIds.current.clear();
+      knownPostIds.current.clear();
+      return;
+    }
+
+    const unsubscribeAnn = onSnapshot(getTenantCollection('announcements'), (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const docId = change.doc.id;
+
+          // A Firebase Function é a única responsável pelo push. Não exibimos
+          // outro aviso pelo snapshot para evitar notificações em duplicidade.
+          knownAnnIds.current.add(docId);
+        }
+      });
+    });
+
+    const unsubscribePosts = onSnapshot(getTenantCollection('posts'), (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const docId = change.doc.id;
+
+          // O push chega pela Firebase Function e pelo listener de mensagens.
+          knownPostIds.current.add(docId);
+        }
+      });
+    });
+
+    return () => {
+      unsubscribeAnn();
+      unsubscribePosts();
+    };
+  }, [authReady, authScope.companyId, authScope.isDeveloper, currentUser?.id, activeCompany, dbUser]);
+  useEffect(() => {
+    if (!isFirebaseAvailable) return;
+
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        }
+      } catch (err) {
+        console.error("Autenticação de banco em nuvem falhou", err);
+      }
+    };
+
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (usr) => {
+      if (usr?.isAnonymous) {
+        localStorage.removeItem('comunica_current_user');
+        setCurrentUser(null);
+        setDbUser(null);
+        setAuthScope({ companyId: '', isDeveloper: false });
+        setAuthReady(true);
+        setDbLoading(false);
+        await signOut(auth);
+        return;
+      }
+      if (!usr) {
+        // Não mantenha um perfil local quando a sessão do Firebase já expirou.
+        localStorage.removeItem('comunica_current_user');
+        localStorage.removeItem('comunica_active_company');
+        setCurrentUser(null);
+        setActiveCompany(null);
+        setDbUser(null);
+        setAuthScope({ companyId: '', isDeveloper: false });
+        setAuthReady(true);
+        setDbLoading(false);
+        return;
+      }
+      try {
+        const token = await usr.getIdTokenResult();
+        const scope = { companyId: String(token.claims.companyId || ''), isDeveloper: token.claims.isDeveloper === true };
+        const savedUser = getLocalStorageItem('comunica_current_user', null);
+        const savedCompany = getLocalStorageItem('comunica_active_company', null);
+        if (savedUser?.id && savedUser.id !== usr.uid || (!scope.isDeveloper && savedCompany?.id && scope.companyId !== savedCompany.id)) {
+          localStorage.removeItem('comunica_current_user');
+          localStorage.removeItem('comunica_active_company');
+          setCurrentUser(null);
+          setActiveCompany(null);
+        }
+        setAuthScope(scope);
+        setDbUser(usr);
+      } catch (error) {
+        console.error('Não foi possível validar a sessão do Firebase', error);
+        setDbUser(null);
+        setAuthScope({ companyId: '', isDeveloper: false });
+      } finally {
+        setAuthReady(true);
+        setDbLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseAvailable || !dbUser || !currentUser?.isDeveloper) return;
+    return onSnapshot(getCompaniesCollection(), (snapshot) => {
+      setCompanies(snapshot.docs.map(company => ({ id: company.id, ...company.data() })));
+    });
+  }, [dbUser, currentUser?.isDeveloper]);
+
+  useEffect(() => {
+    setSupportRequests({});
+    setSupportLoadError(false);
+    if (!isFirebaseAvailable || !dbUser || !currentUser?.isDeveloper) return;
+    const stops = companies.map(company => onSnapshot(query(
+      collection(db, 'artifacts', appId, 'public', 'data', 'companies', company.id, 'messages'),
+      where('participants', 'array-contains', PLATFORM_SUPPORT.id)
+    ), snapshot => {
+      const threads = new Map();
+      snapshot.docs.forEach(item => {
+        const message = { ...item.data(), id: item.id };
+        if (!message.threadId) return;
+        const previous = threads.get(message.threadId);
+        if (!previous || Number(message.timestamp || 0) > Number(previous.timestamp || 0)) threads.set(message.threadId, message);
+      });
+      setSupportRequests(previous => ({ ...previous, [company.id]: [...threads.values()] }));
+    }, () => {
+      setSupportLoadError(true);
+      setSupportRequests(previous => ({ ...previous, [company.id]: [] }));
+    }));
+    return () => stops.forEach(stop => stop());
+  }, [dbUser, currentUser?.isDeveloper, companies]);
+
+  useEffect(() => {
+    if (currentUser) localStorage.setItem('comunica_current_user', JSON.stringify(currentUser));
+    else localStorage.removeItem('comunica_current_user');
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (activeCompany) localStorage.setItem('comunica_active_company', JSON.stringify(activeCompany));
+    else localStorage.removeItem('comunica_active_company');
+  }, [activeCompany]);
+
+  useEffect(() => {
+    const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
+    if (!isFirebaseAvailable || !authReady || !isMatchingSession) {
+      setDbLoading(false);
+      return;
+    }
+
+    const getCollectionPath = (name) => getTenantCollection(name);
+
+    const setupSync = (collectionName, initialData, setState, localKey) => {
+      if (collectionName === 'productivity' && !currentUser?.isAdmin && !currentUser?.prodGroup && !/encarregado.*produ|produ.*encarregado/i.test(currentUser?.role || '')) {
+        setState([]);
+        setLocalStorageSafe(localKey, JSON.stringify([]));
+        return () => {};
+      }
+      const colRef = getCollectionPath(collectionName);
+      const source = collectionName === 'messages' && dbUser.uid !== 'platform-support-francielton'
+        ? query(colRef, or(where('participants', 'array-contains', dbUser.uid), where('senderId', '==', dbUser.uid), where('receiverId', '==', dbUser.uid)))
+        : colRef;
+      return onSnapshot(source, (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          list.sort((a, b) => {
+            const getTime = (item) => {
+              if (!item) return 0;
+              const d = item.createdAt || item.timestamp || item.date;
+
+              if (d) {
+                if (typeof d.toDate === 'function') return d.toDate().getTime();
+                if (d.seconds) return d.seconds * 1000;
+                if (typeof d === 'number') return d;
+                
+                if (typeof d === 'string') {
+                  if (d.includes('/')) {
+                    const [dataPart, horaPart = '00:00:00'] = d.split(' ');
+                    const [dia, mes, ano] = dataPart.split('/');
+                    const parsedBR = new Date(`${ano}-${mes}-${dia}T${horaPart}`).getTime();
+                    if (!isNaN(parsedBR)) return parsedBR;
+                  }
+                  const parsedISO = new Date(d).getTime();
+                  if (!isNaN(parsedISO)) return parsedISO;
+                }
+              }
+
+              if (item.id && item.id.includes('-')) {
+                const num = parseInt(item.id.split('-')[1] || '0', 10);
+                if (!isNaN(num) && num > 1600000000000) return num;
+              }
+              
+              return 0;
+            };
+
+            return getTime(b) - getTime(a);
+          });
+
+          if (collectionName === 'users') {
+            const publicProfiles = list.map(({pin: ignoredPin, ...profile}) => profile);
+            setState(publicProfiles);
+            setLocalStorageSafe(localKey, JSON.stringify(publicProfiles));
+          } else {
+            setState(list);
+            setLocalStorageSafe(localKey, JSON.stringify(list));
+          }
+        } else {
+          // Usuários nunca são repovoados automaticamente por dados de demonstração
+          // ou migrações antigas. A empresa começa vazia somente quando isso é real.
+          setState([]);
+          setLocalStorageSafe(localKey, JSON.stringify([]));
+        }
+      }, () => {
+        setState([]);
+        setLocalStorageSafe(localKey, JSON.stringify([]));
+        setDbLoading(false);
+        triggerNotification('Não foi possível carregar ' + collectionName + '. Confira sua conexão e permissão.', 'error');
+      });
+
+    }; // 3. Faltava fechar a função setupSync principal
+
+    // A partir daqui, você continua com as chamadas normais (dentro do seu useEffect):
+    const unsubDepts = setupSync('departments', INITIAL_DEPARTMENTS, setDepartmentsList, 'comunica_departments');
+    const unsubUsers = setupSync('users', INITIAL_USERS, setUsersList, 'comunica_users');
+    const unsubRoles = setupSync('roles', INITIAL_ROLES, setRolesList, 'comunica_roles');
+    const unsubAnn = setupSync('announcements', INITIAL_ANNOUNCEMENTS, setAnnouncements, 'comunica_announcements');
+    const unsubPosts = setupSync('posts', INITIAL_SECTOR_POSTS, setSectorPosts, 'comunica_sector_posts');
+    const unsubProd = setupSync('productivity', INITIAL_PRODUCTIVITY, setProductivityLogs, 'comunica_productivity');
+    const unsubMessages = setupSync('messages', INITIAL_MESSAGES, setPrivateMessages, 'comunica_messages');
+    const unsubEvents = setupSync('events', INITIAL_CALENDAR_EVENTS, setCalendarEvents, 'comunica_calendar_events');
+    const unsubAbsences = setupSync('absences', INITIAL_ABSENCES, setAbsences, 'comunica_absences');
+    const unsubSchedules = setupSync('schedules', [], setWorkSchedules, 'comunica_work_schedules');
+    const unsubPresence = setupSync('presence', INITIAL_PRESENCE, setPresenceList, 'comunica_presence');
+    const unsubDocuments = () => {};
+    const unsubPolls = setupSync('polls', [], setPollsList, 'comunica_polls');
+
+setDbLoading(false);
+
+    return () => {
+      unsubDepts();
+      unsubUsers();
+      unsubRoles();
+      unsubAnn();
+      unsubPosts();
+      unsubProd();
+      unsubMessages();
+      unsubEvents();
+      unsubAbsences();
+      unsubSchedules();
+      unsubPresence();
+      unsubDocuments();
+      unsubPolls();
+      unsubPosts();
+      unsubProd();
+      unsubMessages();
+      unsubEvents();
+      unsubAbsences();
+      unsubSchedules();
+      unsubPresence();
+      unsubDocuments();
+      unsubPolls();
+    };
+  }, [authReady, authScope.companyId, authScope.isDeveloper, dbUser, activeCompany, currentUser?.id, currentUser?.isAdmin, currentUser?.prodGroup, currentUser?.role]);
+
+  useEffect(() => {
+    setAccessControl({ sectorPermissions: {} });
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id) return;
+    return onSnapshot(doc(getTenantCollection('settings'), 'access-control'), snapshot => {
+      setAccessControl(snapshot.exists() ? { sectorPermissions: {}, ...snapshot.data() } : { sectorPermissions: {} });
+    }, error => console.error('Falha ao carregar controle de acesso', error));
+  }, [dbUser, activeCompany?.id]);
+
+  useEffect(() => {
+    const fallback = sanitizeServiceCatalogSettings({});
+    setServiceCatalogSettings(fallback);
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id) return;
+    return onSnapshot(doc(getTenantCollection('settings'), 'service-catalog'), snapshot => {
+      setServiceCatalogSettings(sanitizeServiceCatalogSettings(snapshot.exists() ? snapshot.data() : {}));
+    }, error => console.error('Falha ao carregar catálogo de serviços', error));
+  }, [dbUser, activeCompany?.id]);
+
+  useEffect(() => {
+    setAutomaticScheduleRules(sanitizeAutomaticScheduleRules({}));
+    setAutomaticScheduleWeeklyHoursText('40:00');
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id) return;
+    return onSnapshot(doc(getTenantCollection('settings'), 'schedule-rules'), snapshot => {
+      const rules = sanitizeAutomaticScheduleRules(snapshot.exists() ? snapshot.data() : {});
+      setAutomaticScheduleRules(rules);
+      const minutes = Math.round(rules.hoursPerWeek * 60);
+      setAutomaticScheduleWeeklyHoursText(`${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
+    }, error => console.error('Falha ao carregar regras da escala', error));
+  }, [dbUser, activeCompany?.id]);
+
+  useEffect(() => {
+    setAuditLogs([]);
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return;
+    return onSnapshot(getTenantCollection('auditLogs'), snapshot => {
+      const entries = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+      entries.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+      setAuditLogs(entries.slice(0, 500));
+    }, error => console.error('Falha ao carregar auditoria', error));
+  }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper]);
+
+  useEffect(() => {
+    if (!isFirebaseAvailable || !authReady || !functionsClient || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany?.id || (!authScope.isDeveloper && authScope.companyId !== activeCompany.id)) return;
+    let cancelled = false;
+    httpsCallable(functionsClient, 'listCompanyDocuments')({companyId: activeCompany.id})
+      .then(result => {
+        if (!cancelled) setDocumentsList(Array.isArray(result.data?.documents) ? result.data.documents : []);
+      })
+      .catch(error => {
+        console.error('Falha ao carregar documentos autorizados', error);
+        if (!cancelled) {
+          setDocumentsList([]);
+          triggerNotification('Não foi possível carregar os documentos autorizados.', 'error');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [authReady, authScope.companyId, authScope.isDeveloper, activeCompany?.id, currentUser?.id, currentUser?.isAdmin, currentUser?.isDeveloper, dbUser]);
+
+  useEffect(() => {
+    setVacanciesList([]);
+    setCareerApplications([]);
+    if (!isFirebaseAvailable || !authReady || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany || (!authScope.isDeveloper && authScope.companyId !== activeCompany.id) || !isCareerManagerUser(currentUser)) return;
+    const stopVacancies = onSnapshot(getTenantCollection('vacancies'), snapshot =>
+      setVacanciesList(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))),
+    () => triggerNotification('Não foi possível carregar as vagas.', 'error'));
+    const stopApplications = onSnapshot(getTenantCollection('applications'), snapshot =>
+      setCareerApplications(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))),
+    () => triggerNotification('Não foi possível carregar as candidaturas.', 'error'));
+    return () => { stopVacancies(); stopApplications(); };
+  }, [authReady, authScope.companyId, authScope.isDeveloper, dbUser, activeCompany, currentUser?.id, currentUser?.isAdmin, currentUser?.isDeveloper, currentUser?.role, currentUser?.dept, currentUser?.department]);
+
+  useEffect(() => {
+    if (activeTab !== 'careers' || !isCareerManagerUser(currentUser) || !activeCompany?.id || careerRetentionCompanyRef.current === activeCompany.id) return;
+    careerRetentionCompanyRef.current = activeCompany.id;
+    httpsCallable(functionsClient, 'initializeCareerRetention')({ companyId: activeCompany.id }).catch(error => {
+      careerRetentionCompanyRef.current = '';
+      console.error('Falha ao inicializar retenção dos currículos', error);
+    });
+  }, [activeTab, activeCompany?.id, currentUser?.id, currentUser?.isAdmin, currentUser?.isDeveloper, currentUser?.role, currentUser?.dept, currentUser?.department]);
+
+  useEffect(() => {
+    if (activeTab !== 'careers' || !careerApplications.length || !isCareerManagerUser(currentUser) || !activeCompany?.id) return;
+    const due = careerApplications.filter(item => applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000).length;
+    const noticeKey = `${activeCompany.id}-${new Date().toISOString().slice(0, 10)}-${due}`;
+    if (!due || careerExpiryNoticeRef.current === noticeKey) return;
+    careerExpiryNoticeRef.current = noticeKey;
+    triggerNotification(`${due} currículo(s) estão vencidos ou expiram nos próximos 15 dias. Revise os prazos no Banco de Talentos.`, 'error');
+  }, [activeTab, activeCompany?.id, careerApplications, currentUser?.id]);
+  useEffect(() => {
+    if (!isCareerManagerUser(currentUser) || !activeCompany?.id) return;
+    const pending = careerApplications.filter(item => item.candidateUpdatePending === true).length;
+    const noticeKey = `${activeCompany.id}-${pending}`;
+    if (!pending || careerCandidateUpdateNoticeRef.current === noticeKey) return;
+    careerCandidateUpdateNoticeRef.current = noticeKey;
+    triggerNotification(`${pending} candidatura(s) em análise foram atualizadas pelo candidato. Revise o Banco de Talentos.`, 'error');
+  }, [activeCompany?.id, careerApplications, currentUser?.id, currentUser?.isAdmin, currentUser?.role]);
+const getStatusEmTempoReal = (colaborador) => {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  // 1. CHECAGEM DE FÉRIAS NO CALENDÁRIO
+  // Blinda ID e checa se o motivo é férias, ignorando maiúsculas
+  const feriasDoUser = absences.filter(abs => {
+    const isMesmoUser = String(abs.userId) === String(colaborador.id) || String(abs.userName).toLowerCase() === String(colaborador.name).toLowerCase();
+    const isFerias = abs.reason && abs.reason.trim().toLowerCase() === 'férias';
+    return isMesmoUser && isFerias;
+  });
+
+  for (const abs of feriasDoUser) {
+    let dataInicio = abs.startDate;
+    let dataFim = abs.endDate;
+
+    if (dataInicio && dataInicio.includes('/')) dataInicio = dataInicio.split('/').reverse().join('-');
+    if (dataFim && dataFim.includes('/')) dataFim = dataFim.split('/').reverse().join('-');
+
+    const inicio = new Date(dataInicio + 'T00:00:00');
+    const fim = new Date(dataFim + 'T23:59:59');
+
+    // Se o dia de hoje estiver dentro do atestado, a pessoa está de férias AGORA
+    if (hoje >= inicio && hoje <= fim) {
+      return 'Férias';
+    }
+  }
+
+  // 2. Escala planejada pelo gestor: vale somente dentro do período
+  // indicado no calendário e não substitui férias vigentes.
+  const plannedSchedule = workSchedules
+    .filter(schedule => String(schedule.userId) === String(colaborador.id) &&
+      todayStr >= schedule.startDate && todayStr <= schedule.endDate)
+    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))[0];
+  if (plannedSchedule?.status) return plannedSchedule.status;
+
+  // 3. BUSCA O STATUS DO DIA A DIA (Presencial, Home Office, Folga)
+  // É AQUI QUE ESTAVA O ERRO! Precisamos olhar para a lista 'presenceList', e não para o perfil.
+  const presencaDiaria = presenceList.find(p => String(p.name).toLowerCase() === String(colaborador.name).toLowerCase());
+  
+  if (presencaDiaria && presencaDiaria.status) {
+    // Se achou na lista diária e não for 'Férias', retorna o status (ex: Home Office)
+    if (presencaDiaria.status !== 'Férias') {
+      return presencaDiaria.status; 
+    }
+  }
+
+  // 4. SEGURANÇA FINAL
+  // Se não tem atestado de férias para hoje, nem status na lista diária, o padrão é Presencial.
+  return 'Presencial'; 
+};
+  const uploadFileToStorage = async (file, folder, accessMetadata = {}, onProgress, onTask) => {
+    beginCloudActivity('Enviando arquivo para a nuvem...');
+    try {
+      if (!file) throw new Error('Selecione um arquivo para enviar.');
+      if (!storage || !activeCompany || !dbUser) throw new Error('Sessão de armazenamento indisponível.');
+      const safeFileName = String(file.name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-160);
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${safeFileName}`;
+      const performUpload = async (uploader, uploadStorage = storage) => {
+        const fileRef = ref(uploadStorage, `companies/${activeCompany.id}/users/${uploader.uid}/${folder}/${uniqueName}`);
+        const customMetadata = Object.fromEntries(Object.entries({ ownerUid: uploader.uid, ...accessMetadata })
+          .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
+          .map(([key, value]) => [key, String(value)]));
+        const uploadTask = uploadBytesResumable(fileRef, file, { contentType: resolveUploadContentType(file), customMetadata });
+        if (typeof onTask === 'function') onTask(uploadTask);
+        const snapshot = await new Promise((resolve, reject) => {
+          uploadTask.on('state_changed', current => {
+            const progress = current.totalBytes > 0 ? Math.round((current.bytesTransferred / current.totalBytes) * 100) : 0;
+            if (typeof onProgress === 'function') onProgress(progress);
+          }, reject, () => resolve(uploadTask.snapshot));
+        });
+        return { url: await getDownloadURL(snapshot.ref), storagePath: snapshot.ref.fullPath };
+      };
+
+      beginCloudActivity('Validando sua sessão para o envio...');
+      try {
+        if (typeof onProgress === 'function') onProgress(0);
+        if (!functionsClient) throw new Error('Serviço de autorização de arquivos indisponível.');
+        // Confere no servidor, em tempo real, se o colaborador continua ativo e
+        // recebe uma autorização curta, vinculada somente a este arquivo. Uma
+        // instância temporária evita substituir a sessão corporativa principal.
+        const verifyUploadAccess = httpsCallable(functionsClient, 'refreshUploadSession');
+        const uploadContentType = resolveUploadContentType(file);
+        const authorization = await verifyUploadAccess({
+          appId,
+          companyId: activeCompany.id,
+          folder,
+          fileName: uniqueName,
+          size: file.size,
+          contentType: uploadContentType,
+        });
+        const uploadToken = authorization.data?.token;
+        if (!uploadToken) throw new Error('O servidor não liberou uma sessão segura para o arquivo.');
+
+        const uploadApp = initializeApp(firebaseConfig, `upload-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+        try {
+          const uploadAuth = getAuth(uploadApp);
+          await setPersistence(uploadAuth, inMemoryPersistence);
+          const uploadCredential = await signInWithCustomToken(uploadAuth, uploadToken);
+          const isolatedStorage = getStorage(uploadApp);
+          isolatedStorage.maxUploadRetryTime = 30 * 60 * 1000;
+          return await performUpload(uploadCredential.user, isolatedStorage);
+        } finally {
+          await deleteApp(uploadApp).catch(error => console.warn('Não foi possível encerrar a sessão temporária de upload.', error));
+        }
+      } finally {
+        endCloudActivity();
+      }
+    } finally {
+      endCloudActivity();
+    }
+  };
+
+  const deleteStoredFile = async (file) => {
+    const location = file?.storagePath || file?.data || file?.url || '';
+    if (!location || !storage) return true;
+    try {
+      await deleteObject(ref(storage, location));
+      return true;
+    } catch (error) {
+      if (String(error?.code || '').includes('object-not-found')) return true;
+      console.error('Não foi possível remover o arquivo físico:', error);
+      return false;
+    }
+  };
+
+  const handleImageUpload = async (e, setFormState, fieldName = 'image') => {
+    const input = e.currentTarget;
+    try {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      const contentType = resolveUploadContentType(file);
+      if (!contentType.startsWith('image/')) throw new Error('Selecione um arquivo de imagem válido.');
+      if (file.size > IMAGE_FILE_MAX_BYTES) throw new Error('A imagem ultrapassa o limite seguro de 25 MB.');
+
+      triggerNotification('Enviando imagem para a nuvem...');
+      const uploaded = await uploadFileToStorage(file, fieldName === 'avatar' ? 'avatars' : 'images');
+      if (uploaded?.url) {
+        setFormState(prev => ({ ...prev, [fieldName]: uploaded.url }));
+        triggerNotification('Imagem salva na nuvem com sucesso!');
+        return;
+      }
+
+      throw new Error('Armazenamento de imagens indisponível.');
+    } catch (err) {
+      console.error('Erro no envio da imagem:', err);
+      const directMessage = String(err?.message || '');
+      triggerNotification(directMessage.startsWith('Selecione') || directMessage.includes('25 MB') ? directMessage : fileUploadErrorMessage(err), 'error');
+    } finally {
+      if (input) input.value = '';
+    }
+  };
+
+  const getCompaniesCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'companies');
+  const getTenantCollection = (name) => activeCompany
+    ? collection(db, 'artifacts', appId, 'public', 'data', 'companies', activeCompany.id, name)
+    : null;
+
+  const recordAuditEvent = async ({ action, collectionName, documentId, fields = [] }) => {
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || collectionName === 'auditLogs') return;
+    try {
+      await addDoc(getTenantCollection('auditLogs'), {
+        actorId: currentUser?.id || dbUser.uid,
+        actorName: currentUser?.name || 'Usuário autenticado',
+        actorRole: currentUser?.role || (currentUser?.isDeveloper ? 'Suporte da plataforma' : 'Colaborador'),
+        action,
+        collection: collectionName,
+        documentId,
+        fields: fields.filter(field => field !== 'pin' && field !== 'pushTokens').slice(0, 30),
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error('Não foi possível registrar a auditoria', error);
+    }
+  };
+
+  const saveDoc = async (colName, docId, data) => {
+    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles'];
+    const accessUser = typeof currentUser === 'undefined' ? null : currentUser;
+    const accessProfile = typeof effectiveAccessProfile === 'undefined' ? { canEdit: true, canManageCalendar: true } : effectiveAccessProfile;
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && controlledCollections.includes(colName) && accessProfile.canEdit === false) {
+      triggerNotification('Seu perfil possui acesso apenas para consulta nesta área.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && ['events', 'absences', 'presence', 'schedules'].includes(colName) && accessProfile.canManageCalendar === false) {
+      triggerNotification('Seu perfil não possui permissão para alterar escalas ou calendário.', 'error');
+      return false;
+    }
+    if (!isFirebaseAvailable || !dbUser) {
+      triggerNotification('Conexão com a nuvem indisponível. Nada foi salvo; tente novamente.', 'error');
+      return false;
+    }
+    const finishActivity = typeof beginCloudActivity === 'function' ? (beginCloudActivity('Salvando alteração...'), endCloudActivity) : () => {};
+    try {
+      const tenantCollection = getTenantCollection(colName);
+      if (!tenantCollection) throw new Error('Nenhuma empresa selecionada.');
+      const payload = {...data};
+      if (colName === 'users') delete payload.pin;
+      await setDoc(doc(tenantCollection, docId), payload, { merge: true });
+      if (typeof recordAuditEvent === 'function') await recordAuditEvent({ action: 'record.saved', collectionName: colName, documentId: docId, fields: Object.keys(payload) });
+      return true;
+    } catch (err) {
+      console.error("Database mutation error on cloud", err);
+      triggerNotification('Não foi possível salvar na nuvem. Nenhuma alteração foi confirmada.', 'error');
+      return false;
+    } finally {
+      finishActivity();
+    }
+  };
+
+  const saveRelatedRecords = async (records, failureMessage = 'Não foi possível publicar. Nenhum dos registros desta operação foi salvo. Seu formulário foi preservado.') => {
+    const finishActivity = typeof beginCloudActivity === 'function' ? (beginCloudActivity('Publicando informações...'), endCloudActivity) : () => {};
+    try {
+      if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
+      await commitAtomicRecords(records, () => writeBatch(db), (collectionName, id) => {
+        const target = getTenantCollection(collectionName);
+        if (!target) throw new Error('Nenhuma empresa selecionada.');
+        return doc(target, id);
+      });
+      if (typeof recordAuditEvent === 'function') {
+        await Promise.all(records.map(record => recordAuditEvent({
+          action: record.operation === 'delete' ? 'record.deleted' : record.operation === 'update' ? 'record.updated' : 'record.created',
+          collectionName: record.collection,
+          documentId: record.id,
+          fields: Object.keys(record.data || {}),
+        })));
+      }
+      return true;
+    } catch (error) {
+      console.error('Falha na gravação conjunta', error);
+      triggerNotification(failureMessage, 'error');
+      return false;
+    } finally {
+      finishActivity();
+    }
+  };
+
+  const updateDocField = async (colName, docId, data) => {
+    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles'];
+    const accessUser = typeof currentUser === 'undefined' ? null : currentUser;
+    const accessProfile = typeof effectiveAccessProfile === 'undefined' ? { canEdit: true, canManageCalendar: true } : effectiveAccessProfile;
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && controlledCollections.includes(colName) && accessProfile.canEdit === false) {
+      triggerNotification('Seu perfil possui acesso apenas para consulta nesta área.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && ['events', 'absences', 'presence', 'schedules'].includes(colName) && accessProfile.canManageCalendar === false) {
+      triggerNotification('Seu perfil não possui permissão para alterar escalas ou calendário.', 'error');
+      return false;
+    }
+    const finishActivity = typeof beginCloudActivity === 'function' ? (beginCloudActivity('Atualizando informação...'), endCloudActivity) : () => {};
+    try {
+      if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
+      const tenantCollection = getTenantCollection(colName);
+      if (!tenantCollection) throw new Error('Nenhuma empresa selecionada.');
+      await updateDoc(doc(tenantCollection, docId), data);
+      if (typeof recordAuditEvent === 'function') await recordAuditEvent({ action: 'record.updated', collectionName: colName, documentId: docId, fields: Object.keys(data || {}) });
+      return true;
+    } catch (error) {
+      console.error('Falha ao atualizar na nuvem', error);
+      const errorCode = String(error?.code || '');
+      triggerNotification(
+        errorCode.includes('permission-denied')
+          ? 'Seu perfil ainda não recebeu permissão para esta ação. Atualize a página, entre novamente e tente outra vez.'
+          : 'Não foi possível confirmar a alteração na nuvem. Tente novamente.',
+        'error',
+      );
+      return false;
+    } finally {
+      finishActivity();
+    }
+  };
+
+  const removeDoc = async (colName, docId) => {
+    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles'];
+    const accessUser = typeof currentUser === 'undefined' ? null : currentUser;
+    const accessProfile = typeof effectiveAccessProfile === 'undefined' ? { canEdit: true, canManageCalendar: true } : effectiveAccessProfile;
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && controlledCollections.includes(colName) && accessProfile.canEdit === false) {
+      triggerNotification('Seu perfil possui acesso apenas para consulta nesta área.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && ['events', 'absences', 'presence', 'schedules'].includes(colName) && accessProfile.canManageCalendar === false) {
+      triggerNotification('Seu perfil não possui permissão para alterar escalas ou calendário.', 'error');
+      return false;
+    }
+    const finishActivity = typeof beginCloudActivity === 'function' ? (beginCloudActivity('Removendo informação...'), endCloudActivity) : () => {};
+    try {
+      if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
+      const tenantCollection = getTenantCollection(colName);
+      if (!tenantCollection) throw new Error('Nenhuma empresa selecionada.');
+      await deleteDoc(doc(tenantCollection, docId));
+      if (typeof recordAuditEvent === 'function') await recordAuditEvent({ action: 'record.deleted', collectionName: colName, documentId: docId });
+      return true;
+    } catch (error) {
+      console.error('Falha ao excluir na nuvem', error);
+      triggerNotification('Não foi possível confirmar a exclusão. Verifique sua conexão e permissão.', 'error');
+      return false;
+    } finally {
+      finishActivity();
+    }
+  };
+
+  const handleCompanyRegistration = async (e) => {
+    e.preventDefault();
+    if (!currentUser?.isDeveloper) {
+      triggerNotification('O cadastro de empresas está disponível apenas no suporte da plataforma.', 'error');
+      return;
+    }
+    const code = companyForm.code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (!companyForm.name.trim() || !code || !companyForm.adminName.trim() || companyForm.adminPin.length !== 4) {
+      triggerNotification('Preencha os dados da empresa e um PIN de 4 dígitos para o administrador.', 'error');
+      return;
+    }
+    try {
+      if (isFirebaseAvailable && functionsClient) {
+        const createCompany = httpsCallable(functionsClient, 'registerCompany');
+        const response = await createCompany({ appId, name: companyForm.name.trim(), code, adminName: companyForm.adminName.trim(), adminPin: companyForm.adminPin });
+        const company = response.data.company;
+        setCompanies(previous => [...previous.filter(item => item.id !== company.id), company]);
+      } else {
+        throw new Error('Serviço de autenticação indisponível.');
+      }
+      setCompanyForm({ name: '', code: '', adminName: '', adminPin: '' });
+      setShowCompanyRegistration(false);
+      triggerNotification('Empresa cadastrada e administrador criado com sucesso! Você permanece no suporte da plataforma.');
+    } catch (error) {
+      console.error('Erro ao cadastrar empresa', error);
+      triggerNotification('Não foi possível cadastrar a empresa. Tente novamente.', 'error');
+    }
+  };
+
+  const handleMigrateLegacyUsers = async () => {
+    if (!currentUser?.isAdmin || activeCompany?.code !== '082026') {
+      triggerNotification('A migração só pode ser feita pelo administrador da empresa 082026.', 'error');
+      return;
+    }
+    if (!isFirebaseAvailable || !dbUser) {
+      triggerNotification('A migração requer conexão com o banco de dados.', 'error');
+      return;
+    }
+
+    try {
+      const migrationRef = doc(getTenantCollection('settings'), 'legacy-migration');
+      const migrationSnapshot = await getDoc(migrationRef);
+      if (migrationSnapshot.exists() && migrationSnapshot.data()?.completedAt) {
+        triggerNotification('A migração desta empresa já foi concluída. Os dados atuais foram preservados.', 'success');
+        return;
+      }
+
+      const collectionsToMigrate = ['users', 'departments', 'roles', 'announcements', 'posts', 'productivity', 'messages', 'events', 'absences', 'presence', 'schedules'];
+      let migrated = 0;
+
+      for (const collectionName of collectionsToMigrate) {
+        const legacySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', collectionName));
+        const tenantSnapshot = await getDocs(getTenantCollection(collectionName));
+        const existingIds = new Set(tenantSnapshot.docs.map(item => item.id));
+
+        for (const legacyItem of legacySnapshot.docs) {
+          if (existingIds.has(legacyItem.id)) continue;
+          const data = { id: legacyItem.id, ...legacyItem.data() };
+          if (collectionName === 'users') {
+            data.companyId = activeCompany.id;
+            data.updatedAt = data.updatedAt || Date.now();
+            data.legacyMigratedAt = Date.now();
+          }
+          await setDoc(doc(getTenantCollection(collectionName), legacyItem.id), data);
+          migrated += 1;
+        }
+      }
+
+      await setDoc(migrationRef, { completedAt: Date.now(), migratedBy: currentUser.id, migratedRecords: migrated });
+
+      triggerNotification(`${migrated} registro(s) migrado(s) para a empresa 082026.`, 'success');
+    } catch (error) {
+      console.error('Erro ao migrar colaboradores', error);
+      triggerNotification('Não foi possível migrar os colaboradores. Tente novamente.', 'error');
+    }
+  };
+
+  const handleCompanyCodeChange = async (value) => {
+    const normalizedCode = value.toUpperCase().trim();
+    const requestId = ++companyLookupRequestRef.current;
+    setCompanyCode(normalizedCode);
+    setLoginSelectedUserId('');
+    setLoginSearchText('');
+    setLoginError('');
+    setActiveCompany(null);
+    setUsersList([]);
+
+    if (!normalizedCode || normalizedCode.length < 3) {
+      return;
+    }
+    try {
+      if (isFirebaseAvailable && functionsClient) {
+        const getDirectory = httpsCallable(functionsClient, 'getLoginDirectory');
+        const response = await getDirectory({ appId, companyCode: normalizedCode });
+        if (requestId !== companyLookupRequestRef.current) return;
+        const { company, users } = response.data;
+        setActiveCompany(company);
+        setUsersList(users);
+        setCompanies(previous => [...previous.filter(item => item.id !== company.id), company]);
+      } else {
+        const company = companies.find(item => item.code === normalizedCode);
+        if (requestId !== companyLookupRequestRef.current || !company) return;
+        setActiveCompany(company);
+      }
+    } catch {
+      if (requestId !== companyLookupRequestRef.current) return;
+      setActiveCompany(null);
+      setUsersList([]);
+    }
+  };
+
+  const handleUserLoginSubmit = async (e) => {
+    e.preventDefault();
+
+    let company = activeCompany;
+    let companyUsers = usersList;
+
+    if (!company) {
+      setLoginError('Empresa não encontrada. Confira o código informado.');
+      return;
+    }
+    
+    let selectedEmployee = null;
+    if (loginSelectedUserId) {
+      selectedEmployee = companyUsers.find(u => u.id === loginSelectedUserId);
+    } else if (loginSearchText.trim()) {
+      // Tenta achar pelo nome digitado de forma idêntica
+      selectedEmployee = companyUsers.find(u => u.name.toLowerCase() === loginSearchText.trim().toLowerCase());
+    }
+
+    if (!selectedEmployee) {
+      setLoginError('Colaborador não encontrado. Por favor, digite seu nome e clique em uma das opções sugeridas.');
+      return;
+    }
+
+    try {
+      if (!isFirebaseAvailable || !functionsClient) throw new Error('Serviço de autenticação indisponível.');
+      const authenticate = httpsCallable(functionsClient, 'authenticateWithPin');
+      const response = await authenticate({ appId, companyCode: company.code, userId: selectedEmployee.id, pin: loginPin });
+      const session = response.data;
+      await authPersistenceReady;
+      await signInWithCustomToken(auth, session.token);
+      setActiveCompany(session.company);
+      setCurrentUser({ ...session.user, mustChangePin: session.requiresPinChange === true });
+      if (session.requiresPinChange === true) {
+        setCurrentPinInput(loginPin);
+        setNewPinInput('');
+        setConfirmNewPinInput('');
+        setForcePinChange(true);
+        setShowChangePinModal(true);
+      }
+      setLoginPin('');
+      setLoginSearchText('');
+      setLoginSelectedUserId('');
+      setLoginError('');
+      triggerNotification(`Bem-vindo, ${session.user.name}! Sessão iniciada de forma segura.`);
+    } catch (error) {
+      console.error('Falha no login seguro', error);
+      setLoginError(loginErrorMessage(error));
+    }
+  };
+
+  const handleDeveloperLogin = async (event) => {
+    event.preventDefault();
+    const developerName = 'FRANCIELTON LIMA NUNES';
+    try {
+      if (!functionsClient) throw new Error('Serviço de autenticação indisponível.');
+      const developerLogin = httpsCallable(functionsClient, 'authenticateDeveloper');
+      const response = await developerLogin({ appId, pin: developerPin, name: developerName });
+      const session = response.data;
+      await authPersistenceReady;
+      await signInWithCustomToken(auth, session.token);
+      setActiveCompany(session.company);
+      setCurrentUser(session.user);
+      setActiveTab('support');
+      setDeveloperPin('');
+      setShowDeveloperLogin(false);
+      triggerNotification('Acesso de suporte iniciado.');
+    } catch (error) {
+      console.error('Erro no acesso de desenvolvedor:', error);
+      setLoginError(loginErrorMessage(error, true));
+    }
+  };
+
+  const handleUserLogout = () => {
+    if (auth) signOut(auth).catch(error => console.error('Falha ao encerrar sessão Firebase', error));
+    setCurrentUser(null);
+    setActiveCompany(null);
+    setCompanyCode('');
+    localStorage.removeItem('comunica_active_company');
+    setLoginSelectedUserId('');
+    setLoginSearchText('');
+    setActiveTab('dashboard');
+    triggerNotification('Sessão encerrada com segurança.');
+  };
+
+  const requestOwnPinChange = async () => {
+    if (pinChangeInFlight.current) return pinChangeInFlight.current;
+    if (!functionsClient || !dbUser || !isFirebaseAvailable) {
+      triggerNotification('Conecte-se e entre novamente para alterar o PIN.', 'error');
+      return false;
+    }
+    if (!/^\d{4}$/.test(currentPinInput)) {
+      triggerNotification('Informe corretamente o seu PIN atual de quatro números.', 'error');
+      return false;
+    }
+    if (!/^\d{4}$/.test(newPinInput) || newPinInput !== confirmNewPinInput) {
+      triggerNotification('Informe um PIN de quatro números e confirme o mesmo PIN.', 'error');
+      return false;
+    }
+    const operation = (async () => {
+      setIsChangingPin(true);
+      try {
+        await dbUser.getIdToken(true);
+        const response = await httpsCallable(functionsClient, 'changeOwnPin')({
+          appId, currentPin: currentPinInput, newPin: newPinInput
+        });
+        if (response.data?.changed !== true) throw new Error('Alteração não confirmada');
+        setCurrentUser(previous => {
+          const { pin: ignoredPin, ...profile } = previous;
+          return { ...profile, mustChangePin: false };
+        });
+        setForcePinChange(false);
+        return true;
+      } catch (error) {
+        console.error('Falha ao alterar o PIN do próprio usuário', error);
+        const code = String(error?.code || '');
+        const message = code.includes('resource-exhausted')
+          ? 'Muitas tentativas. Aguarde 30 segundos antes de tentar novamente.'
+          : code.includes('permission-denied')
+            ? 'O PIN atual informado não confere. Revise os quatro números e tente novamente.'
+            : code.includes('unauthenticated')
+              ? 'Sua sessão expirou. Entre novamente antes de alterar o PIN.'
+              : code.includes('aborted') || code.includes('failed-precondition')
+                ? 'O PIN foi alterado em outra tentativa. Entre novamente usando o novo PIN.'
+                : code.includes('unavailable') || code.includes('deadline-exceeded') || code.includes('internal')
+                  ? 'O serviço de segurança está temporariamente indisponível. Aguarde alguns segundos e tente novamente.'
+                  : 'Não foi possível alterar o PIN. Tente novamente; se persistir, acione o suporte da plataforma.';
+        triggerNotification(message, 'error');
+        return false;
+      } finally {
+        setIsChangingPin(false);
+      }
+    })();
+    pinChangeInFlight.current = operation;
+    try {
+      return await operation;
+    } finally {
+      pinChangeInFlight.current = null;
+    }
+  };
+
+  const handleChangePinSubmit = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !await requestOwnPinChange()) return;
+    setShowChangePinModal(false);
+    setCurrentPinInput('');
+    setNewPinInput('');
+    setConfirmNewPinInput('');
+    triggerNotification('Seu PIN de segurança foi atualizado com sucesso!');
+  };
+
+  const handleMyProfileSubmit = async (e) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    if (showPinFieldsInProfile && (currentPinInput || newPinInput || confirmNewPinInput)) {
+      if (!await requestOwnPinChange()) return;
+    }
+
+    const { pin: ignoredPin, ...publicProfile } = currentUser;
+    const updatedUser = { 
+      ...publicProfile,
+      avatar: currentUser.isAdmin ? myProfileForm.avatar : currentUser.avatar,
+      emergencyName: myProfileForm.emergencyName,
+      emergencyPhone: myProfileForm.emergencyPhone,
+      emergencyRelationship: myProfileForm.emergencyRelationship
+    };
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await saveDoc('users', currentUser.id, updatedUser)) return;
+    } else {
+      setUsersList(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    }
+
+    setCurrentUser(updatedUser);
+    setShowProfileModal(false);
+    
+    // Resetar campos de senha após salvar
+    setCurrentPinInput('');
+    setNewPinInput('');
+    setConfirmNewPinInput('');
+    setShowPinFieldsInProfile(false);
+    
+    triggerNotification('Seu perfil e dados de acesso foram atualizados!');
+  };
+
+  const handleLikeAnnouncement = async (id) => {
+    if (!currentUser) return;
+    const ann = announcements.find(a => a.id === id);
+    if (!ann) return;
+
+    const hasLiked = ann.likedBy?.includes(currentUser.id);
+    const updatedLikes = hasLiked ? ann.likes - 1 : ann.likes + 1;
+    const updatedLikedBy = hasLiked 
+      ? ann.likedBy.filter(uid => uid !== currentUser.id) 
+      : [...(ann.likedBy || []), currentUser.id];
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await updateDocField('announcements', id, { likes: updatedLikes, likedBy: updatedLikedBy })) return;
+    } else {
+      setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, likes: updatedLikes, likedBy: updatedLikedBy } : a));
+    }
+  };
+
+  const handleConfirmAnnouncementRead = async (announcement) => {
+    if (!currentUser || (announcement.readBy || []).includes(currentUser.id)) return;
+    const readBy = [...new Set([...(announcement.readBy || []), currentUser.id])];
+    if (isFirebaseAvailable && dbUser) {
+      if (!await updateDocField('announcements', announcement.id, { readBy: arrayUnion(currentUser.id) })) return;
+    } else {
+      setAnnouncements(previous => previous.map(item => item.id === announcement.id ? { ...item, readBy } : item));
+    }
+    triggerNotification('Leitura confirmada.');
+  };
+
+  const handleDocumentFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > DOCUMENT_FILE_MAX_BYTES) {
+      triggerNotification('O arquivo excede 50 MB. Reduza o tamanho e tente novamente.', 'error');
+      event.target.value = '';
+      return;
+    }
+    if (!isSupportedBusinessFile(file)) {
+      triggerNotification('Formato não aceito. Envie PDF, Word, Excel, PowerPoint, texto, imagem, áudio ou vídeo.', 'error');
+      event.target.value = '';
+      return;
+    }
+    setIsUploadingDocument(true);
+    setDocumentUploadProgress(0);
+    try {
+      triggerNotification('Enviando documento para a nuvem...');
+      const documentId = newDocument.id || `document-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const uploaded = await uploadFileToStorage(
+        file,
+        'documents',
+        { documentId },
+        setDocumentUploadProgress,
+        task => { documentUploadTask.current = task; },
+      );
+      if (!uploaded?.url) throw new Error('Arquivo sem URL');
+      const previousFile = newDocument.file;
+      setNewDocument(previous => ({ ...previous, id: documentId, file: {
+        name: file.name,
+        type: resolveUploadContentType(file),
+        data: uploaded.url,
+        storagePath: uploaded.storagePath,
+      } }));
+      if (previousFile) await deleteStoredFile(previousFile);
+      triggerNotification('Documento anexado com sucesso.');
+    } catch (error) {
+      console.error('Erro ao anexar documento:', error);
+      triggerNotification(fileUploadErrorMessage(error), 'error');
+    } finally {
+      documentUploadTask.current = null;
+      setIsUploadingDocument(false);
+      // Permite selecionar novamente o mesmo arquivo depois de uma falha.
+      event.target.value = '';
+    }
+  };
+
+  const handleSaveDocument = async (event) => {
+    event.preventDefault();
+    if (documentSaveInFlight.current || isUploadingDocument) return;
+    if (!newDocument.title.trim() || !newDocument.file) return;
+    const id = newDocument.id || `document-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (newDocument.accessMode === 'department' && newDocument.dept === 'all') {
+      triggerNotification('Selecione o setor que poderá acessar este documento.', 'error');
+      return;
+    }
+    if (newDocument.accessMode === 'people' && !newDocument.allowedUserIds.length) {
+      triggerNotification('Selecione ao menos um colaborador para este documento.', 'error');
+      return;
+    }
+    const documentData = {
+      id,
+      title: newDocument.title.trim(),
+      description: newDocument.description.trim(),
+      dept: newDocument.dept,
+      accessMode: newDocument.accessMode,
+      allowedUserIds: newDocument.accessMode === 'people' ? newDocument.allowedUserIds : [],
+      category: newDocument.category || 'Geral',
+      folder: normalizeDocumentFolder(newDocument.folder),
+      tags: newDocument.tags.split(',').map(tag => tag.trim()).filter(Boolean),
+      version: newDocument.version.trim() || '1.0',
+      reviewDate: newDocument.reviewDate || '',
+      requiredRead: Boolean(newDocument.requiredRead),
+      readBy: [],
+      file: newDocument.file,
+      authorId: currentUser.id,
+      author: currentUser.name,
+      createdAt: Date.now(),
+    };
+    documentSaveInFlight.current = true;
+    setIsSavingDocument(true);
+    try {
+      if (isFirebaseAvailable && dbUser) { if (!await saveDoc('documents', id, documentData)) return; }
+      setDocumentsList(previous => [documentData, ...previous.filter(item => item.id !== id)]);
+      setNewDocument({ id: '', title: '', description: '', dept: 'all', accessMode: 'company', allowedUserIds: [], category: 'Geral', folder: '', tags: '', version: '1.0', reviewDate: '', requiredRead: false, file: null });
+      setShowDocumentModal(false);
+      triggerNotification('Documento publicado na central.');
+    } finally {
+      documentSaveInFlight.current = false;
+      setIsSavingDocument(false);
+    }
+  };
+
+  const handleDeleteDocument = async (documentId) => {
+    const documentItem = documentsList.find(item => item.id === documentId);
+    if (isFirebaseAvailable && dbUser) { if (!await removeDoc('documents', documentId)) return; }
+    setDocumentsList(previous => previous.filter(item => item.id !== documentId));
+    const fileRemoved = await deleteStoredFile(documentItem?.file);
+    triggerNotification(fileRemoved ? 'Documento e arquivo removidos.' : 'Documento removido. A limpeza do arquivo ficará a cargo do servidor.', fileRemoved ? 'success' : 'warning');
+  };
+
+  const handleMoveDocument = async (documentItem) => {
+    if (!currentUser?.isAdmin) return;
+    const folder = normalizeDocumentFolder(editingDocumentFolder);
+    if (folder === normalizeDocumentFolder(documentItem.folder)) {
+      setEditingDocumentFolderId(null);
+      return;
+    }
+    if (isFirebaseAvailable && dbUser) {
+      if (!await updateDocField('documents', documentItem.id, { folder })) return;
+    }
+    setDocumentsList(previous => previous.map(item => item.id === documentItem.id ? { ...item, folder } : item));
+    setEditingDocumentFolderId(null);
+    triggerNotification(`Documento movido para ${folder}.`);
+  };
+
+  const handleUpdateDocumentReview = async (documentItem) => {
+    if (!currentUser?.isAdmin || !/^\d{4}-\d{2}-\d{2}$/.test(editingDocumentReviewDate)) return;
+    if (editingDocumentReviewDate === documentItem.reviewDate) {
+      setEditingDocumentReviewId(null);
+      return;
+    }
+    const historyEntry = {
+      previousDate: documentItem.reviewDate || '',
+      nextDate: editingDocumentReviewDate,
+      changedAt: Date.now(),
+      changedBy: currentUser.id,
+      changedByName: currentUser.name,
+    };
+    if (isFirebaseAvailable && dbUser) {
+      if (!await updateDocField('documents', documentItem.id, {
+        reviewDate: editingDocumentReviewDate,
+        reviewHistory: arrayUnion(historyEntry),
+      })) return;
+    }
+    setDocumentsList(previous => previous.map(item => item.id === documentItem.id
+      ? { ...item, reviewDate: editingDocumentReviewDate, reviewHistory: [...(item.reviewHistory || []), historyEntry] }
+      : item));
+    setEditingDocumentReviewId(null);
+    triggerNotification('Prazo de revisão atualizado. A alteração ficou registrada no documento.');
+  };
+
+  const handleConfirmDocumentRead = async (documentItem) => {
+    if (!currentUser?.id || (documentItem.readBy || []).includes(currentUser.id)) return;
+    const readBy = [...(documentItem.readBy || []), currentUser.id];
+    if (isFirebaseAvailable && dbUser) { if (!await updateDocField('documents', documentItem.id, { readBy: arrayUnion(currentUser.id) })) return; }
+    setDocumentsList(previous => previous.map(item => item.id === documentItem.id ? { ...item, readBy } : item));
+    triggerNotification('Leitura do documento confirmada.');
+  };
+
+  const handleSavePoll = async (event) => {
+    event.preventDefault();
+    let question;
+    try { [question] = normalizePollQuestions([newPoll]); }
+    catch (error) { triggerNotification(error.message, 'error'); return; }
+    const id = `poll-${Date.now()}`;
+    const createdAt = Date.now();
+    const poll = { id, ...question, category: newPoll.category, votes: {}, expiresAt: newPoll.expiresAt || '', author: currentUser.name, authorId: currentUser.id, createdAt, date: new Date(createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) };
+    if (isFirebaseAvailable && dbUser) { if (!await saveDoc('polls', id, poll)) return; }
+    else setPollsList(previous => [poll, ...previous]);
+    setNewPoll({ category: 'Pulso da equipe', question: '', type: 'single', options: ['', ''], expiresAt: '' });
+    setShowPollModal(false);
+    triggerNotification('Enquete publicada e adicionada ao feed da equipe.');
+  };
+
+  const handleSavePollForm = async (event) => {
+    event.preventDefault();
+    if (!currentUser?.isAdmin || !newPollForm.title.trim()) return;
+    let questions;
+    try { questions = normalizePollQuestions(newPollForm.questions); }
+    catch (error) { triggerNotification(error.message, 'error'); return; }
+    const createdAt = Date.now();
+    const formId = `form-${createdAt}`;
+    const polls = questions.map(({ question, type, options }, index) => ({
+      id: `${formId}-question-${index + 1}`,
+      formId,
+      formTitle: newPollForm.title.trim(),
+      formDescription: newPollForm.description.trim(),
+      category: newPollForm.category,
+      formOrder: index + 1,
+      formQuestionCount: questions.length,
+      question,
+      type,
+      options,
+      votes: {},
+      expiresAt: newPollForm.expiresAt || '',
+      author: currentUser.name,
+      authorId: currentUser.id,
+      createdAt,
+      date: new Date(createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
+    }));
+    if (isFirebaseAvailable && dbUser) {
+      if (!await saveRelatedRecords(polls.map(poll => ({ collection: 'polls', id: poll.id, data: poll })), 'Não foi possível publicar o formulário. Nenhuma pergunta foi salva.')) return;
+    } else setPollsList(previous => [...polls, ...previous]);
+    setNewPollForm({ title: '', description: '', category: 'Pesquisa de clima', questions: [createPollQuestion('scale')], expiresAt: '' });
+    setShowPollModal(false);
+    triggerNotification('Pesquisa publicada e adicionada ao feed da equipe.');
+  };
+
+  const handleVotePoll = async (poll, optionIndex) => {
+    if (!currentUser?.id || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= (poll.options || []).length) return;
+    if (poll.votes?.[currentUser.id] !== undefined) return;
+    if (poll.expiresAt && poll.expiresAt < todayStr) return;
+    const votes = { ...(poll.votes || {}), [currentUser.id]: optionIndex };
+    if (isFirebaseAvailable && dbUser) {
+      try {
+        const pollsCollection = getTenantCollection('polls');
+        if (!pollsCollection) throw new Error('Empresa indisponível.');
+        await updateDoc(doc(pollsCollection, poll.id), new FieldPath('votes', currentUser.id), optionIndex);
+      } catch (error) {
+        console.error('Falha ao registrar voto', error);
+        triggerNotification('Não foi possível registrar o voto. Atualize a enquete e tente novamente.', 'error');
+        return;
+      }
+    }
+    else setPollsList(previous => previous.map(item => item.id === poll.id ? { ...item, votes } : item));
+    triggerNotification('Voto registrado. Obrigado por participar!');
+  };
+
+  const handleSaveVacancy = async (event) => {
+    event.preventDefault();
+    if (!isCareerManagerUser(currentUser) || !activeCompany?.id) return;
+    const skills = [...new Set(newVacancy.skills.split(',').map(item => item.trim()).filter(Boolean))].slice(0, 20);
+    let quiz = [];
+    try { quiz = normalizeVacancyQuiz(newVacancy.quiz); }
+    catch (error) { triggerNotification(error.message, 'error'); return; }
+    if (newVacancy.description.trim().length < 30) {
+      triggerNotification('Descreva a vaga com pelo menos 30 caracteres.', 'error');
+      return;
+    }
+    const id = `vacancy-${Date.now()}`;
+    const vacancy = {
+      id,
+      roleId: newVacancy.roleId || '',
+      roleName: rolesList.find(role => role.id === newVacancy.roleId)?.name || newVacancy.title.trim(),
+      title: newVacancy.title.trim(),
+      description: newVacancy.description.trim(),
+      location: newVacancy.location.trim(),
+      mode: newVacancy.mode,
+      skills,
+      quiz,
+      closesAt: newVacancy.closesAt || '',
+      status: 'published',
+      createdAt: Date.now(),
+      authorId: currentUser.id,
+    };
+    if (!await saveDoc('vacancies', id, vacancy)) return;
+    setNewVacancy({ roleId: '', title: '', description: '', location: '', mode: 'Presencial', skills: '', quiz: [], closesAt: '' });
+    setShowVacancyModal(false);
+    triggerNotification('Vaga publicada no Banco de Talentos.');
+  };
+
+  const handleCloseVacancy = async (vacancy) => {
+    if (!isCareerManagerUser(currentUser) || !await updateDocField('vacancies', vacancy.id, { status: vacancy.status === 'published' ? 'closed' : 'published' })) return;
+    triggerNotification(vacancy.status === 'published' ? 'Vaga encerrada.' : 'Vaga reaberta.');
+  };
+
+  const handleArchiveVacancy = async (vacancy) => {
+    if (!isCareerManagerUser(currentUser) || vacancy.status === 'published') return;
+    if (!await updateDocField('vacancies', vacancy.id, { status: vacancy.status === 'archived' ? 'closed' : 'archived', archivedAt: Date.now(), archivedBy: currentUser.name })) return;
+    triggerNotification(vacancy.status === 'archived' ? 'Vaga devolvida para encerradas.' : 'Vaga arquivada. Ela continuará no histórico interno e não ficará disponível para candidatos.');
+  };
+
+  const handleGenerateCareerAssessment = async (application) => {
+    if (!isCareerManagerUser(currentUser) || !application?.id || careerAiAnalyzingId) return;
+    const vacancy = vacanciesList.find(item => item.id === application.vacancyId);
+    if (!vacancy) {
+      triggerNotification('Não foi possível localizar os dados da vaga para fazer a análise.', 'error');
+      return;
+    }
+    setCareerAiAnalyzingId(application.id);
+    try {
+      const quizSummary = (application.quizQuestions || []).map((question, index) => `${question.question}: ${question.options?.[application.quizAnswers?.[index]] || 'Sem resposta'}`).join('\n');
+      const prompt = `Compare o perfil abaixo com a vaga.\n\nVAGA\nTítulo: ${vacancy.title}\nDescrição: ${vacancy.description}\nCompetências desejadas: ${(vacancy.skills || []).join(', ') || 'Não informadas'}\n\nPERFIL DO CANDIDATO\nCidade: ${application.city || 'Não informada'}\nCompetências declaradas: ${(application.declaredSkills || application.skills || []).join?.(', ') || 'Não informadas'}\nResumo profissional: ${String(application.resumeText || '').slice(0, 7000)}\nRespostas do questionário:\n${quizSummary || 'Sem questionário'}\n\nProduza um parecer curto e útil para triagem humana.`;
+      const assessment = await callGemini(prompt, 'Você apoia recrutadores brasileiros com análise responsável de currículos. Escreva em português claro, sem Markdown, asteriscos ou notas numéricas inventadas. Organize em cinco parágrafos curtos com estes títulos em texto simples: Resumo da aderência, Pontos fortes, Lacunas ou pontos a validar, Perguntas para entrevista, Recomendação de próxima etapa. Use apenas as informações fornecidas, sinalize quando não houver evidência e nunca recomende exclusão com base em idade, gênero, raça, deficiência, religião, estado civil ou qualquer característica protegida. A decisão final é sempre humana.');
+      if (!assessment || /problema temporário/i.test(assessment)) throw new Error('Análise indisponível');
+      const payload = { aiAssessment: assessment.trim(), aiAssessmentAt: Date.now(), aiAssessmentBy: currentUser.name, aiAssessmentVacancyUpdatedAt: Number(vacancy.updatedAt || vacancy.createdAt || 0) };
+      if (!await updateDocField('applications', application.id, payload)) return;
+      triggerNotification('Parecer de aderência gerado e salvo na candidatura.');
+    } catch (error) {
+      console.error('Falha ao gerar parecer da candidatura', error);
+      triggerNotification('Não foi possível gerar o parecer agora. Tente novamente em instantes.', 'error');
+    } finally {
+      setCareerAiAnalyzingId('');
+    }
+  };
+
+  const careerEmailUrl = (application, subject, message) => `mailto:${encodeURIComponent(application.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+
+  const saveCareerDecision = async (event) => {
+    event.preventDefault();
+    const draft = careerDecisionDraft;
+    if (!draft?.application || !draft.message.trim()) return;
+    const application = draft.application;
+    const status = draft.outcome === 'approved' ? 'preselected' : 'rejected';
+    const title = draft.outcome === 'approved' ? 'Você avançou na seleção' : 'Atualização sobre sua candidatura';
+    const payload = {
+      status,
+      reviewNotes: draft.internalNote.trim(),
+      recruitmentUpdate: { type: draft.outcome, title, message: draft.message.trim(), createdAt: Date.now(), createdBy: currentUser.name },
+      decisionAt: Date.now(), decisionBy: currentUser.name,
+      discardReason: draft.outcome === 'rejected' ? draft.internalNote.trim() : '',
+    };
+    if (!await updateDocField('applications', application.id, payload)) return;
+    setCareerDecisionDraft(null);
+    triggerNotification(draft.outcome === 'approved' ? 'Candidato pré-selecionado e avisado no portal.' : 'Candidatura descartada e retorno registrado no portal.');
+    if (draft.openEmail) window.location.href = careerEmailUrl(application, `${title} — ${application.vacancyTitle}`, `Olá, ${application.name}.\n\n${draft.message.trim()}\n\nAtenciosamente,\n${activeCompany?.name || 'Equipe de recrutamento'}`);
+  };
+
+  const saveCareerInterview = async (event) => {
+    event.preventDefault();
+    const draft = careerInterviewDraft;
+    if (!draft?.application || !draft.date || !draft.time || !draft.contact.trim()) return;
+    const application = draft.application;
+    const interview = { date: draft.date, time: draft.time, format: draft.format, location: draft.location.trim(), contact: draft.contact.trim(), notes: draft.notes.trim() };
+    const message = draft.message.trim() || `Você foi pré-selecionado(a) para entrevista em ${formatDate(draft.date)} às ${draft.time}. ${draft.format}${draft.location.trim() ? `: ${draft.location.trim()}` : ''}. Para confirmar ou tirar dúvidas, entre em contato por ${draft.contact.trim()}.`;
+    const payload = { status: 'interview', reviewNotes: draft.internalNote.trim(), interview, recruitmentUpdate: { type: 'interview', title: 'Convite para entrevista', message, createdAt: Date.now(), createdBy: currentUser.name }, interviewScheduledAt: Date.now(), interviewScheduledBy: currentUser.name };
+    if (!await updateDocField('applications', application.id, payload)) return;
+    setCareerInterviewDraft(null);
+    triggerNotification('Entrevista agendada e convite disponível no portal do candidato.');
+    if (draft.openEmail) window.location.href = careerEmailUrl(application, `Convite para entrevista — ${application.vacancyTitle}`, `Olá, ${application.name}.\n\n${message}\n\nAtenciosamente,\n${activeCompany?.name || 'Equipe de recrutamento'}`);
+  };
+
+  const handleDownloadCareerResume = async (application) => {
+    try {
+      const result = await httpsCallable(functionsClient, 'downloadCareerResume')({ companyId: activeCompany.id, applicationId: application.id });
+      const binary = atob(result.data.base64);
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: result.data.contentType }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.data.fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (error) {
+      console.error('Falha ao baixar currículo', error);
+      triggerNotification('Não foi possível abrir o currículo.', 'error');
+    }
+  };
+
+  const handleExtendCareerRetention = async (application) => {
+    try {
+      const result = await httpsCallable(functionsClient, 'extendCareerApplicationRetention')({ companyId: activeCompany.id, applicationId: application.id });
+      triggerNotification(`Prazo prorrogado até ${formatCareerDate(result.data.retentionUntil)}.`);
+    } catch (error) {
+      console.error('Falha ao prorrogar currículo', error);
+      triggerNotification(error?.message?.includes('já foi prorrogado') ? 'O prazo desta candidatura já foi prorrogado uma vez.' : 'Não foi possível prorrogar o prazo.', 'error');
+    }
+  };
+
+  const handlePurgeExpiredCareers = async () => {
+    try {
+      const result = await httpsCallable(functionsClient, 'purgeExpiredCareerApplications')({ companyId: activeCompany.id });
+      setConfirmCareerCleanup(false);
+      triggerNotification(result.data.deleted ? `${result.data.deleted} candidatura(s) vencida(s) e respectivos currículos foram removidos.` : 'Não há currículos vencidos para remover.');
+      if (result.data.hasMore) triggerNotification('Ainda existem registros vencidos. Execute a limpeza novamente.', 'error');
+    } catch (error) {
+      console.error('Falha ao limpar currículos vencidos', error);
+      triggerNotification('Não foi possível remover os currículos vencidos.', 'error');
+    }
+  };
+
+  const handleLikePost = async (id) => {
+    if (!currentUser) return;
+    const post = sectorPosts.find(p => p.id === id);
+    if (!post) return;
+
+    const hasLiked = post.likedBy?.includes(currentUser.id);
+    const updatedLikes = hasLiked ? post.likes - 1 : post.likes + 1;
+    const updatedLikedBy = hasLiked 
+      ? post.likedBy.filter(uid => uid !== currentUser.id) 
+      : [...(post.likedBy || []), currentUser.id];
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await updateDocField('posts', id, { likes: updatedLikes, likedBy: updatedLikedBy })) return;
+    } else {
+      setSectorPosts(prev => prev.map(p => p.id === id ? { ...p, likes: updatedLikes, likedBy: updatedLikedBy } : p));
+    }
+  };
+
+  const handleAddComment = async (id, type) => {
+    if (!currentUser) return;
+    const text = commentText[id]?.trim();
+    if (!text) return;
+
+    const commentObj = { author: currentUser.name, text: text, date: 'Agora' };
+
+    if (type === 'announcement') {
+      const ann = announcements.find(a => a.id === id);
+      if (ann) {
+        const commentsList = [...(ann.comments || []), commentObj];
+        if (isFirebaseAvailable && dbUser) {
+          if (!await updateDocField('announcements', id, { comments: commentsList })) return;
+        } else {
+          setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, comments: commentsList } : a));
+        }
+      }
+    } else {
+      const post = sectorPosts.find(p => p.id === id);
+      if (post) {
+        const commentsList = [...(post.comments || []), commentObj];
+        if (isFirebaseAvailable && dbUser) {
+          if (!await updateDocField('posts', id, { comments: commentsList })) return;
+        } else {
+          setSectorPosts(prev => prev.map(p => p.id === id ? { ...p, comments: commentsList } : p));
+        }
+      }
+    }
+    setCommentText(prev => ({ ...prev, [id]: '' }));
+    triggerNotification('Comentário publicado!');
+  };
+
+  const submitAnnouncement = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !currentUser.isAdmin) {
+      triggerNotification('Acesso negado. Apenas administradores do RH podem postar avisos.', 'error');
+      return;
+    }
+    if (!newAnn.title || !newAnn.content) return;
+
+    const primaryDeptId = getUserDepts(currentUser)[0] || 'rh';
+    const currentDeptName = departmentsList.find(d => d.id === primaryDeptId)?.name || 'Geral';
+    const isHolidayEvent = newEvent.type === 'Feriado';
+    const annId = isHolidayEvent ? '' : `ann-${Date.now()}`;
+    const created = {
+      id: annId,
+      title: newAnn.title,
+      content: newAnn.content,
+      category: newAnn.category,
+      image: newAnn.image || '',
+      author: `${currentUser.name} (${currentDeptName})`,
+date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      pinned: false,
+      likes: 0,
+      likedBy: [],
+      comments: []
+    };
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await saveDoc('announcements', annId, created)) return;
+      setAnnouncements(previous => [created, ...previous.filter(item => item.id !== annId)]);
+    } else {
+      setAnnouncements([created, ...announcements]);
+    }
+    
+    setNewAnn({ title: '', content: '', category: 'Aviso Geral', image: '' });
+    setShowAnnModal(false);
+    triggerNotification('Comunicado oficial publicado na Comunica!');
+  };
+
+  const submitSectorPost = async (e) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (!newPost.title || !newPost.content) return;
+    if (!newPost.depts || newPost.depts.length === 0) {
+      triggerNotification('Selecione pelo menos um setor de destino.', 'error');
+      return;
+    }
+
+    const tagsArray = newPost.tags ? newPost.tags.split(',').map(t => t.trim()) : [];
+    const createdPosts = [];
+
+    for (const deptId of newPost.depts) {
+      const postId = `post-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const created = {
+        id: postId,
+        dept: deptId,
+        title: newPost.title,
+        content: newPost.content,
+        image: newPost.image || '',
+        author: currentUser.name,
+        authorId: currentUser.id,
+date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        likes: 0,
+        likedBy: [],
+        comments: [],
+        tags: tagsArray
+      };
+      createdPosts.push(created);
+
+    }
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await saveRelatedRecords(createdPosts.map(post => ({ collection: 'posts', id: post.id, data: post })))) return;
+      const createdIds = new Set(createdPosts.map(post => post.id));
+      setSectorPosts(previous => [...createdPosts, ...previous.filter(post => !createdIds.has(post.id))]);
+    } else {
+      setSectorPosts([...createdPosts, ...sectorPosts]);
+    }
+
+    setNewPost({ title: '', content: '', depts: [], tags: '', image: '' });
+    setShowPostModal(false);
+    triggerNotification(createdPosts.length > 1 ? 'Posts publicados em múltiplos setores!' : 'Post setorial publicado com sucesso!');
+  };
+const handleDeletePost = async (postId) => {
+  const postObj = sectorPosts.find(p => p.id === postId);
+  if (!postObj) return;
+
+  if (postObj.authorId !== currentUser.id && !currentUser.isAdmin) {
+    triggerNotification('Você só possui permissão para deletar suas próprias postagens.', 'error');
+    return;
+  }
+
+  if (isFirebaseAvailable && dbUser) {
+    try {
+      // Adicionamos o 'await' e um bloco 'try/catch'
+      if (!await removeDoc('posts', postId)) return;
+      
+      // Só removemos da tela SE o Firebase confirmar a exclusão
+      setSectorPosts(prev => prev.filter(p => p.id !== postId));
+      triggerNotification('Postagem removida com sucesso!');
+      
+    } catch (error) {
+      console.error("Erro ao deletar no Firebase:", error);
+      triggerNotification('Erro ao conectar com o banco. A postagem não foi removida.', 'error');
+    }
+  } else {
+    setSectorPosts(prev => prev.filter(p => p.id !== postId));
+    triggerNotification('Postagem removida (Modo Offline)!');
+  }
+};
+  const handleEditProductivity = (log) => {
+    if (!canManageAllProductivity) return;
+    setEditingProdId(log.id);
+    setNewProdLog({
+      group: log.group,
+      date: log.date || todayStr,
+      quantity: log.quantity,
+      defects: log.defects || '',
+      productDescription: log.productDescription || '',
+      notes: log.notes || '',
+      image: log.image || ''
+    });
+    setShowProdModal(true);
+  };
+
+const submitProductivity = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !canAccessProductivity) return;
+    if (!canManageAllProductivity && newProdLog.group !== currentUser.prodGroup) {
+      triggerNotification('Você só pode registrar produções do seu próprio grupo.', 'error');
+      return;
+    }
+    if (!newProdLog.quantity || isNaN(newProdLog.quantity)) {
+      triggerNotification('Insira uma quantidade válida.', 'error');
+      return;
+    }
+
+    if (editingProdId) {
+      const existingLog = productivityLogs.find(p => p.id === editingProdId);
+      const formattedEditDate = newProdLog.date.split('-').reverse().join('/');
+      
+      const updatedLog = {
+        ...existingLog,
+        group: newProdLog.group,
+        date: newProdLog.date,
+        displayDate: `${formattedEditDate} (Editado)`,
+        quantity: parseInt(newProdLog.quantity, 10),
+        defects: parseInt(newProdLog.defects, 10) || 0,
+        productDescription: newProdLog.productDescription || '',
+        notes: newProdLog.notes,
+        image: newProdLog.image || ''
+      };
+
+      if (isFirebaseAvailable && dbUser) {
+        if (!await saveDoc('productivity', editingProdId, updatedLog)) return;
+      }
+      setProductivityLogs(prev => prev.map(p => p.id === editingProdId ? updatedLog : p));
+      triggerNotification('Produção atualizada com sucesso!');
+      
+    } else {
+      const prodId = `prod-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const formattedDate = newProdLog.date.split('-').reverse().join('/');
+      
+      const created = {
+        id: prodId,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+        group: newProdLog.group,
+        quantity: parseInt(newProdLog.quantity, 10),
+        defects: parseInt(newProdLog.defects, 10) || 0,
+        productDescription: newProdLog.productDescription || '',
+        notes: newProdLog.notes,
+        image: newProdLog.image || '',
+        date: newProdLog.date, // Puxando a data do formulário
+        displayDate: `${formattedDate} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      };
+
+      if (isFirebaseAvailable && dbUser) {
+        if (!await saveDoc('productivity', prodId, created)) return;
+      }
+      setProductivityLogs(prev => [created, ...prev.filter(log => log.id !== created.id)]);
+      triggerNotification('Produção registrada com sucesso!');
+    }
+
+    // Limpa o formulário e fecha a tela
+    setNewProdLog({ group: 'Máquina 1', date: todayStr, quantity: '', defects: '', productDescription: '', notes: '', image: '' });
+    setEditingProdId(null);
+    setShowProdModal(false);
+  };
+
+  const handleDeleteProductivity = async (prodId) => {
+    if (!canManageAllProductivity) return;
+    if (isFirebaseAvailable && dbUser) {
+      if (!await removeDoc('productivity', prodId)) return;
+    }
+    setProductivityLogs(prev => prev.filter(p => p.id !== prodId));
+    triggerNotification('Registro de produção removido.');
+  };
+
+const submitPresence = async (e) => {
+  e.preventDefault();
+  
+  // Envolvemos TUDO no try-catch para capturar qualquer travamento
+  try {
+    if (!currentUser) return;
+
+    // Blindagem de strings: previne o erro "Cannot read properties of undefined (reading 'toLowerCase')"
+    const userToSubmit = newPresence?.name || '';
+    const targetUser = usersList.find(u => String(u?.name || '').toLowerCase() === String(userToSubmit).toLowerCase());
+    
+    if (!targetUser) {
+      triggerNotification('Usuário não encontrado na lista.', 'error');
+      return;
+    }
+
+    const isPublishingAnotherPersonsVacation = targetUser.id !== currentUser.id && String(newPresence?.status || '').includes('Férias');
+    const mayPublishAnotherPersonsAbsence = Boolean(currentUser.isAdmin || currentUser.isDeveloper || isManager || effectiveAccessProfile.canPublishAbsenceForOthers === true);
+    if (isPublishingAnotherPersonsVacation && !mayPublishAnotherPersonsAbsence) {
+      triggerNotification('Você não tem permissão para publicar férias de outra pessoa.', 'error');
+      return;
+    }
+    
+    const existing = presenceList.find(p => String(p?.name || '').toLowerCase() === String(userToSubmit).toLowerCase());
+    
+    let statusFinalDeHoje = newPresence?.status || 'Presencial';
+    let isFeriasFuturas = false;
+
+    // 1. AVALIA A TRAVA DE FÉRIAS (Agora aceita "Licença / Férias")
+    if (String(statusFinalDeHoje).includes('Férias') && newPresence.startDate && newPresence.endDate) {
+      if (newPresence.endDate < newPresence.startDate) {
+        triggerNotification('A data de retorno não pode ser anterior à data de início.', 'error');
+        return;
+      }
+
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      
+      // Tratamento seguro de data caso venha com barras ou traços
+      let dtInicioFormatada = newPresence.startDate;
+      if (dtInicioFormatada.includes('/')) {
+        dtInicioFormatada = dtInicioFormatada.split('/').reverse().join('-');
+      }
+      const dataInicio = new Date(dtInicioFormatada + 'T00:00:00');
+
+      if (hoje < dataInicio) {
+        isFeriasFuturas = true;
+        // Se já havia status presencial/home office, mantém. Se não, volta pra presencial.
+        statusFinalDeHoje = (existing && !String(existing.status).includes('Férias')) ? existing.status : 'Presencial';
+      }
+    }
+
+    const data = {
+      status: statusFinalDeHoje,
+      notes: newPresence?.notes || '',
+      dept: newPresence?.dept || '',
+      name: userToSubmit,
+      userId: targetUser.id,
+    };
+
+    const presenceId = existing?.id || `pres-${Date.now()}`;
+    const updatedPresence = { ...existing, id: presenceId, ...data };
+    const shouldSavePresence = !(isPublishingAnotherPersonsVacation && isFeriasFuturas);
+    const records = shouldSavePresence ? [{
+      collection: 'presence',
+      id: presenceId,
+      data: updatedPresence,
+      ...(existing ? { operation: 'update' } : {}),
+    }] : [];
+    let createdAbsence = null;
+    let autoPost = null;
+
+    // 3. SE FOR FÉRIAS, CRIA A AUSÊNCIA E O POST AUTOMÁTICO
+    if (String(newPresence?.status || '').includes('Férias') && newPresence.startDate && newPresence.endDate) {
+      // A mesma programação de férias deve ter um único registro e um único
+      // comunicado. Reaproveitar o registro impede posts repetidos no canal.
+      const existingVacation = absences.find(absence =>
+        (String(absence.userId) === String(targetUser.id) || normalizedText(absence.userName) === normalizedText(targetUser.name)) &&
+        isVacationAbsence(absence) && absence.startDate === newPresence.startDate && absence.endDate === newPresence.endDate
+      );
+      const absId = existingVacation?.id || `abs-ferias-${targetUser.id}-${newPresence.startDate}-${newPresence.endDate}`;
+      createdAbsence = {
+        id: absId,
+        userId: targetUser.id,
+        userName: targetUser.name,
+        createdBy: currentUser.id,
+        createdByName: currentUser.name,
+        startDate: newPresence.startDate,
+        endDate: newPresence.endDate,
+        startTime: '08:00', 
+        endTime: '18:00',
+        reason: 'Férias'
+      };
+
+      const postAbsId = `post-abs-${absId}`;
+      
+      // Proteção caso a função getUserDepts falhe ou não exista
+      let primaryDeptId = 'rh';
+      try { primaryDeptId = getUserDepts(targetUser)[0] || 'rh'; } catch(err) {}
+
+      // Formata as datas para o post sem quebrar o código
+      let fStart = newPresence.startDate;
+      if (fStart.includes('-')) { const p = fStart.split('-'); fStart = `${p[2]}/${p[1]}/${p[0]}`; }
+      
+      let fEnd = newPresence.endDate;
+      if (fEnd.includes('-')) { const p = fEnd.split('-'); fEnd = `${p[2]}/${p[1]}/${p[0]}`; }
+
+      autoPost = {
+        id: postAbsId,
+        dept: primaryDeptId,
+        title: `🌴 Férias Programadas: ${targetUser.name}`,
+        content: `Informamos a todos que ${targetUser.name} estará de férias e indisponível do dia ${fStart} até o dia ${fEnd}.\n\nDesejamos um excelente e merecido descanso!`,
+        image: '',
+        author: 'RH Oficial',
+        authorId: 'system',
+        date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now(),
+        likes: 0,
+        likedBy: [],
+        comments: [],
+        tags: ['Férias', 'Aviso', 'Equipe']
+      };
+
+      const existingPost = sectorPosts.some(post => post.id === postAbsId);
+      records.push(
+        { collection: 'absences', id: absId, data: createdAbsence, ...(existingVacation ? { operation: 'update' } : {}) },
+        { collection: 'posts', id: postAbsId, data: autoPost, ...(existingPost ? { operation: 'update' } : {}) }
+      );
+
+      // Limpa duplicações antigas que tenham exatamente o mesmo período, sem
+      // apagar férias de outros dias do mesmo colaborador.
+      absences.filter(absence => absence.id !== absId &&
+        (String(absence.userId) === String(targetUser.id) || normalizedText(absence.userName) === normalizedText(targetUser.name)) &&
+        isVacationAbsence(absence) && absence.startDate === newPresence.startDate && absence.endDate === newPresence.endDate
+      ).forEach(duplicate => {
+        records.push({ collection: 'absences', id: duplicate.id, data: {}, operation: 'delete' });
+        const duplicatePostId = `post-abs-${duplicate.id}`;
+        if (sectorPosts.some(post => post.id === duplicatePostId)) records.push({ collection: 'posts', id: duplicatePostId, data: {}, operation: 'delete' });
+      });
+    }
+
+    if (!await saveRelatedRecords(records, 'Não foi possível salvar o status ou as férias na nuvem. Nenhuma alteração foi confirmada; o formulário foi preservado.')) return;
+    if (shouldSavePresence) setPresenceList(prev => existing
+      ? prev.map(presence => presence.id === presenceId ? updatedPresence : presence)
+      : [...prev, updatedPresence]);
+    if (createdAbsence && autoPost) {
+      setAbsences(prev => [createdAbsence, ...prev.filter(absence => absence.id !== createdAbsence.id && !(
+        (String(absence.userId) === String(createdAbsence.userId) || normalizedText(absence.userName) === normalizedText(createdAbsence.userName)) &&
+        isVacationAbsence(absence) && absence.startDate === createdAbsence.startDate && absence.endDate === createdAbsence.endDate
+      ))]);
+      const vacationPostIds = new Set([
+        `post-abs-${createdAbsence.id}`,
+        ...absences.filter(absence =>
+          (String(absence.userId) === String(createdAbsence.userId) || normalizedText(absence.userName) === normalizedText(createdAbsence.userName)) &&
+          isVacationAbsence(absence) && absence.startDate === createdAbsence.startDate && absence.endDate === createdAbsence.endDate
+        ).map(absence => `post-abs-${absence.id}`),
+      ]);
+      setSectorPosts(prev => [autoPost, ...prev.filter(post => !vacationPostIds.has(post.id))]);
+      triggerNotification(isFeriasFuturas
+        ? 'Férias agendadas! O status mudará quando a data chegar.'
+        : 'Férias ativadas e adicionadas ao calendário!');
+    } else {
+      triggerNotification('Status diário de trabalho atualizado.');
+    }
+
+    // 4. FECHA O MODAL COM SUCESSO
+    setShowPresenceModal(false);
+
+  } catch (error) {
+    console.error("Erro CRÍTICO no submitPresence:", error);
+    triggerNotification('Não foi possível confirmar a alteração. Tente novamente.', 'error');
+  }
+};
+  const submitAbsence = async (e) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (!newAbsence.reason) return;
+    if (isVacationAbsence(newAbsence)) {
+      triggerNotification('Para registrar férias, use a Escala de Trabalho. Assim o calendário e o canal recebem apenas um comunicado.', 'error');
+      return;
+    }
+
+    if (newAbsence.endDate < newAbsence.startDate) {
+      triggerNotification('A data de término não pode ser anterior à data de início.', 'error');
+      return;
+    }
+
+    const absenceTarget = employeesList.find(user => String(user.id) === String(newAbsence.targetUserId || currentUser.id)) || currentUser;
+    const publishingForAnother = String(absenceTarget.id) !== String(currentUser.id);
+    if (publishingForAnother && !currentUser.isAdmin && !currentUser.isDeveloper && !isManager && effectiveAccessProfile.canPublishAbsenceForOthers !== true) {
+      triggerNotification('Você não tem permissão para agendar ausência de outra pessoa.', 'error');
+      return;
+    }
+
+    const absId = `abs-${Date.now()}`;
+    const created = {
+      id: absId,
+      userId: absenceTarget.id,
+      userName: absenceTarget.name,
+      createdBy: currentUser.id,
+      createdByName: currentUser.name,
+      startDate: newAbsence.startDate,
+      endDate: newAbsence.endDate,
+      startTime: newAbsence.startTime,
+      endTime: newAbsence.endTime,
+      reason: newAbsence.reason
+    };
+
+    const [sYear, sMonth, sDay] = newAbsence.startDate.split('-');
+    const formattedStart = `${sDay}/${sMonth}/${sYear}`;
+    
+    const [eYear, eMonth, eDay] = newAbsence.endDate.split('-');
+    const formattedEnd = `${eDay}/${eMonth}/${eYear}`;
+
+    const dateText = newAbsence.startDate === newAbsence.endDate 
+      ? `no dia ${formattedStart}`
+      : `do dia ${formattedStart} até o dia ${formattedEnd}`;
+
+    const postAbsId = `post-abs-${absId}`;
+    const primaryDeptId = getUserDepts(absenceTarget)[0] || 'rh';
+    
+    const autoPost = {
+      id: postAbsId,
+      dept: primaryDeptId,
+      title: `🕒 Ausência Programada: ${absenceTarget.name}`,
+      content: publishingForAnother
+        ? `Informamos que ${absenceTarget.name} estará ausente ${dateText} no período das ${newAbsence.startTime} às ${newAbsence.endTime}.\n\nMotivo: "${newAbsence.reason}". Publicado por ${currentUser.name}.`
+        : `Prezada equipe, informo que estarei ausente ${dateText} no período das ${newAbsence.startTime} às ${newAbsence.endTime}.\n\nMotivo da indisponibilidade: "${newAbsence.reason}". Por favor, alinhem as urgências caso necessário.`,
+      image: '',
+      author: 'Notificador de Escalas',
+      authorId: 'system',
+      date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now(),
+      likes: 0,
+      likedBy: [],
+      comments: [],
+      tags: ['Ausência', 'Escala', 'Organização']
+    };
+
+    if (!await saveRelatedRecords([
+      { collection: 'absences', id: absId, data: created },
+      { collection: 'posts', id: postAbsId, data: autoPost },
+    ])) return;
+
+    setNewAbsence({ targetUserId: currentUser.id, startDate: todayStr, endDate: todayStr, startTime: '09:00', endTime: '12:00', reason: '' });
+    setShowAbsenceModal(false);
+    triggerNotification('Ausência registrada e publicada no canal do seu setor!');
+  };
+
+  const bulkScheduleOccurrences = (schedule = bulkSchedule) => {
+    const quantity = Math.min(52, Math.max(1, Number(schedule.repeatCount) || 1));
+    const interval = schedule.repeatInterval || 'semanal';
+    return Array.from({ length: quantity }, (_, index) => {
+      const shift = interval === 'mensal'
+        ? { months: index }
+        : { days: index * (interval === 'quinzenal' ? 14 : 7) };
+      return {
+        startDate: civilDateShift(schedule.startDate, shift),
+        endDate: civilDateShift(schedule.endDate, shift),
+      };
+    });
+  };
+
+  const bulkScheduleEligibleEmployees = (schedule = bulkSchedule) => {
+    const search = normalizedText(schedule.employeeSearch);
+    return employeesList.filter(user => {
+      const belongsToDepartment = schedule.dept === 'Todos' || getUserDepts(user).includes(schedule.dept);
+      const searchable = normalizedText(`${user.name} ${user.role || ''} ${getUserDepts(user).join(' ')}`);
+      return belongsToDepartment && (!search || searchable.includes(search));
+    }).sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
+  };
+
+  const openBulkSchedule = () => {
+    const eligible = bulkScheduleEligibleEmployees({ ...bulkSchedule, employeeSearch: '' });
+    setBulkSchedule(previous => ({
+      ...previous,
+      startDate: selectedCalendarDay,
+      endDate: selectedCalendarDay,
+      employeeSearch: '',
+      userIds: eligible.map(user => user.id),
+    }));
+    setAutomaticScheduleProposal([]);
+    setAutomaticSchedulePreviewDate(selectedCalendarDay);
+    setBulkScheduleMode('smart');
+    setShowBulkScheduleModal(true);
+  };
+
+  const scheduleTimeToMinutes = value => {
+    const [hours, minutes] = String(value || '00:00').split(':').map(Number);
+    return (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+  };
+  const scheduleMinutesToTime = value => {
+    const minutes = ((Math.round(Number(value) || 0) % 1440) + 1440) % 1440;
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  };
+  const scheduleDurationToText = value => {
+    const minutes = Math.max(0, Math.round((Number(value) || 0) * 60));
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  };
+  const scheduleTextToHours = value => Math.max(0, scheduleTimeToMinutes(value) / 60);
+  const scheduleIntervalMinutes = (start, end, fallback = 0) => {
+    if (!start || !end) return Math.max(0, Number(fallback) || 0);
+    const startMinutes = scheduleTimeToMinutes(start);
+    let endMinutes = scheduleTimeToMinutes(end);
+    if (endMinutes < startMinutes) endMinutes += 1440;
+    return Math.max(0, endMinutes - startMinutes);
+  };
+  const scheduleTimeWithinShift = (time, shiftStart, shiftEnd) => {
+    if (!time || !shiftStart || !shiftEnd) return false;
+    const start = scheduleTimeToMinutes(shiftStart);
+    let end = scheduleTimeToMinutes(shiftEnd);
+    let point = scheduleTimeToMinutes(time);
+    if (end <= start) end += 1440;
+    if (point < start) point += 1440;
+    return point >= start && point <= end;
+  };
+  const automaticScheduleRowHours = row => {
+    if (!['Presencial', 'Home Office'].includes(row?.status)) return { regular: 0, extra: 0, total: 0, actualEnd: '' };
+    const start = scheduleTimeToMinutes(row.shiftStart);
+    let end = scheduleTimeToMinutes(row.shiftEnd);
+    if (end < start) end += 1440;
+    const breakMinutes = scheduleIntervalMinutes(row.breakStart, row.breakEnd, row.breakMinutes);
+    const regular = Math.max(0, end - start - breakMinutes) / 60;
+    const extra = Math.max(0, Number(row.extraHours) || 0);
+    return { regular, extra, total: regular + extra, actualEnd: scheduleMinutesToTime(end + extra * 60), breakMinutes };
+  };
+  const updateAutomaticScheduleRow = (key, changes) => {
+    setAutomaticScheduleProposal(previous => previous.map(row => row.key === key ? { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true } : row));
+  };
+  const repeatAutomaticScheduleOvertime = source => {
+    const extraHours = Math.max(0, Number(source.extraHours) || 0);
+    setAutomaticScheduleProposal(previous => previous.map(row => (
+      row.userId === source.userId && row.date >= source.date && ['Presencial', 'Home Office'].includes(row.status)
+        ? { ...row, extraHours }
+        : row
+    )));
+    triggerNotification(`Horas extras repetidas para os próximos dias de trabalho de ${source.userName}.`);
+  };
+
+  const saveAutomaticScheduleRules = async () => {
+    const weeklyHours = scheduleTextToHours(automaticScheduleWeeklyHoursText);
+    if (!/^\d{1,3}:[0-5]\d$/.test(automaticScheduleWeeklyHoursText) || weeklyHours < 1 || weeklyHours > 84) {
+      return triggerNotification('Informe a carga semanal no formato hh:mm, entre 01:00 e 84:00.', 'error');
+    }
+    const normalized = sanitizeAutomaticScheduleRules({ ...automaticScheduleRules, hoursPerWeek: weeklyHours });
+    const ruleErrors = validateRuleGroups(normalized.ruleGroups);
+    if (ruleErrors.length) return triggerNotification(ruleErrors[0], 'error');
+    const intervalMinutes = scheduleIntervalMinutes(normalized.breakStart, normalized.breakEnd);
+    if (!normalized.breakStart || !normalized.breakEnd || intervalMinutes <= 0 || intervalMinutes > 360) {
+      return triggerNotification('Informe um intervalo válido, com início e fim, de até 06:00.', 'error');
+    }
+    if (normalized.workDaysPerWeek >= normalized.restEveryDays) {
+      return triggerNotification('As regras são incompatíveis: o descanso deve ocorrer depois dos dias previstos de trabalho.', 'error');
+    }
+    const operationMinutes = scheduleIntervalMinutes(normalized.shiftStart, normalized.shiftEnd);
+    if (!normalized.shiftStart || !normalized.shiftEnd || operationMinutes <= intervalMinutes || !scheduleTimeWithinShift(normalized.breakStart, normalized.shiftStart, normalized.shiftEnd) || !scheduleTimeWithinShift(normalized.breakEnd, normalized.shiftStart, normalized.shiftEnd)) {
+      return triggerNotification('A saída padrão deve ser posterior à entrada e comportar o intervalo informado.', 'error');
+    }
+    if (normalized.allowedWeekdays.length < normalized.workDaysPerWeek) {
+      return triggerNotification('Libere dias da semana suficientes para a quantidade de dias trabalhados.', 'error');
+    }
+    setIsSavingScheduleRules(true);
+    const saved = await saveDoc('settings', 'schedule-rules', {
+      ...normalized,
+      updatedAt: Date.now(),
+      updatedBy: currentUser.name,
+    });
+    setIsSavingScheduleRules(false);
+    if (!saved) return;
+    setAutomaticScheduleRules(normalized);
+    setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(normalized.hoursPerWeek));
+    triggerNotification('Regras da escala salvas para os próximos planejamentos.');
+  };
+
+  const generateAutomaticSchedule = () => {
+    if (!bulkSchedule.startDate || !bulkSchedule.endDate || bulkSchedule.endDate < bulkSchedule.startDate) {
+      triggerNotification('Informe um período válido para gerar a sugestão.', 'error');
+      return;
+    }
+    const targets = employeesList.filter(user => bulkSchedule.userIds.includes(user.id));
+    if (!targets.length) return triggerNotification('Selecione pelo menos um colaborador.', 'error');
+    const dayCount = civilDateDaysInclusive(bulkSchedule.startDate, bulkSchedule.endDate);
+    if (!dayCount || dayCount > 31) return triggerNotification('Para revisar a sugestão com clareza, gere no máximo 31 dias por vez.', 'error');
+    const workDays = Math.max(1, Math.min(7, Number(automaticScheduleRules.workDaysPerWeek) || 5));
+    const restEvery = Math.max(2, Math.min(14, Number(automaticScheduleRules.restEveryDays) || 7));
+    if (!/^\d{1,3}:[0-5]\d$/.test(automaticScheduleWeeklyHoursText)) return triggerNotification('Informe a carga semanal no formato hh:mm antes de gerar a escala.', 'error');
+    const weeklyHours = Math.max(1, Math.min(84, scheduleTextToHours(automaticScheduleWeeklyHoursText) || Number(automaticScheduleRules.hoursPerWeek) || 40));
+    const breakMinutes = scheduleIntervalMinutes(automaticScheduleRules.breakStart, automaticScheduleRules.breakEnd);
+    if (breakMinutes <= 0 || breakMinutes > 360) return triggerNotification('Defina um intervalo válido, com horário de início e fim, antes de gerar a escala.', 'error');
+    if (workDays >= restEvery) return triggerNotification('As regras são incompatíveis: reduza os dias trabalhados ou aumente o intervalo de descanso.', 'error');
+    const allowedWeekdays = new Set(automaticScheduleRules.allowedWeekdays || []);
+    if (allowedWeekdays.size < workDays) return triggerNotification('Selecione dias da semana suficientes para cumprir os dias de trabalho definidos.', 'error');
+    const allDays = Array.from({ length: dayCount }, (_, index) => civilDateShift(bulkSchedule.startDate, { days: index }));
+    const holidayDates = new Set(calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date));
+    const ruleErrors = validateRuleGroups(automaticScheduleRules.ruleGroups || []);
+    if (ruleErrors.length) return triggerNotification(ruleErrors[0], 'error');
+    if (automaticScheduleRules.ruleGroups?.length) {
+      const proposal = buildRuleSchedule({ dates: allDays, users: targets, rules: { ...automaticScheduleRules, hoursPerWeek: weeklyHours }, holidays: [...holidayDates], history: workSchedules, getDepartment: user => getUserDepts(user)[0] || '' });
+      setAutomaticScheduleProposalInput(automaticScheduleInput);
+      setAutomaticScheduleProposal(proposal);
+      setAutomaticSchedulePreviewDate(allDays[0] || '');
+      triggerNotification('Simulação criada. Confira as regras aplicadas, jornadas e pendências antes de publicar.');
+      return;
+    }
+    const proposal = targets.flatMap((user, userIndex) => {
+      const employeeProposal = [];
+      const employeeOverride = automaticScheduleRules.employeeOverrides?.[user.id] || {};
+      const latestWorkSchedule = automaticScheduleRules.reuseLastSchedule
+        ? workSchedules
+          .filter(item => String(item.userId) === String(user.id) && ['Presencial', 'Home Office'].includes(item.status) && item.shiftStart && (item.baseShiftEnd || item.shiftEnd))
+          .sort((a, b) => String(b.endDate || b.startDate || '').localeCompare(String(a.endDate || a.startDate || '')) || Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))[0]
+        : null;
+      const defaultShiftStart = employeeOverride.shiftStart || latestWorkSchedule?.shiftStart || automaticScheduleRules.shiftStart;
+      const defaultBreakStart = latestWorkSchedule?.breakStart || automaticScheduleRules.breakStart;
+      const defaultBreakEnd = latestWorkSchedule?.breakEnd || (latestWorkSchedule?.breakMinutes
+        ? scheduleMinutesToTime(scheduleTimeToMinutes(defaultBreakStart) + Number(latestWorkSchedule.breakMinutes))
+        : automaticScheduleRules.breakEnd);
+      const employeeBreakMinutes = scheduleIntervalMinutes(defaultBreakStart, defaultBreakEnd, breakMinutes);
+      const defaultShiftEnd = employeeOverride.shiftEnd || latestWorkSchedule?.baseShiftEnd || latestWorkSchedule?.shiftEnd || automaticScheduleRules.shiftEnd;
+      const weekGroups = new Map();
+      allDays.forEach(date => {
+        const weekday = new Date(`${date}T00:00:00`).getDay();
+        const mondayOffset = (weekday + 6) % 7;
+        const weekStart = civilDateShift(date, { days: -mondayOffset });
+        weekGroups.set(weekStart, [...(weekGroups.get(weekStart) || []), date]);
+      });
+      [...weekGroups.entries()].forEach(([weekStart, dates], weekIndex) => {
+        const holidayDays = dates.filter(date => holidayDates.has(date));
+        const availableDays = dates.filter(date => !holidayDates.has(date) && allowedWeekdays.has(new Date(`${date}T00:00:00`).getDay()));
+        const baseRestDays = Math.max(0, dates.length - workDays, Math.floor(dates.length / restEvery));
+        const remainingRestDays = Math.max(0, baseRestDays - (automaticScheduleRules.holidaysCountAsRest ? holidayDays.length : 0));
+        const plannedWorkDays = Math.min(workDays, Math.max(0, availableDays.length - remainingRestDays));
+        const weekKey = weekStart;
+        const targetWeekHours = weeklyHours * Math.min(1, dates.length / workDays);
+        const restCount = Math.max(0, availableDays.length - plannedWorkDays);
+        const restSet = new Set();
+        const restStep = restCount ? Math.max(1, Math.floor(availableDays.length / restCount)) : 1;
+        for (let offset = 0; offset < restCount; offset += 1) restSet.add(availableDays[(userIndex + weekIndex + offset * restStep) % availableDays.length]);
+        const workSet = new Set(availableDays.filter(date => !restSet.has(date)).slice(0, plannedWorkDays));
+        const weekRows = [];
+        dates.forEach(date => {
+          const holiday = holidayDates.has(date);
+          const status = holiday
+            ? (automaticScheduleRules.holidaysCountAsRest ? 'Folga' : 'Feriado')
+            : (workSet.has(date) ? 'Presencial' : 'Folga');
+          const isWorkDay = status === 'Presencial';
+          const weekday = new Date(`${date}T00:00:00`).getDay();
+          const dayShiftEnd = weekday === 6 && employeeOverride.saturdayEnd ? employeeOverride.saturdayEnd : defaultShiftEnd;
+          const usesInterval = isWorkDay && scheduleTimeWithinShift(defaultBreakStart, defaultShiftStart, dayShiftEnd) && scheduleTimeWithinShift(defaultBreakEnd, defaultShiftStart, dayShiftEnd);
+          weekRows.push({
+            key: `${user.id}-${date}`, userId: user.id, userName: user.name,
+            dept: getUserDepts(user)[0] || '', date, status,
+            shiftStart: isWorkDay ? defaultShiftStart : '',
+            shiftEnd: isWorkDay ? dayShiftEnd : '',
+            breakStart: usesInterval ? defaultBreakStart : '',
+            breakEnd: usesInterval ? defaultBreakEnd : '',
+            breakMinutes: usesInterval ? employeeBreakMinutes : 0,
+            extraHours: 0,
+            shift: isWorkDay ? `${defaultShiftStart}–${dayShiftEnd}` : status,
+            reusedPattern: Boolean(latestWorkSchedule),
+            sourceScheduleId: latestWorkSchedule?.id || '',
+            holiday, holidayDaysInWeek: holidayDays.length,
+            weekKey, weekHoursTarget: Number(targetWeekHours.toFixed(2)), plannedWorkDays,
+          });
+        });
+        if (automaticScheduleRules.calculateExtraAutomatically) {
+          const baseHours = weekRows.reduce((sum, row) => sum + automaticScheduleRowHours(row).regular, 0);
+          let remainingExtra = Math.max(0, targetWeekHours - baseHours);
+          weekRows.filter(row => ['Presencial', 'Home Office'].includes(row.status)).reverse().forEach(row => {
+            if (remainingExtra <= 0) return;
+            const assigned = Math.min(4, remainingExtra);
+            row.extraHours = Number(assigned.toFixed(2));
+            row.autoExtra = assigned > 0;
+            remainingExtra -= assigned;
+          });
+          weekRows.forEach(row => { row.unallocatedHours = Number(Math.max(0, remainingExtra).toFixed(2)); });
+        }
+        employeeProposal.push(...weekRows);
+      });
+      return employeeProposal;
+    });
+    setAutomaticScheduleProposalInput(automaticScheduleInput);
+    setAutomaticScheduleProposal(proposal);
+    setAutomaticSchedulePreviewDate(allDays[0] || '');
+    if (proposal.length) triggerNotification(`Sugestão criada para ${targets.length} colaborador(es). Revise cada dia antes de salvar.`);
+  };
+
+  const saveAutomaticScheduleProposal = async () => {
+    if (!isManager || !automaticScheduleProposal.length) return;
+    if (automaticScheduleProposalInput !== automaticScheduleInput) return triggerNotification('As regras ou o período mudaram. Gere uma nova simulação antes de publicar.', 'error');
+    const ruleIssues = scheduleRuleIssues(automaticScheduleProposal, workSchedules).filter(issue => issue.blocking);
+    if (ruleIssues.length) {
+      setAutomaticSchedulePreviewDate(ruleIssues[0].date);
+      return triggerNotification(ruleIssues[0].message, 'error');
+    }
+    const invalidWorkRows = automaticScheduleProposal.filter(item => {
+      if (!['Presencial', 'Home Office'].includes(item.status)) return false;
+      const hours = automaticScheduleRowHours(item);
+      const hasIncompleteBreak = Boolean(item.breakStart) !== Boolean(item.breakEnd);
+      const hasInvalidBreak = Boolean(item.breakStart && item.breakEnd) && (hours.breakMinutes <= 0 || hours.breakMinutes > 360 || !scheduleTimeWithinShift(item.breakStart, item.shiftStart, item.shiftEnd) || !scheduleTimeWithinShift(item.breakEnd, item.shiftStart, item.shiftEnd));
+      return !item.shiftStart || !item.shiftEnd || hours.regular <= 0 || hasIncompleteBreak || hasInvalidBreak;
+    });
+    if (invalidWorkRows.length) {
+      triggerNotification(`Revise ${invalidWorkRows.length} jornada(s) com horário ou carga inválida antes de publicar.`, 'error');
+      setAutomaticSchedulePreviewDate(invalidWorkRows[0].date);
+      return;
+    }
+    const collisions = automaticScheduleProposal.filter(item => workSchedules.some(existing =>
+      String(existing.userId) === String(item.userId) && existing.startDate <= item.date && existing.endDate >= item.date
+    ));
+    if (collisions.length) {
+      triggerNotification(`Há ${collisions.length} dia(s) com escala já lançada. Remova ou ajuste as marcações existentes antes de publicar a sugestão.`, 'error');
+      return;
+    }
+    const rows = automaticScheduleProposal.slice().sort((a, b) => a.userId.localeCompare(b.userId) || a.date.localeCompare(b.date));
+    const segments = [];
+    rows.forEach(item => {
+      const hours = automaticScheduleRowHours(item);
+      const previous = segments[segments.length - 1];
+      const nextDate = previous ? civilDateShift(previous.endDate, { days: 1 }) : '';
+      if (previous && previous.ruleReason === (item.ruleReason || '') && previous.ruleGroupId === (item.groupId || '') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
+        previous.endDate = item.date;
+      } else {
+        segments.push({
+          id: `schedule-${item.userId}-${item.date}-${item.date}`,
+          userId: item.userId, userName: item.userName, dept: item.dept,
+          ruleReason: item.ruleReason || '', ruleGroupId: item.groupId || '', ruleGroupName: item.groupName || '',
+          ruleApplied: Boolean(item.ruleApplied), manuallyAdjusted: Boolean(item.manuallyAdjusted),
+          startDate: item.date, endDate: item.date, status: item.status,
+          shift: ['Presencial', 'Home Office'].includes(item.status) ? `${item.shiftStart}–${hours.actualEnd}` : item.status,
+          shiftStart: item.shiftStart, baseShiftEnd: item.shiftEnd, shiftEnd: hours.actualEnd,
+          breakStart: item.breakStart || '', breakEnd: item.breakEnd || '', breakMinutes: hours.breakMinutes,
+          regularHours: Number(hours.regular.toFixed(2)), extraHours: Number(hours.extra.toFixed(2)), plannedHours: Number(hours.total.toFixed(2)),
+          notes: `${bulkSchedule.notes.trim()}${item.status === 'Feriado' ? ' · Feriado não contabilizado como descanso' : ''}`.trim(),
+        });
+      }
+    });
+    const now = Date.now();
+    const schedules = segments.map(segment => {
+      const id = `schedule-${segment.userId}-${segment.startDate}-${segment.endDate}`;
+      return { ...segment, id, createdAt: now, updatedAt: now, updatedBy: currentUser.name, autoGenerated: true };
+    });
+    if (schedules.length > 450) {
+      triggerNotification('Esta sugestão ultrapassa o limite seguro de gravação por lote. Reduza o período ou selecione menos colaboradores.', 'error');
+      return;
+    }
+    if (!await saveRelatedRecords(schedules.map(schedule => ({ collection: 'schedules', id: schedule.id, data: schedule })), 'Não foi possível salvar a sugestão de escala. Nenhuma alteração foi confirmada.')) return;
+    const ids = new Set(schedules.map(schedule => schedule.id));
+    setWorkSchedules(previous => [...schedules, ...previous.filter(schedule => !ids.has(schedule.id))]);
+    setAutomaticScheduleProposal([]);
+    setShowBulkScheduleModal(false);
+    triggerNotification(`Sugestão revisada e publicada no calendário: ${schedules.length} blocos de escala.`);
+  };
+
+  const saveBulkSchedule = async (event) => {
+    event.preventDefault();
+    if (!isManager) {
+      triggerNotification('Apenas gestores podem alterar escalas em lote.', 'error');
+      return;
+    }
+    if (bulkSchedule.endDate < bulkSchedule.startDate) {
+      triggerNotification('A data final da escala não pode ser anterior à inicial.', 'error');
+      return;
+    }
+    const targets = employeesList.filter(user => bulkSchedule.userIds.includes(user.id));
+    if (!targets.length) {
+      triggerNotification('Selecione pelo menos um colaborador para a escala.', 'error');
+      return;
+    }
+    const now = Date.now();
+    const occurrences = bulkScheduleOccurrences();
+    const schedules = targets.flatMap(user => occurrences.map(period => {
+      const id = `schedule-${user.id}-${period.startDate}-${period.endDate}`;
+      const existing = workSchedules.find(schedule => schedule.id === id);
+      return {
+        id,
+        userId: user.id,
+        userName: user.name,
+        dept: getUserDepts(user)[0] || '',
+        startDate: period.startDate,
+        endDate: period.endDate,
+        status: bulkSchedule.status,
+        shift: bulkSchedule.shift || 'Integral',
+        shiftStart: bulkSchedule.shift === 'Personalizado' ? bulkSchedule.customShiftStart : '',
+        shiftEnd: bulkSchedule.shift === 'Personalizado' ? bulkSchedule.customShiftEnd : '',
+        recurrence: occurrences.length > 1 ? { total: occurrences.length, interval: bulkSchedule.repeatInterval } : null,
+        notes: bulkSchedule.notes.trim(),
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+        updatedBy: currentUser.name,
+      };
+    }));
+    if (!await saveRelatedRecords(schedules.map(schedule => ({
+      collection: 'schedules', id: schedule.id, data: schedule,
+      ...(workSchedules.some(item => item.id === schedule.id) ? { operation: 'update' } : {}),
+    })), 'Não foi possível salvar a escala em lote. Nenhuma alteração foi confirmada.')) return;
+    const ids = new Set(schedules.map(schedule => schedule.id));
+    setWorkSchedules(previous => [...schedules, ...previous.filter(schedule => !ids.has(schedule.id))]);
+    setShowBulkScheduleModal(false);
+    triggerNotification(`Escala atualizada para ${schedules.length} colaborador(es).`);
+  };
+
+  const handleDeleteSchedule = async (schedule) => {
+    if (!schedule?.id || deletingScheduleId) return;
+    if (!isManager && !currentUser?.isAdmin) {
+      triggerNotification('Apenas gestores podem excluir escalas.', 'error');
+      return;
+    }
+    setDeletingScheduleId(schedule.id);
+    try {
+      if (!await removeDoc('schedules', schedule.id)) return;
+      setWorkSchedules(previous => previous.filter(item => item.id !== schedule.id));
+      triggerNotification(`Escala de ${schedule.userName || 'colaborador'} removida do calendário.`);
+    } finally {
+      setDeletingScheduleId('');
+    }
+  };
+
+  const handleDeleteAbsence = async (absId, absUserId) => {
+    if (absUserId !== currentUser.id && !currentUser.isAdmin) {
+      triggerNotification('Acesso negado. Você só pode remover seus próprios agendamentos.', 'error');
+      return;
+    }
+
+    const postAbsId = `post-abs-${absId}`;
+
+    if (isFirebaseAvailable && dbUser) {
+      try {
+        const batch = writeBatch(db);
+        batch.delete(doc(getTenantCollection('absences'), absId));
+        batch.delete(doc(getTenantCollection('posts'), postAbsId));
+        await batch.commit();
+      } catch {
+        triggerNotification('Não foi possível excluir o agendamento. Nenhuma exclusão foi confirmada.', 'error');
+        return;
+      }
+    } else {
+      setAbsences(prev => prev.filter(a => a.id !== absId));
+      setSectorPosts(prev => prev.filter(p => p.id !== postAbsId));
+    }
+    triggerNotification('Agendamento de ausência e notificação removidos.');
+  };
+
+  const submitEvent = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !currentUser.isAdmin) {
+      triggerNotification('Apenas administradores podem agendar eventos oficiais.', 'error');
+      return;
+    }
+    if (!newEvent.title || !newEvent.description) return;
+
+    const evId = `ev-${Date.now()}`;
+    const annId = `ann-${Date.now()}`;
+    const created = {
+      id: evId,
+      ...(annId ? { announcementId: annId } : {}),
+      title: newEvent.title,
+      date: newEvent.date,
+      type: newEvent.type,
+      location: newEvent.location || (isHolidayEvent ? 'Calendário oficial' : 'Escritório'),
+      description: newEvent.description
+    };
+
+    // Automação: Publicar o evento como Comunicado Oficial no Feed
+    const autoAnn = !isHolidayEvent ? {
+      id: annId,
+      sourceEventId: evId,
+      title: eventAnnouncementTitle(created),
+      content: eventAnnouncementContent(created),
+      category: newEvent.type,
+      image: '',
+      author: 'Agenda Oficial (Sistema)',
+date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      pinned: false,
+      likes: 0,
+      likedBy: [],
+      comments: []
+    } : null;
+
+    const records = [{ collection: 'events', id: evId, data: created }];
+    if (autoAnn) records.push({ collection: 'announcements', id: annId, data: autoAnn });
+    if (!await saveRelatedRecords(records)) return;
+
+    setNewEvent({ title: '', date: todayStr, type: 'Confraternização', location: '', description: '' });
+    setShowEventModal(false);
+    triggerNotification(isHolidayEvent ? 'Feriado marcado no calendário e disponível para a escala inteligente.' : 'Novo evento oficial agendado e publicado no Feed!');
+  };
+
+  const handleDeleteEvent = async (evId) => {
+    if (!currentUser || !currentUser.isAdmin) {
+      triggerNotification('Apenas administradores podem remover eventos oficiais do RH.', 'error');
+      return;
+    }
+
+    try {
+      if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
+      const eventsCollection = getTenantCollection('events');
+      const announcementsCollection = getTenantCollection('announcements');
+      if (!eventsCollection || !announcementsCollection) throw new Error('Empresa indisponível.');
+
+      const eventSnapshot = await getDoc(doc(eventsCollection, evId));
+      if (!eventSnapshot.exists()) {
+        triggerNotification('Este evento já foi removido. Atualize a página e confira os avisos.', 'error');
+        return;
+      }
+      const announcementSnapshot = await getDocs(announcementsCollection);
+      const linkedIds = linkedEventAnnouncementIds(
+        { ...eventSnapshot.data(), id: evId },
+        announcementSnapshot.docs.map(item => ({ ...item.data(), id: item.id }))
+      );
+      await commitAtomicRecords([
+        { collection: 'events', id: evId, operation: 'delete' },
+        ...linkedIds.map(id => ({ collection: 'announcements', id, operation: 'delete' })),
+      ], () => writeBatch(db), (collectionName, id) => {
+        const target = getTenantCollection(collectionName);
+        if (!target) throw new Error('Empresa indisponível.');
+        return doc(target, id);
+      });
+      triggerNotification(linkedIds.length
+        ? 'Evento e comunicado da timeline removidos juntos.'
+        : 'Evento removido. Nenhum comunicado vinculado foi localizado; confira os avisos antigos.');
+    } catch (error) {
+      console.error('Falha ao remover evento e comunicado', error);
+      triggerNotification('Não foi possível remover o evento e seu comunicado. Nenhuma exclusão foi confirmada.', 'error');
+    }
+  };
+
+  const handleDeleteAnnouncement = async (announcement) => {
+    if (!currentUser?.isAdmin) {
+      triggerNotification('Apenas administradores podem remover comunicados.', 'error');
+      return;
+    }
+    const linkedEvent = calendarEvents.find(event =>
+      linkedEventAnnouncementIds(event, [announcement]).includes(announcement.id)
+    );
+    if (linkedEvent) {
+      await handleDeleteEvent(linkedEvent.id);
+      return;
+    }
+    if (await removeDoc('announcements', announcement.id)) {
+      triggerNotification('Comunicado removido.');
+    }
+  };
+
+  const handleEditUser = (user) => {
+    if (!currentUser || !currentUser.isAdmin) {
+      triggerNotification('Permissão insuficiente. Contate a Diretoria do RH.', 'error');
+      return;
+    }
+    setEditingUser(user);
+    setUserForm({
+      name: user.name,
+      role: user.role,
+      depts: getUserDepts(user),
+      avatar: user.avatar,
+      isAdmin: user.isAdmin || false,
+      pin: '',
+      birthDate: user.birthDate || '',
+      hireDate: user.hireDate || '',
+      emergencyName: user.emergencyName || '',
+      emergencyPhone: user.emergencyPhone || '',
+      emergencyRelationship: user.emergencyRelationship || '',
+      prodGroup: user.prodGroup || '',
+      managerId: user.managerId || ''
+    });
+    setShowUserModal(true);
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (isRemovingUser) return;
+    if (!currentUser || !currentUser.isAdmin) {
+      triggerNotification('Operação negada. Apenas administradores do RH podem remover contas.', 'error');
+      return;
+    }
+    const targetUser = employeesList.find(user => user.id === userId);
+    if (!targetUser) {
+      triggerNotification('Colaborador não encontrado. Atualize a lista e tente novamente.', 'error');
+      setPendingUserRemoval(null);
+      return;
+    }
+    if (currentUser.id === userId) {
+      triggerNotification('Você não pode remover o próprio acesso por esta tela.', 'error');
+      setPendingUserRemoval(null);
+      return;
+    }
+    if (employeesList.length <= 1) {
+      triggerNotification('É necessário manter ao menos um funcionário ativo no portal.', 'error');
+      setPendingUserRemoval(null);
+      return;
+    }
+    if (targetUser.isAdmin && employeesList.filter(user => user.isAdmin).length <= 1) {
+      triggerNotification('Defina outro administrador antes de remover o último administrador da empresa.', 'error');
+      setPendingUserRemoval(null);
+      return;
+    }
+    setIsRemovingUser(true);
+    try {
+      if (!isFirebaseAvailable || !dbUser || !functionsClient || !activeCompany?.id) throw new Error('Sessão indisponível');
+      const response = await httpsCallable(functionsClient, 'removeEmployee')({
+        appId, companyId: activeCompany.id, userId,
+      });
+      if (response.data?.removed !== true) throw new Error('Remoção não confirmada');
+      setPendingUserRemoval(null);
+      triggerNotification('Acesso do colaborador revogado e presença atualizada.');
+    } catch (error) {
+      console.error('Falha na remoção do colaborador', error);
+      triggerNotification('Não foi possível remover o colaborador. Confira a conexão e a equipe atual.', 'error');
+    } finally {
+      setIsRemovingUser(false);
+    }
+  };
+
+  const handleResetUserPin = async (userId, userName) => {
+    if (!currentUser || !currentUser.isAdmin) return;
+    setAdminNewPin('');
+    setAdminConfirmPin('');
+    setPinResetTarget({userId, userName});
+  };
+
+  const submitAdminPinReset = async (event) => {
+    event.preventDefault();
+    if (!pinResetTarget || pinResetSaving) return;
+    if (!/^\d{4}$/.test(adminNewPin) || adminNewPin !== adminConfirmPin) {
+      triggerNotification('Informe e confirme o mesmo PIN de quatro dígitos.', 'error');
+      return;
+    }
+    if (!isFirebaseAvailable || !dbUser || !functionsClient) {
+      triggerNotification('Conecte-se para redefinir o PIN com segurança.', 'error');
+      return;
+    }
+    setPinResetSaving(true);
+    try {
+      const response = await httpsCallable(functionsClient, 'resetEmployeePin')({appId, userId: pinResetTarget.userId, newPin: adminNewPin});
+      if (response.data?.changed !== true) throw new Error('Reset not confirmed');
+      setPinResetTarget(null);
+      setAdminNewPin('');
+      setAdminConfirmPin('');
+      triggerNotification('PIN atualizado. Informe o novo PIN ao colaborador por um canal privado.');
+    } catch {
+      triggerNotification('Não foi possível redefinir o PIN. Confira sua permissão e conexão.', 'error');
+    } finally {
+      setPinResetSaving(false);
+    }
+  };
+
+  const submitUserForm = async (e) => {
+    e.preventDefault();
+    if (userSaveInFlight.current) return;
+    userSaveInFlight.current = true;
+    try {
+    if (!currentUser || !currentUser.isAdmin) {
+      triggerNotification('Você não possui autorização para criar ou modificar funcionários.', 'error');
+      return;
+    }
+    if (!userForm.depts || userForm.depts.length === 0) {
+      triggerNotification('O colaborador precisa estar vinculado a pelo menos um setor.', 'error');
+      return;
+    }
+
+    if (editingUser) {
+      const {pin: ignoredOldPin, ...existingProfile} = editingUser;
+      const {pin: ignoredFormPin, ...formProfile} = userForm;
+      const updatedData = { ...existingProfile, ...formProfile, updatedAt: Date.now() };
+      if (!await saveDoc('users', editingUser.id, updatedData)) return;
+      setUsersList(prev => prev.map(user => user.id === editingUser.id ? updatedData : user));
+      triggerNotification('Ficha de cadastro atualizada!');
+    } else {
+      const uId = `u-${Date.now()}`;
+      if (!isFirebaseAvailable || !dbUser || !functionsClient) {
+        triggerNotification('Conecte-se para cadastrar com segurança.', 'error');
+        return;
+      }
+      try {
+        const {pin, ...profile} = userForm;
+        const response = await httpsCallable(functionsClient, 'createEmployee')({appId, userId: uId, profile: { ...profile, avatar: profile.avatar || DEFAULT_AVATAR }, pin});
+        const {user: created, presence: defaultPresence} = response.data || {};
+        if (!created?.id || !defaultPresence?.id) throw new Error('Cadastro não confirmado');
+        setUsersList(prev => [...prev.filter(user => user.id !== created.id), created]);
+        setPresenceList(prev => [...prev.filter(presence => presence.id !== defaultPresence.id), defaultPresence]);
+      } catch {
+        triggerNotification('Não foi possível cadastrar. Confira sua conexão, permissão e os dados informados.', 'error');
+        return;
+      }
+      triggerNotification('Novo funcionário cadastrado no sistema.');
+    }
+    setEditingUser(null);
+    setShowUserModal(false);
+    } finally {
+      userSaveInFlight.current = false;
+    }
+  };
+
+  const handleAddRole = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !currentUser.isAdmin) return;
+    const trimmed = newRoleValue.trim();
+    if (!trimmed) return;
+    const selectedDepartments = newRoleDepts.filter(id => departmentsList.some(dept => dept.id === id));
+    if (!selectedDepartments.length) {
+      triggerNotification('Selecione pelo menos um setor para o cargo.', 'error');
+      return;
+    }
+    if (rolesList.some(r => r.name.toLowerCase() === trimmed.toLowerCase())) {
+      triggerNotification('Este cargo já existe. Edite-o para acrescentar novos setores.', 'error');
+      return;
+    }
+
+    const roleId = `role-${Date.now()}`;
+    const data = { id: roleId, name: trimmed, description: newRoleDescription.trim(), depts: selectedDepartments, dept: selectedDepartments[0] };
+
+    if (!await saveDoc('roles', roleId, data)) return;
+    setNewRoleValue('');
+    setNewRoleDepts([]);
+    setNewRoleDescription('');
+    triggerNotification(`Cargo "${trimmed}" vinculado a ${selectedDepartments.length} setor(es).`);
+  };
+
+  const handleEditRole = (index) => {
+    if (!currentUser || !currentUser.isAdmin) return;
+    setEditingRoleIdx(index);
+    setEditingRoleValue(rolesList[index].name);
+    setEditingRoleDepts(getRoleDepts(rolesList[index]));
+    setEditingRoleDescription(rolesList[index].description || '');
+  };
+
+  const handleSaveRole = async (index) => {
+    if (!currentUser || !currentUser.isAdmin) return;
+    const trimmed = editingRoleValue.trim();
+    if (!trimmed) return;
+    if (!editingRoleDepts.length) {
+      triggerNotification('Selecione pelo menos um setor para o cargo.', 'error');
+      return;
+    }
+    const targetRole = rolesList[index];
+    const oldRoleName = targetRole.name;
+    
+    if (rolesList.some((r, i) => i !== index && r.name.toLowerCase() === trimmed.toLowerCase())) {
+      triggerNotification('Outro cargo com esse mesmo nome já existe.', 'error');
+      return;
+    }
+
+    const updatedRoleData = { ...targetRole, name: trimmed, description: editingRoleDescription.trim(), depts: editingRoleDepts, dept: editingRoleDepts[0] };
+
+    const affectedUsers = usersList.filter(user =>
+      user.role === oldRoleName && getUserDepts(user).some(deptId => getRoleDepts(targetRole).includes(deptId))
+    );
+    if (!await saveRelatedRecords([
+      { collection: 'roles', id: targetRole.id, data: updatedRoleData, operation: 'update' },
+      ...affectedUsers.map(user => ({ collection: 'users', id: user.id, data: { role: trimmed }, operation: 'update' })),
+    ], 'Não foi possível alterar o cargo e os colaboradores juntos. Nenhuma mudança foi confirmada.')) return;
+    setRolesList(prev => prev.map(role => role.id === targetRole.id ? updatedRoleData : role));
+    setUsersList(prev => prev.map(user =>
+      affectedUsers.some(affected => affected.id === user.id) ? { ...user, role: trimmed } : user
+    ));
+
+    setEditingRoleIdx(null);
+    setEditingRoleValue('');
+    setEditingRoleDepts([]);
+    setEditingRoleDescription('');
+    triggerNotification(`Cargo alterado e atualizado em cascata nos colaboradores!`);
+  };
+
+  const handleDeleteRole = async (index) => {
+    if (!currentUser || !currentUser.isAdmin) return;
+    const roleToDelete = rolesList[index];
+    const isUsed = usersList.some(u => u.role === roleToDelete.name && getUserDepts(u).some(deptId => getRoleDepts(roleToDelete).includes(deptId)));
+    if (isUsed) {
+      triggerNotification(`Não é possível excluir pois existem colaboradores ativos associados a ele.`, 'error');
+      return;
+    }
+
+    if (!await removeDoc('roles', roleToDelete.id)) return;
+    triggerNotification(`Cargo "${roleToDelete.name}" removido do sistema.`);
+  };
+
+  const handleAddSector = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !currentUser.isAdmin) return;
+    const trimmed = newSectorName.trim();
+    if (!trimmed) return;
+    if (departmentsList.some(d => d.name.toLowerCase() === trimmed.toLowerCase())) {
+      triggerNotification('Este setor já está cadastrado no sistema!', 'error');
+      return;
+    }
+
+    const newId = `dept-${Date.now()}`;
+    const data = { id: newId, name: trimmed, color: newSectorColor };
+
+    if (!await saveDoc('departments', newId, data)) return;
+    setNewSectorName('');
+    triggerNotification(`Setor "${trimmed}" criado com sucesso!`);
+  };
+
+  const handleSaveSector = async (id) => {
+    if (!currentUser || !currentUser.isAdmin) return;
+    const trimmed = editingSectorName.trim();
+    if (!trimmed) return;
+    if (departmentsList.some(d => d.id !== id && d.name.toLowerCase() === trimmed.toLowerCase())) {
+      triggerNotification('Outro setor já possui esse nome!', 'error');
+      return;
+    }
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await updateDocField('departments', id, { name: trimmed, color: editingSectorColor })) return;
+    } else {
+      setDepartmentsList(departmentsList.map(d => d.id === id ? { ...d, name: trimmed, color: editingSectorColor } : d));
+    }
+    setEditingSectorId(null);
+    triggerNotification(`Setor "${trimmed}" updated com sucesso!`);
+  };
+
+  const handleDeleteSector = async (id) => {
+    if (!currentUser || !currentUser.isAdmin) return;
+    const isUsedByUsers = usersList.some(u => getUserDepts(u).includes(id));
+    const isUsedByRoles = rolesList.some(r => getRoleDepts(r).includes(id));
+    const isUsedByPosts = sectorPosts.some(p => p.dept === id);
+
+    if (isUsedByUsers || isUsedByRoles || isUsedByPosts) {
+      triggerNotification('Não é possível excluir o setor pois há funcionários, cargos ou posts vinculados a ele.', 'error');
+      return;
+    }
+
+    if (isFirebaseAvailable && dbUser) {
+      if (!await removeDoc('departments', id)) return;
+    } else {
+      setDepartmentsList(departmentsList.filter(d => d.id !== id));
+    }
+    triggerNotification('Setor removido com sucesso!');
+  };
+
+  const handleExportData = () => {
+    if (!currentUser?.isDeveloper) {
+      triggerNotification('Esta ferramenta é exclusiva do suporte da plataforma.', 'error');
+      return;
+    }
+    if (!activeCompany?.id) {
+      triggerNotification('Selecione uma empresa antes de gerar o backup.', 'error');
+      return;
+    }
+    const exportData = {
+      departmentsList,
+      usersList,
+      rolesList,
+      announcements,
+      sectorPosts,
+      productivityLogs,
+      privateMessages,
+      calendarEvents,
+      absences,
+      presenceList
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "comunica_backup_" + new Date().toISOString().split('T')[0] + ".json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+    triggerNotification("Backup exportado com sucesso! Guarde este arquivo em segurança.", "success");
+  };
+
+  const handleImportData = (e) => {
+    if (!currentUser?.isDeveloper) {
+      triggerNotification('Esta ferramenta é exclusiva do suporte da plataforma.', 'error');
+      e.target.value = '';
+      return;
+    }
+    if (!activeCompany?.id) {
+      triggerNotification('Selecione uma empresa antes de restaurar os dados.', 'error');
+      e.target.value = '';
+      return;
+    }
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const importedData = JSON.parse(event.target.result);
+        if (!importedData.usersList) throw new Error("Arquivo inválido");
+
+        triggerNotification("Iniciando restauração. Por favor, aguarde...", "success");
+
+        if (isFirebaseAvailable && dbUser) {
+            const restoreCol = async (colName, dataList) => {
+                for(const item of dataList) {
+                    await saveDoc(colName, item.id, item);
+                }
+            };
+            await restoreCol('departments', importedData.departmentsList || []);
+            await restoreCol('users', importedData.usersList || []);
+            await restoreCol('roles', importedData.rolesList || []);
+            await restoreCol('announcements', importedData.announcements || []);
+            await restoreCol('posts', importedData.sectorPosts || []);
+            await restoreCol('productivity', importedData.productivityLogs || []);
+            await restoreCol('messages', importedData.privateMessages || []);
+            await restoreCol('events', importedData.calendarEvents || []);
+            await restoreCol('absences', importedData.absences || []);
+            await restoreCol('presence', importedData.presenceList || []);
+            triggerNotification("Restauração na nuvem concluída com sucesso!", "success");
+        } else {
+            setDepartmentsList(importedData.departmentsList || []);
+            setUsersList(importedData.usersList || []);
+            setRolesList(importedData.rolesList || []);
+            setAnnouncements(importedData.announcements || []);
+            setSectorPosts(importedData.sectorPosts || []);
+            setProductivityLogs(importedData.productivityLogs || []);
+            setPrivateMessages(importedData.privateMessages || []);
+            setCalendarEvents(importedData.calendarEvents || []);
+            setAbsences(importedData.absences || []);
+            setPresenceList(importedData.presenceList || []);
+            triggerNotification("Dados restaurados localmente com sucesso!", "success");
+        }
+      } catch (err) {
+        triggerNotification("Erro ao importar o arquivo. Verifique se o formato está correto.", "error");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reseta o input de arquivo
+  };
+
+  const generateMonthDays = (year, month) => {
+    const days = [];
+    const firstDay = new Date(year, month, 1).getDay(); 
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    for (let i = 0; i < firstDay; i++) {
+      days.push({ dayNumber: null }); 
+    }
+    
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const dayEvents = calendarEvents.filter(ev => ev.date === dateString);
+      const dayAbsences = absences.filter(abs => {
+        const start = abs.startDate || abs.date;
+        const end = abs.endDate || abs.date || start;
+        return dateString >= start && dateString <= end;
+      }).filter((absence, index, list) => list.findIndex(item =>
+        `${item.userId || item.userName}|${item.startDate || item.date}|${item.endDate || item.date}|${normalizedText(item.reason)}` ===
+        `${absence.userId || absence.userName}|${absence.startDate || absence.date}|${absence.endDate || absence.date}|${normalizedText(absence.reason)}`
+      ) === index);
+      const daySchedules = workSchedules.filter(schedule => dateString >= schedule.startDate && dateString <= schedule.endDate);
+      days.push({
+        dayNumber: i,
+        dateString,
+        events: dayEvents,
+        absences: dayAbsences,
+        schedules: daySchedules
+      });
+    }
+    return days;
+  };
+
+  const handlePrevMonth = () => {
+    if (currentCalMonth === 0) {
+      setCurrentCalMonth(11);
+      setCurrentCalYear(currentCalYear - 1);
+    } else {
+      setCurrentCalMonth(currentCalMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentCalMonth === 11) {
+      setCurrentCalMonth(0);
+      setCurrentCalYear(currentCalYear + 1);
+    } else {
+      setCurrentCalMonth(currentCalMonth + 1);
+    }
+  };
+
+  const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const handleAICopilot = async (type) => {
+    const isAnn = type === 'announcement';
+    const title = isAnn ? newAnn.title : newPost.title;
+    const content = isAnn ? newAnn.content : newPost.content;
+
+    if (!title.trim() || !content.trim()) {
+      setCopilotWarning('⚠️ Digite um rascunho de título e de conteúdo primeiro.');
+      setTimeout(() => setCopilotWarning(''), 5000);
+      return;
+    }
+
+    if (isAnn) setIsImprovingAnn(true);
+    else setIsImprovingPost(true);
+    setCopilotWarning('');
+
+    const sysInstruction = `Você é o redator chefe de Comunicação Interna e RH da Comunica.
+    Reescreva o rascunho fornecido no tom solicitado e engajamento profissional. Nunca use Markdown, asteriscos, hashtags, crases ou marcadores técnicos. Emojis simples são permitidos quando combinarem com o texto.
+    Retorne estritamente um objeto no formato JSON sem blocos markdown ou caracteres extras.
+    Formato JSON desejado: {"titulo": "Título Polido", "conteudo": "Conteúdo Polido"}`;
+
+    const prompt = `Melhore meu texto para a plataforma Comunica, usando o tom "${selectedTone}".\n\nTítulo Original: "${title}"\nConteúdo Original: "${content}"`;
+
+    try {
+      const response = await callGemini(prompt, sysInstruction);
+      
+      // Limpa possíveis marcações de código (```json) que a IA possa enviar antes de converter
+      const cleanedResponse = response.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsedData = JSON.parse(cleanedResponse);
+      const cleanTitle = formatAIText(parsedData.titulo || title).replace(/\n/g, ' ').trim();
+      const cleanContent = formatAIText(parsedData.conteudo || content);
+
+      // Atualiza o formulário correspondente com os textos melhorados
+      if (isAnn) {
+        setNewAnn({ ...newAnn, title: cleanTitle, content: cleanContent });
+      } else {
+        setNewPost({ ...newPost, title: cleanTitle, content: cleanContent });
+      }
+      
+    } catch (error) {
+      console.error("Erro no Copiloto IA:", error);
+      setCopilotWarning('❌ Falha ao aprimorar o texto. Tente novamente.');
+      setTimeout(() => setCopilotWarning(''), 5000);
+    } finally {
+      setIsImprovingAnn(false);
+      setIsImprovingPost(false);
+    }
+  };
+
+  const handleGenerateWeeklySummary = async () => {
+    setIsSummaryLoading(true);
+    setShowSummaryModal(true);
+
+    const userAllowedDepts = currentUser?.isAdmin ? departmentsList.map(d => d.id) : getUserDepts(currentUser);
+
+    const currentDate = new Date(`${todayStr}T00:00:00`);
+    const weekEnd = new Date(currentDate);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const weekEndStr = weekEnd.toISOString().slice(0, 10);
+    const publicationEnd = new Date(currentDate);
+    publicationEnd.setHours(23, 59, 59, 999);
+    const recentStart = new Date(currentDate);
+    recentStart.setDate(recentStart.getDate() - 7);
+
+    const parsePublicationDate = (item) => {
+      if (typeof item.timestamp === 'number') return new Date(item.timestamp);
+      const match = String(item.date || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      return match ? new Date(`${match[3]}-${match[2]}-${match[1]}T00:00:00`) : null;
+    };
+    const formatCalendarDate = (date) => date ? date.split('-').reverse().join('/') : '';
+    const isRecentPublication = (item) => {
+      const date = parsePublicationDate(item);
+      return date && date >= recentStart && date <= publicationEnd;
+    };
+
+    const sysInstruction = `Você é o editor da comunicação interna da Comunica. Escreva um boletim atual, leve, claro e agradável de ler.
+Use somente os dados recebidos. Nunca apresente datas passadas como futuras e não invente informações.
+Não use Markdown, asteriscos, hashtags, tabelas ou códigos. Use título curto, subtítulos com emoji, parágrafos breves e listas com o marcador •. Separe os blocos com uma linha em branco.`;
+
+    const allAnnouncementsStr = announcements
+      .filter(isRecentPublication)
+      .map(a => `• ${a.title}: ${a.content}`).join('\n') || '• Nenhum comunicado recente.';
+    
+    const allPostsStr = sectorPosts
+      .filter(p => userAllowedDepts.includes(p.dept) && isRecentPublication(p))
+      .map(p => `• [Setor: ${p.dept}] ${p.title}: ${p.content}`).join('\n') || '• Nenhuma novidade recente nos setores permitidos.';
+      
+    const allEventsStr = calendarEvents
+      .filter(event => event.date >= todayStr && event.date <= weekEndStr)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(e => `• Dia ${formatCalendarDate(e.date)}: ${e.title} em ${e.location || 'local a confirmar'}`).join('\n') || '• Nenhum evento previsto para os próximos sete dias.';
+    const allAbsencesStr = absences.filter(ab => {
+      const s = ab.startDate || ab.date;
+      const e = ab.endDate || ab.date || s;
+      return s && e && s <= weekEndStr && e >= todayStr;
+    }).map(ab => {
+      const s = ab.startDate || ab.date;
+      const e = ab.endDate || ab.date || s;
+      const dateStr = s === e ? `dia ${s.split('-').reverse().join('/')}` : `de ${s.split('-').reverse().join('/')} até ${e.split('-').reverse().join('/')}`;
+      return `• ${ab.userName} estará indisponível ${dateStr} no período das ${ab.startTime} às ${ab.endTime} devido a: "${ab.reason}"`;
+    }).join('\n') || '• Nenhuma ausência prevista para os próximos sete dias.';
+
+    const prompt = `DATA ATUAL: ${formatCalendarDate(todayStr)}.
+PERÍODO DO BOLETIM: de ${formatCalendarDate(todayStr)} até ${formatCalendarDate(weekEndStr)}.
+
+Abaixo estão as informações válidas para este período na Comunica:
+    
+    [COMUNICADOS OFICIAIS DO RH]:
+    ${allAnnouncementsStr}
+    
+    [NOTÍCIAS DOS SETORES]:
+    ${allPostsStr}
+    
+    [EVENTOS NA AGENDA]:
+    ${allEventsStr}
+    
+    [CONTROLE DE ESCALAS E INDISPONIBILIDADES]:
+    ${allAbsencesStr}
+    
+    Gere "BOLETIM SEMANAL COMUNICA • ${formatCalendarDate(todayStr)}" com estes blocos: 📌 Em foco, 🗓️ Próximos dias, 👥 Escala da equipe e 💡 Boas notícias.
+    Se uma seção não tiver dados, use uma frase curta e positiva. Mantenha o texto convidativo e fácil de escanear.`;
+
+try {
+    const response = await callGemini(prompt, sysInstruction);
+      setSummaryContent(formatAIText(response));
+    } catch (err) {
+      console.error("Erro na IA:", err);
+      setSummaryContent("Não foi possível estabelecer contato com o serviço de Inteligência Artificial para processar o boletim da semana.");
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  };
+
+  const handleSendChatMessage = async () => {
+    if (!chatInput.trim() || !currentUser) return;
+
+    const userMessage = { role: 'user', text: chatInput };
+    setChatMessages(prev => [...prev, userMessage]);
+    const originalInput = chatInput;
+    setChatInput('');
+    setIsChatLoading(true);
+
+    const rhStaff = employeesList.find(u => getUserDepts(u).includes('rh') || getUserDepts(u).includes('adm'));
+    const rhContactName = rhStaff ? rhStaff.name : 'um Administrador do Portal';
+
+    const userAllowedDepts = currentUser?.isAdmin ? departmentsList.map(d => d.id) : getUserDepts(currentUser);
+
+    const sysInstruction = `Você é o ComunicaAI, assistente virtual da plataforma Comunica.
+    Use somente os dados fornecidos no prompt. Para perguntas sobre quem está de férias agora, use exclusivamente a lista "FÉRIAS VIGENTES AGORA" e nunca o histórico de ausências ou publicações antigas. Para agenda, considere somente "EVENTOS DE HOJE E FUTUROS". Nunca apresente evento passado como se ainda fosse futuro ou vigente.
+    Responda em português, de forma direta, humana e agradável. Organize a resposta em blocos breves, com uma frase de abertura e, quando ajudar, subtítulos com emoji e linhas curtas iniciadas por •. Não use Markdown: nunca use asteriscos, #, crases, tabelas ou códigos.`;
+
+    const parseContentDate = (item) => {
+      if (typeof item.timestamp === 'number') return new Date(item.timestamp);
+      const value = String(item.date || '').replace(' às ', ' ');
+      const match = value.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (match) return new Date(`${match[3]}-${match[2]}-${match[1]}T00:00:00`);
+      return null;
+    };
+    const currentDate = new Date(`${todayStr}T00:00:00`);
+    const recentLimit = new Date(currentDate);
+    recentLimit.setDate(recentLimit.getDate() - 30);
+    const eventLimit = new Date(currentDate);
+    eventLimit.setDate(eventLimit.getDate() + 90);
+
+    const activeAnnouncementsText = announcements
+      .filter(announcement => {
+        const date = parseContentDate(announcement);
+        return date && date >= recentLimit && date <= currentDate;
+      })
+      .map(a => `- [Aviso recente] Categoria: ${a.category}. Título: ${a.title}. Conteúdo: ${a.content}`).join('\n');
+    
+    const activeSectorPostsText = sectorPosts
+      .filter(post => {
+        const date = parseContentDate(post);
+        return userAllowedDepts.includes(post.dept) && date && date >= recentLimit && date <= currentDate;
+      })
+      .map(p => `- [Post recente do setor: ${p.dept.toUpperCase()}] Por ${p.author}. Título: ${p.title}. Conteúdo: ${p.content}`).join('\n');
+      
+    const currentAbsencesText = absences.filter(ab => {
+      const start = ab.startDate || ab.date;
+      const end = ab.endDate || ab.date || start;
+      return start && end && todayStr >= start && todayStr <= end;
+    }).map(ab => {
+      const s = ab.startDate || ab.date;
+      const e = ab.endDate || ab.date || s;
+      const dateStr = s === e ? s : `de ${s} até ${e}`;
+      return `- [Ausência Agendada] ${ab.userName} indisponível ${dateStr} das ${ab.startTime} às ${ab.endTime}. Motivo: "${ab.reason}"`;
+    }).join('\n');
+    const currentVacationsText = vacationMembers.length
+      ? vacationMembers.map(user => `- ${user.name} | Setor: ${getUserDepts(user).map(id => departmentsList.find(dept => dept.id === id)?.name || id).join(', ')}`).join('\n')
+      : '- Não há colaboradores em férias hoje.';
+    const activeEventsText = calendarEvents
+      .filter(event => event.date && event.date >= todayStr && new Date(`${event.date}T00:00:00`) <= eventLimit)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(e => `- [Evento de Calendário] Título: ${e.title} na data ${e.date}. Local: ${e.location}. Detalhes: ${e.description}`).join('\n');
+    const activeStaffText = employeesList.map(u => `- Colaborador: ${u.name} | Setores: ${getUserDepts(u).map(dId => departmentsList.find(d => d.id === dId)?.name || dId).join(', ')} | Cargo: ${u.role} | Tipo de Conta: ${u.isAdmin ? 'Admin' : 'Colaborador'}`).join('\n');
+
+    const prompt = `DADOS EM TEMPO REAL DA COMUNICA:
+    
+    [QUADRO DE COLABORADORES ATIVOS]:
+    ${activeStaffText}
+    
+    [AUSÊNCIAS VIGENTES AGORA]:
+    ${currentAbsencesText || '- Nenhuma ausência vigente agora.'}
+
+    [FÉRIAS VIGENTES AGORA]:
+    ${currentVacationsText}
+    
+    [EVENTOS DE HOJE E FUTUROS (PRÓXIMOS 90 DIAS)]:
+    ${activeEventsText || '- Nenhum evento futuro cadastrado no calendário.'}
+    
+    [COMUNICADOS OFICIAIS RECENTES (ÚLTIMOS 30 DIAS)]:
+    ${activeAnnouncementsText || '- Nenhum comunicado recente.'}
+    
+    [POSTAGENS RECENTES NOS CANAIS DE SETOR (ÚLTIMOS 30 DIAS)]:
+    ${activeSectorPostsText || '- Nenhuma postagem recente no setor do usuário.'}
+
+    [USUÁRIO CONVERSANDO ATUALMENTE]:
+    Nome: ${currentUser.name} | Cargo: ${currentUser.role} | Setores: ${getUserDepts(currentUser).map(dId => departmentsList.find(d => d.id === dId)?.name || dId).join(', ')}
+
+    [PERGUNTA DO USUÁRIO]:
+    "${originalInput}"`;
+
+
+try {
+      // Garanta que o final chame apenas a função unificada:
+      const response = await callGemini(prompt, sysInstruction);
+      const formattedResponse = formatAIText(response);
+      setChatMessages(prev => [...prev, { role: 'assistant', text: formattedResponse }]);
+    } catch (err) {
+      console.error("Erro no chat:", err);
+      setChatMessages(prev => [...prev, { role: 'assistant', text: "Infelizmente, tive um problema ao tentar obter respostas da IA. Que tal tentar de novo?" }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const calendarDays = generateMonthDays(currentCalYear, currentCalMonth);
+  const activeDayData = calendarDays.find(d => d.dateString === selectedCalendarDay) || { dayNumber: null, events: [], absences: [], schedules: [] };
+
+  const teamStatus = employeesList.map(user => ({ ...user, currentStatus: getStatusEmTempoReal(user) }));
+  const teamPresenceList = teamStatus.map(user => {
+    const savedPresence = presenceList.find(presence => String(presence.name).toLowerCase() === String(user.name).toLowerCase());
+    return {
+      ...user,
+      dept: savedPresence?.dept || getUserDepts(user)[0] || 'rh',
+      notes: savedPresence?.notes || '',
+      status: savedPresence?.status || user.currentStatus
+    };
+  });
+  const filteredTeamPresenceList = teamPresenceList
+    .filter(colab => colab.name?.toLocaleLowerCase('pt-BR').includes(presenceSearchText.toLocaleLowerCase('pt-BR')))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
+  const isPresenceListExpanded = showAllPresence || Boolean(presenceSearchText.trim());
+  const activeMembers = teamStatus.filter(user => user.currentStatus === 'Presencial' || user.currentStatus === 'Home Office');
+  const offDutyMembers = teamStatus.filter(user => user.currentStatus === 'Folga');
+  const vacationMembers = teamStatus.filter(user => user.currentStatus === 'Férias');
+  const activePresences = activeMembers.length;
+  const offDutyCount = offDutyMembers.length;
+  const vacationCount = vacationMembers.length;
+  const dashboardDetailMembers = dashboardDetail === 'active' ? activeMembers : dashboardDetail === 'offDuty' ? offDutyMembers : vacationMembers;
+  const dashboardDetailTitle = dashboardDetail === 'active' ? 'Membros ativos' : dashboardDetail === 'offDuty' ? 'Colaboradores de folga hoje' : 'Colaboradores em férias';
+  const todayMonthDay = `${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+  const birthdayMembers = employeesList.filter(user => user.birthDate?.slice(5) === todayMonthDay);
+  const newMembers = employeesList.filter(user => {
+    if (!user.hireDate) return false;
+    const joinedAt = new Date(`${user.hireDate}T00:00:00`).getTime();
+    return !Number.isNaN(joinedAt) && Date.now() - joinedAt >= 0 && Date.now() - joinedAt <= 30 * 24 * 60 * 60 * 1000;
+  }).sort((a, b) => String(b.hireDate).localeCompare(String(a.hireDate))).slice(0, 4);
+
+  const userAllowedDepts = currentUser ? (currentUser.isAdmin ? departmentsList.map(d => d.id) : getUserDepts(currentUser)) : [];
+  const accessibleDocuments = documentsList.filter(item => canAccessDocument(item, { allowedDepartments: userAllowedDepts, userId: currentUser?.id, isAdmin: currentUser?.isAdmin }));
+  const availableDocumentFolders = documentFolders(accessibleDocuments);
+  const visibleDocuments = filterDocuments(documentsList, {
+    allowedDepartments: userAllowedDepts,
+    category: documentCategoryFilter,
+    folder: documentFolderFilter,
+    department: documentDepartmentFilter,
+    fileType: documentTypeFilter,
+    reading: documentReadingFilter,
+    review: documentReviewFilter,
+    today: todayStr,
+    search: documentSearch,
+    userId: currentUser?.id,
+    isAdmin: currentUser?.isAdmin,
+    sort: documentSort,
+  });
+  const pendingDocumentReads = accessibleDocuments.filter(item => item.requiredRead && !(item.readBy || []).includes(currentUser?.id)).length;
+  const overdueDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'vencida').length;
+  const upcomingDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'proxima').length;
+  const pollEmployeeIds = employeesList.map(employee => employee.id).filter(Boolean);
+  const pollTimelineEntries = pollTimelineItems(pollsList);
+  const activePollsCount = pollsList.filter(poll => !poll.expiresAt || poll.expiresAt >= todayStr).length;
+  const pollParticipationValues = pollsList.map(poll => pollParticipation(poll, pollEmployeeIds));
+  const pollAverageParticipation = pollParticipationValues.length ? Math.round(pollParticipationValues.reduce((sum, value) => sum + value, 0) / pollParticipationValues.length) : 0;
+  const pendingPollResponses = pollsList.filter(poll => (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[currentUser?.id] === undefined).length;
+  const pollFormGroups = Object.values(pollsList.filter(poll => poll.formId).reduce((groups, poll) => {
+    (groups[poll.formId] ||= []).push(poll);
+    return groups;
+  }, {}));
+  const visiblePolls = pollsList.filter(poll => {
+    const expired = Boolean(poll.expiresAt && poll.expiresAt < todayStr);
+    const matchesStatus = pollViewFilter === 'Todas'
+      || (pollViewFilter === 'Ativas' && !expired)
+      || (pollViewFilter === 'Encerradas' && expired)
+      || (pollViewFilter === 'Pendentes' && !expired && poll.votes?.[currentUser?.id] === undefined)
+      || (pollViewFilter === 'Formulários' && Boolean(poll.formId));
+    const matchesSearch = `${poll.formTitle || ''} ${poll.question || ''}`.toLocaleLowerCase('pt-BR').includes(pollSearch.trim().toLocaleLowerCase('pt-BR'));
+    return matchesStatus && matchesSearch;
+  }).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0) || Number(a.formOrder || 0) - Number(b.formOrder || 0));
+  
+  const isManager = currentUser && (currentUser.isAdmin || ['coordenador', 'encarregado', 'supervis', 'diretor', 'rh', 'gest'].some(r => currentUser.role.toLowerCase().includes(r)));
+  const isProductionSupervisor = Boolean(currentUser?.role && /encarregado.*produ|produ.*encarregado/i.test(currentUser.role));
+  const canAccessProductivity = Boolean(currentUser && (currentUser.isAdmin || currentUser.prodGroup || isProductionSupervisor));
+  const canManageAllProductivity = Boolean(currentUser && (currentUser.isAdmin || isProductionSupervisor));
+  const bulkSchedulePreview = bulkScheduleOccurrences();
+  const bulkScheduleVisibleEmployees = bulkScheduleEligibleEmployees();
+  const bulkScheduleConsecutiveDays = civilDateDaysInclusive(bulkSchedule.startDate, bulkSchedule.endDate);
+  const automaticScheduleReusablePatterns = new Set(workSchedules.filter(item => bulkSchedule.userIds.some(userId => String(userId) === String(item.userId)) && ['Presencial', 'Home Office'].includes(item.status) && item.shiftStart && (item.baseShiftEnd || item.shiftEnd)).map(item => String(item.userId))).size;
+  const automaticScheduleDates = [...new Set(automaticScheduleProposal.map(item => item.date))].sort();
+  const automaticScheduleVisibleDate = automaticScheduleDates.includes(automaticSchedulePreviewDate) ? automaticSchedulePreviewDate : (automaticScheduleDates[0] || '');
+  const automaticScheduleVisibleRows = automaticScheduleProposal.filter(item => item.date === automaticScheduleVisibleDate).sort((a, b) => a.userName.localeCompare(b.userName, 'pt-BR'));
+  const automaticScheduleWorkingRows = automaticScheduleVisibleRows.filter(item => ['Presencial', 'Home Office'].includes(item.status));
+  const automaticScheduleDayHours = automaticScheduleWorkingRows.reduce((sum, item) => sum + automaticScheduleRowHours(item).total, 0);
+  const automaticScheduleEmployeeTotals = [...new Set(automaticScheduleProposal.map(item => item.userId))].map(userId => {
+    const rows = automaticScheduleProposal.filter(item => item.userId === userId);
+    const totals = rows.reduce((result, item) => { const hours = automaticScheduleRowHours(item); return { regular: result.regular + hours.regular, extra: result.extra + hours.extra }; }, { regular: 0, extra: 0 });
+    const target = [...new Map(rows.map(row => [row.weekKey, Number(row.weekHoursTarget) || 0])).values()].reduce((sum, hours) => sum + hours, 0);
+    const total = totals.regular + totals.extra;
+    return { userId, userName: rows[0]?.userName || '', ...totals, target, balance: total - target, total, projectedOvertime: Math.max(0, total - target), missingHours: Math.max(0, target - total) };
+  }).sort((a, b) => a.userName.localeCompare(b.userName, 'pt-BR'));
+  const automaticScheduleDetectedHolidays = calendarEvents.filter(event => event.date >= bulkSchedule.startDate && event.date <= bulkSchedule.endDate && normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).sort((a, b) => a.date.localeCompare(b.date));
+  const automaticScheduleIssues = [
+    ...scheduleRuleIssues(automaticScheduleProposal, workSchedules),
+    ...(automaticScheduleProposal.length && automaticScheduleProposalInput !== automaticScheduleInput ? [{ key: 'stale', date: automaticScheduleProposal[0].date, blocking: true, message: 'As regras ou os dados do planejamento mudaram. Gere uma nova simulação.' }] : []),
+  ];
+  const createRecurringRuleFromDay = item => {
+    const groups = automaticScheduleRules.ruleGroups || [];
+    const assigned = groups.find(group => group.userIds.includes(String(item.userId)));
+    const group = assigned || { id: `group-${globalThis.crypto.randomUUID()}`, name: `Escala de ${item.userName}`.slice(0, 80), userIds: [String(item.userId)], dayRules: [] };
+    const rule = { ...newDayRule(), name: `Regra de ${item.userName}`.slice(0, 80), weekdays: [new Date(`${item.date}T00:00:00`).getDay()], userIds: [String(item.userId)], action: ['Presencial', 'Home Office'].includes(item.status) ? 'work' : 'rest', shiftStart: item.shiftStart || automaticScheduleRules.shiftStart, shiftEnd: item.shiftEnd || automaticScheduleRules.shiftEnd, breakStart: item.breakStart || '', breakEnd: item.breakEnd || '', status: item.status === 'Home Office' ? 'Home Office' : 'Presencial' };
+    const updated = { ...group, dayRules: [...group.dayRules, rule] };
+    setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups: assigned ? groups.map(entry => entry.id === group.id ? updated : entry) : [...groups, updated] }));
+    setAutomaticScheduleEditorFocus({ groupId: group.id, ruleId: rule.id });
+    setAutomaticScheduleRuleTab('rules');
+    setAutomaticScheduleProposal([]);
+    triggerNotification('Regra recorrente criada para revisão. Ajuste a repetição, salve as regras e simule novamente.');
+  };
+  const renderAutomaticScheduleRow = item => {
+    const hours = automaticScheduleRowHours(item);
+    const working = ['Presencial', 'Home Office'].includes(item.status);
+    const fieldClass = 'w-[94px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-slate-700 disabled:bg-slate-100 disabled:text-slate-300';
+    return <tr key={item.key} className="border-t border-slate-100 align-middle hover:bg-slate-50/70">
+      <td className="px-3 py-2.5"><strong className="block text-slate-800">{item.userName}</strong><span className="text-[8px] text-slate-400">{departmentsList.find(dept => dept.id === item.dept)?.name || 'Sem setor'}{item.holiday ? ' · feriado' : ''}</span><div className="mt-1 flex flex-wrap gap-1">{item.reusedPattern && <span className="w-fit rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black uppercase text-emerald-700">Padrão anterior</span>}{item.autoExtra && <span className="w-fit rounded-full bg-violet-100 px-1.5 py-0.5 text-[7px] font-black uppercase text-violet-700">Complemento automático</span>}</div></td>
+      <td className="max-w-[230px] px-3 py-2 text-[10px]"><strong className="block text-cyan-900">{item.groupName || 'Padrão da empresa'}</strong><span className="mt-1 block text-slate-600">{item.ruleReason || 'Jornada padrão e distribuição de folgas'}</span>{item.ruleConflicts?.length > 0 && <span className="mt-1 block font-bold text-rose-700">Conflito: {item.ruleConflicts.join(' / ')}. Corrija a regra ou ajuste este dia.</span>}<span className="mt-1 block text-[9px] text-slate-400">Editar os campos altera somente este dia.</span><button type="button" className="mt-2 text-[10px] font-bold text-cyan-800 underline" onClick={() => createRecurringRuleFromDay(item)}>Criar regra recorrente a partir deste dia</button></td>
+      <td className="px-2 py-2"><select value={item.status} onChange={event => { const status = event.target.value; const becomesWorking = ['Presencial', 'Home Office'].includes(status); const start = item.shiftStart || automaticScheduleRules.shiftStart; const breakStart = item.breakStart || automaticScheduleRules.breakStart; const breakEnd = item.breakEnd || automaticScheduleRules.breakEnd; const interval = scheduleIntervalMinutes(breakStart, breakEnd); const baseMinutes = scheduleTimeToMinutes(start) + Math.round((scheduleTextToHours(automaticScheduleWeeklyHoursText) / Number(automaticScheduleRules.workDaysPerWeek)) * 60) + interval; updateAutomaticScheduleRow(item.key, { status, shiftStart: becomesWorking ? start : '', shiftEnd: becomesWorking ? (item.shiftEnd || scheduleMinutesToTime(baseMinutes)) : '', breakStart: becomesWorking ? breakStart : '', breakEnd: becomesWorking ? breakEnd : '', breakMinutes: becomesWorking ? interval : 0, extraHours: becomesWorking ? Number(item.extraHours || 0) : 0 }); }} className="w-full min-w-[112px] rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold text-slate-700"><option>Presencial</option><option>Home Office</option><option>Folga</option><option>Feriado</option></select></td>
+      <td className="px-2 py-2"><input aria-label={`Entrada de ${item.userName}`} type="time" disabled={!working} value={item.shiftStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftStart: event.target.value })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><input aria-label={`Saída base de ${item.userName}`} type="time" disabled={!working} value={item.shiftEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftEnd: event.target.value })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><input aria-label={`Início do intervalo de ${item.userName}`} type="time" disabled={!working} value={item.breakStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakStart: event.target.value, breakMinutes: scheduleIntervalMinutes(event.target.value, item.breakEnd) })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><input aria-label={`Fim do intervalo de ${item.userName}`} type="time" disabled={!working} value={item.breakEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakEnd: event.target.value, breakMinutes: scheduleIntervalMinutes(item.breakStart, event.target.value) })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><div className="flex items-center gap-1"><input aria-label={`Hora extra de ${item.userName}`} type="time" disabled={!working} min="00:00" max="12:00" value={scheduleDurationToText(item.extraHours)} onChange={event => updateAutomaticScheduleRow(item.key, { extraHours: scheduleTextToHours(event.target.value) })} className={fieldClass} /><button type="button" disabled={!working || !(Number(item.extraHours) > 0)} onClick={() => repeatAutomaticScheduleOvertime(item)} title="Repetir a hora extra nos próximos dias de trabalho" className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-2 font-bold text-violet-700 disabled:cursor-not-allowed disabled:opacity-30">Repetir →</button></div></td>
+      <td className="px-2 py-2"><strong className="block text-xs text-slate-800">{working ? hours.actualEnd : '—'}</strong><span className="text-[8px] text-slate-400">saída final</span></td>
+      <td className="px-3 py-2 text-right"><strong className="block text-sm text-slate-900">{working ? scheduleDurationToText(hours.total) : '—'}</strong>{working && <span className="text-[8px] text-slate-400">base {scheduleDurationToText(hours.regular)} + extra {scheduleDurationToText(hours.extra)}</span>}</td>
+    </tr>;
+  };
+  const productivityAuthors = [...new Set(productivityLogs.map(log => log.authorName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const visibleProductivityLogs = productivityLogs.filter(log => {
+    const allowedGroup = canManageAllProductivity || log.group === currentUser?.prodGroup;
+    const matchesDate = log.date >= prodFilterStart && log.date <= prodFilterEnd;
+    const matchesGroup = prodFilterGroup === 'Todos' || log.group === prodFilterGroup;
+    const searchableText = `${log.productDescription || ''} ${log.notes || ''} ${log.group || ''}`.toLocaleLowerCase('pt-BR');
+    const matchesDescription = searchableText.includes(prodFilterDescription.trim().toLocaleLowerCase('pt-BR'));
+    const matchesAuthor = prodFilterAuthor === 'Todos' || log.authorName === prodFilterAuthor;
+    return allowedGroup && matchesDate && matchesGroup && matchesDescription && matchesAuthor;
+  });
+
+  // Normalização de mensagens (suporte ao formato antigo 1-para-1 e novo formato em Grupo)
+  const getNormalizedMessages = () => {
+    return privateMessages.map(m => {
+      if (m.threadId) return m;
+      const participants = [m.senderId, m.receiverId];
+      const threadId = `legacy-${[m.senderId, m.receiverId].sort().join('-')}`;
+      const readBy = m.read ? participants : [m.senderId];
+      return { ...m, threadId, subject: 'Conversa sem Assunto', participants, readBy, isLegacy: true };
+    });
+  };
+
+  const normMessages = getNormalizedMessages();
+  const unreadMessages = normMessages.filter(m => m.participants.includes(currentUser?.id) && !m.readBy.includes(currentUser?.id));
+  const getMessageTimestamp = (message) => {
+    if (typeof message.timestamp === 'number') return message.timestamp;
+    const normalized = String(message.date || '').replace(' às ', ' ');
+    const [datePart, timePart = '00:00'] = normalized.split(' ');
+    const [day, month, year] = datePart.split('/');
+    const parsed = new Date(`${year}-${month}-${day}T${timePart}`).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  const formatMessageDateTime = (message) => {
+    const timestamp = getMessageTimestamp(message);
+    if (!timestamp) return message.date || '';
+    const date = new Date(timestamp);
+    const today = new Date();
+    const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return date.toDateString() === today.toDateString() ? `Hoje, ${time}` : `${date.toLocaleDateString('pt-BR')}, ${time}`;
+  };
+  const formatMessageDay = (message) => {
+    const timestamp = getMessageTimestamp(message);
+    if (!timestamp) return 'Data não informada';
+    const date = new Date(timestamp);
+    const today = new Date();
+    if (date.toDateString() === today.toDateString()) return 'Hoje';
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return 'Ontem';
+    return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+  const formatDueDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR') : 'Sem prazo definido';
+  const getThreadMetadata = (threadId) => {
+    const messages = normMessages
+      .filter(message => message.threadId === threadId)
+      .sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
+    // Mesmo antes de existir prazo, a primeira mensagem já é a fonte do assunto
+    // e dos participantes. Assim o primeiro registro de histórico é autorizado.
+    const firstMessage = messages[0] || {};
+    const firstWithMetadata = messages.find(message => message.dueDate || message.completedAt || message.initialDueDate);
+    return { ...firstMessage, ...(firstWithMetadata || {}), messages };
+  };
+  const getThreadOpener = (threadId) => {
+    const messages = getThreadMetadata(threadId).messages
+      .filter(message => message.senderId && message.senderId !== 'system')
+      .sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
+    return messages[0] || null;
+  };
+  const isThreadOpenedByCurrentUser = (threadId) => getThreadOpener(threadId)?.senderId === currentUser?.id;
+  const getThreadDeadlineStatus = (threadId) => {
+    const meta = getThreadMetadata(threadId);
+    if (!meta.dueDate) return { label: 'Sem prazo', className: 'bg-slate-100 text-slate-500 border-slate-200' };
+    const hasExtension = (meta.dueDateHistory || []).some(item => item.from && item.to && item.from !== item.to);
+    if (meta.completedAt) {
+      const completedDay = new Date(meta.completedAt).toISOString().slice(0, 10);
+      if (completedDay <= meta.dueDate) return { label: 'Concluída no prazo', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      if (hasExtension) return { label: 'Concluída com prorrogação', className: 'bg-violet-50 text-violet-700 border-violet-200' };
+      return { label: 'Concluída em atraso', className: 'bg-rose-50 text-rose-700 border-rose-200' };
+    }
+    if (todayStr > meta.dueDate) return { label: 'Em atraso', className: 'bg-rose-50 text-rose-700 border-rose-200' };
+    if (hasExtension) return { label: 'Prazo prorrogado', className: 'bg-violet-50 text-violet-700 border-violet-200' };
+    return { label: 'Em andamento', className: 'bg-amber-50 text-amber-700 border-amber-200' };
+  };
+  const isThreadArchived = (threadId) => {
+    if (!currentUser || !threadId) return false;
+    const messages = normMessages.filter(message => message.threadId === threadId);
+    if (messages.length === 0) return false;
+    const latestMessage = messages.reduce((latest, message) =>
+      getMessageTimestamp(message) > getMessageTimestamp(latest) ? message : latest, messages[0]);
+    return (latestMessage.archivedBy || []).includes(currentUser.id);
+  };
+
+  const companyServiceCatalog = mergeServiceCatalogSettings(serviceCatalogSettings);
+  const activeServiceCatalog = companyServiceCatalog.filter(category => category.active);
+  const getCompanyServiceCategory = categoryId => companyServiceCatalog.find(category => category.id === categoryId) || getServiceCategory(categoryId);
+
+  const getAllowedMessageRecipients = () => {
+    if (!currentUser) return [];
+    if (currentUser.isAdmin) return messageContacts.filter(u => u.id !== currentUser.id);
+
+    const myDepts = getUserDepts(currentUser);
+    const allowedIds = new Set();
+    
+    messageContacts.forEach(u => {
+      if (u.id !== currentUser.id && u.isDeveloper) {
+        allowedIds.add(u.id);
+        return;
+      }
+      if (u.id !== currentUser.id && u.isAdmin) {
+        if (getUserDepts(u).some(d => myDepts.includes(d))) allowedIds.add(u.id);
+      }
+    });
+
+    normMessages.forEach(m => {
+      if (m.participants.includes(currentUser.id)) {
+        m.participants.forEach(p => { if (p !== currentUser.id) allowedIds.add(p); });
+      }
+    });
+
+    return messageContacts.filter(u => allowedIds.has(u.id));
+  };
+
+  const getMessageRecipientDepartments = (user) => getUserDepts(user)
+    .map(deptId => departmentsList.find(dept => dept.id === deptId)?.name)
+    .filter(Boolean);
+  const filterMessageRecipients = (searchText = '') => {
+    const normalizedSearch = String(searchText).trim().toLocaleLowerCase('pt-BR');
+    return getAllowedMessageRecipients()
+      .filter(user => {
+        if (!normalizedSearch) return true;
+        const searchable = [user.name, user.role, ...getMessageRecipientDepartments(user)]
+          .filter(Boolean)
+          .join(' ')
+          .toLocaleLowerCase('pt-BR');
+        return searchable.includes(normalizedSearch);
+      })
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
+  };
+
+  const getServiceRecipientCandidates = (categoryOrId) => {
+    const category = typeof categoryOrId === 'string' ? getCompanyServiceCategory(categoryOrId) : categoryOrId;
+    if (!category || !currentUser) return [];
+    const configuredRecipients = (category.defaultRecipientIds || [])
+      .map(userId => employeesList.find(user => user.id === userId))
+      .filter(user => user && user.id !== currentUser.id && !user.isDeveloper);
+    const terms = category.departmentTerms.map(normalizedText);
+    const scored = employeesList
+      .filter(user => user.id !== currentUser.id && !user.isDeveloper)
+      .map(user => {
+        const departments = getMessageRecipientDepartments(user);
+        const searchable = normalizedText(`${user.role || ''} ${departments.join(' ')} ${getUserDepts(user).join(' ')}`);
+        const areaMatch = terms.some(term => searchable.includes(term));
+        const managerMatch = Boolean(user.isAdmin || /coordenador|encarregado|supervis|diretor|gestor|gerente|rh/i.test(user.role || ''));
+        return { user, score: (areaMatch ? 4 : 0) + (managerMatch ? 2 : 0) + (user.isAdmin ? 1 : 0) };
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score || String(a.user.name || '').localeCompare(String(b.user.name || ''), 'pt-BR', { sensitivity: 'base' }));
+    const matched = scored.filter(item => item.score >= 4);
+    const suggested = (matched.length ? matched : scored).map(item => item.user);
+    return [...new Map([...configuredRecipients, ...suggested].map(user => [user.id, user])).values()].slice(0, 12);
+  };
+
+  const getServiceRecipientSuggestionReason = (user, categoryOrId) => {
+    const category = typeof categoryOrId === 'string' ? getCompanyServiceCategory(categoryOrId) : categoryOrId;
+    if (!category || !user) return 'Disponível para seleção manual';
+    if ((category.defaultRecipientIds || []).includes(user.id)) return 'Responsável padrão definido pelo administrador';
+    const searchable = normalizedText(`${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`);
+    if ((category.departmentTerms || []).map(normalizedText).some(term => searchable.includes(term))) return 'Sugerido por setor ou função compatível';
+    if (user.isAdmin || /coordenador|encarregado|supervis|diretor|gestor|gerente|rh/i.test(user.role || '')) return 'Sugerido pelo perfil de gestão';
+    return 'Disponível para seleção manual';
+  };
+
+  const getServiceRecipientOptions = (category, searchText = '') => {
+    const suggestions = getServiceRecipientCandidates(category);
+    const suggestionIds = new Set(suggestions.map(user => user.id));
+    const search = normalizedText(searchText);
+    const all = employeesList
+      .filter(user => user.id !== currentUser?.id && !user.isDeveloper)
+      .filter(user => !search || normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(search))
+      .sort((a, b) => (suggestionIds.has(b.id) ? 1 : 0) - (suggestionIds.has(a.id) ? 1 : 0) || String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+    return all.slice(0, 40);
+  };
+
+  const openServiceRequestForm = categoryId => {
+    const category = getCompanyServiceCategory(categoryId);
+    if (!category?.active) {
+      triggerNotification('Este serviço está indisponível no catálogo da empresa.', 'error');
+      return;
+    }
+    const candidates = getServiceRecipientCandidates(category);
+    const configuredIds = (category.defaultRecipientIds || []).filter(userId => candidates.some(user => user.id === userId));
+    setServiceDraft({ ...emptyServiceRequest(categoryId), recipientIds: configuredIds.length ? configuredIds : (candidates[0]?.id ? [candidates[0].id] : []) });
+    setServiceRecipientSearch('');
+    setServiceFormOpen(true);
+  };
+
+  const openServiceSettings = () => {
+    setServiceSettingsDraft(sanitizeServiceCatalogSettings(serviceCatalogSettings));
+    setServiceSettingsOpen(true);
+  };
+
+  const updateServiceSetting = (categoryId, changes) => {
+    setServiceSettingsDraft(previous => ({
+      ...previous,
+      items: previous.items.map(item => item.id === categoryId ? { ...item, ...changes } : item),
+    }));
+  };
+
+  const updateServiceGuide = (categoryId, guideId, changes) => {
+    const current = serviceSettingsDraft.items.find(item => item.id === categoryId);
+    updateServiceSetting(categoryId, {
+      guides: (current?.guides || []).map(guide => guide.id === guideId ? { ...guide, ...changes } : guide),
+    });
+  };
+
+  const addServiceGuide = categoryId => {
+    const current = serviceSettingsDraft.items.find(item => item.id === categoryId);
+    if ((current?.guides || []).length >= 8) {
+      triggerNotification('Cada serviço pode ter até oito orientações rápidas.', 'error');
+      return;
+    }
+    updateServiceSetting(categoryId, {
+      guides: [...(current?.guides || []), { id: `${categoryId}-guide-${Date.now()}`, title: '', content: '' }],
+    });
+  };
+
+  const removeServiceGuide = (categoryId, guideId) => {
+    const current = serviceSettingsDraft.items.find(item => item.id === categoryId);
+    updateServiceSetting(categoryId, { guides: (current?.guides || []).filter(guide => guide.id !== guideId) });
+  };
+
+  const handleSaveServiceSettings = async () => {
+    if (isSavingServiceSettings || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return;
+    const incompleteGuide = serviceSettingsDraft.items.some(item => (item.guides || []).some(guide => !String(guide.title || '').trim() || !String(guide.content || '').trim()));
+    if (incompleteGuide) {
+      triggerNotification('Preencha o título e o conteúdo de todas as orientações rápidas.', 'error');
+      return;
+    }
+    setIsSavingServiceSettings(true);
+    const normalized = sanitizeServiceCatalogSettings(serviceSettingsDraft);
+    const validUserIds = new Set(employeesList.map(user => user.id));
+    normalized.items = normalized.items.map(item => ({
+      ...item,
+      defaultRecipientIds: item.defaultRecipientIds.filter(userId => validUserIds.has(userId)),
+    }));
+    const saved = await saveDoc('settings', 'service-catalog', {
+      ...normalized,
+      updatedAt: Date.now(),
+      updatedBy: currentUser?.name || 'Administrador',
+      updatedById: currentUser?.id || '',
+    });
+    setIsSavingServiceSettings(false);
+    if (!saved) return;
+    setServiceCatalogSettings(normalized);
+    setServiceSettingsOpen(false);
+    triggerNotification('Catálogo de serviços atualizado para a empresa.');
+  };
+
+  const handleCreateServiceRequest = async event => {
+    event.preventDefault();
+    if (isCreatingServiceRequest || !currentUser) return;
+    const category = getCompanyServiceCategory(serviceDraft.categoryId);
+    if (!category?.active || !serviceDraft.subject.trim() || serviceDraft.description.trim().length < 10 || !serviceDraft.recipientIds.length) {
+      triggerNotification('Preencha o assunto, a descrição e escolha ao menos um responsável.', 'error');
+      return;
+    }
+    setIsCreatingServiceRequest(true);
+    const threadId = `thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const messageId = `msg-${String(threadId).replace(/^thread-/, '')}`;
+    const participants = [...new Set([currentUser.id, ...serviceDraft.recipientIds])];
+    const dueDate = serviceDueDate(todayStr, category, serviceDraft.priority);
+    const priorityLabel = SERVICE_PRIORITIES.find(item => item.id === serviceDraft.priority)?.label || 'Normal';
+    const selectedAssignee = employeesList.find(user => user.id === serviceDraft.recipientIds[0]);
+    const description = serviceDraft.description.trim();
+    const extraDetail = serviceDraft.extraDetail.trim();
+    const message = {
+      id: messageId,
+      threadId,
+      subject: serviceDraft.subject.trim(),
+      participants,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      content: `${description}${extraDetail ? `\n\nInformação complementar: ${extraDetail}` : ''}`,
+      attachment: null,
+      date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now(),
+      readBy: [currentUser.id],
+      dueDate,
+      initialDueDate: dueDate,
+      dueDateHistory: [],
+      completedAt: null,
+      completedBy: null,
+      ticketNumber: null,
+      serviceRequest: true,
+      serviceCategoryId: category.id,
+      serviceCategory: category.label,
+      servicePriority: serviceDraft.priority,
+      servicePriorityLabel: priorityLabel,
+      serviceRequiresApproval: category.requiresApproval,
+      serviceDecision: '',
+      serviceDecisionBy: '',
+      serviceDecisionAt: null,
+      serviceStatus: category.requiresApproval ? 'approval' : 'open',
+      serviceRequestedAt: Date.now(),
+      serviceSlaDays: category.slaDays,
+      serviceExtraDetail: extraDetail,
+      serviceAssigneeId: selectedAssignee?.id || '',
+      serviceAssigneeName: selectedAssignee?.name || '',
+      serviceStartedAt: null,
+      serviceWaitingSince: null,
+      servicePromisedDate: '',
+      serviceProgress: 0,
+      serviceProgressNote: '',
+      serviceProgressUpdatedAt: null,
+      serviceProgressUpdatedBy: '',
+    };
+    try {
+      if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
+      const response = await httpsCallable(functionsClient, 'createConversation')({ appId, companyId: activeCompany?.id, message });
+      if (response.data?.created !== true || !Number(response.data?.ticketNumber)) throw new Error('Solicitação não confirmada.');
+      message.ticketNumber = Number(response.data.ticketNumber);
+      setServiceFormOpen(false);
+      setServiceDraft(emptyServiceRequest());
+      setActiveThreadId(threadId);
+      setThreadHeaderExpanded(true);
+      setShowArchivedThreads(false);
+      setShowMessagesModal(true);
+      triggerNotification(`Solicitação #${String(message.ticketNumber).padStart(6, '0')} aberta com sucesso.`);
+    } catch (error) {
+      console.error('Falha ao abrir solicitação de serviço', error);
+      triggerNotification('Não foi possível abrir a solicitação. Seus dados foram preservados para uma nova tentativa.', 'error');
+    } finally {
+      setIsCreatingServiceRequest(false);
+    }
+  };
+
+  const openPlatformSupport = () => {
+    if (!currentUser || currentUser.isDeveloper) return;
+    setActiveThreadId(null);
+    setIsComposingMsg(true);
+    setMsgRecipientIds([PLATFORM_SUPPORT.id]);
+    setConversationDraftThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    setMsgSearchText('');
+    setMsgSubject(`Suporte — ${activeCompany?.name || 'Minha empresa'}`);
+    setMsgText('');
+    setMsgAttachment(null);
+    setMsgDueDate('');
+    setShowMsgSuggestions(false);
+    setShowArchivedThreads(false);
+    setMobileMenuOpen(false);
+    setShowMessagesModal(true);
+  };
+
+  const handleMessageAttachment = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!isComposingMsg && activeThreadId && getThreadMetadata(activeThreadId).completedAt) {
+      triggerNotification('Esta conversa foi concluída. A pessoa que a abriu pode reabri-la durante a avaliação.', 'error');
+      e.target.value = '';
+      return;
+    }
+    if (messageUploadInFlight.current) return;
+    messageUploadInFlight.current = true;
+    setIsUploadingMessageAttachment(true);
+    const previousAttachment = msgAttachment;
+    setMsgAttachment(null);
+    try {
+      triggerNotification('Enviando anexo para a nuvem...');
+      let attachmentThreadId = activeThreadId;
+      if (isComposingMsg) {
+        attachmentThreadId = conversationDraftThreadId || `thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        if (!conversationDraftThreadId) setConversationDraftThreadId(attachmentThreadId);
+      }
+      const messageId = isComposingMsg
+        ? `msg-${String(attachmentThreadId).replace(/^thread-/, '')}`
+        : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const uploaded = await uploadFileToStorage(file, 'attachments', { messageId, threadId: attachmentThreadId });
+      if (uploaded?.url) {
+        setMsgAttachment({
+          name: file.name || 'arquivo_anexo',
+          type: resolveUploadContentType(file),
+          data: uploaded.url,
+          storagePath: uploaded.storagePath,
+          messageId,
+        });
+        if (previousAttachment) await deleteStoredFile(previousAttachment);
+        triggerNotification('Anexo salvo na nuvem com sucesso!');
+        return;
+      }
+      throw new Error('Armazenamento de anexos indisponível.');
+    } catch (error) {
+      console.error('Erro no envio do anexo:', error);
+      if (previousAttachment) setMsgAttachment(previousAttachment);
+      triggerNotification('Não foi possível salvar o anexo na nuvem.', 'error');
+    } finally {
+      messageUploadInFlight.current = false;
+      setIsUploadingMessageAttachment(false);
+    }
+  };
+
+  const discardPendingMessageAttachment = async () => {
+    const pendingAttachment = msgAttachment;
+    setMsgAttachment(null);
+    if (pendingAttachment && !await deleteStoredFile(pendingAttachment)) {
+      triggerNotification('O anexo foi retirado da mensagem, mas a limpeza na nuvem será concluída depois.', 'warning');
+    }
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!isComposingMsg && activeThreadId && getThreadMetadata(activeThreadId).completedAt) {
+      triggerNotification('Esta conversa está concluída e não aceita novas mensagens. Aguarde a avaliação ou a reabertura.', 'error');
+      return;
+    }
+    if (messageUploadInFlight.current) {
+      triggerNotification('Aguarde o envio do anexo antes de publicar a mensagem.', 'error');
+      return;
+    }
+    if (!msgText.trim() && !msgAttachment) return;
+    if (messageSendInFlight.current) {
+      triggerNotification('A mensagem já está sendo enviada. Aguarde a confirmação.', 'error');
+      return;
+    }
+    messageSendInFlight.current = true;
+    setIsSendingMessage(true);
+    try {
+    let threadId = activeThreadId;
+    let participants = [];
+    let subject = msgSubject;
+    let dueDate = msgDueDate;
+    let initialDueDate = msgDueDate;
+    let dueDateHistory = [];
+    let completedAt = null;
+    let completedBy = null;
+
+    if (isComposingMsg) {
+      if (!msgRecipientIds.length || !msgSubject.trim()) return;
+      threadId = conversationDraftThreadId || `thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      participants = [...new Set([currentUser.id, ...msgRecipientIds])];
+    } else {
+      const activeMsgs = normMessages.filter(m => m.threadId === activeThreadId);
+      if (activeMsgs.length > 0) {
+        participants = activeMsgs[0].participants;
+        subject = activeMsgs[0].subject;
+        dueDate = activeMsgs[0].dueDate || '';
+        initialDueDate = activeMsgs[0].initialDueDate || dueDate;
+        dueDateHistory = activeMsgs[0].dueDateHistory || [];
+        completedAt = activeMsgs[0].completedAt || null;
+        completedBy = activeMsgs[0].completedBy || null;
+      }
+    }
+
+    const msgId = msgAttachment?.messageId || (isComposingMsg
+      ? `msg-${String(threadId).replace(/^thread-/, '')}`
+      : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    if (!participants.length) {
+      triggerNotification('Aguarde o carregamento da conversa antes de enviar.', 'error');
+      return;
+    }
+    const newMsg = {
+      id: msgId,
+      threadId,
+      subject,
+      participants,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      content: msgText,
+      attachment: msgAttachment || null,
+date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now(),
+      readBy: [currentUser.id],
+      dueDate,
+      initialDueDate,
+      dueDateHistory,
+      completedAt,
+      completedBy,
+      ticketNumber: isComposingMsg ? null : Number(getThreadMetadata(activeThreadId).ticketNumber || 0) || null,
+      replyTo: replyingToMessage ? messageReplySnapshot(replyingToMessage) : null,
+      mentions: findMentionedParticipantIds(msgText, participants.map(id => messageContacts.find(user => user.id === id)).filter(Boolean)),
+      likedBy: [],
+      savedBy: [],
+      highlightedBy: [],
+      activity: null,
+    };
+
+    if (isFirebaseAvailable && dbUser) {
+      if (isComposingMsg) {
+        try {
+          const response = await httpsCallable(functionsClient, 'createConversation')({appId, companyId: activeCompany?.id, message: newMsg});
+          if (response.data?.created !== true || !Number(response.data?.ticketNumber)) throw new Error('Chamado não confirmado.');
+          newMsg.ticketNumber = Number(response.data.ticketNumber);
+        } catch (error) {
+          console.error('Falha ao gerar o número sequencial do chamado', error);
+          triggerNotification('Não foi possível abrir o chamado com numeração segura. Tente novamente.', 'error');
+          return;
+        }
+      } else if (!await saveDoc('messages', msgId, newMsg)) return;
+    } else {
+      if (isComposingMsg) newMsg.ticketNumber = new Set(normMessages.map(message => message.threadId)).size + 1;
+      setPrivateMessages([newMsg, ...privateMessages]);
+    }
+    
+    setMsgText('');
+    setMsgAttachment(null);
+    setReplyingToMessage(null);
+    setMessageFocusFilter('all');
+    if (isComposingMsg) {
+      setIsComposingMsg(false);
+      setActiveThreadId(threadId);
+      setThreadHeaderExpanded(false);
+      setMsgSubject('');
+      setMsgDueDate('');
+      setMsgRecipientIds([]);
+      setConversationDraftThreadId('');
+      setMsgSearchText('');
+    }
+    } finally {
+      messageSendInFlight.current = false;
+      setIsSendingMessage(false);
+    }
+  };
+
+  const updateMessageFeatures = async (message, changes, successText = '') => {
+    if (!message?.id || message.senderId === 'system') return false;
+    if (!await updateDocField('messages', message.id, changes)) return false;
+    if (successText) triggerNotification(successText);
+    return true;
+  };
+
+  const handleToggleMessageLike = message => updateMessageFeatures(message, { likedBy: toggleMessageUser(message.likedBy, currentUser.id) });
+  const handleToggleSavedMessage = message => updateMessageFeatures(message, { savedBy: toggleMessageUser(message.savedBy, currentUser.id) }, (message.savedBy || []).includes(currentUser.id) ? 'Mensagem removida dos itens salvos.' : 'Mensagem salva para consultar depois.');
+  const handleToggleHighlightedMessage = message => updateMessageFeatures(message, { highlightedBy: toggleMessageUser(message.highlightedBy, currentUser.id) });
+  const handleToggleMessageActivity = message => updateMessageFeatures(message, { activity: normalizeMessageActivity(message.activity) ? null : createMessageActivity(currentUser) }, normalizeMessageActivity(message.activity) ? 'Marcação de atividade removida.' : 'Mensagem marcada como atividade.');
+  const handleUpdateMessageActivity = async (message, changes) => {
+    const current = normalizeMessageActivity(message.activity) || createMessageActivity(currentUser);
+    const nextStatus = changes.status || current.status;
+    const activity = normalizeMessageActivity({
+      ...current,
+      ...changes,
+      resolvedAt: nextStatus === 'resolved' ? (current.resolvedAt || Date.now()) : null,
+      resolvedBy: nextStatus === 'resolved' ? currentUser.name : '',
+    });
+    await updateMessageFeatures(message, { activity });
+  };
+  const handleAddMessageChecklistItem = async message => {
+    const text = String(checklistDrafts[message.id] || '').trim();
+    if (!text) return;
+    const activity = normalizeMessageActivity(message.activity) || createMessageActivity(currentUser);
+    await handleUpdateMessageActivity(message, { checklist: [...activity.checklist, { id: `item-${Date.now()}`, text, completed: false }] });
+    setChecklistDrafts(previous => ({ ...previous, [message.id]: '' }));
+  };
+  const handleToggleMessageChecklistItem = (message, itemId) => {
+    const activity = normalizeMessageActivity(message.activity);
+    if (!activity) return;
+    handleUpdateMessageActivity(message, { checklist: activity.checklist.map(item => item.id === itemId ? { ...item, completed: !item.completed } : item) });
+  };
+
+  const openThread = async (threadId) => {
+    setActiveThreadId(threadId);
+    setThreadHeaderExpanded(false);
+    setPendingThreadDueDate(getThreadMetadata(threadId).dueDate || '');
+    setShowResolutionEvaluation(false);
+    setResolutionRating(0);
+    setResolutionFeedback('');
+    setMsgText('');
+    setMsgAttachment(null);
+    setReplyingToMessage(null);
+    const openedMetadata = getThreadMetadata(threadId);
+    setServiceDeliveryDraft(openedMetadata.servicePromisedDate || '');
+    setServiceProgressDraft(Number(openedMetadata.serviceProgress || 0));
+    setServiceProgressNoteDraft(openedMetadata.serviceProgressNote || '');
+    setShowAddParticipant(false);
+    
+    const unreadInThread = normMessages.filter(m => m.threadId === threadId && !m.readBy.includes(currentUser.id));
+    
+    if (unreadInThread.length > 0) {
+      await saveRelatedRecords(unreadInThread.map(message => ({
+        collection: 'messages', id: message.id, operation: 'update',
+        data: message.isLegacy
+          ? { read: true }
+          : { readBy: [...new Set([...(message.readBy || []), currentUser.id])] },
+      })), 'A conversa abriu, mas não foi possível confirmar a leitura na nuvem. Tente novamente.');
+    }
+  };
+
+  const createThreadSystemMessage = (threadId, metadata, content) => ({
+    id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    threadId,
+    subject: metadata.subject || 'Conversa sem Assunto',
+    participants: metadata.participants || [],
+    senderId: 'system',
+    actorId: currentUser.id,
+    senderName: 'Sistema Automático',
+    content,
+    attachment: null,
+    date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    timestamp: Date.now(),
+    readBy: [currentUser.id],
+    dueDate: metadata.dueDate || '',
+    initialDueDate: metadata.initialDueDate || metadata.dueDate || '',
+    dueDateHistory: metadata.dueDateHistory || [],
+    completedAt: metadata.completedAt || null,
+    completedBy: metadata.completedBy || null,
+    resolutionRating: metadata.resolutionRating || 0,
+    resolutionFeedback: metadata.resolutionFeedback || '',
+    resolutionEvaluatedAt: metadata.resolutionEvaluatedAt || null,
+    serviceRequest: metadata.serviceRequest === true,
+    serviceCategoryId: metadata.serviceCategoryId || '',
+    serviceCategory: metadata.serviceCategory || '',
+    servicePriority: metadata.servicePriority || 'normal',
+    servicePriorityLabel: metadata.servicePriorityLabel || 'Normal',
+    serviceRequiresApproval: metadata.serviceRequiresApproval === true,
+    serviceDecision: metadata.serviceDecision || '',
+    serviceDecisionBy: metadata.serviceDecisionBy || '',
+    serviceDecisionAt: metadata.serviceDecisionAt || null,
+    serviceStatus: metadata.serviceStatus || '',
+    serviceRequestedAt: metadata.serviceRequestedAt || null,
+    serviceSlaDays: metadata.serviceSlaDays || null,
+    serviceExtraDetail: metadata.serviceExtraDetail || '',
+    serviceAssigneeId: metadata.serviceAssigneeId || '',
+    serviceAssigneeName: metadata.serviceAssigneeName || '',
+    serviceStartedAt: metadata.serviceStartedAt || null,
+    serviceWaitingSince: metadata.serviceWaitingSince || null,
+      servicePromisedDate: metadata.servicePromisedDate || '',
+      serviceProgress: Number(metadata.serviceProgress || 0),
+      serviceProgressNote: metadata.serviceProgressNote || '',
+      serviceProgressUpdatedAt: metadata.serviceProgressUpdatedAt || null,
+      serviceProgressUpdatedBy: metadata.serviceProgressUpdatedBy || '',
+    archivedBy: metadata.archivedBy || []
+  });
+
+  const saveThreadMetadata = async (threadId, changes, systemText, { archiveForUserId = '', unarchiveForEveryone = false } = {}) => {
+    const metadata = getThreadMetadata(threadId);
+    if (!metadata.messages.length) return false;
+    const nextMetadata = {
+      dueDate: metadata.dueDate || '',
+      initialDueDate: metadata.initialDueDate || metadata.dueDate || '',
+      dueDateHistory: metadata.dueDateHistory || [],
+      completedAt: metadata.completedAt || null,
+      completedBy: metadata.completedBy || null,
+      resolutionRating: metadata.resolutionRating || 0,
+      resolutionFeedback: metadata.resolutionFeedback || '',
+      resolutionEvaluatedAt: metadata.resolutionEvaluatedAt || null,
+      serviceDecision: metadata.serviceDecision || '',
+      serviceDecisionBy: metadata.serviceDecisionBy || '',
+      serviceDecisionAt: metadata.serviceDecisionAt || null,
+      serviceStatus: metadata.serviceStatus || (metadata.serviceRequiresApproval ? 'approval' : 'open'),
+      serviceAssigneeId: metadata.serviceAssigneeId || '',
+      serviceAssigneeName: metadata.serviceAssigneeName || '',
+      serviceStartedAt: metadata.serviceStartedAt || null,
+      serviceWaitingSince: metadata.serviceWaitingSince || null,
+      servicePromisedDate: metadata.servicePromisedDate || '',
+      serviceProgress: Number(metadata.serviceProgress || 0),
+      serviceProgressNote: metadata.serviceProgressNote || '',
+      serviceProgressUpdatedAt: metadata.serviceProgressUpdatedAt || null,
+      serviceProgressUpdatedBy: metadata.serviceProgressUpdatedBy || '',
+      ...changes
+    };
+    const archiveForMessage = (message) => unarchiveForEveryone
+      ? []
+      : archiveForUserId
+        ? [...new Set([...(message.archivedBy || []), archiveForUserId])]
+        : (message.archivedBy || []);
+    const systemMessage = createThreadSystemMessage(threadId, {
+      ...metadata,
+      ...nextMetadata,
+      archivedBy: unarchiveForEveryone ? [] : (archiveForUserId ? [archiveForUserId] : []),
+    }, systemText);
+    try {
+      if (!await saveRelatedRecords([
+        ...metadata.messages.map(message => ({ collection: 'messages', id: message.id, data: { ...nextMetadata, archivedBy: archiveForMessage(message) }, operation: 'update' })),
+        { collection: 'messages', id: systemMessage.id, data: systemMessage },
+      ], 'Não foi possível atualizar a conversa na nuvem. Nenhum prazo ou histórico foi alterado.')) return false;
+    } catch (error) {
+      console.error('Erro ao atualizar prazo da conversa', error);
+      triggerNotification('Não foi possível atualizar a conversa. Tente novamente.', 'error');
+      return false;
+    }
+    return true;
+  };
+
+  const handleUpdateThreadDeadline = async (newDueDate) => {
+    if (!newDueDate || !activeThreadId) return;
+    const metadata = getThreadMetadata(activeThreadId);
+    const oldDueDate = metadata.dueDate || '';
+    if (newDueDate === oldDueDate) return;
+    const historyEntry = { from: oldDueDate, to: newDueDate, changedAt: Date.now(), changedBy: currentUser.name };
+    const dueDateHistory = [...(metadata.dueDateHistory || []), historyEntry];
+    const wasDefined = Boolean(oldDueDate);
+    if (!await saveThreadMetadata(
+      activeThreadId,
+      { dueDate: newDueDate, initialDueDate: metadata.initialDueDate || newDueDate, dueDateHistory, completedAt: null, completedBy: null },
+      wasDefined
+        ? `${currentUser.name} alterou o prazo de conclusão de ${formatDueDate(oldDueDate)} para ${formatDueDate(newDueDate)}.`
+        : `${currentUser.name} definiu o prazo de conclusão para ${formatDueDate(newDueDate)}.`
+    )) return;
+    setPendingThreadDueDate(newDueDate);
+    triggerNotification('Prazo da conversa atualizado.');
+  };
+
+  const handleServiceDecision = async (threadId, decision) => {
+    const metadata = getThreadMetadata(threadId);
+    const opener = getThreadOpener(threadId);
+    if (!metadata.serviceRequest || !metadata.serviceRequiresApproval || !['approved', 'rejected'].includes(decision)) return;
+    if (!metadata.participants?.includes(currentUser.id) || opener?.senderId === currentUser.id) {
+      triggerNotification('A aprovação deve ser registrada por um dos responsáveis pelo atendimento.', 'error');
+      return;
+    }
+    const approved = decision === 'approved';
+    if (!await saveThreadMetadata(
+      threadId,
+      { serviceDecision: decision, serviceDecisionBy: currentUser.name, serviceDecisionAt: Date.now(), serviceStatus: decision },
+      approved
+        ? `${currentUser.name} aprovou esta solicitação. O atendimento pode prosseguir.`
+        : `${currentUser.name} não aprovou esta solicitação. Consulte o responsável para entender o motivo.`
+    )) return;
+    triggerNotification(approved ? 'Solicitação aprovada e participantes avisados.' : 'Decisão registrada e participantes avisados.');
+  };
+
+  const canManageServiceThread = (threadId) => {
+    const metadata = getThreadMetadata(threadId);
+    const opener = getThreadOpener(threadId);
+    return Boolean(metadata.serviceRequest && !metadata.completedAt && metadata.participants?.includes(currentUser?.id) && opener?.senderId !== currentUser?.id);
+  };
+
+  const handleServiceAssignment = async (threadId, assigneeId) => {
+    if (!canManageServiceThread(threadId)) {
+      triggerNotification('Somente os responsáveis pelo atendimento podem alterar essa atribuição.', 'error');
+      return;
+    }
+    const metadata = getThreadMetadata(threadId);
+    const opener = getThreadOpener(threadId);
+    const allowedIds = (metadata.participants || []).filter(id => id !== opener?.senderId);
+    const assignee = assigneeId ? employeesList.find(user => user.id === assigneeId && allowedIds.includes(user.id)) : null;
+    if (assigneeId && !assignee) {
+      triggerNotification('Escolha um participante responsável por este chamado.', 'error');
+      return;
+    }
+    if (!await saveThreadMetadata(
+      threadId,
+      { serviceAssigneeId: assignee?.id || '', serviceAssigneeName: assignee?.name || '' },
+      assignee ? `${currentUser.name} atribuiu o atendimento a ${assignee.name}.` : `${currentUser.name} removeu a atribuição do chamado.`
+    )) return;
+    triggerNotification(assignee ? `Chamado atribuído a ${assignee.name}.` : 'Chamado deixado sem responsável.');
+  };
+
+  const handleServiceStage = async (threadId, nextStatus) => {
+    const allowedStatuses = ['open', 'in_progress', 'waiting_requester'];
+    if (!allowedStatuses.includes(nextStatus) || !canManageServiceThread(threadId)) {
+      triggerNotification('Somente os responsáveis pelo atendimento podem alterar essa etapa.', 'error');
+      return;
+    }
+    const metadata = getThreadMetadata(threadId);
+    if (metadata.serviceRequiresApproval && !metadata.serviceDecision) {
+      triggerNotification('Registre a aprovação antes de iniciar o atendimento.', 'error');
+      return;
+    }
+    if (metadata.serviceDecision === 'rejected') {
+      triggerNotification('Uma solicitação não aprovada não pode entrar em atendimento.', 'error');
+      return;
+    }
+    const stageTexts = {
+      open: `${currentUser.name} devolveu a solicitação para a fila de novos atendimentos.`,
+      in_progress: `${currentUser.name} iniciou ou retomou o atendimento desta solicitação.`,
+      waiting_requester: `${currentUser.name} informou que o atendimento aguarda uma resposta do solicitante.`,
+    };
+    const changes = {
+      serviceStatus: nextStatus,
+      serviceWaitingSince: nextStatus === 'waiting_requester' ? Date.now() : null,
+      ...(nextStatus === 'in_progress' ? {
+        serviceStartedAt: metadata.serviceStartedAt || Date.now(),
+        serviceAssigneeId: metadata.serviceAssigneeId || currentUser.id,
+        serviceAssigneeName: metadata.serviceAssigneeName || currentUser.name,
+      } : {}),
+    };
+    if (!await saveThreadMetadata(threadId, changes, stageTexts[nextStatus])) return;
+    triggerNotification(nextStatus === 'waiting_requester' ? 'Solicitante avisado. O chamado aguarda retorno.' : 'Etapa do atendimento atualizada.');
+  };
+
+  const handleServiceProgressUpdate = async threadId => {
+    if (!canManageServiceThread(threadId)) {
+      triggerNotification('Somente quem atende a solicitação pode informar a previsão e o andamento.', 'error');
+      return;
+    }
+    const progress = Math.min(100, Math.max(0, Number(serviceProgressDraft) || 0));
+    const promisedDate = serviceDeliveryDraft || '';
+    const note = serviceProgressNoteDraft.trim().slice(0, 500);
+    if (!promisedDate && progress === 0 && !note) {
+      triggerNotification('Informe uma data prevista, o percentual ou uma observação.', 'error');
+      return;
+    }
+    if (!await saveThreadMetadata(threadId, {
+      servicePromisedDate: promisedDate,
+      serviceProgress: progress,
+      serviceProgressNote: note,
+      serviceProgressUpdatedAt: Date.now(),
+      serviceProgressUpdatedBy: currentUser.name,
+      ...(progress > 0 && progress < 100 ? { serviceStatus: 'in_progress', serviceStartedAt: getThreadMetadata(threadId).serviceStartedAt || Date.now() } : {}),
+    }, `${currentUser.name} atualizou o atendimento: ${progress}% concluído${promisedDate ? `, previsão de entrega em ${formatDueDate(promisedDate)}` : ''}${note ? `. ${note}` : '.'}`)) return;
+    triggerNotification('Previsão e andamento atualizados para todos os participantes.');
+  };
+
+  const handleCompleteThread = async () => {
+    if (!activeThreadId) return;
+    const metadata = getThreadMetadata(activeThreadId);
+    if (metadata.completedAt) return;
+    if (metadata.serviceRequest && metadata.serviceRequiresApproval && !metadata.serviceDecision) {
+      triggerNotification('Esta solicitação precisa ser aprovada ou recusada antes da conclusão.', 'error');
+      return;
+    }
+    if (!await saveThreadMetadata(
+      activeThreadId,
+      { completedAt: Date.now(), completedBy: currentUser.name, ...(metadata.serviceRequest ? { serviceStatus: 'completed' } : {}) },
+      `${currentUser.name} marcou esta conversa como concluída em ${new Date().toLocaleDateString('pt-BR')}.`,
+      { archiveForUserId: currentUser.id }
+    )) return;
+    setActiveThreadId(null);
+    triggerNotification('Conversa concluída e arquivada apenas para você. Os demais participantes continuam com ela pendente.');
+  };
+
+  const handleReopenThread = async () => {
+    if (!activeThreadId) return;
+    if (!isThreadOpenedByCurrentUser(activeThreadId)) {
+      triggerNotification('Somente quem abriu a conversa pode avaliá-la ou reabri-la.', 'error');
+      return;
+    }
+    const metadata = getThreadMetadata(activeThreadId);
+    if (!await saveThreadMetadata(
+      activeThreadId,
+      { completedAt: null, completedBy: null, resolutionRating: 0, resolutionFeedback: '', resolutionEvaluatedAt: null, ...(metadata.serviceRequest ? { serviceStatus: metadata.serviceDecision || (metadata.serviceRequiresApproval ? 'approval' : 'open') } : {}) },
+      `${currentUser.name} informou que a demanda não foi atendida e reabriu a conversa. Todos os participantes foram avisados.`,
+      { unarchiveForEveryone: true }
+    )) return;
+    setShowResolutionEvaluation(false);
+    setResolutionRating(0);
+    setResolutionFeedback('');
+    triggerNotification('Conversa reaberta e devolvida à Caixa de entrada de todos os participantes.');
+  };
+
+  const handleEvaluateResolution = async () => {
+    if (!activeThreadId || !resolutionRating) {
+      triggerNotification('Escolha uma nota para avaliar a resolução.', 'error');
+      return;
+    }
+    if (!isThreadOpenedByCurrentUser(activeThreadId)) {
+      triggerNotification('Somente quem abriu a conversa pode registrar a avaliação.', 'error');
+      return;
+    }
+    if (!await saveThreadMetadata(
+      activeThreadId,
+      { resolutionRating, resolutionFeedback: resolutionFeedback.trim(), resolutionEvaluatedAt: Date.now() },
+      `${currentUser.name} confirmou o atendimento da demanda e avaliou a resolução com nota ${resolutionRating}/5${resolutionFeedback.trim() ? '.' : '.'}`
+    )) return;
+    setShowResolutionEvaluation(false);
+    triggerNotification('Avaliação registrada. Obrigado pelo retorno.');
+  };
+
+  const handleArchiveThread = async (threadId) => {
+    if (!currentUser) return;
+    const messagesInThread = normMessages.filter(message => message.threadId === threadId);
+    try {
+      if (!await saveRelatedRecords(messagesInThread.map(message => ({
+        collection: 'messages', id: message.id, operation: 'update',
+        data: { archivedBy: [...new Set([...(message.archivedBy || []), currentUser.id])] },
+      })), 'Não foi possível arquivar a conversa na nuvem. Ela permanece na Caixa de entrada.')) return;
+      setActiveThreadId(null);
+      triggerNotification('Conversa arquivada.');
+    } catch (error) {
+      console.error('Erro ao arquivar conversa', error);
+      triggerNotification('Não foi possível arquivar a conversa.', 'error');
+    }
+  };
+
+  const handleRestoreThread = async (threadId) => {
+    if (!currentUser) return;
+    const messagesInThread = normMessages.filter(message => message.threadId === threadId);
+    try {
+      if (!await saveRelatedRecords(messagesInThread.map(message => ({
+        collection: 'messages', id: message.id, operation: 'update',
+        data: { archivedBy: (message.archivedBy || []).filter(userId => userId !== currentUser.id) },
+      })), 'Não foi possível restaurar a conversa na nuvem. Ela continua arquivada.')) return;
+      setShowArchivedThreads(false);
+      triggerNotification('Conversa restaurada para a Caixa de entrada.');
+    } catch (error) {
+      console.error('Erro ao restaurar conversa', error);
+      triggerNotification('Não foi possível restaurar a conversa.', 'error');
+    }
+  };
+
+  const handleAddParticipant = async (e) => {
+    e.preventDefault();
+    if (!newParticipantId || !activeThreadId) return;
+    if (getThreadMetadata(activeThreadId).completedAt) {
+      triggerNotification('A conversa está concluída. Reabra-a pela avaliação antes de alterar participantes.', 'error');
+      return;
+    }
+    
+    const threadMsgs = privateMessages.filter(m => {
+        const nm = getNormalizedMessages().find(x => x.id === m.id);
+        return nm && nm.threadId === activeThreadId;
+    });
+    if(threadMsgs.length === 0) return;
+
+    const participantUser = messageContacts.find(u => u.id === newParticipantId);
+    if (!participantUser) {
+      triggerNotification('Selecione um colaborador válido para esta conversa.', 'error');
+      return;
+    }
+    const subject = threadMsgs[0].subject || 'Conversa sem Assunto';
+    const participants = [...new Set(threadMsgs.flatMap(message =>
+      message.participants || [message.senderId, message.receiverId]
+    ).filter(Boolean).concat(newParticipantId))];
+    if (threadMsgs.every(message => (message.participants || [message.senderId, message.receiverId]).includes(newParticipantId))) {
+      triggerNotification('Este colaborador já participa da conversa.', 'error');
+      return;
+    }
+    const updates = threadMsgs.map(message => {
+      const currentParts = (message.participants || [message.senderId, message.receiverId]).filter(Boolean);
+      const nextParts = [...new Set([...currentParts, newParticipantId])];
+      return {
+        collection: 'messages', id: message.id, operation: 'update',
+        data: message.threadId
+          ? { participants: nextParts }
+          : {
+              threadId: activeThreadId,
+              subject,
+              participants: nextParts,
+              readBy: message.read ? currentParts : [message.senderId],
+            },
+      };
+    });
+    const systemMessage = createThreadSystemMessage(
+      activeThreadId,
+      { ...getThreadMetadata(activeThreadId), subject, participants },
+      `${currentUser.name} adicionou ${participantUser.name} à conversa. Todo o histórico anterior está disponível para visualização.`
+    );
+    if (!await saveRelatedRecords([
+      ...updates,
+      { collection: 'messages', id: systemMessage.id, data: systemMessage },
+    ], 'Não foi possível incluir o colaborador. O histórico da conversa não foi alterado.')) return;
+
+    setNewParticipantId('');
+    setParticipantSearch('');
+    setShowAddParticipant(false);
+    triggerNotification(`Colaborador adicionado. Histórico compartilhado com sucesso!`);
+  };
+
+  const getNotifTs = (item) => {
+    if (!item) return 0;
+    if (typeof item === 'string') {
+      const idTimestamp = item.match(/\d{13}/)?.[0];
+      return idTimestamp ? Number(idTimestamp) : 0;
+    }
+
+    const value = item.createdAt || item.timestamp;
+    if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    if (value?.seconds) return value.seconds * 1000;
+    if (typeof value === 'number') return value;
+
+    if (item.date) {
+      const normalizedDate = item.date.replace(' às ', ' ');
+      const [datePart, timePart = '00:00:00'] = normalizedDate.split(' ');
+      const brDate = datePart.split('/');
+      if (brDate.length === 3) {
+        const parsed = new Date(`${brDate[2]}-${brDate[1]}-${brDate[0]}T${timePart}`).getTime();
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+      const parsed = new Date(normalizedDate).getTime();
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+
+    const idTimestamp = item.id?.match(/\d{13}/)?.[0];
+    return idTimestamp ? Number(idTimestamp) : 0;
+  };
+
+  const allNotifications = currentUser ? [
+    ...announcements.map(a => ({ ...a, notifType: 'announcement' })),
+    ...sectorPosts.filter(p => userAllowedDepts.includes(p.dept)).map(p => ({ ...p, notifType: 'post' })),
+    ...pollTimelineEntries,
+  ].sort((a, b) => getNotifTs(b) - getNotifTs(a)) : [];
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const recentAnnouncementsForReport = announcements.filter(announcement => getNotifTs(announcement) >= thirtyDaysAgo);
+  const recentReadConfirmations = recentAnnouncementsForReport.reduce((total, announcement) => total + (announcement.readBy?.length || 0), 0);
+  const recentReadRate = recentAnnouncementsForReport.length && usersList.length
+    ? Math.round((recentReadConfirmations / (recentAnnouncementsForReport.length * usersList.length)) * 100)
+    : 0;
+
+  const dashboardFeedItems = allNotifications.filter(item => !(
+    item.notifType === 'post' && (
+      item.id?.startsWith('post-abs-') ||
+      item.tags?.includes('Ausência') ||
+      item.title?.startsWith('🕒 Ausência Programada:')
+    )
+  ));
+
+  const unreadNotifications = allNotifications.filter(n =>
+    !(currentUser?.readNotifications || []).includes(n.id) &&
+    n.authorId !== currentUser?.id &&
+    !String(n.author || '').includes(currentUser?.name || '')
+  );
+
+const notificationsToShow = [...allNotifications]
+    .filter(n => n.authorId !== currentUser?.id && !String(n.author || '').includes(currentUser?.name || ''))
+    .sort((a, b) => {
+      return getNotifTs(b) - getNotifTs(a);
+    })
+    .slice(0, 15);
+
+  const handleNotificationClick = async (notification) => {
+    if (!currentUser) return;
+
+    const updatedUser = {
+      ...currentUser,
+      readNotifications: [...new Set([...(currentUser.readNotifications || []), notification.id])]
+    };
+
+    setCurrentUser(updatedUser);
+    setShowNotificationsDropdown(false);
+    if (isFirebaseAvailable && dbUser) {
+      await saveDoc('users', currentUser.id, updatedUser);
+    } else {
+      setUsersList(prev => prev.map(user => user.id === currentUser.id ? updatedUser : user));
+    }
+
+    if (notification.notifType === 'announcement') {
+      setActiveTab('announcements');
+    } else if (notification.notifType === 'poll') {
+      setPollSearch(notification.formTitle || notification.question || '');
+      setPollViewFilter('Todas');
+      setActiveTab('polls');
+    } else {
+      setSectorFilter(notification.dept || 'all');
+      setActiveTab('sectors');
+    }
+
+    setTimeout(() => {
+      document.getElementById(`notification-item-${notification.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }, 100);
+  };
+  const sectorCounts = departmentsList.map(d => ({ ...d, count: employeesList.filter(u => getUserDepts(u).includes(d.id)).length }));
+  const uniqueRoles = [...new Set(employeesList.map(u => u.role).filter(Boolean))];
+  const roleCounts = uniqueRoles.map(role => ({ name: role, count: employeesList.filter(u => u.role === role).length }));
+  const uniqueProdGroups = [...new Set(employeesList.map(u => u.prodGroup).filter(Boolean))];
+  const prodGroupCounts = uniqueProdGroups.map(group => ({ name: group, count: employeesList.filter(u => u.prodGroup === group).length }));
+
+  const filteredEmployees = employeesList.filter(u => {
+    const matchText = u.name.toLowerCase().includes(empSearchText.toLowerCase());
+    const matchSector = empSectorFilter === 'Todos' || getUserDepts(u).includes(empSectorFilter);
+    const matchRole = empRoleFilter === 'Todos' || u.role === empRoleFilter;
+    const matchProdGroup = empProdGroupFilter === 'Todos' || u.prodGroup === empProdGroupFilter;
+    return matchText && matchSector && matchRole && matchProdGroup;
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
+  const peopleOverview = {
+    active: employeesList.length,
+    recentlyActive: employeesList.filter(user => Number(user.lastLoginAt || 0) >= Date.now() - (7 * 24 * 60 * 60 * 1000)).length,
+    pendingAccess: employeesList.filter(user => !user.lastLoginAt).length,
+    incompleteProfile: employeesList.filter(user => !user.role || !getUserDepts(user).length).length,
+  };
+  const peopleAttentionList = employeesList.filter(user => !user.lastLoginAt || !user.role || !getUserDepts(user).length)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
+  const accessProfileForUser = (user) => {
+    if (!user || user.isAdmin || user.isDeveloper) return fullAccessProfile();
+    if (user.permissions) return normalizeAccessProfile(user.permissions);
+    const sectorProfile = getUserDepts(user).map(deptId => accessControl.sectorPermissions?.[deptId]).find(Boolean);
+    return normalizeAccessProfile(sectorProfile || {});
+  };
+  const effectiveAccessProfile = accessProfileForUser(currentUser);
+  const canOpenModule = moduleId => moduleId === 'careers'
+    ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
+    : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false;
+const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManagerUser(currentUser) && currentUser?.permissions?.tabs?.whistleblowing === true));
+  const canViewEngagement = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canViewEngagement === true);
+  const engagementUserName = userId => usersList.find(user => user.id === userId)?.name || messageContacts.find(user => user.id === userId)?.name || 'Usuário não localizado';
+  const loadPermissionTarget = (scope, targetId) => {
+    setPermissionScope(scope);
+    setPermissionTargetId(targetId);
+    if (!targetId) return setPermissionDraft(fullAccessProfile());
+    if (scope === 'sector') return setPermissionDraft(normalizeAccessProfile(accessControl.sectorPermissions?.[targetId] || {}));
+    const user = employeesList.find(item => item.id === targetId);
+    setPermissionDraft(accessProfileForUser(user));
+  };
+  const savePermissionTarget = async () => {
+    if (!currentUser?.isAdmin && !currentUser?.isDeveloper) return;
+    if (!permissionTargetId) return triggerNotification('Selecione um colaborador ou setor.', 'error');
+    const payload = normalizeAccessProfile(permissionDraft);
+    if (permissionScope === 'user') {
+      if (!await updateDocField('users', permissionTargetId, { permissions: payload, permissionsUpdatedAt: Date.now(), permissionsUpdatedBy: currentUser.name })) return;
+    } else {
+      const sectorPermissions = { ...(accessControl.sectorPermissions || {}), [permissionTargetId]: payload };
+      if (!await saveDoc('settings', 'access-control', { sectorPermissions, updatedAt: Date.now(), updatedBy: currentUser.name })) return;
+      const sectorUsers = employeesList.filter(user => getUserDepts(user).includes(permissionTargetId) && !user.isAdmin);
+      const results = await Promise.all(sectorUsers.map(user => updateDocField('users', user.id, {
+        permissions: payload,
+        permissionSource: `sector:${permissionTargetId}`,
+        permissionsUpdatedAt: Date.now(),
+        permissionsUpdatedBy: currentUser.name,
+      })));
+      if (results.some(result => result === false)) return;
+    }
+    triggerNotification('Permissões atualizadas e registradas na auditoria.');
+  };
+  const auditCollectionLabels = { users: 'Colaboradores', announcements: 'Avisos', posts: 'Publicações', documents: 'Documentos', polls: 'Enquetes', events: 'Calendário', absences: 'Ausências', presence: 'Presença', schedules: 'Escalas', vacancies: 'Vagas', applications: 'Candidaturas', messages: 'Conversas', settings: 'Configurações', roles: 'Cargos', departments: 'Setores', productivity: 'Produtividade' };
+  const auditActionLabels = {
+    'record.created': 'criou um registro',
+    'record.saved': 'salvou informações',
+    'record.updated': 'alterou informações',
+    'record.deleted': 'excluiu um registro',
+    'conversation.created': 'abriu uma conversa',
+    'security.pin_changed': 'alterou o próprio PIN',
+  };
+  const auditFieldLabels = {
+    name: 'nome', role: 'cargo', depts: 'setores', dept: 'setor', managerId: 'gestor responsável', description: 'descrição', title: 'título', content: 'conteúdo', status: 'situação', dueDate: 'prazo', participants: 'participantes', ticketNumber: 'número do ticket', permissions: 'permissões', readBy: 'confirmações de leitura', likedBy: 'curtidas', savedBy: 'mensagens salvas', highlightedBy: 'destaques', activity: 'atividade e checklist', likes: 'total de curtidas', date: 'data', startDate: 'data inicial', endDate: 'data final', schedule: 'escala', roleId: 'cargo vinculado', roleName: 'nome do cargo', category: 'categoria', folder: 'pasta', requiredRead: 'leitura obrigatória', reviewDate: 'próxima revisão', accessMode: 'público autorizado', allowedUserIds: 'colaboradores autorizados', questions: 'perguntas', options: 'opções', password: 'senha', pin: 'PIN', pushTokens: 'dispositivos de notificação', serviceCategory: 'categoria do serviço', servicePriority: 'prioridade da solicitação', serviceStatus: 'etapa do atendimento', serviceDecision: 'decisão de aprovação', serviceDecisionBy: 'responsável pela decisão', serviceAssigneeId: 'responsável atribuído', serviceAssigneeName: 'nome do responsável', serviceStartedAt: 'início do atendimento', serviceWaitingSince: 'aguardando solicitante desde', servicePromisedDate: 'previsão informada', serviceProgress: 'andamento', serviceProgressNote: 'atualização do atendimento',
+  };
+  const auditActors = [...new Map(auditLogs.filter(entry => entry.actorId || entry.actorName).map(entry => [entry.actorId || entry.actorName, { id: entry.actorId || entry.actorName, name: entry.actorName || 'Usuário' }])).values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const auditAreas = [...new Set(auditLogs.map(entry => entry.collection).filter(Boolean))].sort((a, b) => (auditCollectionLabels[a] || a).localeCompare(auditCollectionLabels[b] || b, 'pt-BR'));
+  const auditActions = [...new Set(auditLogs.map(entry => entry.action).filter(Boolean))].sort((a, b) => (auditActionLabels[a] || a).localeCompare(auditActionLabels[b] || b, 'pt-BR'));
+  const filteredAuditLogs = auditLogs.filter(entry => {
+    const matchesText = normalizedText(`${entry.actorName || ''} ${entry.actorRole || ''} ${auditActionLabels[entry.action] || entry.action || ''} ${auditCollectionLabels[entry.collection] || entry.collection || ''} ${(entry.fields || []).map(field => auditFieldLabels[field] || field).join(' ')}`).includes(normalizedText(auditSearch));
+    const matchesPerson = auditPersonFilter === 'all' || (entry.actorId || entry.actorName) === auditPersonFilter;
+    const matchesArea = auditAreaFilter === 'all' || entry.collection === auditAreaFilter;
+    const matchesAction = auditActionFilter === 'all' || entry.action === auditActionFilter;
+    return matchesText && matchesPerson && matchesArea && matchesAction;
+  });
+  const conversationAuditBase = Object.values(normMessages.reduce((threads, message) => {
+    if (!threads[message.threadId]) threads[message.threadId] = { id: message.threadId, messages: [] };
+    threads[message.threadId].messages.push(message);
+    return threads;
+  }, {})).map(thread => {
+    const metadata = getThreadMetadata(thread.id);
+    const opener = getThreadOpener(thread.id);
+    const deadline = getThreadDeadlineStatus(thread.id);
+    const openedAt = Math.min(...thread.messages.map(getMessageTimestamp).filter(Boolean));
+    const participantIds = [...new Set(thread.messages.flatMap(message => message.participants || []))];
+    const participantNames = participantIds.map(id => messageContacts.find(user => user.id === id)?.name).filter(Boolean);
+    const statusKey = metadata.completedAt
+      ? (/no prazo/i.test(deadline.label) ? 'completed_on_time' : /prorroga/i.test(deadline.label) ? 'extended' : 'completed_late')
+      : (/atras/i.test(deadline.label) ? 'overdue' : /prorroga/i.test(deadline.label) ? 'extended' : 'open');
+    return {
+      id: thread.id,
+      ticketNumber: Number(metadata.ticketNumber || 0),
+      subject: metadata.subject || 'Conversa sem assunto',
+      openerId: opener?.senderId || '',
+      openerName: opener?.senderName || 'Não identificado',
+      participantIds,
+      participantNames,
+      openedAt,
+      dueDate: metadata.dueDate || '',
+      completedAt: Number(metadata.completedAt || 0),
+      deadlineLabel: deadline.label,
+      deadlineClassName: deadline.className,
+      statusKey,
+      extensions: (metadata.dueDateHistory || []).filter(item => item.from && item.to && item.from !== item.to).length,
+      reopened: thread.messages.some(message => message.senderId === 'system' && /reabert/i.test(message.content || '')),
+    };
+  });
+  const legacyTicketNumbers = new Map([...conversationAuditBase].sort((a, b) => a.openedAt - b.openedAt).map((row, index) => [row.id, index + 1]));
+  const conversationAuditRows = conversationAuditBase.map(row => {
+    const ticketNumber = row.ticketNumber || legacyTicketNumbers.get(row.id) || 0;
+    return {...row, ticketNumber, ticket: String(ticketNumber).padStart(6, '0')};
+  }).sort((a, b) => b.openedAt - a.openedAt);
+  const conversationAuditMetricRows = conversationAuditRows.filter(row => {
+    const periodDays = Number(conversationAuditPeriod || 0);
+    const matchesPeriod = !periodDays || row.openedAt >= Date.now() - periodDays * 24 * 60 * 60 * 1000;
+    const matchesPerson = conversationAuditPerson === 'all' || row.openerId === conversationAuditPerson || row.participantIds.includes(conversationAuditPerson);
+    return matchesPeriod && matchesPerson;
+  });
+  const conversationAuditFiltered = conversationAuditMetricRows.filter(row => conversationAuditStatus === 'all'
+    || (conversationAuditStatus === 'extended' && row.extensions > 0)
+    || (conversationAuditStatus === 'reopened' && row.reopened)
+    || row.statusKey === conversationAuditStatus);
+  const conversationAuditMetrics = conversationAuditMetricRows.reduce((totals, row) => {
+    totals.total += 1;
+    if (row.statusKey === 'completed_on_time') totals.onTime += 1;
+    if (row.statusKey === 'completed_late') totals.late += 1;
+    if (row.statusKey === 'overdue') totals.overdue += 1;
+    if (row.extensions > 0) totals.extended += 1;
+    if (row.reopened) totals.reopened += 1;
+    return totals;
+  }, { total: 0, onTime: 0, late: 0, overdue: 0, extended: 0, reopened: 0 });
+  const serviceRequestRows = Object.values(normMessages.reduce((threads, message) => {
+    if (!message.threadId) return threads;
+    if (!threads[message.threadId]) threads[message.threadId] = { id: message.threadId, messages: [] };
+    threads[message.threadId].messages.push(message);
+    return threads;
+  }, {})).filter(thread => thread.messages.some(message => message.serviceRequest === true)).map(thread => {
+    const metadata = getThreadMetadata(thread.id);
+    const opener = getThreadOpener(thread.id);
+    const latest = thread.messages.reduce((current, message) => getMessageTimestamp(message) > getMessageTimestamp(current) ? message : current, thread.messages[0]);
+    const status = serviceRequestStatus(metadata, todayStr);
+    return {
+      id: thread.id,
+      ticketNumber: Number(metadata.ticketNumber || 0),
+      subject: metadata.subject || 'Solicitação de serviço',
+      categoryId: metadata.serviceCategoryId || '',
+      category: metadata.serviceCategory || getCompanyServiceCategory(metadata.serviceCategoryId)?.label || 'Serviço interno',
+      priority: metadata.servicePriority || 'normal',
+      priorityLabel: metadata.servicePriorityLabel || 'Normal',
+      status,
+      workflowStatus: metadata.serviceStatus || (metadata.serviceRequiresApproval ? 'approval' : 'open'),
+      dueDate: metadata.dueDate || '',
+      openerId: opener?.senderId || '',
+      openerName: opener?.senderName || 'Colaborador',
+      requiresApproval: metadata.serviceRequiresApproval === true,
+      decisionBy: metadata.serviceDecisionBy || '',
+      assigneeId: metadata.serviceAssigneeId || '',
+      assigneeName: metadata.serviceAssigneeName || '',
+      startedAt: Number(metadata.serviceStartedAt || 0),
+      waitingSince: Number(metadata.serviceWaitingSince || 0),
+      participantIds: metadata.participants || [],
+      completedAt: Number(metadata.completedAt || 0),
+      resolutionRating: Number(metadata.resolutionRating || 0),
+      updatedAt: getMessageTimestamp(latest),
+      preview: latest.content || 'Atualização registrada na solicitação.',
+    };
+  }).sort((a, b) => b.updatedAt - a.updatedAt);
+  const filteredServiceRequests = serviceRequestRows.filter(request => {
+    const matchesText = normalizedText(`${request.subject} ${request.category} ${request.openerName} ${request.assigneeName} ${request.preview}`).includes(normalizedText(serviceSearch));
+    const matchesCategory = serviceCategoryFilter === 'all' || request.categoryId === serviceCategoryFilter;
+    const matchesStatus = serviceStatusFilter === 'all'
+      || (serviceStatusFilter === 'active' && !['completed', 'rejected'].includes(request.status))
+      || request.status === serviceStatusFilter;
+    const matchesAssignee = serviceAssigneeFilter === 'all'
+      || (serviceAssigneeFilter === 'mine' && request.assigneeId === currentUser.id)
+      || (serviceAssigneeFilter === 'unassigned' && !request.assigneeId)
+      || request.assigneeId === serviceAssigneeFilter;
+    return matchesText && matchesCategory && matchesStatus && matchesAssignee;
+  });
+  const serviceMetricTotals = serviceRequestRows.reduce((totals, request) => {
+    totals.total += 1;
+    if (!['completed', 'rejected'].includes(request.status)) totals.active += 1;
+    if (request.status === 'approval') totals.approval += 1;
+    if (request.status === 'overdue') totals.overdue += 1;
+    if (!request.assigneeId && !['completed', 'rejected'].includes(request.status)) totals.unassigned += 1;
+    if (request.status === 'completed') {
+      totals.completed += 1;
+      if (request.dueDate) {
+        totals.completedWithDeadline += 1;
+        if (new Date(request.completedAt).toISOString().slice(0, 10) <= request.dueDate) totals.completedOnTime += 1;
+      }
+    }
+    if (request.resolutionRating > 0) {
+      totals.rated += 1;
+      totals.ratingSum += request.resolutionRating;
+    }
+    return totals;
+  }, { total: 0, active: 0, approval: 0, overdue: 0, completed: 0, unassigned: 0, completedWithDeadline: 0, completedOnTime: 0, rated: 0, ratingSum: 0 });
+  const serviceMetrics = {
+    ...serviceMetricTotals,
+    slaRate: serviceMetricTotals.completedWithDeadline ? Math.round((serviceMetricTotals.completedOnTime / serviceMetricTotals.completedWithDeadline) * 100) : 0,
+    averageRating: serviceMetricTotals.rated ? (serviceMetricTotals.ratingSum / serviceMetricTotals.rated).toFixed(1) : '—',
+  };
+  const careerStageDefinitions = [
+    { id: 'received', label: 'Recebidas', color: 'bg-sky-500' },
+    { id: 'reviewing', label: 'Em análise', color: 'bg-amber-500' },
+    { id: 'preselected', label: 'Pré-seleção', color: 'bg-blue-600' },
+    { id: 'interview', label: 'Entrevistas', color: 'bg-violet-500' },
+    { id: 'hired', label: 'Contratados', color: 'bg-emerald-500' },
+    { id: 'rejected', label: 'Não aderentes', color: 'bg-rose-500' },
+    { id: 'closed', label: 'Concluídas', color: 'bg-slate-500' },
+  ];
+  const careerIndicatorVacancyIds = new Set(vacanciesList.filter(vacancy => vacancy.status !== 'archived').map(vacancy => vacancy.id));
+  const careerIndicatorApplications = careerApplications.filter(application => application.source === 'talent_pool' || careerIndicatorVacancyIds.has(application.vacancyId));
+  const careerStageInsights = careerStageDefinitions.map(stage => ({ ...stage, count: careerIndicatorApplications.filter(item => (item.status || 'received') === stage.id).length }));
+  const careerFitValues = careerIndicatorApplications.map(item => Number(item.fit?.percentage)).filter(Number.isFinite);
+  const careerAverageFit = careerFitValues.length ? Math.round(careerFitValues.reduce((sum, value) => sum + value, 0) / careerFitValues.length) : 0;
+  const careerRetentionSoon = careerIndicatorApplications.filter(item => {
+    const until = applicationRetentionMs(item);
+    return until > Date.now() && until <= Date.now() + 15 * 24 * 60 * 60 * 1000;
+  }).length;
+  const careerPendingCandidateUpdates = careerIndicatorApplications.filter(item => item.candidateUpdatePending === true).length;
+  const talentPoolApplications = careerApplications.filter(application => application.source === 'talent_pool' && (application.status || 'received') !== 'rejected');
+  const talentPoolApplicationsByRole = [...new Map(talentPoolApplications.map(application => [application.vacancyId, {
+    id: application.vacancyId,
+    title: application.vacancyTitle || 'Cargo não informado',
+    count: talentPoolApplications.filter(item => item.vacancyId === application.vacancyId).length,
+  }])).values()].sort((a, b) => b.count - a.count);
+  const dashboardUpcomingEvents = calendarEvents
+    .filter(event => event.date && event.date >= todayStr)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const dashboardOpenConversations = conversationAuditRows.filter(row => !row.completedAt && row.participantIds.includes(currentUser?.id));
+  const dashboardOverdueConversations = dashboardOpenConversations.filter(row => row.statusKey === 'overdue').length;
+  const supportTickets = buildSupportTickets(companies, supportRequests, currentUser?.id, todayStr);
+  const visibleSupportTickets = filterSupportTickets(supportTickets, supportTicketSearch, supportTicketFilter);
+  const supportMetrics = supportDashboardMetrics(companies, supportTickets);
+  const visibleSupportCompanies = companies
+    .filter(company => normalizedText(`${company.name || ''} ${company.code || ''}`).includes(normalizedText(supportCompanySearch)))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+  const visibleSupportHealth = (supportCompanyHealth.companies || []).filter(company =>
+    normalizedText(`${company.name || ''} ${company.code || ''}`).includes(normalizedText(supportCompanySearch)));
+  const supportHealthAverage = supportCompanyHealth.companies?.length
+    ? Math.round(supportCompanyHealth.companies.reduce((sum, company) => sum + Number(company.score || 0), 0) / supportCompanyHealth.companies.length)
+    : 0;
+  const supportHealthChecklistLabels = {
+    team: 'Equipe cadastrada', departments: 'Setores definidos', roles: 'Cargos configurados', firstAccess: 'Primeiro acesso realizado',
+    permissions: 'Permissões revisadas', communication: 'Primeiro comunicado', documents: 'Documentos publicados', notifications: 'Notificações ativadas',
+  };
+  const supportHealthTone = {
+    ready: { label: 'Implantação completa', className: 'border-emerald-200 bg-emerald-50 text-emerald-800', bar: 'bg-emerald-500' },
+    progressing: { label: 'Em implantação', className: 'border-amber-200 bg-amber-50 text-amber-800', bar: 'bg-amber-500' },
+    attention: { label: 'Requer atenção', className: 'border-rose-200 bg-rose-50 text-rose-800', bar: 'bg-rose-500' },
+  };
+  const supportTicketStatus = {
+    open: { label: 'Em atendimento', className: 'border-blue-200 bg-blue-50 text-blue-800' },
+    overdue: { label: 'Prazo vencido', className: 'border-rose-200 bg-rose-50 text-rose-800' },
+    completed: { label: 'Concluído', className: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
+  };
+  const formatSupportActivity = timestamp => timestamp
+    ? new Date(timestamp).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : 'Data não informada';
+  const openSupportTicket = ticket => {
+    setPrivateMessages([]);
+    setActiveCompany(ticket.company);
+    setIsComposingMsg(false);
+    setActiveThreadId(ticket.threadId);
+    setMsgText('');
+    setMsgAttachment(null);
+    setShowArchivedThreads(false);
+    setShowMessagesModal(true);
+  };
+  const dashboardRoleLabel = currentUser?.isDeveloper
+    ? 'Suporte da plataforma'
+    : currentUser?.isAdmin
+      ? 'Visão executiva'
+      : isCareerManagerUser(currentUser)
+        ? 'Pessoas e recrutamento'
+        : isManager
+          ? 'Gestão operacional'
+          : 'Meu dia no Comunica';
+  const dashboardAttentionItems = [
+    unreadMessages.length > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadMessages.length} mensagem(ns) aguardando leitura`, tone: 'blue', icon: MessageSquare, action: () => { setInboxStatusFilter('unread'); setShowMessagesModal(true); } } : null,
+    pendingDocumentReads > 0 ? { id: 'document-reads', label: 'Leituras obrigatórias', detail: `${pendingDocumentReads} documento(s) aguardando confirmação`, tone: 'amber', icon: FileText, action: () => { setDocumentReadingFilter('Pendentes'); setActiveTab('documents'); } } : null,
+    pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: `${pendingPollResponses} votação(ões) disponíveis`, tone: 'cyan', icon: Activity, action: () => { setPollViewFilter('Ativas'); setActiveTab('polls'); } } : null,
+    dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setShowMessagesModal(true) } : null,
+    serviceMetrics.overdue > 0 ? { id: 'overdue-services', label: 'Serviços em atraso', detail: `${serviceMetrics.overdue} chamado(s) fora do prazo`, tone: 'rose', icon: CheckCircle2, action: () => { setServiceStatusFilter('overdue'); setActiveTab('services'); } } : null,
+    (currentUser?.isAdmin || currentUser?.isDeveloper) && serviceMetrics.unassigned > 0 ? { id: 'unassigned-services', label: 'Chamados sem responsável', detail: `${serviceMetrics.unassigned} solicitação(ões) precisam de atribuição`, tone: 'violet', icon: UserPlus, action: () => { setServiceAssigneeFilter('unassigned'); setServiceStatusFilter('active'); setActiveTab('services'); } } : null,
+    canOpenModule('careers') && careerPendingCandidateUpdates > 0 ? { id: 'candidate-updates', label: 'Currículos atualizados', detail: `${careerPendingCandidateUpdates} candidatura(s) precisam de nova análise`, tone: 'fuchsia', icon: Briefcase, action: () => setActiveTab('careers') } : null,
+  ].filter(Boolean);
+  const dashboardAttentionTone = {
+    blue: 'border-blue-100 bg-blue-50 text-blue-800',
+    amber: 'border-amber-100 bg-amber-50 text-amber-800',
+    cyan: 'border-cyan-100 bg-cyan-50 text-cyan-800',
+    rose: 'border-rose-100 bg-rose-50 text-rose-800',
+    violet: 'border-violet-100 bg-violet-50 text-violet-800',
+    fuchsia: 'border-fuchsia-100 bg-fuchsia-50 text-fuchsia-800',
+  };
+  const dashboardQuickActions = [
+    canOpenModule('services') && activeServiceCatalog.length ? { id: 'new-service', label: 'Abrir solicitação', detail: 'Novo chamado interno', icon: Plus, action: () => openServiceRequestForm(activeServiceCatalog[0].id) } : null,
+    { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setShowMessagesModal(true) },
+    canOpenModule('documents') ? { id: 'documents', label: 'Documentos', detail: pendingDocumentReads ? `${pendingDocumentReads} leitura(s) pendente(s)` : 'Consultar arquivos', icon: FileText, action: () => setActiveTab('documents') } : null,
+    canOpenModule('scale') ? { id: 'calendar', label: 'Calendário', detail: `${dashboardUpcomingEvents.length} evento(s) futuro(s)`, icon: Calendar, action: () => setActiveTab('scale') } : null,
+    canOpenModule('careers') ? { id: 'careers', label: 'Recrutamento', detail: `${careerIndicatorApplications.length} candidatura(s) ativas`, icon: Briefcase, action: () => setActiveTab('careers') } : null,
+    currentUser?.isAdmin ? { id: 'team', label: 'Gestão da equipe', detail: `${employeesList.length} colaborador(es)`, icon: Users, action: () => setActiveTab('management') } : null,
+  ].filter(Boolean);
+  const careerApplicationsByVacancy = [...vacanciesList.filter(vacancy => vacancy.status !== 'archived').map(vacancy => ({
+    id: vacancy.id,
+    title: vacancy.title || 'Vaga sem título',
+    count: careerApplications.filter(application => application.vacancyId === vacancy.id).length,
+  })), ...[...new Map(careerApplications.filter(application => application.source === 'talent_pool').map(application => [application.vacancyId, { id: application.vacancyId, title: `Banco de talentos · ${application.vacancyTitle || 'Cargo'}`, count: careerApplications.filter(item => item.vacancyId === application.vacancyId).length }])).values()]].sort((a, b) => b.count - a.count).slice(0, 5);
+  const careerMaxApplications = Math.max(1, ...careerApplicationsByVacancy.map(item => item.count));
+  const careerCities = [...new Set(careerIndicatorApplications.map(application => (application.city || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const careerFilteredApplications = careerApplications.filter(application => {
+    if ((application.status || 'received') === 'rejected') return false;
+    if (application.source !== 'talent_pool' && !careerIndicatorVacancyIds.has(application.vacancyId)) return false;
+    const matchesVacancy = careerVacancyFilter === 'all' || application.vacancyId === careerVacancyFilter;
+    const matchesSource = careerSourceFilter === 'all'
+      || (careerSourceFilter === 'talent_pool' ? application.source === 'talent_pool' : application.source !== 'talent_pool');
+    const matchesStage = careerStageFilter === 'all' || (application.status || 'received') === careerStageFilter;
+    const fit = Number(application.fit?.percentage);
+    const matchesFit = careerFitFilter === 'all' || (careerFitFilter === 'high' ? fit >= 75 : careerFitFilter === 'medium' ? fit >= 50 && fit < 75 : !Number.isFinite(fit) || fit < 50);
+    const matchesCity = careerCityFilter === 'all' || application.city === careerCityFilter;
+    const search = normalizedText(careerCandidateSearch);
+    const matchesSearch = !search || normalizedText(`${application.name} ${application.email} ${application.city} ${application.vacancyTitle}`).includes(search);
+    return matchesSource && matchesVacancy && matchesStage && matchesFit && matchesCity && matchesSearch;
+  }).sort((a, b) => careerSort === 'fit'
+    ? Number(b.fit?.percentage || -1) - Number(a.fit?.percentage || -1)
+    : careerSort === 'name'
+      ? String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR')
+      : Number(b.candidateUpdatedAt || b.createdAt || 0) - Number(a.candidateUpdatedAt || a.createdAt || 0));
+  const careerComparisonApplications = careerApplications.filter(application => careerComparisonIds.includes(application.id)).slice(0, 3);
+  const careerAnalysisApplication = careerApplications.find(application => application.id === careerAnalysisSelectedId) || null;
+
+  if (firebaseEnvironmentError) {
+    return <div className="grid min-h-screen place-items-center bg-slate-950 p-6 text-white"><EnvironmentBadge /><div className="max-w-md rounded-3xl border border-rose-300/30 bg-white/10 p-7 text-center shadow-2xl"><Lock className="mx-auto h-8 w-8 text-rose-300" /><h1 className="mt-4 text-lg font-black">Configuração de ambiente bloqueada</h1><p className="mt-2 text-sm leading-6 text-slate-300">{firebaseEnvironmentError}</p></div></div>;
+  }
+
+  if (dbLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+        <EnvironmentBadge />
+        <div className="bg-slate-850 p-8 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center gap-4 text-center max-w-sm">
+          <div className="w-12 h-12 border-4 border-slate-300 border-t-slate-900 rounded-full animate-spin"></div>
+          <h2 className="text-lg font-black tracking-tight">Comunica</h2>
+          <p className="text-xs text-slate-400">Conectando ao banco de dados em nuvem em tempo real de forma segura. Aguarde um instante...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    const loginCompanyIdentified = isLoginCompanyIdentified(activeCompany, companyCode);
+    return (
+      <div className="relative isolate min-h-screen overflow-hidden bg-[#071a36] font-sans text-slate-800">
+        <EnvironmentBadge />
+        <div className="login-aurora pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_12%,rgba(32,173,211,0.35),transparent_30%),radial-gradient(circle_at_85%_78%,rgba(49,151,126,0.28),transparent_32%)]" />
+        <div className="login-orbit login-orbit-one pointer-events-none absolute -left-24 top-1/4 h-80 w-80 rounded-full border border-white/10" />
+        <div className="login-orbit login-orbit-two pointer-events-none absolute -right-20 bottom-[-4rem] h-96 w-96 rounded-full border-[28px] border-white/5" />
+        <NotificationToast notification={customNotification} />
+
+        <main className="relative mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-4 py-7 sm:px-8 lg:grid-cols-[1.12fr_0.88fr] lg:gap-16 lg:px-10">
+          <section className="mx-auto w-full max-w-2xl text-center text-white lg:mx-0 lg:text-left">
+            <div className="mx-auto flex w-max items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-100 backdrop-blur lg:mx-0"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,1)]" /> Plataforma corporativa segura</div>
+            <div className="mt-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
+              <div className="login-logo-float relative h-28 w-28 shrink-0 overflow-hidden rounded-[2rem] border border-white/20 bg-white/[0.06] shadow-2xl shadow-cyan-950/30 backdrop-blur sm:h-32 sm:w-32"><img src="/assets/comunica-logo-transparent.png" alt="Símbolo Comunica" className="absolute -top-1 left-1/2 h-auto w-[270px] max-w-none -translate-x-1/2 drop-shadow-[0_12px_28px_rgba(34,211,238,0.28)]" /></div>
+              <div><div className="flex items-center justify-center gap-2 lg:justify-start"><h1 className="text-5xl font-black tracking-[-0.04em] sm:text-6xl">Comunica</h1><span className="rounded-full border border-cyan-200/30 bg-cyan-300/10 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-cyan-100">Plataforma</span></div><p className="mt-2 text-sm font-semibold tracking-[0.08em] text-blue-100">Informação que conecta pessoas</p></div>
+            </div>
+            <h2 className="mt-8 text-3xl font-extrabold leading-tight sm:text-4xl lg:text-[2.7rem]">Sua empresa conectada.<br /><span className="bg-gradient-to-r from-cyan-200 to-emerald-200 bg-clip-text text-transparent">Sua equipe mais próxima.</span></h2>
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-blue-100/80 lg:mx-0">Informação, pessoas e processos reunidos em uma experiência simples, segura e feita para o trabalho acontecer.</p>
+            <div className="mt-7 grid grid-cols-3 gap-2 text-left sm:gap-3"><div className="login-feature-card rounded-2xl border border-white/10 bg-white/[0.07] p-3 backdrop-blur sm:p-4"><MessageSquare className="h-4 w-4 text-cyan-200" /><strong className="mt-3 block text-xs">Comunicação</strong><span className="mt-1 hidden text-[10px] text-blue-100/65 sm:block">Avisos e canais em tempo real</span></div><div className="login-feature-card rounded-2xl border border-white/10 bg-white/[0.07] p-3 backdrop-blur sm:p-4"><Users className="h-4 w-4 text-emerald-200" /><strong className="mt-3 block text-xs">Pessoas</strong><span className="mt-1 hidden text-[10px] text-blue-100/65 sm:block">Equipe sempre conectada</span></div><div className="login-feature-card rounded-2xl border border-white/10 bg-white/[0.07] p-3 backdrop-blur sm:p-4"><FileText className="h-4 w-4 text-violet-200" /><strong className="mt-3 block text-xs">Organização</strong><span className="mt-1 hidden text-[10px] text-blue-100/65 sm:block">Rotinas em um só lugar</span></div></div>
+            <p className="mt-6 text-[10px] font-medium text-blue-100/55">Acesso protegido e exclusivo para pessoas autorizadas.</p>
+          </section>
+
+          <section className="login-panel-enter relative mx-auto w-full max-w-md overflow-hidden rounded-[2rem] border border-cyan-100/20 bg-gradient-to-br from-[#102e55]/95 via-[#0b2547]/94 to-[#071b36]/96 p-5 text-white shadow-[0_30px_90px_rgba(0,0,0,0.46)] backdrop-blur-2xl sm:p-7">
+            <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 -left-20 h-52 w-52 rounded-full bg-emerald-300/10 blur-3xl" />
+            <div className="relative mb-5 flex items-start justify-between gap-3"><div><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200">Acesso corporativo</span><h2 className="mt-1 text-2xl font-extrabold text-white">Entre no Comunica</h2><p className="mt-2 text-xs leading-relaxed text-blue-100/70">Identifique sua empresa e acesse o ambiente da equipe.</p></div><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-cyan-100/20 bg-white/10 text-cyan-100 shadow-lg shadow-cyan-950/30"><Lock className="h-4.5 w-4.5" /></div></div>
+            <div className="relative mb-5 grid grid-cols-3 gap-2">{['Empresa', 'Colaborador', 'PIN'].map((step, index) => <div key={step} className="flex items-center gap-1.5"><span className={`grid h-5 w-5 place-items-center rounded-full text-[8px] font-extrabold ${index === 0 || loginCompanyIdentified ? 'bg-cyan-300 text-[#082344] shadow-[0_0_14px_rgba(103,232,249,0.28)]' : 'bg-white/10 text-blue-100/45'}`}>{index + 1}</span><span className={`text-[8px] font-bold uppercase tracking-wide ${index === 0 || loginCompanyIdentified ? 'text-blue-50' : 'text-blue-100/40'}`}>{step}</span></div>)}</div>
+
+  {/* CAMPO DE BUSCA DE NOME E PIN */}
+  <form onSubmit={handleUserLoginSubmit} className="relative z-10 flex flex-col gap-4">
+    <div>
+      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75">Código da empresa</label>
+      <input
+        type="text"
+        required
+        placeholder="Ex.: MINHA-EMPRESA"
+        value={companyCode}
+        onChange={(e) => handleCompanyCodeChange(e.target.value)}
+        className="w-full rounded-xl border border-white/15 bg-white/[0.09] px-3 py-3 text-sm font-bold text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10"
+      />
+    </div>
+    {loginCompanyIdentified && <div className="flex items-center gap-3 rounded-2xl border border-emerald-200/25 bg-emerald-300/10 p-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-300 text-[#07382f] shadow-lg shadow-emerald-950/20"><Building className="h-5 w-5" /></span><div className="min-w-0 flex-1"><span className="block text-[9px] font-extrabold uppercase tracking-wider text-emerald-200">Empresa identificada</span><strong className="mt-0.5 block truncate text-xs text-white">{activeCompany.name}</strong></div><CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" /></div>}
+    <div className="relative">
+      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75">Qual é o seu nome?</label>
+      <div className="relative">
+        <input
+          type="text"
+          required
+          disabled={!loginCompanyIdentified}
+          placeholder="Digite para buscar seu nome..."
+          value={loginSearchText}
+          onChange={(e) => {
+            setLoginSearchText(e.target.value);
+            setLoginSelectedUserId(''); // Limpa ID caso o usuário mude o texto manualmente
+            setShowLoginSuggestions(true);
+            setLoginError('');
+          }}
+          onFocus={() => setShowLoginSuggestions(true)}
+          onBlur={() => {
+            // Timeout rápido para permitir que o clique na sugestão seja computado antes de sumir o menu
+            setTimeout(() => setShowLoginSuggestions(false), 250);
+          }}
+          className="w-full rounded-xl border border-white/15 bg-white/[0.09] px-3 py-3 text-sm font-bold text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-40"
+        />
+        
+        {/* LISTAGEM DE SUGESTÕES DINÂMICAS */}
+        {showLoginSuggestions && loginCompanyIdentified && loginSearchText.trim() !== '' && (
+          <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+            {usersList
+              .filter(u => isCompanyEmployee(u) && u.name.toLowerCase().includes(loginSearchText.toLowerCase()))
+              .map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onMouseDown={() => {
+                    setLoginSearchText(u.name);
+                    setLoginSelectedUserId(u.id);
+                    setShowLoginSuggestions(false);
+                  }}
+                  className="w-full border-b border-slate-100 px-4 py-2.5 text-left text-xs text-slate-600 transition-colors last:border-0 hover:bg-blue-50"
+                >
+                  <span className="block leading-tight font-extrabold text-slate-800">{u.name}</span>
+                  <span className="mt-0.5 block text-[10px] text-slate-400">{u.role}</span>
+                </button>
+              ))}
+            {usersList.filter(u => isCompanyEmployee(u) && u.name.toLowerCase().includes(loginSearchText.toLowerCase())).length === 0 && (
+              <div className="p-3 text-xs text-slate-500 italic text-center">Nenhum colaborador encontrado</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div>
+      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75">Seu PIN de acesso</label>
+      <div className="relative">
+        <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-cyan-100/55" />
+        <input
+          type="password"
+          maxLength="4"
+          required
+          disabled={!loginCompanyIdentified}
+          placeholder="• • • •"
+          value={loginPin}
+          onChange={(e) => {
+            setLoginPin(e.target.value.replace(/\D/g, ''));
+            setLoginError('');
+          }}
+          className="w-full rounded-xl border border-white/15 bg-white/[0.09] py-3 pl-10 pr-4 text-center text-lg font-black tracking-[0.45em] text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-40"
+        />
+      </div>
+    </div>
+
+    {loginError && (
+      <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-center text-xs font-semibold text-rose-800">
+        ⚠️ {loginError}
+      </div>
+    )}
+
+    <button
+      type="submit"
+      disabled={!loginCompanyIdentified || !loginSearchText.trim() || loginPin.length !== 4}
+      className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-300 to-emerald-300 px-4 py-3.5 text-sm font-extrabold text-[#082344] shadow-lg shadow-cyan-950/30 transition hover:-translate-y-0.5 hover:from-cyan-200 hover:to-emerald-200 focus:outline-none focus:ring-4 focus:ring-cyan-200/20 disabled:cursor-not-allowed disabled:from-white/15 disabled:to-white/15 disabled:text-white/35 disabled:shadow-none disabled:hover:translate-y-0"
+    >
+      <Lock className="h-4.5 w-4.5" /> Acessar Painel
+    </button>
+  </form>
+
+  <button type="button" onClick={() => { setShowDeveloperLogin(true); setLoginError(''); }} className="relative mt-3 w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-xs font-bold text-blue-100/75 transition hover:border-cyan-100/20 hover:bg-white/10 hover:text-white">
+    Sou do suporte da plataforma
+  </button>
+
+  {!isStandaloneApp && <button type="button" onClick={handleInstallApp} className="relative mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-3 text-xs font-extrabold text-cyan-100 transition hover:border-cyan-100/40 hover:bg-cyan-300/15 hover:text-white">
+    <Download className="h-4 w-4" /> Instalar o Comunica no celular
+  </button>}
+
+  {showDeveloperLogin && (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 p-4">
+      <form onSubmit={handleDeveloperLogin} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4"><div><h3 className="text-sm font-extrabold text-slate-800">Suporte da plataforma</h3><p className="mt-1 text-xs text-slate-500">Acesso exclusivo de Francielton Lima Nunes.</p></div><button type="button" onClick={() => setShowDeveloperLogin(false)} className="text-slate-500"><X className="h-5 w-5" /></button></div>
+        <label className="mt-5 block text-[10px] font-bold uppercase text-slate-500">PIN de acesso</label>
+        <input autoFocus required type="password" inputMode="numeric" maxLength="4" value={developerPin} onChange={event => { setDeveloperPin(event.target.value.replace(/\D/g, '')); setLoginError(''); }} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-center text-lg font-black tracking-[0.45em] focus:outline-none" placeholder="••••" />
+        {loginError && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-800">{loginError}</div>}
+        <button type="submit" className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-bold text-white">Entrar no ambiente de suporte</button>
+      </form>
+    </div>
+  )}
+
+  <InstallAppDialog open={showInstallHelp} onClose={() => setShowInstallHelp(false)} />
+
+          </section>
+        </main>
+      </div>
+    );
+  }
+  const handleMarkAllAsRead = async () => {
+    const newReads = [...new Set([
+      ...(currentUser?.readNotifications || []),
+      ...unreadNotifications.map(n => n.id)
+    ])];
+    
+    const updatedUser = { ...currentUser, readNotifications: newReads };
+    
+    if (isFirebaseAvailable && dbUser) {
+       await saveDoc('users', currentUser.id, updatedUser);
+    } else {
+       setUsersList(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    }
+    setCurrentUser(updatedUser);
+  };
+
+  const navigationSections = [
+    {
+      label: 'Comunicação',
+      items: [
+        { id: 'dashboard', label: 'Central de gestão', description: 'Prioridades e indicadores', icon: Layers, activeClass: 'from-slate-950 to-blue-900', accent: 'text-blue-600' },
+        { id: 'updates', label: 'Novidades do Comunica', description: 'Ferramentas e melhorias', icon: Sparkles, badge: platformUpdates.filter(item => !platformUpdateReadIds.has(item.id)).length || null, activeClass: 'from-cyan-700 to-blue-700', accent: 'text-cyan-700' },
+        { id: 'announcements', label: 'Avisos e políticas', description: 'Comunicados oficiais', icon: Megaphone, activeClass: 'from-blue-800 to-cyan-700', accent: 'text-blue-600' },
+        { id: 'sectors', label: 'Canais de setores', description: 'Publicações da equipe', icon: Building, activeClass: 'from-cyan-800 to-teal-700', accent: 'text-cyan-700' },
+        { id: 'polls', label: 'Enquetes e clima', description: 'Escuta e participação', icon: Activity, badge: pendingPollResponses || null, activeClass: 'from-violet-800 to-blue-700', accent: 'text-violet-600' },
+      ],
+    },
+    {
+      label: 'Trabalho',
+      items: [
+        { id: 'services', label: 'Central de serviços', description: 'Solicitações e aprovações', icon: CheckCircle2, badge: serviceMetrics.active || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
+        { id: 'documents', label: 'Documentos', description: 'Arquivos e políticas', icon: FileText, badge: pendingDocumentReads || null, activeClass: 'from-emerald-800 to-teal-700', accent: 'text-emerald-600' },
+        { id: 'scale', label: 'Escalas e calendário', description: 'Agenda e disponibilidade', icon: Calendar, activeClass: 'from-orange-700 to-amber-600', accent: 'text-orange-600' },
+        canAccessProductivity ? { id: 'productivity', label: 'Produtividade', description: 'Registros de produção', icon: TrendingUp, activeClass: 'from-indigo-800 to-violet-700', accent: 'text-indigo-600' } : null,
+      ].filter(Boolean),
+    },
+    {
+      label: 'Gestão e suporte',
+      items: [
+        isCareerManagerUser(currentUser) ? { id: 'careers', label: 'Banco de talentos', description: 'Vagas e candidaturas', icon: Briefcase, badge: careerPendingCandidateUpdates || null, activeClass: 'from-fuchsia-800 to-violet-700', accent: 'text-fuchsia-600' } : null,
+        canManageWhistleblowing ? { id: 'whistleblowing', label: 'Central de Denúncias', description: 'Relatos confidenciais', icon: Lock, activeClass: 'from-rose-900 to-red-700', accent: 'text-rose-600' } : null,
+        currentUser.isAdmin ? { id: 'management', label: 'Gestão da equipe', description: 'Pessoas e permissões', icon: Users, activeClass: 'from-rose-800 to-orange-700', accent: 'text-rose-600' } : null,
+        currentUser.isDeveloper
+          ? { id: 'support', label: 'Central de suporte', description: 'Demandas da plataforma', icon: KeyRound, activeClass: 'from-slate-900 to-slate-700', accent: 'text-slate-600' }
+          : { id: 'platform-support', label: 'Suporte da plataforma', description: 'Solicitar atendimento', icon: MessageSquare, action: openPlatformSupport, activeClass: 'from-slate-900 to-blue-900', accent: 'text-blue-600' },
+      ].filter(Boolean),
+    },
+  ];
+  const visibleNavigationSections = navigationSections
+    .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
+    .filter(section => section.items.length);
+  const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
+
+  return (
+    <div className={`min-h-[100dvh] bg-slate-100 text-slate-800 flex flex-col font-sans relative ${isDarkMode ? 'comunica-dark' : ''}`}>
+      <EnvironmentBadge />
+      
+      <NotificationToast notification={customNotification} />
+      <CloudActivityIndicator activity={cloudActivity} />
+      <InstallAppDialog open={showInstallHelp} onClose={() => setShowInstallHelp(false)} />
+
+
+<header className="sticky top-0 z-40 border-b border-blue-100 bg-gradient-to-r from-white via-white to-cyan-50/80 pt-[env(safe-area-inset-top)] text-slate-800 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur">
+
+  {/* Aqui continua o restante do seu conteúdo do header */}
+
+        <div className="relative z-10 mx-auto flex h-[4.5rem] w-full max-w-7xl items-center justify-between gap-2 px-3 sm:px-4">
+          <button type="button" onClick={() => setActiveTab('dashboard')} className="group flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
+            <div className="flex h-14 w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
+               <img
+                 src="/assets/comunica-logo-transparent.png"
+                 alt="Comunica"
+                 className="h-full w-full object-contain"
+               />
+            </div>
+            <div className="hidden min-w-0 sm:block"><div className="flex items-center gap-2"><h1 className="text-base font-black tracking-tight text-slate-900">Comunica</h1><span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-cyan-800">Plataforma</span></div><p className="mt-0.5 max-w-52 truncate text-[9px] font-semibold text-slate-500">{activeCompany?.name || 'Comunicação e gestão corporativa'}</p>
+            </div>
+          </button>
+
+          <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
+
+          <div className="flex min-w-0 items-center justify-end gap-1 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
+            <button
+              onClick={() => {
+                setMyProfileForm({
+                  avatar: currentUser.avatar || '',
+                  emergencyName: currentUser.emergencyName || '',
+                  emergencyPhone: currentUser.emergencyPhone || '',
+                  emergencyRelationship: currentUser.emergencyRelationship || ''
+                });
+                setShowPinFieldsInProfile(false);
+                setShowProfileModal(true);
+              }}
+              className="flex items-center gap-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
+              title="Meu Perfil de Colaborador"
+            >
+              <span className="relative"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-9 w-9 rounded-xl border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
+              <div className="hidden max-w-44 md:block">
+                <span className="text-xs font-bold block leading-tight text-slate-800">{currentUser.name}</span>
+                <span className="text-[9px] uppercase font-bold text-slate-500 block tracking-wider">
+                  {currentUser.role} {currentUser.isAdmin && '• ADM'}
+                </span>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 sm:gap-1 sm:pl-2">
+              <button type="button" onClick={() => setIsDarkMode(value => !value)} className="rounded-lg p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-700" title={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}>
+                {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
+              {!isStandaloneApp && <button type="button" onClick={handleInstallApp} className="p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
+              <button type="button" onClick={() => { setActiveTab('updates'); setShowNotificationsDropdown(false); }} className="relative rounded-lg p-2 text-cyan-700 transition hover:bg-cyan-50" title="Novidades do Comunica" aria-label="Novidades do Comunica">
+                <Sparkles className="h-4 w-4" />
+                {platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
+              </button>
+              
+              <div className="relative">
+                <button
+                  onClick={() => setShowMessagesModal(true)}
+                  className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
+                  title="Mensagens Privadas"
+                >
+                  <MessageSquare className="h-4.5 w-4.5" />
+                  {unreadMessages.length > 0 && (
+                    <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white shadow-sm ring-2 ring-white">
+                      {unreadMessages.length > 9 ? '9+' : unreadMessages.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {/* O container pai DEVE ter "relative" para ancorar o dropdown */}
+<div className="relative">
+  
+  <button
+    onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+    className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
+    title="Notificações"
+  >
+    <Bell className="h-4.5 w-4.5" />
+    {unreadNotifications.length > 0 && (
+      /* Ajustado para 'absolute' para a bolinha não bugar o botão */
+      <span className="absolute top-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-600 text-[8px] font-bold text-white shadow-sm ring-2 ring-white">
+        {unreadNotifications.length > 9 ? '9+' : unreadNotifications.length}
+      </span>
+    )}
+  </button>
+
+  {showNotificationsDropdown && (
+    <div className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-50 mt-2 max-h-[calc(100dvh-5.5rem-env(safe-area-inset-top))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in slide-in-from-top-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-none">
+      
+      <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+        <h4 className="font-extrabold text-sm flex items-center gap-1.5">
+          <Bell className="h-4 w-4 text-slate-300"/> Notificações
+        </h4>
+        <div className="flex items-center gap-2">
+          {unreadNotifications.length > 0 && (
+            <button type="button" onClick={handleMarkAllAsRead} className="text-[10px] text-slate-300 hover:text-white font-bold bg-slate-800 px-2 py-1 rounded">
+              Marcar lidas
+            </button>
+          )}
+          <button type="button" onClick={() => setShowNotificationsDropdown(false)} className="rounded p-1 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white" title="Fechar notificações" aria-label="Fechar notificações">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      
+      <div className="max-h-[calc(100dvh-10rem)] overflow-y-auto overscroll-contain sm:max-h-80">
+        {notificationsToShow.length === 0 ? (
+          <div className="p-4 text-center text-slate-500 text-xs italic">Nenhuma notificação recente.</div>
+        ) : 
+               (
+                        notificationsToShow.map(notif => {
+                          const isUnread = !(currentUser.readNotifications || []).includes(notif.id);
+                          
+                          // Busca os dados do autor da publicação para enriquecer a notificação
+                          const authorUser = usersList.find(u => u.id === notif.authorId) || usersList.find(u => String(notif.author || '').startsWith(u.name));
+                          const authorName = authorUser ? authorUser.name : String(notif.author || 'Equipe responsável').split(' (')[0];
+                          const authorRole = authorUser ? authorUser.role : 'Colaborador';
+                          const deptId = notif.dept || (authorUser ? getUserDepts(authorUser)[0] : 'adm');
+                          const deptName = departmentsList.find(d => d.id === deptId)?.name || 'Geral';
+
+                          return (
+                            <button
+                              key={notif.id}
+                              onClick={() => handleNotificationClick(notif)}
+                              className={`w-full text-left p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${isUnread ? 'bg-blue-50/20' : ''}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className={`text-xs font-bold ${isUnread ? 'text-slate-900' : 'text-slate-600'} line-clamp-2 leading-snug`}>{notif.title}</span>
+                                {isUnread && <span className="h-2 w-2 rounded-full bg-blue-600 flex-shrink-0 mt-1 shadow-sm"></span>}
+                              </div>
+                              
+                              <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
+                                <img src={authorUser?.avatar || DEFAULT_AVATAR} className="w-4 h-4 rounded-full object-cover border border-slate-200 flex-shrink-0" alt="" />
+                                <span className="truncate leading-tight">
+                                  <strong className="text-slate-700">{authorName}</strong><br/>
+                                  {authorRole} • <span className="uppercase">{deptName}</span>
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-0.5">
+                                <span className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">{notif.notifType === 'announcement' ? '📌 RH Oficial' : notif.notifType === 'poll' ? '📊 Enquete' : '🏢 Canal Setor'}</span>
+                                <span className="text-[9px] text-slate-400 font-semibold">{notif.date || (getNotifTs(notif) ? new Date(getNotifTs(notif)).toLocaleDateString('pt-BR') : '')}</span>
+                              </div>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {(currentUser.isAdmin || currentUser.isDeveloper) && <button
+                type="button"
+                onClick={() => { setControlCenterTab('permissions'); setShowControlCenter(true); }}
+                title="Configurações, permissões e auditoria"
+                className="p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-700 transition-all"
+              >
+                <Lock className="h-4 w-4" />
+              </button>}
+
+              <button
+                onClick={() => {
+                  setMyProfileForm({
+                    avatar: currentUser.avatar || '',
+                    emergencyName: currentUser.emergencyName || '',
+                    emergencyPhone: currentUser.emergencyPhone || '',
+                    emergencyRelationship: currentUser.emergencyRelationship || ''
+                  });
+                  setShowPinFieldsInProfile(true);
+                  setShowProfileModal(true);
+                }}
+                title="Alterar PIN de Acesso"
+                className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all"
+                type="button"
+              >
+                <KeyRound className="h-4 w-4" />
+              </button>
+              
+              <button
+                onClick={handleUserLogout}
+                title="Encerrar Sessão"
+                className="p-2 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-slate-500 transition-all flex items-center gap-1 text-xs font-semibold"
+                type="button"
+              >
+                <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sair</span>
+              </button>
+            </div>
+          </div>
+
+          <button 
+            className="sm:hidden p-2 hover:bg-slate-100 rounded-lg ml-auto text-slate-600"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            type="button"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+          </div>
+      </header>
+
+      {/* 1. CAIXA PRINCIPAL: Ela precisa abraçar o Menu e o Feed juntos */}
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:flex-row">
+
+        {/* 2. BARRA LATERAL ESQUERDA (O Menu Correto) */}
+        <aside data-tour="platform-menu" className={`${sidebarCollapsed ? 'sm:w-20' : 'sm:w-72'} h-full w-full overflow-y-auto pb-24 transition-all duration-300 sm:sticky sm:top-20 sm:max-h-[calc(100vh-6rem)] ${
+          mobileMenuOpen ? 'fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-slate-100 p-5 pt-[calc(env(safe-area-inset-top)+5rem)] pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))]' : 'hidden sm:block' 
+        }`}>
+                    {/* Botão fechar no mobile */}
+          {mobileMenuOpen && (
+            <div className="flex justify-end mb-6 sm:hidden">
+              <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+          )}
+
+          <div className={`mb-3 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-800 text-white shadow-lg ${sidebarCollapsed ? 'p-2' : 'p-4'}`}>
+            <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}><div className="relative shrink-0"><img src={currentUser.avatar || DEFAULT_AVATAR} alt="Foto de perfil" className={`${sidebarCollapsed ? 'h-10 w-10' : 'h-12 w-12'} rounded-2xl border-2 border-white/40 object-cover shadow`} /><span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-blue-950 bg-emerald-400" /></div>{!sidebarCollapsed && <div className="min-w-0"><h4 className="truncate text-sm font-extrabold">{currentUser.name}</h4><p className="mt-0.5 truncate text-[10px] font-semibold text-blue-100/70">{currentUser.role}</p><span className="mt-2 inline-flex rounded-full bg-white/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-cyan-100">Sessão ativa</span></div>}</div>
+          </div>
+
+          <nav className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+            <div className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-2 pt-1'}`}>{!sidebarCollapsed && <div><span className="block text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Navegação</span><strong className="text-xs text-slate-800">Menu principal</strong></div>}<button type="button" onClick={() => setSidebarCollapsed(previous => !previous)} className="hidden rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:block" title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'} aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}>{sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</button></div>
+            <div className="space-y-3">{visibleNavigationSections.map(section => <section key={section.label}>{!sidebarCollapsed && <span className="mb-1 block px-3 text-[8px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{section.label}</span>}<div className="space-y-1">{section.items.map(item => { const Icon = item.icon; const active = activeTab === item.id; return <button key={item.id} type="button" title={sidebarCollapsed ? item.label : undefined} onClick={() => { if (item.action) item.action(); else setActiveTab(item.id); setMobileMenuOpen(false); }} className={`group relative flex w-full items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5 text-left'} ${active ? `bg-gradient-to-r ${item.activeClass} text-white shadow-md` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><span className={`grid shrink-0 place-items-center rounded-xl transition ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'} ${active ? 'bg-white/15 text-white' : `bg-slate-100 ${item.accent} group-hover:bg-white group-hover:shadow-sm`}`}><Icon className="h-4.5 w-4.5" /></span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-extrabold">{item.label}</strong><span className={`mt-0.5 block truncate text-[8px] font-medium ${active ? 'text-white/65' : 'text-slate-400'}`}>{item.description}</span></span>}{item.badge ? <span className={`${sidebarCollapsed ? 'absolute right-1 top-1' : ''} grid min-h-5 min-w-5 place-items-center rounded-full px-1 text-[8px] font-extrabold ${active ? 'bg-white text-slate-900' : 'bg-rose-100 text-rose-700'}`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}{active && !sidebarCollapsed && <ChevronRight className="h-3.5 w-3.5 text-white/70" />}</button>; })}</div></section>)}</div>
+          </nav>
+
+          <div className={`relative mt-3 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}><div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-cyan-300/20 blur-xl" />{sidebarCollapsed ? <button type="button" onClick={handleGenerateWeeklySummary} title="Gerar boletim semanal" className="relative grid h-11 w-full place-items-center rounded-2xl bg-blue-900 text-white"><Sparkles className="h-4.5 w-4.5" /></button> : <div className="relative"><span className="flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wider text-blue-700"><Sparkles className="h-4 w-4" /> Inteligência do Comunica</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Boletim semanal</h4><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Compile os principais acontecimentos da empresa.</p><button onClick={handleGenerateWeeklySummary} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-900 px-3 py-2.5 text-[10px] font-extrabold text-white shadow transition hover:bg-blue-800" type="button"><Sparkles className="h-4 w-4" /> Gerar boletim</button></div>}</div>
+
+        </aside>
+
+        {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
+        <main className="flex-1 flex flex-col gap-6 overflow-hidden">          
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative w-full">
+              <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Pesquisar comunicados, setores ou palavras-chave..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2 w-full rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto justify-end">
+              {currentUser.isAdmin && (
+                <button
+                  onClick={() => setShowAnnModal(true)}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow-md flex-1 sm:flex-initial justify-center transition-all"
+                  type="button"
+                >
+                  <Plus className="h-4.5 w-4.5" /> Novo Comunicado
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setNewPost(prev => ({ ...prev, depts: [getUserDepts(currentUser)[0] || 'rh'] }));
+                  setShowPostModal(true);
+                }}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow-sm flex-1 sm:flex-initial justify-center transition-all border border-slate-350"
+                type="button"
+              >
+                <Share2 className="h-4.5 w-4.5 text-slate-600" /> Publicar no Setor
+              </button>
+            </div>
+          </div>
+
+          {/* TAB: SUPPORT */}
+          {activeTab === 'updates' && (
+            <div data-tour="updates"><PlatformUpdates
+              updates={platformUpdates}
+              readIds={platformUpdateReadIds}
+              onRead={handlePlatformUpdateRead}
+              onPublish={handlePublishPlatformUpdate}
+              onArchive={handleArchivePlatformUpdate}
+              onImprove={handleImprovePlatformUpdate}
+              canOpenModule={canOpenModule}
+              isDeveloper={Boolean(currentUser.isDeveloper)}
+            /></div>
+          )}
+
+          {activeTab === 'support' && currentUser.isDeveloper && (
+            <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <section className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-6 text-white shadow-xl shadow-blue-950/10 sm:p-8">
+                <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-cyan-300/15 blur-3xl" />
+                <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[.16em] text-cyan-100"><KeyRound className="h-3.5 w-3.5" /> Operação multiempresa</span><h2 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Central de Suporte do Comunica</h2><p className="mt-2 text-sm leading-relaxed text-blue-100/80">Acompanhe empresas, priorize chamados e entre no ambiente correto sem misturar informações.</p></div>
+                  <button type="button" onClick={() => setShowCompanyRegistration(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-3 text-xs font-extrabold text-slate-950 shadow-lg shadow-cyan-950/20 hover:bg-cyan-200"><Building className="h-4 w-4" /> Cadastrar nova empresa</button>
+                </div>
+              </section>
+
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[
+                  { label: 'Empresas atendidas', value: supportMetrics.companies, detail: 'ambientes cadastrados', icon: Building, tone: 'text-blue-700 bg-blue-50' },
+                  { label: 'Chamados abertos', value: supportMetrics.open, detail: 'aguardando resolução', icon: MessageSquare, tone: 'text-cyan-700 bg-cyan-50' },
+                  { label: 'Não lidos', value: supportMetrics.unread, detail: 'pedem sua atenção', icon: Bell, tone: 'text-violet-700 bg-violet-50' },
+                  { label: 'Prazo vencido', value: supportMetrics.overdue, detail: 'precisam de prioridade', icon: Clock, tone: 'text-rose-700 bg-rose-50' },
+                ].map(metric => { const MetricIcon = metric.icon; return <article key={metric.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className={`grid h-10 w-10 place-items-center rounded-xl ${metric.tone}`}><MetricIcon className="h-4.5 w-4.5" /></div><span className="mt-3 block text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className="mt-1 block text-2xl font-black text-slate-900">{metric.value}</strong><span className="text-[9px] text-slate-500">{metric.detail}</span></article>; })}
+              </div>
+
+              <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 border-b border-slate-100 bg-gradient-to-r from-white via-blue-50/40 to-cyan-50/50 p-5 sm:flex-row sm:items-end sm:justify-between">
+                  <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Implantação e adoção</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Saúde das empresas</h3><p className="mt-1 text-xs leading-5 text-slate-500">Saúde combina preparo do ambiente, uso nos últimos 30 dias e alcance das notificações.</p></div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold text-slate-600">Média de saúde <strong className="ml-1 text-slate-900">{supportHealthAverage}%</strong></span><button type="button" disabled={supportHealthLoading} onClick={() => loadSupportCompanyHealth(true)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-[10px] font-extrabold text-white hover:bg-slate-800 disabled:opacity-50">{supportHealthLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />} Atualizar indicadores</button></div>
+                </div>
+                {supportHealthError && <p role="alert" className="m-5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">{supportHealthError}</p>}
+                {!supportHealthError && supportHealthLoading && !supportCompanyHealth.companies.length && <div className="flex items-center justify-center gap-2 p-10 text-xs font-semibold text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin text-blue-600" /> Preparando o resumo das empresas...</div>}
+                <div className="grid gap-4 p-5 lg:grid-cols-2">
+                  {visibleSupportHealth.map(company => { const tone = supportHealthTone[company.level] || supportHealthTone.progressing; const companyRecord = companies.find(item => item.id === company.companyId) || { id: company.companyId, name: company.name, code: company.code }; return <article key={company.companyId} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Código {company.code || 'não informado'}</span><h4 className="mt-1 truncate text-sm font-extrabold text-slate-900">{company.name}</h4></div><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${tone.className}`}>{tone.label}</span></div><div className="mt-4 flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${company.score}%` }} /></div><strong className="text-sm text-slate-900">{company.score}%</strong></div><div className="mt-2 flex flex-wrap gap-2 text-[9px] font-semibold text-slate-600"><span className="rounded-full bg-white px-2.5 py-1">Implantação {company.implementationScore}%</span><span className="rounded-full bg-white px-2.5 py-1">Adoção {company.adoptionRate}%</span><span className="rounded-full bg-white px-2.5 py-1">Notificações {company.notificationRate}%</span></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Equipe</span><strong className="mt-1 block text-xs text-slate-800">{company.employees}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Ativos 30d</span><strong className="mt-1 block text-xs text-slate-800">{company.active30Days}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Sem acesso</span><strong className="mt-1 block text-xs text-slate-800">{company.neverAccessed}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Com alertas</span><strong className="mt-1 block text-xs text-slate-800">{company.notificationUsers}</strong></div></div><div className="mt-4 grid gap-1.5 sm:grid-cols-2">{(company.checklist || []).map(item => <div key={item.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-[9px] font-semibold ${item.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-white text-slate-500'}`}>{item.complete ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <Clock className="h-3.5 w-3.5 shrink-0" />}<span>{supportHealthChecklistLabels[item.id] || item.id}</span></div>)}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><span className="text-[9px] text-slate-500">Último acesso: <strong className="text-slate-700">{company.lastAccessAt ? formatSupportActivity(company.lastAccessAt) : 'ainda não realizado'}</strong></span><button type="button" onClick={() => { setActiveCompany(companyRecord); setActiveTab('dashboard'); triggerNotification(`Ambiente de ${company.name} selecionado.`); }} className="rounded-lg bg-blue-700 px-3 py-2 text-[9px] font-extrabold text-white hover:bg-blue-800">Abrir ambiente</button></div></article>; })}
+                  {!supportHealthLoading && !supportHealthError && visibleSupportHealth.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">Nenhuma empresa corresponde à busca ou os indicadores ainda não foram carregados.</div>}
+                </div>
+                {supportCompanyHealth.generatedAt > 0 && <p className="border-t border-slate-100 px-5 py-3 text-[9px] text-slate-400">Resumo atualizado em {formatSupportActivity(supportCompanyHealth.generatedAt)}. Os dados são armazenados em cache por cinco minutos para reduzir leituras e custos.</p>}
+              </section>
+
+              <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+                <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 p-5">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-blue-700">Fila de atendimento</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Chamados das empresas</h3></div><span className="text-[10px] font-semibold text-slate-400">{visibleSupportTickets.length} de {supportTickets.length} chamado(s)</span></div>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <label className="relative block"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={supportTicketSearch} onChange={event => setSupportTicketSearch(event.target.value)} placeholder="Buscar empresa, pessoa, assunto ou ticket" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" /></label>
+                      <select aria-label="Filtrar chamados de suporte" value={supportTicketFilter} onChange={event => setSupportTicketFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todos</option><option value="open">Em atendimento</option><option value="unread">Não lidos</option><option value="overdue">Prazo vencido</option><option value="completed">Concluídos</option></select>
+                    </div>
+                    {supportLoadError && <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">Não foi possível carregar todos os chamados. Atualize a página para tentar novamente.</p>}
+                  </div>
+                  <div className="max-h-[38rem] divide-y divide-slate-100 overflow-y-auto">
+                    {visibleSupportTickets.map(ticket => { const status = supportTicketStatus[ticket.status]; return <button key={ticket.id} type="button" onClick={() => openSupportTicket(ticket)} className={`group flex w-full gap-3 p-4 text-left transition hover:bg-blue-50/60 sm:p-5 ${ticket.unread ? 'bg-blue-50/20' : ''}`}><span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${ticket.unread ? 'bg-blue-600 ring-4 ring-blue-100' : 'bg-slate-200'}`} /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2">{ticket.ticketNumber > 0 && <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[9px] font-black text-white">#{String(ticket.ticketNumber).padStart(6, '0')}</span>}<span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${status.className}`}>{status.label}</span>{ticket.unread && <span className="rounded-full bg-blue-600 px-2.5 py-1 text-[9px] font-bold text-white">Novo</span>}</span><strong className="mt-2 block break-words text-sm text-slate-900 [overflow-wrap:anywhere]">{ticket.subject}</strong><span className="mt-1 block text-[10px] font-semibold text-slate-600">{ticket.companyName} · {ticket.requester}</span><span className="mt-1 line-clamp-2 block break-words text-[10px] leading-4 text-slate-500 [overflow-wrap:anywhere]">{ticket.preview}</span></span><span className="flex shrink-0 flex-col items-end gap-2 text-[9px] text-slate-400"><span>{formatSupportActivity(ticket.timestamp)}</span><ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" /></span></button>; })}
+                    {!supportLoadError && visibleSupportTickets.length === 0 && <div className="p-10 text-center"><MessageSquare className="mx-auto h-8 w-8 text-slate-300" /><strong className="mt-3 block text-sm text-slate-700">Nenhum chamado encontrado</strong><p className="mt-1 text-xs text-slate-400">Ajuste a busca ou os filtros para ver outros atendimentos.</p></div>}
+                  </div>
+                </section>
+
+                <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 p-5"><span className="text-[9px] font-black uppercase tracking-[.16em] text-cyan-700">Diretório de clientes</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Empresas</h3><label className="relative mt-4 block"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={supportCompanySearch} onChange={event => setSupportCompanySearch(event.target.value)} placeholder="Buscar nome ou código" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" /></label></div>
+                  <div className="max-h-[38rem] space-y-2 overflow-y-auto p-3">
+                    {visibleSupportCompanies.map(company => { const companyTickets = supportTickets.filter(ticket => ticket.companyId === company.id); const companyUnread = companyTickets.filter(ticket => ticket.unread).length; return <button key={company.id} type="button" onClick={() => { setActiveCompany(company); setActiveTab('dashboard'); triggerNotification(`Ambiente de ${company.name} selecionado.`); }} className={`group flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40 ${activeCompany?.id === company.id ? 'border-cyan-400 bg-cyan-50' : 'border-slate-200 bg-white'}`}><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-900 text-sm font-black text-white">{String(company.name || 'E').slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-slate-900">{company.name}</strong><span className="mt-0.5 block text-[9px] text-slate-500">Código {company.code || 'não informado'}</span><span className="mt-1 block text-[9px] font-semibold text-blue-700">{companyTickets.length} chamado(s){companyUnread ? ` · ${companyUnread} não lido(s)` : ''}</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5" /></button>; })}
+                    {visibleSupportCompanies.length === 0 && <p className="p-6 text-center text-xs text-slate-400">Nenhuma empresa corresponde à busca.</p>}
+                  </div>
+                </section>
+              </div>
+
+              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-950 to-blue-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between">
+                  <div><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-200">Ferramenta exclusiva do suporte</span><h3 className="mt-1 flex items-center gap-2 text-base font-extrabold"><Database className="h-5 w-5" /> Banco de dados</h3><p className="mt-1 text-xs text-slate-300">Backup e restauração da empresa selecionada.</p></div>
+                  <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs"><span className="block text-[9px] font-bold uppercase text-blue-200">Empresa em operação</span><strong>{activeCompany?.name || 'Nenhuma empresa selecionada'}</strong></div>
+                </div>
+                <div className="grid gap-4 p-5 md:grid-cols-2">
+                  <div className="flex flex-col rounded-2xl border border-blue-100 bg-blue-50 p-5"><div className="grid h-11 w-11 place-items-center rounded-xl bg-blue-700 text-white"><Download className="h-5 w-5" /></div><h4 className="mt-4 text-sm font-black text-slate-900">Exportar dados</h4><p className="mt-1 flex-1 text-xs leading-5 text-slate-600">Gera uma cópia dos colaboradores, estrutura, publicações, mensagens, calendário e demais informações carregadas da empresa.</p><button type="button" disabled={!activeCompany?.id} onClick={handleExportData} className="mt-4 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Baixar arquivo de backup</button></div>
+                  <div className="flex flex-col rounded-2xl border border-emerald-100 bg-emerald-50 p-5"><div className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-700 text-white"><Upload className="h-5 w-5" /></div><h4 className="mt-4 text-sm font-black text-slate-900">Restaurar backup</h4><p className="mt-1 flex-1 text-xs leading-5 text-slate-600">Importa um arquivo JSON para a empresa selecionada. Confirme a empresa acima antes de continuar.</p><label className={`mt-4 block rounded-xl px-4 py-2.5 text-center text-xs font-bold text-white ${activeCompany?.id ? 'cursor-pointer bg-emerald-700 hover:bg-emerald-800' : 'cursor-not-allowed bg-slate-400 opacity-50'}`}><span>Selecionar arquivo JSON</span><input disabled={!activeCompany?.id} type="file" accept=".json" onChange={handleImportData} className="hidden" /></label></div>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* TAB: DASHBOARD */}
+          {activeTab === 'dashboard' && (
+            <div data-tour="dashboard" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <section data-tour="dashboard-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-6 text-white shadow-xl shadow-blue-950/10 sm:p-8">
+                <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-cyan-300/15 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-24 left-1/4 h-56 w-56 rounded-full bg-blue-400/15 blur-3xl" />
+                <div className="relative grid gap-6 lg:grid-cols-[1.35fr_1fr] lg:items-end">
+                  <div><span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[.16em] text-cyan-100"><Layers className="h-3.5 w-3.5" /> Central de Gestão</span><h2 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Olá, {String(currentUser?.name || 'colaborador').split(' ')[0]}.</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-blue-100/80">{dashboardRoleLabel} · acompanhe o que exige atenção e acesse rapidamente suas principais atividades em {activeCompany?.name || 'sua empresa'}.</p><button type="button" onClick={() => setActiveTutorial('dashboard')} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-[10px] font-bold text-white hover:bg-white/15"><BookOpen className="h-3.5 w-3.5" /> Entenda seu painel</button></div>
+                  <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => document.querySelector('[data-tour=\"dashboard-priorities\"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Alertas</span><strong className="mt-1 block text-2xl font-black">{dashboardAttentionItems.length}</strong></button><button type="button" onClick={() => { setInboxStatusFilter('unread'); setShowMessagesModal(true); }} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Não lidas</span><strong className="mt-1 block text-2xl font-black">{unreadMessages.length}</strong></button><button type="button" onClick={() => setActiveTab('scale')} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Próximos eventos</span><strong className="mt-1 block text-2xl font-black">{dashboardUpcomingEvents.length}</strong></button></div>
+                </div>
+              </section>
+
+              <div className="-mt-3 flex justify-end"><button type="button" onClick={() => setActiveTutorial('platform')} className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3.5 py-2 text-[10px] font-extrabold text-blue-800 shadow-sm hover:border-blue-200 hover:bg-blue-50"><BookOpen className="h-3.5 w-3.5" /> Iniciar tour completo da plataforma</button></div>
+
+              <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
+                <section data-tour="dashboard-priorities" className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-end justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.14em] text-rose-600">Prioridades</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">O que precisa da sua atenção</h3></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-bold text-slate-600">Atualização em tempo real</span></div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">{dashboardAttentionItems.map(item => { const ItemIcon = item.icon; return <button key={item.id} type="button" onClick={item.action} className={`group flex min-w-0 items-center gap-3 rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${dashboardAttentionTone[item.tone]}`}><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/80 shadow-sm"><ItemIcon className="h-4.5 w-4.5" /></span><span className="min-w-0 flex-1"><strong className="block text-xs">{item.label}</strong><span className="mt-0.5 block break-words text-[10px] opacity-75 [overflow-wrap:anywhere]">{item.detail}</span></span><ChevronRight className="h-4 w-4 shrink-0 opacity-40 transition group-hover:translate-x-0.5" /></button>; })}{dashboardAttentionItems.length === 0 && <div className="col-span-full flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800"><span className="grid h-10 w-10 place-items-center rounded-xl bg-white"><CheckCircle2 className="h-5 w-5" /></span><div><strong className="block text-xs">Tudo em ordem por aqui</strong><span className="mt-0.5 block text-[10px] text-emerald-700">Você não possui pendências importantes neste momento.</span></div></div>}</div>
+                </section>
+                <section data-tour="dashboard-actions" className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><span className="text-[9px] font-black uppercase tracking-[.14em] text-blue-600">Acesso rápido</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">Ferramentas para o seu perfil</h3><div className="mt-4 grid grid-cols-2 gap-2">{dashboardQuickActions.slice(0, 6).map(item => { const ItemIcon = item.icon; return <button key={item.id} type="button" onClick={item.action} className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white text-blue-700 shadow-sm"><ItemIcon className="h-4 w-4" /></span><strong className="mt-2 block text-[10px] text-slate-800">{item.label}</strong><span className="mt-0.5 block text-[9px] leading-4 text-slate-500">{item.detail}</span></button>; })}</div></section>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button type="button" onClick={() => setDashboardDetail('active')} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 text-left hover:border-slate-400 hover:shadow-md transition-all">
+                  <div className="p-3 rounded-xl bg-slate-100 text-slate-800 border border-slate-200">
+                    <UserCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase">Membros Ativos</span>
+                    <strong className="text-xl text-slate-800 font-black">{activePresences} Integrantes</strong>
+                  </div>
+                </button>
+
+                <button type="button" onClick={() => setDashboardDetail('offDuty')} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 text-left hover:border-slate-400 hover:shadow-md transition-all">
+                  <div className="p-3 rounded-xl bg-slate-50 text-slate-600 border border-slate-200">
+                    <Coffee className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase">De Folga Hoje</span>
+                    <strong className="text-xl text-slate-800 font-black">{offDutyCount} Colaboradores</strong>
+                  </div>
+                </button>
+
+                <button type="button" onClick={() => setDashboardDetail('vacation')} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 text-left hover:border-slate-400 hover:shadow-md transition-all">
+                  <div className="p-3 rounded-xl bg-slate-100 text-slate-700 border border-slate-250">
+                    <BookOpen className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold block uppercase">Em Férias</span>
+                    <strong className="text-xl text-slate-800 font-black">{vacationCount} Pessoas</strong>
+                  </div>
+                </button>
+              </div>
+
+              {(birthdayMembers.length > 0 || newMembers.length > 0) && (
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+                    <h3 className="flex items-center gap-2 text-sm font-extrabold text-blue-950">🎉 Aniversariantes de hoje</h3>
+                    {birthdayMembers.length ? <div className="mt-3 flex flex-wrap gap-2">{birthdayMembers.map(member => <span key={member.id} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-blue-900 shadow-sm">{member.name}</span>)}</div> : <p className="mt-2 text-xs text-blue-700">Não há aniversariantes cadastrados para hoje.</p>}
+                  </div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+                    <h3 className="flex items-center gap-2 text-sm font-extrabold text-emerald-950">👋 Boas-vindas à equipe</h3>
+                    {newMembers.length ? <div className="mt-3 flex flex-wrap gap-2">{newMembers.map(member => <span key={member.id} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-emerald-900 shadow-sm">{member.name}</span>)}</div> : <p className="mt-2 text-xs text-emerald-700">Novos colaboradores aparecerão aqui durante os primeiros 30 dias.</p>}
+                  </div>
+                </div>
+              )}
+
+              {currentUser.isAdmin && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between"><div><h3 className="text-sm font-extrabold text-slate-800">Visão gerencial</h3><p className="mt-1 text-xs text-slate-500">Indicadores dos últimos 30 dias.</p></div><TrendingUp className="h-6 w-6 text-slate-700" /></div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4"><div className="rounded-xl bg-slate-50 p-3"><span className="block text-[10px] font-bold uppercase text-slate-400">Equipe</span><strong className="text-lg text-slate-800">{employeesList.length}</strong></div><div className="rounded-xl bg-slate-50 p-3"><span className="block text-[10px] font-bold uppercase text-slate-400">Presenciais</span><strong className="text-lg text-slate-800">{activePresences}</strong></div><div className="rounded-xl bg-slate-50 p-3"><span className="block text-[10px] font-bold uppercase text-slate-400">Leitura (30 dias)</span><strong className="text-lg text-slate-800">{recentReadRate}%</strong><small className="block text-[9px] text-slate-400">{recentReadConfirmations} confirmações</small></div><div className="rounded-xl bg-slate-50 p-3"><span className="block text-[10px] font-bold uppercase text-slate-400">Enquetes</span><strong className="text-lg text-slate-800">{pollsList.length}</strong></div></div>
+                  {recentAnnouncementsForReport.length > 0 && <div className="mt-4 border-t border-slate-100 pt-3"><p className="mb-2 text-[10px] font-bold uppercase text-slate-400">Leitura por comunicado</p><div className="flex flex-col gap-2">{recentAnnouncementsForReport.slice(0, 4).map(announcement => { const count = announcement.readBy?.length || 0; const rate = usersList.length ? Math.round((count / usersList.length) * 100) : 0; return <div key={announcement.id} className="flex items-center gap-3 text-xs"><span className="w-44 truncate font-semibold text-slate-700">{announcement.title}</span><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${rate}%` }} /></div><span className="w-16 text-right text-[10px] font-bold text-slate-600">{count}/{usersList.length}</span></div> })}</div></div>}
+                </div>
+              )}
+
+              {dashboardDetail && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-slate-900 px-5 py-3 text-white flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-extrabold">{dashboardDetailTitle}</h4>
+                      <p className="text-[10px] text-slate-300">{dashboardDetailMembers.length} colaborador(es)</p>
+                    </div>
+                    <button type="button" onClick={() => setDashboardDetail(null)} className="p-1 rounded hover:bg-slate-800"><X className="h-4 w-4" /></button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {dashboardDetailMembers.length === 0 ? (
+                      <p className="col-span-full py-4 text-center text-xs italic text-slate-400">Nenhum colaborador nesta situação.</p>
+                    ) : dashboardDetailMembers
+                      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+                      .map(member => (
+                        <div key={member.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="min-w-0">
+                            <strong className="block truncate text-xs text-slate-800">{member.name}</strong>
+                            <span className="block truncate text-[10px] text-slate-500">{departmentsList.find(dept => getUserDepts(member).includes(dept.id))?.name || member.role}</span>
+                          </div>
+                          <span className="shrink-0 rounded bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-700">{member.currentStatus}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <div className="lg:col-span-2 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      <Megaphone className="h-5 w-5 text-slate-700" /> Feed Dinâmico (Destaques Recentes)
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-semibold text-slate-400 italic">Atualizado em tempo real</span>
+                    </div>
+                  </div>
+
+                  {dashboardFeedItems.slice(0, 4).map((item) => (
+                    <div key={item.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-slate-300 transition-all flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded border uppercase ${item.notifType === 'announcement' ? 'bg-blue-50 text-blue-800 border-blue-200' : item.notifType === 'poll' ? 'bg-cyan-50 text-cyan-800 border-cyan-200' : 'bg-slate-100 text-slate-800 border-slate-200'}`}>
+                          {item.category || (departmentsList.find(d => d.id === item.dept)?.name || item.dept)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold">{item.date || (getNotifTs(item) ? new Date(getNotifTs(item)).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '')}</span>
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{item.title}</h4>
+                        <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><TextoComEmojis texto={item.content} /></p>
+                        {item.notifType === 'poll' && <button type="button" onClick={() => { setPollSearch(item.formTitle || item.question || ''); setPollViewFilter('Todas'); setActiveTab('polls'); }} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-cyan-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-cyan-800"><Activity className="h-4 w-4" /> Participar agora</button>}
+                        
+                        {item.image && (
+                          <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200">
+                            <img src={item.image} alt={item.title} loading="lazy" className="block w-full h-auto rounded-xl object-contain" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="h-[1px] bg-slate-100 my-1"></div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">Postado por: <strong className="text-slate-700 font-semibold">{item.author}</strong></span>
+                        <div className="flex items-center gap-3">
+                          {currentUser.isAdmin && item.notifType === 'announcement' && (
+                            <button type="button" onClick={() => handleDeleteAnnouncement(item)} title="Remover comunicado" aria-label={`Remover comunicado ${item.title}`} className="text-slate-400 hover:text-rose-600">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                          {item.notifType !== 'poll' && <button
+                            onClick={() => item.notifType === 'announcement' ? handleLikeAnnouncement(item.id) : handleLikePost(item.id)}
+                            className={`flex items-center gap-1 text-xs font-semibold ${
+                              item.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'
+                            }`}
+                            type="button"
+                          >
+                            <Heart className={`h-4.5 w-4.5 ${item.likedBy?.includes(currentUser.id) ? 'fill-blue-900 text-blue-900' : ''}`} /> {item.likes}
+                          </button>}
+                          {item.notifType === 'poll' && <span className="flex items-center gap-1 text-xs font-semibold text-cyan-800"><Users className="h-4 w-4" /> {pollVoteCount(item)} participação(ões)</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {dashboardFeedItems.length === 0 && (
+                    <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-center text-slate-400 text-xs italic">
+                      Seu feed está vazio. Não há novos destaques para o seu perfil.
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-slate-700" /> Eventos Pendentes
+                  </h3>
+
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
+                    {dashboardUpcomingEvents.slice(0, 3).map((ev) => (
+                      <div key={ev.id} className="p-3 rounded-xl bg-slate-50 border border-slate-150 flex flex-col gap-1.5 hover:border-slate-300 transition-all relative group">
+                        
+                        {currentUser.isAdmin && (
+                          <button
+                            onClick={() => handleDeleteEvent(ev.id)}
+                            title="Remover Evento Oficial"
+                            className="canais de setor top-2 right-2 p-1 text-slate-400 hover:text-rose-600 bg-white shadow-sm border border-slate-250 rounded transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] bg-slate-200 text-slate-800 font-extrabold px-1.5 py-0.5 rounded">
+                            {ev.type}
+                          </span>
+                          <span className="text-[10px] text-slate-800 font-bold">{ev.date.split('-')[2]}/{ev.date.split('-')[1]}</span>
+                        </div>
+                        <h5 className="font-extrabold text-slate-800 text-xs">{ev.title}</h5>
+                        <p className="text-slate-500 text-[11px] leading-tight flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5 text-slate-400" /> {ev.location}
+                        </p>
+                      </div>
+                    ))}
+                    
+                    <button 
+                      onClick={() => setActiveTab('scale')}
+                      className="w-full text-center py-2 text-xs font-bold text-slate-700 hover:text-slate-900 hover:underline"
+                      type="button"
+                    >
+                      Acessar Calendário Geral
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB: CENTRAL DE SERVIÇOS */}
+          {activeTab === 'services' && (
+            <div data-tour="services" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <section data-tour="services-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-6 text-white shadow-xl shadow-blue-950/10 sm:p-8">
+                <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-300/15 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-blue-400/15 blur-3xl" />
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-cyan-100"><CheckCircle2 className="h-3.5 w-3.5" /> Atendimento interno</span>
+                    <h3 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Central de Serviços</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-blue-100/80">Abra solicitações para as áreas responsáveis, acompanhe prazos e aprovações e mantenha todo o histórico em um único chamado.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setActiveTutorial('services')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15"><BookOpen className="h-4 w-4" /> Como usar</button>
+                    {(currentUser?.isAdmin || currentUser?.isDeveloper) && <button type="button" onClick={openServiceSettings} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15"><Settings2 className="h-4 w-4" /> Configurar catálogo</button>}
+                    <button type="button" disabled={!activeServiceCatalog.length} onClick={() => activeServiceCatalog[0] && openServiceRequestForm(activeServiceCatalog[0].id)} className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-extrabold text-blue-950 shadow-lg shadow-blue-950/30 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" /> Nova solicitação</button>
+                  </div>
+                </div>
+              </section>
+
+              <section data-tour="services-metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                {[
+                  { id: 'all', label: 'Total', value: serviceMetrics.total, color: 'text-slate-900' },
+                  { id: 'active', label: 'Pendentes', value: serviceMetrics.active, color: 'text-blue-700' },
+                  { id: 'approval', label: 'Aguardando aprovação', value: serviceMetrics.approval, color: 'text-amber-700' },
+                  { id: 'overdue', label: 'Em atraso', value: serviceMetrics.overdue, color: 'text-rose-700' },
+                  { id: 'completed', label: 'Concluídas', value: serviceMetrics.completed, color: 'text-emerald-700' },
+                ].map(metric => {
+                  const active = serviceStatusFilter === metric.id && serviceAssigneeFilter === 'all';
+                  return <button type="button" aria-pressed={active} onClick={() => { setServiceStatusFilter(metric.id); setServiceAssigneeFilter('all'); }} key={metric.id} className={`rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md ${active ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className={`mt-1 block text-2xl font-black ${metric.color}`}>{metric.value}</strong><span className="mt-1 block text-[9px] font-semibold text-slate-400">Clique para filtrar</span></button>;
+                })}
+              </section>
+
+              <section className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-emerald-700">SLA cumprido</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-emerald-900">{serviceMetrics.slaRate}%</strong><span className="pb-1 text-[10px] text-emerald-700">dos chamados concluídos com prazo</span></div></div>
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-amber-700">Satisfação média</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-amber-900">{serviceMetrics.averageRating}</strong><span className="pb-1 text-[10px] text-amber-700">de 5 · {serviceMetrics.rated} avaliação(ões)</span></div></div>
+                <button type="button" aria-pressed={serviceAssigneeFilter === 'unassigned'} onClick={() => { setServiceAssigneeFilter(previous => previous === 'unassigned' ? 'all' : 'unassigned'); setServiceStatusFilter('active'); }} className={`rounded-2xl border border-violet-100 bg-violet-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${serviceAssigneeFilter === 'unassigned' ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="text-[9px] font-black uppercase tracking-wide text-violet-700">Sem responsável</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-violet-900">{serviceMetrics.unassigned}</strong><span className="pb-1 text-[10px] text-violet-700">precisa(m) de atribuição</span></div><span className="mt-1 block text-[9px] font-semibold text-violet-600">Clique para filtrar</span></button>
+              </section>
+
+              <section data-tour="services-catalog">
+                <div className="mb-3 flex items-end justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">O que você precisa?</h4><p className="mt-1 text-xs text-slate-500">Escolha uma categoria para receber o prazo e os responsáveis sugeridos.</p></div></div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {activeServiceCatalog.map(category => <button key={category.id} type="button" onClick={() => openServiceRequestForm(category.id)} className="group rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><div className="flex items-start justify-between gap-3"><span className={`inline-flex rounded-xl border px-2.5 py-1 text-[9px] font-black uppercase ${SERVICE_TONE_CLASSES[category.tone]}`}>{category.shortLabel}</span><ChevronRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600" /></div><strong className="mt-4 block text-sm text-slate-900">{category.label}</strong><p className="mt-1 min-h-10 text-[11px] leading-5 text-slate-500">{category.description}</p><div className="mt-3 flex items-center justify-between text-[9px] font-bold text-slate-400"><span>Prazo padrão: {category.slaDays} dias úteis</span>{category.requiresApproval && <span className="text-amber-700">Exige aprovação</span>}</div></button>)}
+                  {activeServiceCatalog.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"><Settings2 className="mx-auto h-7 w-7 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Catálogo temporariamente indisponível</h5><p className="mt-1 text-xs text-slate-500">Um administrador precisa ativar ao menos uma categoria de atendimento.</p></div>}
+                </div>
+              </section>
+
+              {activeServiceCatalog.some(category => category.guides.length > 0) && (
+                <section className="rounded-[1.5rem] border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 p-4 shadow-sm sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-blue-600">Base de orientações</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Talvez você resolva sem abrir um chamado</h4><p className="mt-1 text-xs text-slate-600">Consulte os procedimentos preparados pela sua empresa. Se ainda precisar de ajuda, abra a solicitação normalmente.</p></div><span className="shrink-0 rounded-full border border-blue-100 bg-white px-3 py-1.5 text-[9px] font-bold text-blue-700">{activeServiceCatalog.reduce((total, category) => total + category.guides.length, 0)} orientação(ões)</span></div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {activeServiceCatalog.flatMap(category => category.guides.map(guide => <details key={`${category.id}-${guide.id}`} className="group rounded-2xl border border-white bg-white/90 p-4 shadow-sm open:border-blue-200"><summary className="flex cursor-pointer list-none items-start justify-between gap-3"><span className="min-w-0"><span className={`inline-flex rounded-lg border px-2 py-0.5 text-[8px] font-black uppercase ${SERVICE_TONE_CLASSES[category.tone]}`}>{category.shortLabel}</span><strong className="mt-2 block text-xs text-slate-900">{guide.title}</strong></span><ChevronDown className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-180" /></summary><p className="mt-3 whitespace-pre-wrap border-t border-slate-100 pt-3 text-[11px] leading-5 text-slate-600">{guide.content}</p><button type="button" onClick={() => openServiceRequestForm(category.id)} className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-extrabold text-blue-700 hover:text-blue-900"><Plus className="h-3.5 w-3.5" /> Ainda preciso de ajuda</button></details>))}
+                  </div>
+                </section>
+              )}
+
+              <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div><h4 className="text-sm font-extrabold text-slate-900">Minhas solicitações</h4><p className="mt-1 text-xs text-slate-500">Chamados em que você participa, com atualização em tempo real.</p></div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[820px] xl:grid-cols-4">
+                    <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={serviceSearch} onChange={event => setServiceSearch(event.target.value)} placeholder="Buscar chamado" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-blue-300" /></div>
+                    <select value={serviceCategoryFilter} onChange={event => setServiceCategoryFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todas as categorias</option>{companyServiceCatalog.map(category => <option key={category.id} value={category.id}>{category.label}</option>)}</select>
+                    <select value={serviceStatusFilter} onChange={event => setServiceStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="active">Pendentes</option><option value="all">Todos os status</option>{Object.entries(serviceStatusLabel).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+                    <select value={serviceAssigneeFilter} onChange={event => setServiceAssigneeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todos os responsáveis</option><option value="mine">Atribuídos a mim</option><option value="unassigned">Sem responsável</option>{employeesList.filter(user => serviceRequestRows.some(request => request.assigneeId === user.id)).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                  {filteredServiceRequests.map(request => {
+                    const canDecide = request.requiresApproval && request.status === 'approval' && request.openerId !== currentUser.id && request.participantIds.includes(currentUser.id);
+                    const canManage = request.openerId !== currentUser.id && request.participantIds.includes(currentUser.id) && !['completed', 'rejected'].includes(request.status);
+                    const participantAssignees = employeesList.filter(user => request.participantIds.includes(user.id) && user.id !== request.openerId);
+                    return <article key={request.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-blue-200 hover:bg-white hover:shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-slate-900 px-2.5 py-1 text-[9px] font-black text-white">#{String(request.ticketNumber || 0).padStart(6, '0')}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${SERVICE_STATUS_CLASSES[request.status]}`}>{serviceStatusLabel[request.status]}</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[9px] font-bold text-slate-600">{request.priorityLabel}</span></div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{request.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{request.preview}</p></div>
+                        <span className="shrink-0 text-[10px] font-semibold text-slate-400">{request.dueDate ? `Prazo ${formatDueDate(request.dueDate)}` : 'Sem prazo'}</span>
+                      </div>
+                      <div className="mt-3 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                        <div className="min-w-0"><span className="text-[9px] font-black uppercase text-slate-400">Responsável pelo atendimento</span><strong className="mt-0.5 block truncate text-xs text-slate-800">{request.assigneeName || 'Ainda não atribuído'}</strong></div>
+                        {canManage && <select aria-label={`Responsável pelo chamado ${request.ticketNumber}`} value={request.assigneeId} onChange={event => handleServiceAssignment(request.id, event.target.value)} className="max-w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold text-slate-700"><option value="">Sem responsável</option>{participantAssignees.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select>}
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><span className="text-[10px] text-slate-500"><strong className="text-slate-700">{request.category}</strong> · aberto por {request.openerId === currentUser.id ? 'você' : request.openerName}</span><div className="flex flex-wrap gap-2">{canDecide && <><button type="button" onClick={() => handleServiceDecision(request.id, 'rejected')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50">Não aprovar</button><button type="button" onClick={() => handleServiceDecision(request.id, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700">Aprovar</button></>}{canManage && !['approval', 'in_progress', 'waiting_requester'].includes(request.workflowStatus) && <button type="button" onClick={() => handleServiceStage(request.id, 'in_progress')} className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[10px] font-bold text-cyan-800 hover:bg-cyan-50">Iniciar atendimento</button>}{canManage && request.workflowStatus === 'in_progress' && <button type="button" onClick={() => handleServiceStage(request.id, 'waiting_requester')} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50">Aguardar solicitante</button>}{canManage && request.workflowStatus === 'waiting_requester' && <button type="button" onClick={() => handleServiceStage(request.id, 'in_progress')} className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[10px] font-bold text-cyan-800 hover:bg-cyan-50">Retomar</button>}<button type="button" onClick={() => { openThread(request.id); setShowMessagesModal(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir chamado</button></div></div>
+                    </article>;
+                  })}
+                  {filteredServiceRequests.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma solicitação encontrada</h5><p className="mt-1 text-xs text-slate-500">Abra um novo chamado ou altere os filtros para consultar o histórico.</p></div>}
+                </div>
+              </section>
+
+              {serviceFormOpen && (() => {
+                const category = getCompanyServiceCategory(serviceDraft.categoryId) || activeServiceCatalog[0] || SERVICE_CATALOG[0];
+                const suggestedCandidates = getServiceRecipientCandidates(category);
+                const candidates = getServiceRecipientOptions(category, serviceRecipientSearch);
+                const expectedDate = serviceDueDate(todayStr, category, serviceDraft.priority);
+                return <div className="fixed inset-0 z-[10010] flex items-end justify-center bg-slate-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && !isCreatingServiceRequest && setServiceFormOpen(false)}><form onSubmit={handleCreateServiceRequest} className="flex max-h-[96dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[1.75rem]"><header className="flex items-start justify-between gap-4 bg-gradient-to-r from-slate-950 to-blue-950 px-5 py-5 text-white sm:px-7"><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-200">Nova solicitação</span><h3 className="mt-1 text-xl font-black">{category.label}</h3><p className="mt-1 text-xs text-blue-100/70">Prazo padrão configurado pelo administrador: {category.slaDays} dias úteis · estimativa {formatDueDate(expectedDate)}</p></div><button type="button" disabled={isCreatingServiceRequest} onClick={() => setServiceFormOpen(false)} className="rounded-xl p-2 text-blue-100 hover:bg-white/10" aria-label="Fechar"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-7"><div><label className="mb-1.5 block text-[10px] font-black uppercase text-slate-500">Tipo de atendimento</label><select value={serviceDraft.categoryId} onChange={event => openServiceRequestForm(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-bold text-slate-800">{SERVICE_CATALOG.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div><div className="grid gap-4 sm:grid-cols-[1fr_180px]"><label className="text-[10px] font-black uppercase text-slate-500">Assunto<input required maxLength="180" value={serviceDraft.subject} onChange={event => setServiceDraft(previous => ({ ...previous, subject: event.target.value }))} placeholder="Resuma o que você precisa" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm font-medium normal-case text-slate-800 outline-none focus:border-blue-300" /></label><label className="text-[10px] font-black uppercase text-slate-500">Prioridade<select value={serviceDraft.priority} onChange={event => setServiceDraft(previous => ({ ...previous, priority: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-bold normal-case text-slate-700">{SERVICE_PRIORITIES.map(priority => <option key={priority.id} value={priority.id}>{priority.label}</option>)}</select></label></div><label className="block text-[10px] font-black uppercase text-slate-500">Descrição<textarea required minLength="10" rows="4" value={serviceDraft.description} onChange={event => setServiceDraft(previous => ({ ...previous, description: event.target.value }))} placeholder="Explique a necessidade, o impacto e o resultado esperado." className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 px-3.5 py-3 text-sm leading-6 normal-case text-slate-700 outline-none focus:border-blue-300" /></label><label className="block text-[10px] font-black uppercase text-slate-500">{category.detailLabel}<input value={serviceDraft.extraDetail} onChange={event => setServiceDraft(previous => ({ ...previous, extraDetail: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm font-medium normal-case text-slate-700 outline-none focus:border-blue-300" placeholder="Informação opcional que agiliza o atendimento" /></label><div><div className="flex items-end justify-between gap-3"><div><span className="block text-[10px] font-black uppercase text-slate-500">Quem atenderá</span><p className="mt-1 text-[10px] text-slate-400">Os primeiros nomes são responsáveis definidos pelo administrador ou sugestões por setor e função. Você também pode buscar outra pessoa.</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">{serviceDraft.recipientIds.length} selecionado(s)</span></div><div className="relative mt-2"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={serviceRecipientSearch} onChange={event => setServiceRecipientSearch(event.target.value)} placeholder="Buscar por nome, cargo ou setor" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-blue-300" /></div><div className="mt-2 grid max-h-56 gap-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 sm:grid-cols-2">{candidates.map(user => { const selected = serviceDraft.recipientIds.includes(user.id); const suggested = suggestedCandidates.some(item => item.id === user.id); return <button key={user.id} type="button" onClick={() => setServiceDraft(previous => ({ ...previous, recipientIds: selected ? previous.recipientIds.filter(id => id !== user.id) : [...new Set([...previous.recipientIds, user.id])] }))} className={`flex items-center gap-3 rounded-xl border p-2.5 text-left transition ${selected ? 'border-blue-300 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200'}`}><img src={user.avatar || DEFAULT_AVATAR} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" /><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{user.name}</strong><span className={`mt-0.5 block truncate text-[9px] ${selected ? 'text-blue-100' : 'text-slate-400'}`}>{[user.role, getMessageRecipientDepartments(user).join(', ')].filter(Boolean).join(' · ')}</span><span className={`mt-1 block text-[8px] font-bold ${selected ? 'text-cyan-100' : suggested ? 'text-blue-600' : 'text-slate-400'}`}>{getServiceRecipientSuggestionReason(user, category)}</span></span>{selected && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>; })}{candidates.length === 0 && <div className="col-span-full p-5 text-center text-xs text-slate-500">Nenhum colaborador encontrado com essa busca.</div>}</div></div><div className={`rounded-2xl border p-4 text-xs leading-5 ${category.requiresApproval ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-100 bg-blue-50 text-blue-900'}`}><strong>{category.requiresApproval ? 'Esta solicitação exige aprovação.' : 'Atendimento direto.'}</strong> O chamado será numerado, os participantes receberão notificações e todas as alterações ficarão registradas.</div></div><footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:px-7"><span className="text-[10px] text-slate-400">SLA padrão: <strong className="text-slate-700">{category.slaDays} dias úteis</strong></span><div className="flex gap-2"><button type="button" disabled={isCreatingServiceRequest} onClick={() => setServiceFormOpen(false)} className="rounded-xl px-4 py-3 text-xs font-bold text-slate-500 hover:bg-slate-100">Cancelar</button><button type="submit" disabled={isCreatingServiceRequest || !serviceDraft.recipientIds.length} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-xs font-extrabold text-white shadow-lg hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">{isCreatingServiceRequest ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{isCreatingServiceRequest ? 'Abrindo chamado...' : 'Abrir solicitação'}</button></div></footer></form></div>;
+              })()}
+            </div>
+          )}
+
+          {serviceSettingsOpen && (currentUser?.isAdmin || currentUser?.isDeveloper) && (
+            <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && !isSavingServiceSettings && setServiceSettingsOpen(false)}>
+              <section className="flex max-h-[96dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[1.75rem]" role="dialog" aria-modal="true" aria-labelledby="service-settings-title">
+                <header className="flex items-start justify-between gap-4 bg-gradient-to-r from-slate-950 via-blue-950 to-cyan-900 px-5 py-5 text-white sm:px-7">
+                  <div><span className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-200">Administração da empresa</span><h3 id="service-settings-title" className="mt-1 text-xl font-black">Configurar catálogo de serviços</h3><p className="mt-1 max-w-2xl text-xs leading-5 text-blue-100/70">Defina o que sua equipe pode solicitar, o prazo padrão, a aprovação e quem recebe cada chamado automaticamente.</p></div>
+                  <button type="button" disabled={isSavingServiceSettings} onClick={() => setServiceSettingsOpen(false)} className="rounded-xl p-2 text-blue-100 hover:bg-white/10" aria-label="Fechar configurações"><X className="h-5 w-5" /></button>
+                </header>
+                <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {mergeServiceCatalogSettings(serviceSettingsDraft).map(category => {
+                      const eligibleUsers = employeesList.filter(user => !user.isDeveloper).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
+                      const selectedUsers = category.defaultRecipientIds.map(userId => eligibleUsers.find(user => user.id === userId)).filter(Boolean);
+                      return <article key={category.id} className={`rounded-2xl border bg-white p-4 shadow-sm transition ${category.active ? 'border-blue-200' : 'border-slate-200 opacity-75'}`}>
+                        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><span className={`inline-flex rounded-lg border px-2 py-1 text-[9px] font-black uppercase ${SERVICE_TONE_CLASSES[category.tone]}`}>{category.shortLabel}</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">{category.label}</h4><p className="mt-1 text-[10px] leading-4 text-slate-500">{category.description}</p></div><label className="flex shrink-0 cursor-pointer items-center gap-2 text-[10px] font-bold text-slate-600"><input type="checkbox" checked={category.active} onChange={event => updateServiceSetting(category.id, { active: event.target.checked })} className="h-4 w-4 rounded border-slate-300 text-blue-700" /> Ativo</label></div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-[9px] font-black uppercase text-slate-500">Prazo padrão (dias úteis)<input type="number" min="1" max="30" value={category.slaDays} onChange={event => updateServiceSetting(category.id, { slaDays: event.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-800 outline-none focus:border-blue-300" /></label><label className="flex items-center gap-2 self-end rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-bold text-slate-700"><input type="checkbox" checked={category.requiresApproval} onChange={event => updateServiceSetting(category.id, { requiresApproval: event.target.checked })} className="h-4 w-4 rounded border-slate-300 text-blue-700" /> Exigir aprovação</label></div>
+                        <div className="mt-3"><label className="text-[9px] font-black uppercase text-slate-500">Responsáveis padrão<select value="" onChange={event => { const userId = event.target.value; if (userId) updateServiceSetting(category.id, { defaultRecipientIds: [...new Set([...category.defaultRecipientIds, userId])] }); }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold normal-case text-slate-700"><option value="">Adicionar responsável...</option>{eligibleUsers.filter(user => !category.defaultRecipientIds.includes(user.id)).map(user => <option key={user.id} value={user.id}>{user.name} · {user.role || 'Colaborador'}</option>)}</select></label><div className="mt-2 flex min-h-7 flex-wrap gap-1.5">{selectedUsers.map(user => <button key={user.id} type="button" onClick={() => updateServiceSetting(category.id, { defaultRecipientIds: category.defaultRecipientIds.filter(id => id !== user.id) })} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-800" title="Remover responsável">{user.name}<X className="h-3 w-3" /></button>)}{selectedUsers.length === 0 && <span className="text-[9px] leading-6 text-slate-400">Sem responsável fixo; o Comunica sugerirá pela área e função.</span>}</div></div>
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                          <div className="flex items-center justify-between gap-3"><div><span className="text-[9px] font-black uppercase text-slate-500">Orientações rápidas</span><p className="mt-0.5 text-[9px] text-slate-400">Respostas que o colaborador consulta antes de abrir um chamado.</p></div><button type="button" onClick={() => addServiceGuide(category.id)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-[9px] font-bold text-blue-700 hover:bg-blue-100"><Plus className="h-3 w-3" /> Adicionar</button></div>
+                          <div className="mt-3 space-y-2">{category.guides.map((guide, guideIndex) => <div key={guide.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="flex items-center justify-between gap-2"><span className="text-[8px] font-black uppercase tracking-wide text-slate-400">Orientação {guideIndex + 1}</span><button type="button" onClick={() => removeServiceGuide(category.id, guide.id)} className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label={`Remover orientação ${guideIndex + 1}`}><Trash2 className="h-3.5 w-3.5" /></button></div><input value={guide.title} maxLength="120" onChange={event => updateServiceGuide(category.id, guide.id, { title: event.target.value })} placeholder="Ex.: Como solicitar segunda via do documento?" className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-bold text-slate-800 outline-none focus:border-blue-300" /><textarea value={guide.content} maxLength="1200" rows="3" onChange={event => updateServiceGuide(category.id, guide.id, { content: event.target.value })} placeholder="Explique o procedimento de forma simples e objetiva." className="mt-2 w-full resize-y rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] leading-4 text-slate-700 outline-none focus:border-blue-300" /></div>)}{category.guides.length === 0 && <div className="rounded-xl border border-dashed border-slate-200 px-3 py-2.5 text-center text-[9px] text-slate-400">Nenhuma orientação cadastrada.</div>}</div>
+                        </div>
+                      </article>;
+                    })}
+                  </div>
+                </div>
+                <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:px-7"><span className="text-[10px] text-slate-400">As mudanças valem apenas para <strong className="text-slate-700">{activeCompany?.name || 'esta empresa'}</strong>.</span><div className="flex gap-2"><button type="button" disabled={isSavingServiceSettings} onClick={() => setServiceSettingsOpen(false)} className="rounded-xl px-4 py-3 text-xs font-bold text-slate-500 hover:bg-slate-100">Cancelar</button><button type="button" disabled={isSavingServiceSettings} onClick={handleSaveServiceSettings} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-xs font-extrabold text-white shadow-lg hover:bg-blue-800 disabled:opacity-50">{isSavingServiceSettings ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{isSavingServiceSettings ? 'Salvando...' : 'Salvar configurações'}</button></div></footer>
+              </section>
+            </div>
+          )}
+
+          {/* TAB: PRODUCTIVITY */}
+          {activeTab === 'productivity' && (canAccessProductivity ? (
+            <div data-tour="productivity" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-slate-700" /> Controle de Produtividade (Produção)
+                  </h3>
+                  <p className="text-slate-500 text-xs mt-1">Acompanhe e registre a quantidade de itens produzidos por grupo.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setNewProdLog(prev => ({ ...prev, group: currentUser.prodGroup || 'Máquina 1' }));
+                    setShowProdModal(true);
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow transition-all whitespace-nowrap"
+                  type="button"
+                >
+                  <Plus className="h-4 w-4" /> Registrar Produção
+                </button>
+              </div>
+
+              {canAccessProductivity && (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-end gap-4">
+                  <div className="w-full sm:w-auto">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data Inicial</label>
+                    <input
+                      type="date"
+                      value={prodFilterStart}
+                      onChange={(e) => setProdFilterStart(e.target.value)}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data Final</label>
+                    <input
+                      type="date"
+                      value={prodFilterEnd}
+                      onChange={(e) => setProdFilterEnd(e.target.value)}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Grupo de Produção</label>
+                    <select
+                      value={prodFilterGroup}
+                      onChange={(e) => setProdFilterGroup(e.target.value)}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                    >
+                      <option value="Todos">Todos os Grupos</option>
+                      <option value="Máquina 1">Máquina 1</option>
+                      <option value="Máquina 2">Máquina 2</option>
+                      <option value="Laje">Laje</option>
+                      <option value="Mourão">Mourão</option>
+                    </select>
+                  </div>
+                  <div className="w-full sm:flex-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Descrição do produto</label>
+                    <input
+                      type="search"
+                      value={prodFilterDescription}
+                      onChange={(e) => setProdFilterDescription(e.target.value)}
+                      placeholder="Buscar produto ou observação..."
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div className="w-full sm:w-auto">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Colaborador</label>
+                    <select value={prodFilterAuthor} onChange={(e) => setProdFilterAuthor(e.target.value)} className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none">
+                      <option value="Todos">Todos</option>
+                      {productivityAuthors.map(author => <option key={author} value={author}>{author}</option>)}
+                    </select>
+                  </div>
+                  {(() => {
+                    const filteredLogs = visibleProductivityLogs;
+                    const totalProduced = filteredLogs.reduce((acc, log) => acc + log.quantity, 0);
+                    const totalDefects = filteredLogs.reduce((acc, log) => acc + (log.defects || 0), 0);
+                    const qualityIndex = totalProduced > 0 ? (((totalProduced - totalDefects) / totalProduced) * 100).toFixed(1) : 100;
+                    
+                    // Cálculo de Tendência (Comparando com período anterior)
+                    const startD = new Date(prodFilterStart);
+                    const endD = new Date(prodFilterEnd);
+                    const diffDays = Math.ceil(Math.abs(endD - startD) / (1000 * 60 * 60 * 24)) + 1;
+                    
+                    const prevEndD = new Date(startD);
+                    prevEndD.setDate(prevEndD.getDate() - 1);
+                    const prevStartD = new Date(prevEndD);
+                    prevStartD.setDate(prevStartD.getDate() - diffDays + 1);
+                    
+                    const prevStartStr = prevStartD.toISOString().split('T')[0];
+                    const prevEndStr = prevEndD.toISOString().split('T')[0];
+                    
+                    const prevLogs = productivityLogs.filter(log => log.date >= prevStartStr && log.date <= prevEndStr && (prodFilterGroup === 'Todos' || log.group === prodFilterGroup));
+                    const prevTotal = prevLogs.reduce((acc, log) => acc + log.quantity, 0);
+                    
+                    let trendPct = 0;
+                    if (prevTotal > 0) trendPct = (((totalProduced - prevTotal) / prevTotal) * 100).toFixed(1);
+                    else if (totalProduced > 0) trendPct = 100;
+const handleDownload = async (fileUrl, fileName) => {
+  try {
+    const response = await fetch(fileUrl);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Erro no download:", error);
+    // Tente apenas abrir em uma nova aba como plano B
+    window.open(fileUrl, '_blank');
+  }
+};
+                    return (
+                      
+                      <div className="bg-blue-900 text-white p-3 rounded-xl flex-1 flex flex-col justify-center shadow-inner gap-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider">Total Produzido:</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-black">{totalProduced}</span>
+                            {trendPct !== 0 && (
+                              <span className={`flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${trendPct > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`} title={`Comparado aos ${diffDays} dias anteriores (${prevTotal} un)`}>
+                                {trendPct > 0 ? <TrendingUp className="w-3 h-3 mr-0.5"/> : <TrendingDown className="w-3 h-3 mr-0.5"/>}
+                                {trendPct > 0 ? '+' : ''}{trendPct}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-blue-800 pt-1 mt-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Qualidade:</span>
+                          <span className={`text-sm font-black ${qualityIndex >= 95 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {qualityIndex}% <span className="text-[9px] font-normal text-blue-300">({totalDefects} perdas)</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {visibleProductivityLogs.map(log => (
+                  <div key={log.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-4 flex flex-col gap-2 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="bg-slate-100 text-slate-800 text-[10px] font-extrabold px-2 py-0.5 rounded border border-slate-250">
+                          {log.group}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold">{log.displayDate}</span>
+                      </div>
+                      
+                      <div className="flex items-end gap-2 my-2">
+                        <span className="text-3xl font-black text-slate-800 leading-none">{log.quantity}</span>
+                        <span className="text-xs font-bold text-slate-500 mb-1">itens</span>
+                        {log.defects > 0 && (
+                          <span className="ml-auto text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded-lg">
+                            -{log.defects} refugo
+                          </span>
+                        )}
+                      </div>
+
+                      {log.notes && (
+                        <p className="text-slate-600 text-xs italic bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          "<TextoComEmojis texto={log.notes} />"
+                        </p>
+                      )}
+
+                      {log.productDescription && (
+                        <p className="text-slate-700 text-xs font-bold">Produto: <span className="font-medium">{log.productDescription}</span></p>
+                      )}
+
+                      {log.image && (
+                        <div className="mt-2 rounded-xl overflow-hidden h-32 bg-slate-50 border border-slate-200">
+                          <img src={log.image} alt="Produção" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <span className="text-slate-500">Por: <strong className="text-slate-700">{log.authorName}</strong></span>
+                      {canManageAllProductivity && (
+                        <div className="flex gap-2">
+                          <button onClick={() => handleEditProductivity(log)} className="text-slate-400 hover:text-blue-600 p-1 transition-colors" title="Editar Registro">
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button onClick={() => handleDeleteProductivity(log.id)} className="text-rose-500 hover:text-rose-700 p-1 transition-colors" title="Excluir Registro">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {visibleProductivityLogs.length === 0 && (
+                  <div className="col-span-full bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-400 italic text-xs">
+                    Nenhum registro de produtividade encontrado para os filtros atuais.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+              <Lock className="mx-auto h-8 w-8 text-slate-300" />
+              <h3 className="mt-3 text-sm font-extrabold text-slate-800">Acesso restrito à Produção</h3>
+              <p className="mt-1 text-xs text-slate-500">Esta área está disponível para colaboradores vinculados a grupos de produção, Encarregado de Produção e administradores.</p>
+            </div>
+          ))}
+
+          {/* TAB: ANNOUNCEMENTS */}
+          {activeTab === 'announcements' && (
+            <div data-tour="announcements" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                    <Megaphone className="h-5 w-5 text-slate-700" /> Avisos Oficiais e Políticas
+                  </h3>
+                  <p className="text-slate-500 text-xs mt-1">Acompanhe as diretrizes do RH e da gestão.</p>
+                </div>
+                {currentUser.isAdmin && (
+                  <button
+                    onClick={() => setShowAnnModal(true)}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow flex-shrink-0"
+                    type="button"
+                  >
+                    <Plus className="h-4 w-4" /> Novo Aviso
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {announcements.map((ann) => (
+                  <div id={`notification-item-${ann.id}`} key={ann.id} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col gap-3 ${ann.category === 'Emergência' ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded border ${ann.category === 'Emergência' ? 'bg-rose-600 text-white border-rose-700' : 'bg-slate-100 text-slate-800 border-slate-200'}`}>
+                        {ann.category === 'Emergência' ? '🚨 COMUNICADO DE EMERGÊNCIA' : ann.category}
+                      </span>
+{/* Substitua a linha da data por esta chamada: */}
+<span className="text-slate-500 text-xs">
+  {getRelativeDate(ann.date || ann.createdAt || ann.timestamp)}
+</span>                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{ann.title}</h4>
+                      <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><TextoComEmojis texto={ann.content} /></p>
+                      {ann.image && (
+                        <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <img src={ann.image} alt={ann.title} loading="lazy" className="block w-full h-auto rounded-xl object-contain" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="h-[1px] bg-slate-100 my-1"></div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Por: <strong className="text-slate-700 font-semibold">{ann.author}</strong></span>
+                      <div className="flex items-center gap-3">
+                        {currentUser.isAdmin && (
+                          <button type="button" onClick={() => handleDeleteAnnouncement(ann)} title="Remover comunicado" aria-label={`Remover comunicado ${ann.title}`} className="text-rose-500 hover:text-rose-700"><Trash2 className="h-4 w-4"/></button>
+                        )}
+                        <button 
+                          onClick={() => handleLikeAnnouncement(ann.id)}
+                          className={`flex items-center gap-1 text-xs font-semibold ${ann.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'}`}
+                          type="button"
+                        >
+                          <Heart className={`h-4 w-4 ${ann.likedBy?.includes(currentUser.id) ? 'fill-blue-900 text-blue-900' : ''}`} /> {ann.likes}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        {ann.readBy?.length || 0} confirmação(ões) de leitura
+                      </span>
+                      {canViewEngagement && <button type="button" onClick={() => setEngagementDetail({ title: ann.title, readIds: ann.readBy || [], likedIds: ann.likedBy || [] })} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-blue-700 hover:border-blue-200">Ver pessoas</button>}
+                      {(ann.readBy || []).includes(currentUser.id) ? (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Leitura confirmada</span>
+                      ) : (
+                        <button type="button" onClick={() => handleConfirmAnnouncementRead(ann)} className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-700">
+                          Confirmar leitura
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: POLLS */}
+          {activeTab === 'polls' && (
+            <div data-tour="polls" className="flex flex-col gap-5 animate-in fade-in duration-300">
+              <section data-tour="polls-overview" className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-800 p-6 text-white shadow-lg sm:p-7">
+                <div className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full bg-cyan-300/10 blur-2xl" />
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="max-w-2xl"><span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-cyan-100"><Activity className="h-3.5 w-3.5" /> Escuta ativa</span><h3 className="mt-4 text-2xl font-black tracking-tight">Enquetes e clima organizacional</h3><p className="mt-2 max-w-xl text-xs leading-relaxed text-blue-100/80">Transforme opiniões em indicadores claros, acompanhe a participação da equipe e responda às pesquisas sem sair do Comunica.</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={() => setActiveTutorial('polls')} className="flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15"><BookOpen className="h-4 w-4" /> Como usar</button>{currentUser.isAdmin && <button type="button" onClick={() => setShowPollModal(true)} className="rounded-xl bg-white px-4 py-2.5 text-xs font-extrabold text-blue-950 shadow hover:bg-blue-50">+ Nova pesquisa</button>}</div></div>
+                  <div className="flex items-center gap-4 rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur"><div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#67e8f9 ${pollAverageParticipation * 3.6}deg, rgba(255,255,255,.12) 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-blue-950/95 text-center"><strong className="text-xl">{pollAverageParticipation}%</strong><span className="text-[8px] font-bold uppercase text-blue-200">participação</span></div></div><div><strong className="block text-sm">Visão geral</strong><span className="mt-1 block text-[10px] leading-relaxed text-blue-100/75">Média de respostas em todas as perguntas publicadas.</span></div></div>
+                </div>
+              </section>
+
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[
+                  { id: 'Todas', label: 'Publicações', value: pollTimelineEntries.length, detail: 'enquetes e pesquisas', tone: 'border-sky-100 bg-sky-50 text-sky-950', labelTone: 'text-sky-700' },
+                  { id: 'Ativas', label: 'Perguntas ativas', value: activePollsCount, detail: 'aceitando respostas', tone: 'border-emerald-100 bg-emerald-50 text-emerald-950', labelTone: 'text-emerald-700' },
+                  { id: 'Pendentes', label: 'Aguardando você', value: pendingPollResponses, detail: 'respostas pendentes', tone: 'border-amber-100 bg-amber-50 text-amber-950', labelTone: 'text-amber-700' },
+                  { id: 'Formulários', label: 'Formulários', value: pollFormGroups.length, detail: 'pesquisas estruturadas', tone: 'border-violet-100 bg-violet-50 text-violet-950', labelTone: 'text-violet-700' },
+                ].map(metric => {
+                  const active = pollViewFilter === metric.id;
+                  return <button key={metric.id} type="button" aria-pressed={active} onClick={() => setPollViewFilter(previous => previous === metric.id && metric.id !== 'Todas' ? 'Todas' : metric.id)} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${metric.tone} ${active ? 'ring-2 ring-current ring-offset-2' : ''}`}><span className={`text-[10px] font-bold uppercase tracking-wide ${metric.labelTone}`}>{metric.label}</span><strong className="mt-2 block text-2xl">{metric.value}</strong><span className={`text-[10px] ${metric.labelTone}`}>{metric.detail}</span></button>;
+                })}
+              </div>
+
+              {currentUser.isAdmin && pollFormGroups.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Acompanhamento dos formulários</h4><p className="mt-1 text-xs text-slate-500">Conclusão integral por colaborador.</p></div><TrendingUp className="h-5 w-5 text-cyan-700" /></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{pollFormGroups.map(group => { const completion = pollFormCompletion(group, pollEmployeeIds); return <div key={group[0].formId} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><strong className="block text-xs text-slate-800">{group[0].formTitle}</strong><span className="text-[10px] text-slate-500">{group.length} perguntas · {completion.completed} de {pollEmployeeIds.length} concluíram</span></div><strong className="text-sm text-cyan-800">{completion.percentage}%</strong></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${completion.percentage}%` }} /></div></div>; })}</div></section>}
+
+              <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={pollSearch} onChange={event => setPollSearch(event.target.value)} aria-label="Buscar enquete ou formulário" placeholder="Buscar por título ou pergunta" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs focus:border-cyan-500 focus:outline-none" /></div><select value={pollViewFilter} onChange={event => setPollViewFilter(event.target.value)} aria-label="Filtrar enquetes" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option>Todas</option><option>Ativas</option><option>Encerradas</option><option>Pendentes</option><option>Formulários</option></select>{(pollSearch || pollViewFilter !== 'Todas') && <button type="button" onClick={() => { setPollSearch(''); setPollViewFilter('Todas'); }} className="rounded-xl px-3 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100">Limpar</button>}</div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{visiblePolls.map(poll => { const votes = poll.votes || {}; const total = pollVoteCount(poll); const voted = votes[currentUser.id]; const expired = poll.expiresAt && poll.expiresAt < todayStr; const results = pollOptionResults(poll); const showResults = currentUser.isAdmin || voted !== undefined || expired; return <article id={`notification-item-${poll.id}`} key={poll.id} className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${voted !== undefined ? 'border-emerald-200' : expired ? 'border-slate-200 opacity-90' : 'border-cyan-200'}`}><div className={`h-1.5 ${voted !== undefined ? 'bg-emerald-500' : expired ? 'bg-slate-300' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`} /><div className="p-5"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-cyan-800">{poll.category || 'Enquete'}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-bold text-slate-600">{POLL_QUESTION_TYPES[poll.type]?.label || 'Escolha única'}</span>{poll.formTitle && <span className="ml-auto text-[9px] font-bold uppercase text-blue-700">Pergunta {poll.formOrder}/{poll.formQuestionCount}</span>}</div>{poll.formTitle && <h4 className="mt-3 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{poll.formTitle}</h4>}<h5 className="mt-2 break-words text-base font-extrabold leading-snug text-slate-900">{poll.question}</h5><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500"><span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {total} voto(s)</span>{poll.expiresAt && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> até {formatDate(poll.expiresAt)}</span>}{currentUser.isAdmin && <span>{pollParticipation(poll, pollEmployeeIds)}% da equipe</span>}</div><div className="mt-5 flex flex-col gap-2.5">{poll.options.map((option, index) => <button disabled={voted !== undefined || expired} type="button" onClick={() => handleVotePoll(poll, index)} key={`${poll.id}-${index}`} className={`group relative overflow-hidden rounded-xl border px-3.5 py-3 text-left text-xs font-semibold transition-all ${voted === index ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-100' : 'border-slate-200 text-slate-700 hover:border-cyan-400 hover:bg-cyan-50/40'} disabled:cursor-default`}><span className={`absolute inset-y-0 left-0 ${voted === index ? 'bg-emerald-100/70' : 'bg-cyan-50'}`} style={{ width: `${showResults ? results[index].percentage : 0}%` }} /><span className="relative flex items-center justify-between gap-3"><span className="flex items-center gap-2"><span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[9px] ${voted === index ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-500'}`}>{voted === index ? '✓' : index + 1}</span><TextoComEmojis texto={option} /></span>{showResults && <span className="shrink-0 font-extrabold text-slate-700">{results[index].count} · {results[index].percentage}%</span>}</span></button>)}</div><div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><p className={`text-[10px] font-semibold ${expired ? 'text-slate-400' : voted !== undefined ? 'text-emerald-700' : 'text-cyan-800'}`}>{expired ? 'Votação encerrada' : voted !== undefined ? 'Resposta registrada com sucesso' : 'Escolha uma alternativa para participar'}</p><span className="text-[9px] text-slate-400">por {poll.author || 'Equipe responsável'}</span></div></div></article>; })}</div>
+              {visiblePolls.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Activity className="mx-auto h-8 w-8 text-slate-300" /><strong className="mt-3 block text-sm text-slate-600">Nenhuma enquete encontrada</strong><span className="mt-1 block text-xs text-slate-400">Ajuste a busca ou os filtros para visualizar outras publicações.</span></div>}
+            </div>
+          )}
+
+          {/* TAB: DOCUMENTS */}
+          {activeTab === 'whistleblowing' && canManageWhistleblowing && (
+            <div data-tour="whistleblowing"><WhistleblowingAdmin
+              key={activeCompany?.id}
+              functionsClient={functionsClient}
+              company={activeCompany}
+              onNotice={triggerNotification}
+              loadPosterSettings={async () => {
+                const settingsRef = doc(getTenantCollection('settings'), 'whistleblowing-poster');
+                const snapshot = await getDoc(settingsRef);
+                return snapshot.exists() ? snapshot.data() : {};
+              }}
+              savePosterSettings={settings => saveDoc('settings', 'whistleblowing-poster', settings)}
+              uploadPosterLogo={async file => (await uploadFileToStorage(file, 'whistleblowing-poster'))?.url || ''}
+            /></div>
+          )}
+
+          {activeTab === 'careers' && canOpenModule('careers') && (
+            <div data-tour="careers" className="flex flex-col gap-5 animate-in fade-in duration-300">
+              <div data-tour="careers-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-900 p-6 text-white shadow-xl shadow-blue-950/10 sm:p-7"><div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-cyan-300/15 blur-3xl" /><div className="pointer-events-none absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-violet-400/15 blur-3xl" /><div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-cyan-100"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Recrutamento inteligente</span><h3 className="mt-4 flex items-center gap-2 text-2xl font-black tracking-tight"><Briefcase className="h-6 w-6 text-cyan-200" /> Banco de Talentos</h3><p className="mt-2 max-w-2xl text-sm leading-relaxed text-blue-100/75">Centralize vagas, compare perfis e conduza cada pessoa pelo processo seletivo com clareza.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveTutorial('careers')} className="flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-bold text-white backdrop-blur hover:bg-white/15"><BookOpen className="h-4 w-4" /> Como usar</button><button type="button" onClick={() => setShowVacancyModal(true)} className="rounded-xl bg-white px-5 py-2.5 text-xs font-extrabold text-blue-950 shadow-lg shadow-blue-950/30 hover:bg-cyan-50">+ Nova vaga</button></div></div></div>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-950"><strong>Link para candidatos:</strong> <a href={`/carreiras?empresa=${encodeURIComponent(activeCompany?.id || '')}`} target="_blank" rel="noreferrer" className="ml-1 break-all font-bold underline">{window.location.origin}/carreiras?empresa={activeCompany?.id}</a><p className="mt-1 text-blue-800">O candidato cria uma conta própria, confirma o e-mail e envia currículo em PDF ou Word. A aderência por competências é apenas um apoio para avaliação humana.</p></div>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <button type="button" aria-pressed={careerSourceFilter === 'open' && careerStageFilter === 'all'} onClick={() => { setCareerSourceFilter('open'); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerViewMode('list'); }} className={`rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-4 text-left text-xs text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'open' && careerStageFilter === 'all' ? 'ring-2 ring-cyan-400 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-slate-300">Vagas ativas</span><strong className="mt-2 block text-2xl">{vacanciesList.filter(item => item.status === 'published').length}</strong><span className="mt-1 block text-[10px] text-slate-300">abertas para inscrição</span></button>
+                <button type="button" aria-pressed={careerSourceFilter === 'all' && careerStageFilter === 'all'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerViewMode('list'); }} className={`rounded-2xl border border-sky-100 bg-sky-50 p-4 text-left text-xs text-sky-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'all' && careerStageFilter === 'all' ? 'ring-2 ring-sky-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-sky-700">Candidaturas</span><strong className="mt-2 block text-2xl">{careerIndicatorApplications.length}</strong><span className="mt-1 block text-[10px] text-sky-700">sem vagas arquivadas</span></button>
+                <button type="button" aria-pressed={careerStageFilter === 'reviewing'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter(previous => previous === 'reviewing' ? 'all' : 'reviewing'); setCareerViewMode('list'); }} className={`rounded-2xl border border-amber-100 bg-amber-50 p-4 text-left text-xs text-amber-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerStageFilter === 'reviewing' ? 'ring-2 ring-amber-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-amber-700">Em análise</span><strong className="mt-2 block text-2xl">{careerStageInsights.find(item => item.id === 'reviewing')?.count || 0}</strong><span className="mt-1 block text-[10px] text-amber-700">aguardando decisão</span></button>
+                <button type="button" aria-pressed={careerStageFilter === 'interview'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter(previous => previous === 'interview' ? 'all' : 'interview'); setCareerViewMode('list'); }} className={`rounded-2xl border border-violet-100 bg-violet-50 p-4 text-left text-xs text-violet-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerStageFilter === 'interview' ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-violet-700">Entrevistas</span><strong className="mt-2 block text-2xl">{careerStageInsights.find(item => item.id === 'interview')?.count || 0}</strong><span className="mt-1 block text-[10px] text-violet-700">próxima etapa</span></button>
+              </div>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Funil de seleção</h4><p className="mt-1 text-xs text-slate-500">Distribuição das candidaturas por etapa.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{careerIndicatorApplications.length} no total</span></div><div className="mt-5 space-y-4">{careerStageInsights.map(stage => <div key={stage.id}><div className="mb-1.5 flex justify-between text-xs"><span className="font-semibold text-slate-700">{stage.label}</span><strong className="text-slate-900">{stage.count}</strong></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${stage.color}`} style={{ width: `${careerIndicatorApplications.length ? Math.max(4, Math.round(stage.count / careerIndicatorApplications.length * 100)) : 0}%` }} /></div></div>)}</div></section>
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-900">Qualidade da triagem</h4><p className="mt-1 text-xs text-slate-500">Indicadores de apoio, não de decisão automática.</p><div className="mt-5 flex items-center gap-5"><div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#2563eb ${careerAverageFit * 3.6}deg, #e2e8f0 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center"><strong className="text-xl text-slate-900">{careerAverageFit}%</strong><span className="text-[8px] font-bold uppercase text-slate-400">aderência</span></div></div><div className="space-y-2 text-xs"><p><strong className="text-slate-900">{careerFitValues.length}</strong> perfis com leitura disponível</p><p><strong className="text-slate-900">{careerRetentionSoon}</strong> currículo(s) vencem em até 15 dias</p><p className="text-slate-500">Revise sempre currículo e respostas antes de avançar.</p></div></div></section>
+              </div>
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Candidaturas por vaga</h4><p className="mt-1 text-xs text-slate-500">As cinco vagas com maior volume de inscrições.</p></div><TrendingUp className="h-5 w-5 text-emerald-600" /></div>{careerApplicationsByVacancy.length ? <div className="mt-5 space-y-3">{careerApplicationsByVacancy.map(item => <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_42px] items-center gap-3"><div><div className="mb-1 flex justify-between gap-2 text-xs"><span className="truncate font-semibold text-slate-700">{item.title}</span><span className="shrink-0 text-slate-400">{item.count} inscrição(ões)</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${Math.max(4, Math.round(item.count / careerMaxApplications * 100))}%` }} /></div></div><strong className="text-right text-sm text-slate-900">{item.count}</strong></div>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">Publique uma vaga para acompanhar a evolução das inscrições aqui.</p>}</section>
+              {careerApplications.some(item => applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950"><strong>Prazo de retenção dos currículos</strong><p className="mt-1">{careerApplications.filter(item => applicationRetentionMs(item) > Date.now() && applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000).length} currículo(s) expiram nos próximos 15 dias e {careerApplications.filter(item => applicationRetentionMs(item) <= Date.now()).length} já venceram.</p><div className="mt-3 flex flex-wrap gap-2">{careerApplications.some(item => applicationRetentionMs(item) <= Date.now()) && !confirmCareerCleanup && <button type="button" onClick={() => setConfirmCareerCleanup(true)} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Remover vencidos</button>}{confirmCareerCleanup && <><span className="self-center font-semibold">Remover definitivamente candidaturas e arquivos vencidos?</span><button type="button" onClick={handlePurgeExpiredCareers} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Confirmar limpeza</button><button type="button" onClick={() => setConfirmCareerCleanup(false)} className="rounded-lg border border-amber-300 px-3 py-2 font-bold">Cancelar</button></>}</div></div>}
+              <div className="flex items-center justify-between gap-3"><h4 className="text-sm font-extrabold text-slate-800">Vagas do processo</h4><button type="button" onClick={() => setShowArchivedVacancies(previous => !previous)} className="text-xs font-bold text-slate-600">{showArchivedVacancies ? 'Ocultar arquivadas' : 'Ver arquivadas'}</button></div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{[...vacanciesList].filter(vacancy => showArchivedVacancies || vacancy.status !== 'archived').sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).map(vacancy => <div key={vacancy.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-2"><div><h4 className="text-sm font-extrabold text-slate-900">{vacancy.title}</h4><span className="text-[10px] text-slate-500">{vacancy.location || 'Local não informado'} · {vacancy.mode}</span></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${vacancy.status === 'published' ? 'bg-emerald-50 text-emerald-700' : vacancy.status === 'archived' ? 'bg-slate-200 text-slate-600' : 'bg-amber-50 text-amber-700'}`}>{vacancy.status === 'published' ? 'Publicada' : vacancy.status === 'archived' ? 'Arquivada' : 'Encerrada'}</span></div><p className="mt-3 whitespace-pre-wrap text-xs text-slate-600">{vacancy.description}</p><p className="mt-3 text-[10px] text-slate-500">Competências: {(vacancy.skills || []).join(', ') || 'Não especificadas'} · Quiz: {(vacancy.quiz || []).length} perguntas</p><div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs"><span>{careerApplications.filter(item => item.vacancyId === vacancy.id).length} candidaturas</span><div className="flex gap-3"><button type="button" onClick={() => handleCloseVacancy(vacancy)} className="font-bold text-blue-700">{vacancy.status === 'published' ? 'Encerrar vaga' : 'Reabrir vaga'}</button>{vacancy.status !== 'published' && <button type="button" onClick={() => handleArchiveVacancy(vacancy)} className="font-bold text-slate-600">{vacancy.status === 'archived' ? 'Desarquivar' : 'Arquivar'}</button>}</div></div></div>)}</div>
+              {vacanciesList.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">Nenhuma vaga publicada ainda.</div>}
+              <section className="overflow-hidden rounded-[1.5rem] border border-violet-200 bg-gradient-to-br from-violet-950 via-indigo-950 to-blue-950 text-white shadow-lg shadow-indigo-950/10"><div className="grid gap-5 p-5 lg:grid-cols-[0.8fr_1.2fr]"><div><span className="inline-flex rounded-full border border-violet-200/20 bg-white/10 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-violet-100">Cadastro permanente</span><h4 className="mt-3 text-lg font-black">Banco de Talentos · Futuras oportunidades</h4><p className="mt-2 text-xs leading-5 text-indigo-100/75">Currículos enviados para cargos divulgados no Trabalhe Conosco, sem vínculo com uma vaga aberta. Esses perfis ficam separados dos processos seletivos ativos e seguem a retenção de 90 dias.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => { setCareerSourceFilter('talent_pool'); setCareerVacancyFilter('all'); setCareerViewMode('list'); }} className="rounded-xl bg-white px-4 py-2.5 text-xs font-extrabold text-indigo-950">Ver todos os currículos</button><button type="button" onClick={() => { setCareerSourceFilter('open'); setCareerVacancyFilter('all'); }} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white">Ver somente vagas abertas</button></div></div><div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="flex items-center justify-between"><strong className="text-xs">Currículos por cargo</strong><span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold">{talentPoolApplications.length} no total</span></div>{talentPoolApplicationsByRole.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{talentPoolApplicationsByRole.map(role => <button key={role.id} type="button" onClick={() => { setCareerSourceFilter('talent_pool'); setCareerVacancyFilter(role.id); setCareerViewMode('list'); }} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/10 p-3 text-left transition hover:bg-white/15"><span className="min-w-0 truncate text-xs font-bold">{role.title}</span><span className="grid h-7 min-w-7 place-items-center rounded-full bg-violet-300 px-2 text-[10px] font-black text-violet-950">{role.count}</span></button>)}</div> : <div className="mt-3 rounded-xl border border-dashed border-white/20 p-5 text-center text-xs text-indigo-100/70">Ainda não há currículos cadastrados para futuras oportunidades.</div>}</div></div></section>
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><span className="mr-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Origem dos perfis</span>{[['all', 'Todos'], ['open', 'Vagas abertas'], ['talent_pool', 'Futuras oportunidades']].map(([value, label]) => <button key={value} type="button" onClick={() => { setCareerSourceFilter(value); setCareerVacancyFilter('all'); }} className={`rounded-full px-3 py-2 text-[10px] font-extrabold transition ${careerSourceFilter === value ? 'bg-indigo-700 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}</button>)}</div>
+              <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><h4 className="text-base font-extrabold text-slate-950">Central de triagem</h4><p className="mt-1 text-xs text-slate-500">Encontre os melhores perfis e acompanhe o avanço em cada etapa.</p></div><div className="inline-flex w-max rounded-xl bg-slate-100 p-1"><button type="button" onClick={() => setCareerViewMode('pipeline')} className={`rounded-lg px-3 py-2 text-[10px] font-extrabold transition ${careerViewMode === 'pipeline' ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500'}`}>Funil</button><button type="button" onClick={() => setCareerViewMode('list')} className={`rounded-lg px-3 py-2 text-[10px] font-extrabold transition ${careerViewMode === 'list' ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500'}`}>Lista detalhada</button></div></div><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-6"><label className="relative xl:col-span-2"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input aria-label="Buscar candidato" value={careerCandidateSearch} onChange={event => setCareerCandidateSearch(event.target.value)} placeholder="Buscar nome, cidade, e-mail ou vaga" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400" /></label><select aria-label="Filtrar vaga" value={careerVacancyFilter} onChange={event => setCareerVacancyFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Todas as vagas</option>{vacanciesList.filter(vacancy => vacancy.status !== 'archived').map(vacancy => <option key={vacancy.id} value={vacancy.id}>{vacancy.title}</option>)}</select><select aria-label="Filtrar etapa" value={careerStageFilter} onChange={event => setCareerStageFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Todas as etapas</option>{careerStageDefinitions.filter(stage => stage.id !== 'rejected').map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select><select aria-label="Filtrar aderência" value={careerFitFilter} onChange={event => setCareerFitFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Toda aderência</option><option value="high">Alta · 75% ou mais</option><option value="medium">Média · 50% a 74%</option><option value="low">Baixa ou não calculada</option></select><select aria-label="Filtrar cidade" value={careerCityFilter} onChange={event => setCareerCityFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Todas as cidades</option>{careerCities.map(city => <option key={city} value={city}>{city}</option>)}</select></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase text-slate-400">Ordenar:</span>{[['recent', 'Mais recentes'], ['fit', 'Maior aderência'], ['name', 'Nome A–Z']].map(([value, label]) => <button key={value} type="button" onClick={() => setCareerSort(value)} className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${careerSort === value ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}</button>)}{(careerCandidateSearch || careerVacancyFilter !== 'all' || careerStageFilter !== 'all' || careerFitFilter !== 'all' || careerCityFilter !== 'all') && <button type="button" onClick={() => { setCareerCandidateSearch(''); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerFitFilter('all'); setCareerCityFilter('all'); }} className="ml-auto text-[10px] font-bold text-rose-600">Limpar filtros</button>}<span className="text-[10px] text-slate-400">{careerFilteredApplications.length} perfil(is)</span></div></div>{careerComparisonApplications.length > 1 && <div className="overflow-x-auto border-t border-blue-100 bg-blue-50/40"><table className="w-full min-w-[620px] text-left text-xs"><thead className="text-blue-950"><tr><th className="p-3">Comparativo</th>{careerComparisonApplications.map(application => <th key={application.id} className="p-3">{application.name}</th>)}</tr></thead><tbody><tr className="border-t border-blue-100"><th className="p-3 text-slate-500">Aderência</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-3 font-bold">{application.fit?.percentage ?? '—'}{application.fit?.percentage != null ? '%' : ''}</td>)}</tr><tr className="border-t border-blue-100"><th className="p-3 text-slate-500">Competências identificadas</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-3">{(application.fit?.matched || []).join(', ') || '—'}</td>)}</tr><tr className="border-t border-blue-100"><th className="p-3 text-slate-500">Cidade</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-3">{application.city || '—'}</td>)}</tr></tbody></table><button type="button" onClick={() => setCareerComparisonIds([])} className="m-3 text-xs font-bold text-blue-700">Limpar comparação</button></div>}</section>
+              {careerViewMode === 'pipeline' && <div className="overflow-x-auto pb-2"><div className="grid min-w-[1120px] grid-cols-5 gap-3">{careerStageDefinitions.filter(stage => ['received', 'reviewing', 'preselected', 'interview', 'hired'].includes(stage.id)).map(stage => { const stageApplications = careerFilteredApplications.filter(application => (application.status || 'received') === stage.id); return <section key={stage.id} className="min-h-[240px] rounded-2xl border border-slate-200 bg-slate-100/70 p-3"><div className="mb-3 flex items-center justify-between"><span className="flex items-center gap-2 text-xs font-extrabold text-slate-800"><span className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />{stage.label}</span><span className="grid h-6 min-w-6 place-items-center rounded-full bg-white px-1.5 text-[10px] font-black text-slate-600 shadow-sm">{stageApplications.length}</span></div><div className="space-y-2.5">{stageApplications.map(application => <article key={application.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><strong className="block truncate text-xs text-slate-900">{application.name}</strong><span className="mt-0.5 block truncate text-[9px] text-slate-500">{application.vacancyTitle}</span></div><span className={`shrink-0 rounded-lg px-2 py-1 text-[9px] font-black ${Number(application.fit?.percentage) >= 75 ? 'bg-emerald-50 text-emerald-700' : Number(application.fit?.percentage) >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{application.fit?.percentage ?? '—'}{application.fit?.percentage != null ? '%' : ''}</span></div><div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2"><span className="truncate text-[9px] text-slate-400">{application.city || 'Cidade não informada'}</span><button type="button" onClick={() => { setCareerViewMode('list'); setCareerCandidateSearch(application.name || ''); }} className="text-[9px] font-extrabold text-blue-700">Ver perfil</button></div></article>)}{stageApplications.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-[10px] text-slate-400">Nenhum candidato nesta etapa</div>}</div></section>; })}</div></div>}
+              <section className="overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/50 shadow-sm"><div className="grid gap-5 p-5 lg:grid-cols-[0.8fr_1.2fr]"><div><span className="inline-flex rounded-full bg-indigo-100 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-indigo-700">Análise assistida por IA</span><h4 className="mt-3 text-base font-extrabold text-slate-950">Parecer de aderência</h4><p className="mt-1 text-xs leading-relaxed text-slate-500">Compare currículo, requisitos e respostas para preparar uma triagem mais consistente. O parecer não substitui a decisão humana.</p><select value={careerAnalysisSelectedId} onChange={event => setCareerAnalysisSelectedId(event.target.value)} className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="">Selecione um candidato</option>{careerFilteredApplications.map(application => <option key={application.id} value={application.id}>{application.name} · {application.vacancyTitle}</option>)}</select><button type="button" disabled={!careerAnalysisApplication || Boolean(careerAiAnalyzingId)} onClick={() => handleGenerateCareerAssessment(careerAnalysisApplication)} className="mt-2 w-full rounded-xl bg-gradient-to-r from-indigo-700 to-blue-700 px-4 py-3 text-xs font-extrabold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">{careerAiAnalyzingId ? 'Analisando currículo e vaga...' : careerAnalysisApplication?.aiAssessment ? 'Atualizar parecer' : 'Gerar parecer completo'}</button></div><div className="min-h-[190px] rounded-2xl border border-white bg-white/90 p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><strong className="text-xs text-slate-900">Análise para o recrutador</strong>{careerAnalysisApplication?.aiAssessmentAt && <span className="text-[9px] text-slate-400">Atualizada em {new Date(careerAnalysisApplication.aiAssessmentAt).toLocaleDateString('pt-BR')}</span>}</div>{careerAnalysisApplication?.aiAssessment ? <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-slate-700">{careerAnalysisApplication.aiAssessment}</p> : <div className="grid min-h-[145px] place-items-center text-center"><div><Briefcase className="mx-auto h-7 w-7 text-indigo-200" /><p className="mt-2 text-xs font-semibold text-slate-500">Selecione um perfil e gere o parecer.</p><span className="mt-1 block text-[10px] text-slate-400">Serão destacados pontos fortes, lacunas e perguntas para entrevista.</span></div></div>}</div></div></section>
+              {careerViewMode === 'list' && <><h4 className="text-sm font-extrabold text-slate-800">Candidaturas recebidas</h4>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{careerFilteredApplications.map(application => <div key={application.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h5 className="text-sm font-extrabold text-slate-900">{application.name}</h5><p className="mt-1 text-xs text-slate-500">{application.vacancyTitle} · {application.city || 'Cidade não informada'}</p></div><label className="flex items-center gap-1 text-[10px] font-bold text-blue-700"><input type="checkbox" checked={careerComparisonIds.includes(application.id)} onChange={event => setCareerComparisonIds(previous => event.target.checked ? [...previous, application.id].slice(-3) : previous.filter(id => id !== application.id))} /> Comparar</label></div><p className="mt-2 text-xs text-slate-600">{application.email} · {application.phone}</p><p className={`mt-2 text-xs font-semibold ${applicationRetentionMs(application) <= Date.now() ? 'text-rose-700' : applicationRetentionMs(application) <= Date.now() + 15 * 24 * 60 * 60 * 1000 ? 'text-amber-700' : 'text-slate-500'}`}>Currículo disponível até {formatCareerDate(applicationRetentionMs(application))}{application.retentionExtendedCount ? ' · prazo prorrogado' : ''}</p><div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-700"><strong>Compatibilidade indicativa: {application.fit?.percentage ?? '—'}{application.fit?.percentage != null ? '%' : ''}</strong><p className="mt-1">Informadas pelo candidato: {(application.fit?.matchedDeclared || application.fit?.matched || []).join(', ') || 'Nenhuma'}</p><p>Encontradas no arquivo: {(application.fit?.matchedFromCv || []).join(', ') || 'Nenhuma'}</p><p>Não identificadas: {(application.fit?.missing || []).join(', ') || 'Nenhuma'}</p>{application.resumeReadable === false && <p className="mt-1 font-semibold text-amber-700">Não foi possível ler o texto do arquivo automaticamente. Abra o currículo para análise humana.</p>}<small className="mt-1 block text-slate-500">Indicador auxiliar; não é decisão de contratação.</small></div><details className="mt-3 text-xs text-slate-600"><summary className="cursor-pointer font-bold">Ver resumo do currículo e quiz</summary><p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap">{application.resumeText}</p>{(application.quizQuestions || []).map((question, index) => <p key={index} className="mt-2"><strong>{question.question}</strong><br />{question.options?.[application.quizAnswers?.[index]] || 'Sem resposta'}</p>)}</details><div className="mt-4 flex flex-wrap items-center gap-2"><button type="button" onClick={() => handleDownloadCareerResume(application)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white">Baixar currículo</button><button type="button" onClick={() => setCareerDecisionDraft({ application, outcome: 'approved', message: `Parabéns! Você foi pré-selecionado(a) para continuar no processo da vaga ${application.vacancyTitle}.`, internalNote: '', openEmail: true })} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">Pré-selecionar</button><button type="button" onClick={() => setCareerInterviewDraft({ application, date: '', time: '', format: 'Online', location: '', contact: '', notes: '', internalNote: '', message: '', openEmail: true })} className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-800">Agendar entrevista</button><button type="button" onClick={() => setCareerDecisionDraft({ application, outcome: 'rejected', message: `Agradecemos seu interesse na vaga ${application.vacancyTitle}. Após a análise, seu perfil não seguirá para a próxima etapa deste processo.`, internalNote: '', openEmail: true })} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800">Descartar</button>{applicationRetentionMs(application) <= Date.now() + 15 * 24 * 60 * 60 * 1000 && !application.retentionExtendedCount && <button type="button" onClick={() => handleExtendCareerRetention(application)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Prorrogar 90 dias</button>}<select aria-label={`Etapa de ${application.name}`} value={application.status || 'received'} onChange={event => updateDocField('applications', application.id, { status: event.target.value })} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="received">Recebida</option><option value="reviewing">Em análise</option><option value="preselected">Pré-seleção</option><option value="interview">Entrevista</option><option value="rejected">Não aderente</option><option value="closed">Concluída</option></select></div></div>)}</div>
+              {careerFilteredApplications.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">Nenhuma candidatura ativa corresponde aos filtros. Candidaturas descartadas e vagas arquivadas ficam fora desta tela.</div>}</>}
+            </div>
+          )}
+
+          {/* TAB: DOCUMENTS */}
+          {activeTab === 'documents' && (
+            <div data-tour="documents" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <div data-tour="documents-overview" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-800"><FileText className="h-5 w-5" /> Central de Documentos</h3>
+                  <p className="mt-1 text-xs text-slate-500">Encontre arquivos por pasta, categoria, setor ou tipo.</p>
+                </div>
+                <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveTutorial('documents')} className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"><BookOpen className="h-4 w-4" /> Como usar</button>{currentUser.isAdmin && <button type="button" onClick={() => setShowDocumentModal(true)} className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white shadow hover:bg-slate-800"><Plus className="h-4 w-4" /> Adicionar documento</button>}</div>
+              </div>
+              <div data-tour="documents-filters" className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600"><span className="mr-auto"><strong className="text-slate-900">{accessibleDocuments.length}</strong> documentos disponíveis</span><button type="button" onClick={() => setDocumentReadingFilter(value => value === 'Pendentes' ? 'Todos' : 'Pendentes')} className={`rounded-full px-3 py-1.5 font-bold ${documentReadingFilter === 'Pendentes' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-800'}`}>{pendingDocumentReads} leituras pendentes</button><button type="button" onClick={() => setDocumentReviewFilter(value => value === 'vencida' ? 'Todas' : 'vencida')} className={`rounded-full px-3 py-1.5 font-bold ${documentReviewFilter === 'vencida' ? 'bg-rose-700 text-white' : 'bg-rose-50 text-rose-800'}`}>{overdueDocumentReviews} revisões vencidas</button><button type="button" onClick={() => setDocumentReviewFilter(value => value === 'proxima' ? 'Todas' : 'proxima')} className={`rounded-full px-3 py-1.5 font-bold ${documentReviewFilter === 'proxima' ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-800'}`}>{upcomingDocumentReviews} próximas revisões</button></div>
+                <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={documentSearch} onChange={event => setDocumentSearch(event.target.value)} className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400" placeholder="Buscar título, descrição, nome do arquivo ou etiqueta..." aria-label="Buscar documentos" /></div>
+                <div className="flex flex-wrap gap-2" aria-label="Pastas de documentos"><button type="button" onClick={() => setDocumentFolderFilter('Todas as pastas')} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${documentFolderFilter === 'Todas as pastas' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Todas as pastas</button>{availableDocumentFolders.map(folder => <button key={folder} type="button" onClick={() => setDocumentFolderFilter(folder)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${documentFolderFilter === folder ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600'}`}>{folder}</button>)}</div>
+                <button type="button" onClick={() => setShowDocumentFilters(value => !value)} className="flex items-center gap-1 text-xs font-bold text-blue-700 sm:hidden" aria-expanded={showDocumentFilters}><Filter className="h-4 w-4" /> {showDocumentFilters ? 'Ocultar filtros' : 'Mais filtros'}</button>
+                <div className={`${showDocumentFilters ? 'grid' : 'hidden'} grid-cols-1 gap-2 sm:grid sm:grid-cols-2 xl:grid-cols-4`}>
+                  <select aria-label="Filtrar categoria" value={documentCategoryFilter} onChange={event => setDocumentCategoryFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos">Todas as categorias</option>{DOCUMENT_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}</select>
+                  <select aria-label="Filtrar setor" value={documentDepartmentFilter} onChange={event => setDocumentDepartmentFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos os setores">Todos os setores</option><option value="all">Compartilhados com todos</option>{departmentsList.filter(dept => userAllowedDepts.includes(dept.id)).map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select>
+                  <select aria-label="Filtrar tipo de arquivo" value={documentTypeFilter} onChange={event => setDocumentTypeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos os tipos">Todos os tipos</option>{['PDF', 'Imagem', 'Planilha', 'Texto', 'Outros'].map(type => <option key={type} value={type}>{type}</option>)}</select>
+                  <select aria-label="Ordenar documentos" value={documentSort} onChange={event => setDocumentSort(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="recentes">Mais recentes</option><option value="titulo">Título de A a Z</option></select>
+                </div>
+                <span className="text-[10px] text-slate-400">Exibindo {visibleDocuments.length} de {accessibleDocuments.length} documentos</span>
+              </div>
+              <div data-tour="documents-list" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {visibleDocuments.map(item => (
+                  <div key={item.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0"><div className="flex items-center gap-2"><FileText className="h-5 w-5 shrink-0 text-blue-700" /><h4 className="break-words text-sm font-extrabold text-slate-800">{item.title}</h4></div><div className="mt-2 flex flex-wrap gap-1"><span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-[9px] font-extrabold uppercase text-blue-700">{item.category || 'Geral'}</span><span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold text-slate-700">{documentFileType(item)}</span></div></div>
+                      {currentUser.isAdmin && <button type="button" onClick={() => handleDeleteDocument(item.id)} className="text-rose-500 hover:text-rose-700" title="Remover documento"><Trash2 className="h-4 w-4" /></button>}
+                    </div>
+                    {item.description && <p className="text-xs leading-relaxed text-slate-600"><TextoComEmojis texto={item.description} /></p>}
+                    <div className="text-[10px] font-semibold text-slate-600">Pasta: {normalizeDocumentFolder(item.folder)}{currentUser.isAdmin && editingDocumentFolderId !== item.id && <button type="button" onClick={() => { setEditingDocumentFolderId(item.id); setEditingDocumentFolder(item.folder || ''); }} className="ml-2 text-blue-700 hover:underline" aria-label={`Mudar pasta de ${item.title}`}>Mudar</button>}</div>
+                    {currentUser.isAdmin && editingDocumentFolderId === item.id && <div className="flex flex-wrap gap-2"><input value={editingDocumentFolder} onChange={event => setEditingDocumentFolder(event.target.value)} maxLength={60} list="document-folder-suggestions" placeholder={DEFAULT_DOCUMENT_FOLDER} aria-label={`Nova pasta de ${item.title}`} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs" /><button type="button" onClick={() => handleMoveDocument(item)} className="rounded-lg bg-blue-700 px-2 py-1.5 text-xs font-bold text-white">Salvar</button><button type="button" onClick={() => setEditingDocumentFolderId(null)} className="text-xs text-slate-500">Cancelar</button></div>}
+                    <div className="flex flex-wrap gap-1"><span className="w-max rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase text-slate-600">{item.accessMode === 'people' ? `${item.allowedUserIds?.length || 0} pessoa(s) selecionada(s)` : item.accessMode === 'department' ? departmentsList.find(dept => dept.id === item.dept)?.name || item.dept : item.dept === 'all' ? 'Toda a empresa' : departmentsList.find(dept => dept.id === item.dept)?.name || item.dept}</span>{item.accessMode === 'people' && <span className="w-max rounded-full bg-blue-50 px-2 py-1 text-[9px] font-bold uppercase text-blue-700">Acesso restrito</span>}</div>
+                    {(item.tags || []).length > 0 && <div className="flex flex-wrap gap-1.5">{item.tags.map(tag => <span key={tag} className="rounded-md bg-slate-100 px-2 py-1 text-[9px] font-semibold text-slate-600">#{tag}</span>)}</div>}
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500"><span>Versão {item.version || '1.0'}</span>{item.reviewDate && <span>Revisão: {formatDate(item.reviewDate)}</span>}</div>
+                    {documentReviewStatus(item.reviewDate, todayStr) === 'vencida' && <span className="w-max rounded-full bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700">Revisão vencida</span>}
+                    {documentReviewStatus(item.reviewDate, todayStr) === 'proxima' && <span className="w-max rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">Revisão nos próximos 30 dias</span>}
+                    {currentUser.isAdmin && editingDocumentReviewId !== item.id && <button type="button" onClick={() => { setEditingDocumentReviewId(item.id); setEditingDocumentReviewDate(item.reviewDate || ''); }} className="w-max text-[10px] font-bold text-blue-700 hover:underline">Atualizar prazo de revisão</button>}
+                    {currentUser.isAdmin && editingDocumentReviewId === item.id && <div className="flex flex-wrap items-center gap-2"><input type="date" value={editingDocumentReviewDate} onChange={event => setEditingDocumentReviewDate(event.target.value)} aria-label={`Novo prazo de revisão de ${item.title}`} className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs" /><button type="button" disabled={!editingDocumentReviewDate} onClick={() => handleUpdateDocumentReview(item)} className="rounded-lg bg-blue-700 px-2 py-1.5 text-xs font-bold text-white disabled:opacity-50">Salvar</button><button type="button" onClick={() => setEditingDocumentReviewId(null)} className="text-xs text-slate-500">Cancelar</button></div>}
+                    {currentUser.isAdmin && (item.reviewHistory || []).length > 0 && <details className="text-[10px] text-slate-500"><summary className="cursor-pointer font-semibold">Histórico de prazos ({item.reviewHistory.length})</summary><ul className="mt-1 space-y-1">{[...item.reviewHistory].reverse().map((entry, index) => <li key={`${entry.changedAt}-${index}`}>{entry.previousDate ? formatDate(entry.previousDate) : 'Sem data'} → {formatDate(entry.nextDate)} · {entry.changedByName || 'Administrador'}</li>)}</ul></details>}
+                    {item.requiredRead && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[10px] font-semibold text-amber-800"><span>Leitura obrigatória {canViewEngagement ? `· ${item.readBy?.length || 0} confirmações` : ''}</span>{canViewEngagement && <button type="button" onClick={() => setEngagementDetail({ title: item.title, readIds: item.readBy || [], likedIds: [] })} className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-[9px] font-bold text-amber-800">Ver pessoas</button>}{!(item.readBy || []).includes(currentUser.id) && <button type="button" onClick={() => handleConfirmDocumentRead(item)} className="rounded-lg bg-amber-600 px-2 py-1 text-[9px] font-bold text-white hover:bg-amber-700">Confirmar leitura</button>}{(item.readBy || []).includes(currentUser.id) && <span className="text-emerald-700">· confirmada</span>}</div>}
+                    <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3"><span className="text-[10px] text-slate-400">Por {item.author}</span><button type="button" onClick={() => handleDownload(item.file, item.file?.name)} className="flex items-center gap-1 text-xs font-bold text-blue-700 hover:text-blue-900"><Download className="h-4 w-4" /> Abrir</button></div>
+                  </div>
+                ))}
+                {visibleDocuments.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-xs italic text-slate-400">Nenhum documento encontrado com esses filtros.</div>}
+              </div>
+              <datalist id="document-folder-suggestions">{availableDocumentFolders.filter(folder => folder !== DEFAULT_DOCUMENT_FOLDER).map(folder => <option key={folder} value={folder} />)}</datalist>
+            </div>
+          )}
+
+          {/* TAB: SECTORS */}
+          {activeTab === 'sectors' && (
+            <div data-tour="sectors" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                    <Building className="h-5 w-5 text-slate-700" /> Canais de Setor
+                  </h3>
+                  <p className="text-slate-500 text-xs mt-1">Feed de novidades e manuais compartilhados entre as equipes.</p>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <select
+                    value={sectorFilter}
+                    onChange={(e) => setSectorFilter(e.target.value)}
+                    className="px-3 py-2 w-full sm:w-auto rounded-xl border border-slate-200 text-xs focus:outline-none flex-1"
+                  >
+                    <option value="all">Todos os meus setores</option>
+                    {departmentsList.filter(d => userAllowedDepts.includes(d.id)).map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => { setNewPost(prev => ({ ...prev, depts: [sectorFilter === 'all' ? (userAllowedDepts[0] || 'rh') : sectorFilter] })); setShowPostModal(true); }}
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow flex-shrink-0"
+                    type="button"
+                  >
+                    <Plus className="h-4 w-4" /> Postar
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {sectorPosts
+                  .filter(p => userAllowedDepts.includes(p.dept) && (sectorFilter === 'all' || p.dept === sectorFilter))
+                  .map((post) => (
+                  <div id={`notification-item-${post.id}`} key={post.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="bg-slate-100 text-slate-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded border border-slate-200 uppercase">
+                        {departmentsList.find(d => d.id === post.dept)?.name || post.dept}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold">{post.date}</span>
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{post.title}</h4>
+                      <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><TextoComEmojis texto={post.content} /></p>
+                      {post.tags && post.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {post.tags.map(t => <span key={t} className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">#{t}</span>)}
+                        </div>
+                      )}
+                      {post.image && (
+                        <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <img src={post.image} alt={post.title} loading="lazy" className="block w-full h-auto rounded-xl object-contain" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="h-[1px] bg-slate-100 my-1"></div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Por: <strong className="text-slate-700 font-semibold">{post.author}</strong></span>
+                      <div className="flex items-center gap-3">
+                        {(currentUser.isAdmin || currentUser.id === post.authorId) && (
+                          <button onClick={() => handleDeletePost(post.id)} className="text-rose-500 hover:text-rose-700"><Trash2 className="h-4 w-4"/></button>
+                        )}
+                        <button 
+                          onClick={() => handleLikePost(post.id)}
+                          className={`flex items-center gap-1 text-xs font-semibold ${post.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'}`}
+                          type="button"
+                        >
+                          <Heart className={`h-4 w-4 ${post.likedBy?.includes(currentUser.id) ? 'fill-blue-900 text-blue-900' : ''}`} /> {post.likes}
+                        </button>
+                        {canViewEngagement && <button type="button" onClick={() => setEngagementDetail({ title: post.title, readIds: [], likedIds: post.likedBy || [] })} className="text-[10px] font-bold text-blue-700 hover:underline">Ver pessoas</button>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SCALE & CALENDAR */}
+          {activeTab === 'scale' && (
+            <div data-tour="scale" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-full bg-slate-100 text-slate-800 border border-slate-200">
+                    <UserCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-sm">Meu Status de Presença Diária</h3>
+                    <p className="text-slate-500 text-xs">Mantenha sua equipe atualizada se você está trabalhando remotamente ou presencialmente na sede de Comunica hoje.</p>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    const existingPresence = presenceList.find(p => p.name.toLowerCase() === currentUser.name.toLowerCase());
+                    const primaryDeptId = getUserDepts(currentUser)[0] || 'rh';
+                    setNewPresence({
+                      name: currentUser.name,
+                      dept: primaryDeptId,
+                      status: existingPresence ? existingPresence.status : 'Presencial',
+                      notes: existingPresence ? existingPresence.notes : '',
+                      startDate: todayStr,
+                      endDate: todayStr
+                    });
+                    setShowPresenceModal(true);
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow transition-all"
+                  type="button"
+                >
+                  <Plus className="h-4 w-4" /> {currentUser.isAdmin ? 'Atualizar Status (Equipe)' : 'Atualizar Meu Status de Trabalho'}
+                </button>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <h4 className="text-slate-800 font-extrabold text-xs uppercase tracking-wider">
+                    Escala de Trabalho Hoje ({todayDD}/{todayMM}/{todayYYYY})
+                  </h4>
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="search"
+                      value={presenceSearchText}
+                      onChange={(e) => setPresenceSearchText(e.target.value)}
+                      placeholder="Buscar colaborador..."
+                      className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredTeamPresenceList.map((colab, idx) => (
+                    <div
+                      key={colab.id || colab.name}
+                      className={`p-3 rounded-xl border border-slate-150 items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-all relative group ${
+                        isPresenceListExpanded || idx < 2
+                          ? 'flex'
+                          : idx < 4
+                            ? 'hidden sm:flex'
+                            : idx < 6
+                              ? 'hidden lg:flex'
+                              : 'hidden'
+                      }`}
+                    >
+                      
+                      {currentUser.isAdmin && (
+                        <button
+                          onClick={() => {
+                            setNewPresence({
+                              name: colab.name,
+                              dept: colab.dept,
+                              status: colab.status,
+                              notes: colab.notes || '',
+                              startDate: todayStr,
+                              endDate: todayStr
+                            });
+                            setShowPresenceModal(true);
+                          }}
+                          title="Editar Status do Colaborador"
+                          className="absolute -top-2 -right-2 p-1.5 bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition-all z-10"
+                          type="button"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+
+                      <div>
+                        <strong className="text-slate-800 text-xs block font-bold">{colab.name}</strong>
+                        <span className="text-[10px] text-slate-400 font-bold block">
+                          {departmentsList.find(d => d.id === colab.dept)?.name || colab.dept}
+                        </span>
+                        {colab.notes && <span className="text-[10px] text-slate-600 font-medium block mt-1">📍 {colab.notes}</span>}
+                      </div>
+
+<span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+  getStatusEmTempoReal(colab) === 'Presencial' ? 'bg-slate-900 text-white border border-slate-800' :
+  getStatusEmTempoReal(colab) === 'Home Office' ? 'bg-slate-100 text-slate-700 border border-slate-350' :
+  getStatusEmTempoReal(colab) === 'Folga' ? 'bg-slate-50 text-slate-600 border border-slate-200' :
+  getStatusEmTempoReal(colab) === 'Férias' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+  'bg-slate-100 text-slate-500'
+}`}>
+  {getStatusEmTempoReal(colab)}
+</span>
+                    </div>
+                  ))}
+                </div>
+                {filteredTeamPresenceList.length > 2 && !presenceSearchText.trim() && (
+                  <div className="mt-4 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowAllPresence(prev => !prev)}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                    >
+                      {showAllPresence ? 'Ver menos' : 'Ver mais'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-sm">Cronograma Mensal Integrado</h4>
+                      <p className="text-slate-500 text-xs">Monitore eventos oficiais e as indisponibilidades agendadas de toda a equipe.</p>
+                    </div>
+                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                      <button onClick={handlePrevMonth} className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 transition-all"><ChevronLeft className="h-4 w-4" /></button>
+                      <strong className="text-slate-800 font-black text-xs uppercase w-28 text-center">
+                        {monthNames[currentCalMonth]} {currentCalYear}
+                      </strong>
+                      <button onClick={handleNextMonth} className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 transition-all"><ChevronRight className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 text-center font-bold text-slate-400 text-[10px] uppercase">
+                    <div>Dom</div>
+                    <div>Seg</div>
+                    <div>Ter</div>
+                    <div>Qua</div>
+                    <div>Qui</div>
+                    <div>Sex</div>
+                    <div>Sáb</div>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {calendarDays.map((day, idx) => {
+                      if (day.dayNumber === null) {
+                          return <div key={`empty-${idx}`} className="h-14 bg-slate-50 rounded-lg"></div>;
+                      }
+
+                      const isSelected = selectedCalendarDay === day.dateString;
+                      const hasEvents = day.events.length > 0;
+                      const hasAbsences = day.absences.length > 0;
+                      const hasSchedules = day.schedules.length > 0;
+
+                      return (
+                        <button
+                          key={day.dayNumber}
+                          type="button"
+                          onClick={() => setSelectedCalendarDay(day.dateString)}
+                          className={`h-14 p-1 rounded-xl flex flex-col justify-between transition-all border relative ${
+                            isSelected 
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
+                              : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="text-[10px] font-extrabold">{day.dayNumber}</span>
+                          
+                          <div className="flex flex-col gap-0.5 w-full">
+                            {hasEvents && (
+                              <div className="h-1.5 w-full rounded-sm bg-slate-850" title={`${day.events.length} Evento(s)`}></div>
+                            )}
+                            {hasAbsences && (
+                              <div className="h-1.5 w-full rounded-sm bg-slate-400" title={`${day.absences.length} Ausência(s)`}></div>
+                            )}
+                            {hasSchedules && (
+                              <div className="h-1.5 w-full rounded-sm bg-violet-500" title={`${day.schedules.length} Escala(s)`}></div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold border-t border-slate-100 pt-3">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 rounded bg-slate-850"></span> Evento Cadastrado
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 rounded bg-slate-400"></span> Ausência Programada
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 rounded bg-violet-500"></span> Escala planejada
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
+                    <h5 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                      Agenda: Dia {selectedCalendarDay.split('-').reverse().join('/')}
+                    </h5>
+
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase">Eventos Oficiais:</span>
+                      {activeDayData.events.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic">Sem eventos previstos para esta data.</p>
+                      ) : (
+                        activeDayData.events.map((ev) => (
+                          <div key={ev.id} className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-xs relative group">
+                            {currentUser.isAdmin && (
+                              <button
+                                onClick={() => handleDeleteEvent(ev.id)}
+                                title="Cancelar Evento"
+                                className="absolute top-2 right-2 p-1 text-slate-400 hover:text-rose-600 bg-white shadow-xs rounded border border-slate-200 opacity-0 group-hover:opacity-100 transition-all"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                            <strong className="text-slate-800 block font-bold">{ev.title}</strong>
+                            <span className="text-[10px] text-slate-500 block">📍 Local: {ev.location}</span>
+                            <p className="text-slate-600 text-[11px] mt-1 leading-tight"><TextoComEmojis texto={ev.description} /></p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase">Indisponibilidades de Horário:</span>
+                      {activeDayData.absences.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic">Ninguém agendou ausência neste dia.</p>
+                      ) : (
+                        activeDayData.absences.map((abs) => {
+                          const isOwnAbsence = abs.userId === currentUser.id;
+                          const canDeleteAbs = isOwnAbsence || currentUser.isAdmin;
+                          
+                          const s = abs.startDate || abs.date;
+                          const e = abs.endDate || abs.date || s;
+                          const dateSpan = s === e 
+                            ? `Horário: ${abs.startTime} às ${abs.endTime}` 
+                            : `De ${s.split('-').reverse().join('/')} a ${e.split('-').reverse().join('/')} (${abs.startTime} às ${abs.endTime})`;
+
+                          return (
+                            <div key={abs.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs relative group">
+                              
+                              {canDeleteAbs && (
+                                <button
+                                  onClick={() => handleDeleteAbsence(abs.id, abs.userId)}
+                                  title="Remover Agendamento"
+                                  className="absolute top-2 right-2 p-1 text-slate-400 hover:text-rose-600 bg-white shadow-xs rounded border border-slate-200 opacity-0 group-hover:opacity-100 transition-all"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+
+                              <strong className="text-slate-800 block font-bold">{abs.userName}</strong>
+                              <span className="text-[10px] text-slate-600 font-bold block">🕒 {dateSpan}</span>
+                              <span className="text-slate-500 text-[10px] block italic mt-0.5">Motivo: {abs.reason}</span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
+                      <span className="text-[9px] font-bold text-violet-500 uppercase">Escala de trabalho:</span>
+                      {activeDayData.schedules.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic">Nenhuma escala planejada para esta data.</p>
+                      ) : activeDayData.schedules.map(schedule => (
+                        <div key={schedule.id} className="group relative rounded-lg border border-violet-100 bg-violet-50 p-2.5 pr-10 text-xs">
+                          <strong className="block text-violet-950">{schedule.userName}</strong>
+                          <span className="mt-0.5 block text-[10px] font-bold text-violet-700">{schedule.status} · {schedule.shift || 'Integral'}{schedule.shift === 'Personalizado' && schedule.shiftStart && schedule.shiftEnd ? ` (${schedule.shiftStart}–${schedule.shiftEnd})` : ''}{Number(schedule.plannedHours) > 0 ? ` · ${scheduleDurationToText(schedule.plannedHours)}` : ''}{Number(schedule.extraHours) > 0 ? ` (${scheduleDurationToText(schedule.extraHours)} extra)` : ''}{schedule.breakStart && schedule.breakEnd ? ` · intervalo ${schedule.breakStart}–${schedule.breakEnd}` : Number(schedule.breakMinutes) > 0 ? ` · intervalo ${scheduleDurationToText(Number(schedule.breakMinutes) / 60)}` : ''}{schedule.notes ? ` · ${schedule.notes}` : ''}</span>
+                          {schedule.ruleReason && <span className="mt-1 block text-[10px] text-slate-600">{schedule.ruleGroupName ? `${schedule.ruleGroupName} · ` : ''}{schedule.ruleReason}</span>}
+                          {(isManager || currentUser.isAdmin) && <button type="button" disabled={Boolean(deletingScheduleId)} onClick={() => handleDeleteSchedule(schedule)} title="Excluir esta escala e todo o período vinculado" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-violet-100 bg-white p-1.5 text-slate-400 shadow-sm transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-wait disabled:opacity-50">{deletingScheduleId === schedule.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewAbsence(prev => ({ ...prev, targetUserId: currentUser.id, startDate: selectedCalendarDay, endDate: selectedCalendarDay }));
+                          setShowAbsenceModal(true);
+                        }}
+                        className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 py-2 rounded-xl text-xs font-bold transition-all border border-slate-250 text-center"
+                      >
+                        {isManager || effectiveAccessProfile.canPublishAbsenceForOthers === true ? 'Agendar ausência' : 'Agendar Minha Ausência'}
+                      </button>
+                      
+                      {currentUser.isAdmin && (
+                        <div className="grid grid-cols-2 gap-2"><button
+                          type="button"
+                          onClick={() => {
+                            setNewEvent(prev => ({ ...prev, date: selectedCalendarDay }));
+                            setShowEventModal(true);
+                          }}
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold transition-all text-center"
+                        >
+                          Criar evento
+                        </button><button type="button" onClick={() => { setNewEvent({ title: 'Feriado', date: selectedCalendarDay, type: 'Feriado', location: 'Calendário oficial', description: 'Dia marcado como feriado para o planejamento das escalas.' }); setShowEventModal(true); }} className="w-full rounded-xl border border-amber-200 bg-amber-50 py-2 text-center text-xs font-bold text-amber-900 transition-all hover:bg-amber-100">Marcar feriado</button></div>
+                      )}
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={openBulkSchedule}
+                          className="w-full border border-violet-200 bg-violet-50 py-2 text-center text-xs font-bold text-violet-800 transition-all hover:bg-violet-100 rounded-xl"
+                        >
+                          Organizar escala em lote
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
+          {activeTab === 'management' && currentUser.isAdmin && (
+            <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              
+              <div className="flex border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
+                <button
+                  type="button"
+                  onClick={() => setMgmtSubTab('overview')}
+                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
+                    mgmtSubTab === 'overview'
+                      ? 'border-slate-900 text-slate-900 font-black'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Activity className="h-3.5 w-3.5 inline-block -mt-0.5" /> Visão da equipe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMgmtSubTab('employees')}
+                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
+                    mgmtSubTab === 'employees' 
+                      ? 'border-slate-900 text-slate-900 font-black' 
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  👥 Colaboradores ({employeesList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMgmtSubTab('roles')}
+                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
+                    mgmtSubTab === 'roles' 
+                      ? 'border-slate-900 text-slate-900 font-black' 
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  👔 Cargos ({rolesList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMgmtSubTab('sectors')}
+                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
+                    mgmtSubTab === 'sectors' 
+                      ? 'border-slate-900 text-slate-900 font-black' 
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  🏢 Setores ({departmentsList.length})
+                </button>
+              </div>
+
+              {mgmtSubTab === 'overview' && (
+                <div className="flex flex-col gap-5 animate-in fade-in duration-200">
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-sm">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Gestão de pessoas</span>
+                    <h3 className="mt-1 text-xl font-black">Visão rápida da sua equipe</h3>
+                    <p className="mt-1 max-w-2xl text-xs text-slate-300">Acompanhe o acesso, a estrutura organizacional e os cadastros que precisam de atenção.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Users className="h-5 w-5 text-blue-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Colaboradores</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.active}</strong><span className="text-[10px] text-slate-500">cadastros ativos</span></div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Activity className="h-5 w-5 text-emerald-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Acessos recentes</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.recentlyActive}</strong><span className="text-[10px] text-slate-500">nos últimos 7 dias</span></div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><UserPlus className="h-5 w-5 text-amber-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Primeiro acesso</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.pendingAccess}</strong><span className="text-[10px] text-slate-500">ainda não acessaram</span></div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Filter className="h-5 w-5 text-violet-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Para completar</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-slate-500">sem cargo ou setor</span></div>
+                  </div>
+                  <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                      <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-800">Cadastros que precisam de atenção</h4><p className="mt-1 text-xs text-slate-500">Ajuste vínculo, cargo ou acompanhe quem ainda não fez o primeiro acesso.</p></div><button type="button" onClick={() => setMgmtSubTab('employees')} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Abrir equipe</button></div>
+                      <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!user.lastLoginAt ? 'Ainda não acessou' : ''}{!user.lastLoginAt && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { setEmpSearchText(user.name || ''); setMgmtSubTab('employees'); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-800">Distribuição da equipe</h4><div className="mt-4 space-y-3">{sectorCounts.slice().sort((a,b) => b.count - a.count).slice(0, 5).map(sector => <div key={sector.id}><div className="flex justify-between text-[10px] font-semibold text-slate-600"><span>{sector.name}</span><span>{sector.count}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${peopleOverview.active ? Math.round((sector.count / peopleOverview.active) * 100) : 0}%` }} /></div></div>)}{sectorCounts.length === 0 && <p className="mt-4 text-xs text-slate-500">Cadastre setores para acompanhar a distribuição.</p>}</div></div>
+                  </div>
+                </div>
+              )}
+
+              {mgmtSubTab === 'employees' && (
+                <div className="bg-white p-4 sm:p-6 rounded-[26px] border border-slate-200 shadow-[0_18px_50px_-36px_rgba(15,23,42,.55)] flex flex-col gap-5">
+                  <div className="rounded-[22px] bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-5 sm:p-6 text-white flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-[.18em] text-blue-200">Gestão de pessoas</span>
+                      <h3 className="font-black text-white text-xl mt-1">Colaboradores</h3>
+                      <p className="text-slate-300 text-xs mt-1">Consulte vínculos, acessos e situações que exigem atenção.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {activeCompany?.code === '082026' && <button type="button" onClick={handleMigrateLegacyUsers} className="bg-white/10 hover:bg-white/15 text-white font-bold text-xs py-2.5 px-4 rounded-xl border border-white/15">Migrar dados anteriores</button>}
+                      <button type="button" onClick={() => { setEditingUser(null); setUserForm({ name: '', role: '', depts: [], avatar: DEFAULT_AVATAR, isAdmin: false, pin: '1234', emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', managerId: '', birthDate: '', hireDate: '' }); setShowUserModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow-lg transition-all flex-shrink-0"><Plus className="h-4 w-4" /> Novo colaborador</button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-blue-600">Equipe</span><strong className="block text-xl font-black text-blue-950 mt-1">{peopleOverview.active}</strong><span className="text-[10px] text-blue-700">colaboradores ativos</span></div>
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-emerald-600">Ativos recentemente</span><strong className="block text-xl font-black text-emerald-950 mt-1">{peopleOverview.recentlyActive}</strong><span className="text-[10px] text-emerald-700">últimos 7 dias</span></div>
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-amber-600">Primeiro acesso</span><strong className="block text-xl font-black text-amber-950 mt-1">{peopleOverview.pendingAccess}</strong><span className="text-[10px] text-amber-700">ainda pendentes</span></div>
+                    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-violet-600">Cadastro incompleto</span><strong className="block text-xl font-black text-violet-950 mt-1">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-violet-700">sem cargo ou setor</span></div>
+                  </div>
+
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Buscar por nome..."
+                        value={empSearchText}
+                        onChange={(e) => setEmpSearchText(e.target.value)}
+                        className="pl-9 pr-3 py-2 w-full rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      />
+                    </div>
+                    <select
+                      value={empSectorFilter}
+                      onChange={(e) => setEmpSectorFilter(e.target.value)}
+                      className="px-3 py-2 w-full rounded-lg border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                    >
+                      <option value="Todos">Todos os Setores</option>
+                      {sectorCounts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.count})</option>)}
+                    </select>
+                    <select
+                      value={empRoleFilter}
+                      onChange={(e) => setEmpRoleFilter(e.target.value)}
+                      className="px-3 py-2 w-full rounded-lg border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                    >
+                      <option value="Todos">Todos os Cargos</option>
+                      {roleCounts.map(r => <option key={r.name} value={r.name}>{r.name} ({r.count})</option>)}
+                    </select>
+                    <select
+                      value={empProdGroupFilter}
+                      onChange={(e) => setEmpProdGroupFilter(e.target.value)}
+                      className="px-3 py-2 w-full rounded-lg border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                    >
+                      <option value="Todos">Todos os Grupos</option>
+                      <option value="">Sem Grupo ({employeesList.filter(u => !u.prodGroup).length})</option>
+                      {prodGroupCounts.map(g => <option key={g.name} value={g.name}>{g.name} ({g.count})</option>)}
+                    </select>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="w-full min-w-[760px] text-left text-xs text-slate-600 border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-400 uppercase font-black tracking-wide text-[9px] border-b border-slate-200">
+                          <th className="p-4">Colaborador</th>
+                          <th className="p-4">Vínculo</th>
+                          <th className="p-4">Último acesso</th>
+                          <th className="p-4">Situação</th>
+                          <th className="p-4 text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredEmployees.map((user) => (
+                          <tr key={user.id} className="border-b border-slate-100 last:border-0 hover:bg-blue-50/40 transition-all group">
+                            <td className="p-4 flex items-center gap-3">
+                              <img src={user.avatar || DEFAULT_AVATAR} className="w-11 h-11 rounded-2xl object-cover border-2 border-white shadow-sm" alt="" />
+                              <div>
+                                <strong className="text-slate-900 font-extrabold block">{user.name}</strong>
+                                <span className="text-[10px] text-slate-500 block font-medium mt-0.5">{user.isAdmin ? 'Administrador' : 'Colaborador'}</span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <strong className="block text-[11px] text-slate-800">{user.role || 'Cargo não informado'}</strong>
+                              <div className="flex flex-wrap gap-1">
+                                {getUserDepts(user).map(dId => (
+                                  <span key={dId} className="mt-1 bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full border border-slate-200 text-[9px]">
+                                    {departmentsList.find(d => d.id === dId)?.name || dId}
+                                  </span>
+                                ))}
+                              </div>
+                              {user.prodGroup && <span className="block text-[9px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded mt-1 w-max">{user.prodGroup}</span>}
+                              <span className="mt-2 block text-[9px] font-semibold text-slate-400">Gestor responsável</span>
+                              <span className="block text-[10px] font-bold text-slate-700">{employeesList.find(manager => manager.id === user.managerId)?.name || 'Não definido'}</span>
+                            </td>
+                            <td className="p-4 text-[10px] font-medium text-slate-500 whitespace-nowrap">
+                              {user.lastLoginAt ? <><strong className="block text-slate-700">{new Date(user.lastLoginAt).toLocaleDateString('pt-BR')}</strong><span>{new Date(user.lastLoginAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></> : <span className="font-bold text-amber-700">Ainda não acessou</span>}
+                            </td>
+                            <td className="p-4">
+                              {(!user.role || !getUserDepts(user).length) ? <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-black text-amber-700">Cadastro incompleto</span> : user.lastLoginAt ? <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black text-emerald-700">Ativo</span> : <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-black text-blue-700">Aguardando acesso</span>}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button type="button" onClick={() => handleResetUserPin(user.id, user.name)} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-blue-700 transition-all border border-transparent hover:border-blue-100" title="Redefinir PIN"><KeyRound className="h-4 w-4" /></button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditUser(user)}
+                                  className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-900 transition-all border border-transparent hover:border-slate-200"
+                                  title="Editar Informações"
+                                >
+                                  <Edit2 className="h-4.5 w-4.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingUserRemoval({ id: user.id, name: user.name })}
+                                  className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-rose-600 transition-all border border-transparent hover:border-rose-100"
+                                  title="Remover Cadastro"
+                                >
+                                  <Trash2 className="h-4.5 w-4.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {filteredEmployees.length === 0 && (
+                          <tr>
+                            <td colSpan="5" className="p-8 text-center text-slate-500 italic border-b border-slate-100">
+                              Nenhum colaborador encontrado para os filtros selecionados.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {mgmtSubTab === 'roles' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="font-extrabold text-slate-800 text-base">Cargos Existentes</h3>
+                      <p className="text-slate-500 text-xs">Cargos atualmente configurados por setor de trabalho na Comunica.</p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1">
+                      {rolesList.map((role, idx) => {
+                        const isEditing = editingRoleIdx === idx;
+                        const roleDepartments = getRoleDepts(role);
+                        const count = employeesList.filter(u => u.role === role.name && getUserDepts(u).some(deptId => roleDepartments.includes(deptId))).length;
+
+                        return (
+                          <div
+                            key={role.id || idx}
+                            className="p-3 rounded-xl border border-slate-150 flex items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-all text-xs"
+                          >
+                            {isEditing ? (
+                              <div className="flex flex-col gap-2 w-full">
+                                <input
+                                  type="text"
+                                  value={editingRoleValue}
+                                  onChange={(e) => setEditingRoleValue(e.target.value)}
+                                  className="px-2 py-1 w-full bg-white border border-slate-200 rounded-lg text-xs focus:outline-none"
+                                  autoFocus
+                                />
+                                <textarea value={editingRoleDescription} onChange={(event) => setEditingRoleDescription(event.target.value)} rows="4" maxLength="2000" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs leading-5 outline-none focus:border-blue-400" placeholder="Descreva as principais atividades, responsabilidades e requisitos do cargo." />
+                                <div className="rounded-xl border border-slate-200 bg-white p-2"><span className="mb-1.5 block text-[9px] font-bold uppercase text-slate-400">Setores vinculados</span><div className="flex flex-wrap gap-1.5">{departmentsList.map(dept => <label key={dept.id} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[10px] font-bold ${editingRoleDepts.includes(dept.id) ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-slate-200 text-slate-600'}`}><input type="checkbox" checked={editingRoleDepts.includes(dept.id)} onChange={event => setEditingRoleDepts(previous => event.target.checked ? [...new Set([...previous, dept.id])] : previous.filter(id => id !== dept.id))} className="accent-blue-700" />{dept.name}</label>)}</div></div>
+                                <div className="flex items-center gap-1.5 w-full justify-end">
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveRole(idx)}
+                                      className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-2.5 py-1 rounded-lg text-[10px]"
+                                    >
+                                      Salvar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setEditingRoleIdx(null); setEditingRoleDepts([]); setEditingRoleDescription(''); }}
+                                      className="text-slate-400 hover:text-slate-600 text-[10px]"
+                                    >
+                                      Sair
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex flex-col">
+                                  <span className="font-extrabold text-slate-800">{role.name}</span>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                    {roleDepartments.map(deptId => <span key={deptId} className="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded border border-slate-200">{departmentsList.find(d => d.id === deptId)?.name || deptId}</span>)}
+                                    <span className="text-[10px] text-slate-400 font-bold">
+                                      • {count} {count === 1 ? 'colaborador' : 'colaboradores'}
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 max-w-2xl whitespace-pre-wrap break-words text-[10px] leading-4 text-slate-500 [overflow-wrap:anywhere]">{role.description || 'Descrição das atividades ainda não cadastrada.'}</p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditRole(idx)}
+                                    className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-900 transition-all"
+                                    title="Editar Nome do Cargo"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRole(idx)}
+                                    className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-rose-600 transition-all"
+                                    title="Remover Cargo"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h4 className="font-black text-slate-850 text-sm">Criar Novo Cargo</h4>
+                      <p className="text-slate-500 text-xs">Preencha o cargo e selecione todos os setores em que ele poderá ser utilizado.</p>
+                    </div>
+
+                    <form onSubmit={handleAddRole} className="flex flex-col gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Título do Cargo</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Desenvolvedor Senior"
+                          value={newRoleValue}
+                          onChange={(e) => setNewRoleValue(e.target.value)}
+                          className="px-3.5 py-2 w-full rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
+                        />
+                      </div>
+                      <div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Descritivo das atividades</label><textarea value={newRoleDescription} onChange={(event) => setNewRoleDescription(event.target.value)} rows="5" maxLength="2000" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs leading-5 outline-none focus:ring-2 focus:ring-slate-400/50" placeholder="Informe atividades, responsabilidades e requisitos que poderão ser reutilizados nas vagas." /><span className="mt-1 block text-[10px] text-slate-400">Este texto será sugerido automaticamente ao publicar uma vaga vinculada ao cargo.</span></div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Setores vinculados</label>
+                        <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">{departmentsList.map(dept => <label key={dept.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${newRoleDepts.includes(dept.id) ? 'border-blue-300 bg-blue-50 text-blue-900' : 'border-transparent bg-white text-slate-600 hover:border-slate-200'}`}><input type="checkbox" checked={newRoleDepts.includes(dept.id)} onChange={event => setNewRoleDepts(previous => event.target.checked ? [...new Set([...previous, dept.id])] : previous.filter(id => id !== dept.id))} className="accent-blue-700" />{dept.name}</label>)}</div>
+                        <span className="mt-1 block text-[10px] text-slate-400">Selecionados: {newRoleDepts.length}</span>
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-1 shadow mt-1"
+                      >
+                        <Plus className="h-4 w-4" /> Adicionar Cargo
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {mgmtSubTab === 'sectors' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-2">
+                  <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h3 className="font-extrabold text-slate-800 text-base">Setores Cadastrados</h3>
+                      <p className="text-slate-500 text-xs">Gerencie os setores ativos, altere as nomenclaturas e a cor institucional dos crachás.</p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1">
+                      {departmentsList.map((dept) => {
+                        const isEditing = editingSectorId === dept.id;
+                        const connectedUsers = employeesList.filter(u => getUserDepts(u).includes(dept.id)).length;
+                        const connectedRoles = rolesList.filter(r => getRoleDepts(r).includes(dept.id)).length;
+
+                        return (
+                          <div
+                            key={dept.id}
+                            className="p-3.5 rounded-xl border border-slate-150 flex items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-all text-xs"
+                          >
+                            {isEditing ? (
+                              <div className="flex flex-col gap-2.5 w-full">
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={editingSectorName}
+                                    onChange={(e) => setEditingSectorName(e.target.value)}
+                                    className="px-3 py-1.5 flex-1 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none"
+                                    autoFocus
+                                  />
+                                  <select
+                                    value={editingSectorColor}
+                                    onChange={(e) => setEditingSectorColor(e.target.value)}
+                                    className="px-2 py-1.5 rounded-xl bg-white border border-slate-200 text-[11px] focus:outline-none"
+                                  >
+                                    {SECTOR_COLORS.map((col) => (
+                                      <option key={col.class} value={col.class}>{col.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveSector(dept.id)}
+                                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-[10px]"
+                                  >
+                                    Salvar Alterações
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSectorId(null)}
+                                    className="text-slate-500 hover:text-slate-700 text-[10px] px-2 py-1.5"
+                                  >
+                                    Sair
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2">
+                                    <strong className="text-slate-800 text-sm">{dept.name}</strong>
+                                    <span className={`text-[8px] font-bold px-2 py-0.5 rounded border ${dept.color}`}>
+                                      Amostra Crachá
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-[10px] text-slate-400 font-semibold">
+                                    <span>👤 {connectedUsers} Colaboradores</span>
+                                    <span>👔 {connectedRoles} Cargos</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingSectorId(dept.id);
+                                      setEditingSectorName(dept.name);
+                                      setEditingSectorColor(dept.color);
+                                    }}
+                                    className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-900 transition-all"
+                                    title="Editar Nome/Cor do Setor"
+                                  >
+                                    <Edit2 className="h-4.5 w-4.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSector(dept.id)}
+                                    className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-rose-600 transition-all"
+                                    title="Excluir Setor"
+                                  >
+                                    <Trash2 className="h-4.5 w-4.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <h4 className="font-black text-slate-850 text-sm">Criar Novo Setor</h4>
+                      <p className="text-slate-500 text-xs">Crie novas categorias de departamentos para a sua empresa.</p>
+                    </div>
+
+                    <form onSubmit={handleAddSector} className="flex flex-col gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nome do Setor</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: Recursos Humanos, Financeiro"
+                          value={newSectorName}
+                          onChange={(e) => setNewSectorName(e.target.value)}
+                          className="px-3.5 py-2 w-full rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Visual do Crachá (Paleta)</label>
+                        <select
+                          value={newSectorColor}
+                          onChange={(e) => setNewSectorColor(e.target.value)}
+                          className="px-3 py-2.5 w-full rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                        >
+                          {SECTOR_COLORS.map((col) => (
+                            <option key={col.class} value={col.class}>{col.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 mt-1">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase mb-1">Prévia do Crachá:</span>
+                        <div className="flex justify-center">
+                          <span className={`text-[10px] font-bold px-3 py-1 rounded border ${newSectorColor}`}>
+                            {newSectorName || 'Nome do Setor'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-1 shadow mt-1"
+                      >
+                        <Plus className="h-4 w-4" /> Criar Setor Oficial
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+        </main>
+      </div>
+      {/* BOTÃO FLUTUANTE DA IA */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {isChatOpen && (
+          <div className="bg-white rounded-2xl w-80 sm:w-96 h-[500px] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5">
+            <div className="bg-slate-900 text-slate-100 p-4 flex items-center justify-between border-b border-slate-850">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700">
+                  <Sparkles className="h-4.5 w-4.5 text-slate-300" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs">Assistente ComunicaAI</h4>
+                  <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span> Base de Dados Comunica Integrada
+                  </span>
+                </div>
+              </div>
+              <button type="button" onClick={() => setIsChatOpen(false)} className="p-1 hover:bg-slate-800 rounded text-slate-300">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3 bg-slate-50 text-xs">
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex flex-col max-w-[85%] rounded-2xl p-3 leading-relaxed shadow-sm ${
+                    msg.role === 'user'
+                      ? 'bg-slate-900 text-white self-end rounded-tr-none'
+                      : 'bg-white text-slate-800 self-start rounded-tl-none border border-slate-200'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap"><TextoComEmojis texto={msg.text} /></p>
+                </div>
+              ))}
+              
+              {isChatLoading && (
+                <div className="bg-white text-slate-800 self-start rounded-2xl rounded-tl-none p-3 border border-slate-200 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto bg-white whitespace-nowrap">
+              {[
+                'Quem trabalha de home office hoje?',
+                'Quando vai ser a festa junina?',
+                'Tem cargos criados no marketing?',
+                'Tem alguém ausente na semana?'
+              ].map((question, qIdx) => (
+                <button
+                  key={qIdx}
+                  type="button"
+                  onClick={() => {
+                    setChatInput(question);
+                    triggerNotification('Sugestão de pergunta copiada!');
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold py-1 px-2.5 rounded-lg border border-slate-200"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-3 border-t border-slate-150 bg-white flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Perguntar sobre escalas, ausências, cargos..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSendChatMessage();
+                }}
+                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
+              />
+              <BotaoEmoji aoSelecionar={(emoji) => setChatInput(prev => prev + emoji)} />
+              <button 
+                type="button"
+                onClick={handleSendChatMessage}
+                className="p-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition-all"
+              >
+                <Send className="h-4.5 w-4.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          className="bg-slate-900 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 hover:bg-slate-800 transition-all border border-slate-850 hover:scale-105 active:scale-95"
+        >
+          <Sparkles className="h-5.5 w-5.5 text-slate-300" />
+          <span className="text-xs font-bold pr-1">ComunicaAI</span>
+        </button>
+      </div>
+
+      {showControlCenter && (currentUser.isAdmin || currentUser.isDeveloper) && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/70 p-3 sm:p-5">
+          <div data-tour="control-center" role="dialog" aria-modal="true" aria-labelledby="control-center-title" className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <header className="flex items-center justify-between gap-4 bg-gradient-to-r from-slate-950 via-blue-950 to-cyan-900 px-5 py-4 text-white sm:px-7">
+              <div><span className="text-[9px] font-bold uppercase tracking-[.18em] text-cyan-200">Administração</span><h2 id="control-center-title" className="mt-1 text-lg font-black">Central de controle</h2><p className="mt-1 text-[11px] text-blue-100/75">Permissões por colaborador ou setor e histórico das alterações.</p></div>
+              <button type="button" onClick={() => setShowControlCenter(false)} className="rounded-xl p-2 text-blue-100 hover:bg-white/10" aria-label="Fechar central de controle"><X className="h-5 w-5" /></button>
+            </header>
+            <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-3 sm:px-7">
+              <button type="button" onClick={() => setControlCenterTab('permissions')} className={`border-b-2 px-4 py-3 text-xs font-extrabold ${controlCenterTab === 'permissions' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500'}`}><Lock className="mr-1.5 inline h-4 w-4" />Permissões</button>
+              <button type="button" onClick={() => setControlCenterTab('audit')} className={`border-b-2 px-4 py-3 text-xs font-extrabold ${controlCenterTab === 'audit' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500'}`}><Database className="mr-1.5 inline h-4 w-4" />Auditoria</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-7">
+              {controlCenterTab === 'permissions' ? <div data-tour="control-permissions" className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]">
+                <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="text-sm font-extrabold text-slate-900">Quem receberá a regra?</h3><p className="mt-1 text-xs leading-5 text-slate-500">A configuração individual tem prioridade sobre a regra do setor.</p>
+                  <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => loadPermissionTarget('user', '')} className={`rounded-xl border p-3 text-xs font-bold ${permissionScope === 'user' ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200 bg-white text-slate-600'}`}>Colaborador</button><button type="button" onClick={() => loadPermissionTarget('sector', '')} className={`rounded-xl border p-3 text-xs font-bold ${permissionScope === 'sector' ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200 bg-white text-slate-600'}`}>Setor inteiro</button></div>
+                  <label className="mt-4 block text-[10px] font-bold uppercase text-slate-500">Selecionar
+                    <select value={permissionTargetId} onChange={event => loadPermissionTarget(permissionScope, event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-700"><option value="">Escolha uma opção</option>{permissionScope === 'user' ? employeesList.slice().sort((a,b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name} — {user.role || 'Sem cargo'}</option>) : departmentsList.slice().sort((a,b) => a.name.localeCompare(b.name, 'pt-BR')).map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select>
+                  </label>
+                  <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[10px] leading-5 text-blue-900"><strong className="block">Como funciona</strong>Abas desmarcadas desaparecem do menu. “Alterar informações” transforma as áreas liberadas em somente leitura. O calendário possui um controle próprio.</div>
+                </section>
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="text-sm font-extrabold text-slate-900">Áreas e ações permitidas</h3><p className="mt-1 text-xs text-slate-500">Selecione apenas o necessário para o trabalho dessa pessoa ou setor.</p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">{ACCESS_MODULES.map(module => <label key={module.id} className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-semibold ${permissionDraft.tabs?.[module.id] !== false ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>{module.label}</span><input type="checkbox" checked={permissionDraft.tabs?.[module.id] !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, tabs: { ...previous.tabs, [module.id]: event.target.checked } }))} className="accent-blue-700" /></label>)}</div>
+                  <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2"><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar informações</span><input type="checkbox" checked={permissionDraft.canEdit !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canEdit: event.target.checked }))} className="accent-emerald-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageCalendar ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar escalas e calendário</span><input type="checkbox" checked={permissionDraft.canManageCalendar !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageCalendar: event.target.checked }))} className="accent-amber-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canPublishAbsenceForOthers ? 'border-cyan-200 bg-cyan-50 text-cyan-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Publicar ausência de outras pessoas</span><input type="checkbox" checked={permissionDraft.canPublishAbsenceForOthers === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canPublishAbsenceForOthers: event.target.checked }))} className="accent-cyan-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewEngagement ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver confirmações e curtidas</span><input type="checkbox" checked={permissionDraft.canViewEngagement === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewEngagement: event.target.checked }))} className="accent-violet-700" /></label></div>
+                  <div className="mt-5 flex justify-end"><button type="button" onClick={savePermissionTarget} disabled={!permissionTargetId} className="rounded-xl bg-slate-900 px-5 py-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Salvar permissões</button></div>
+                </section>
+              </div> : <section data-tour="control-audit" className="space-y-6">
+                <div><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas e tickets</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Desempenho da Caixa de Entrada</h3><p className="mt-1 text-xs leading-5 text-slate-500">Acompanhe volume, cumprimento de prazo, prorrogações e reaberturas.</p></div>
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
+                  {[
+                    { id: 'all', label: 'Conversas', value: conversationAuditMetrics.total, tone: 'border-blue-100 bg-blue-50 text-blue-800' },
+                    { id: 'completed_on_time', label: 'No prazo', value: conversationAuditMetrics.onTime, tone: 'border-emerald-100 bg-emerald-50 text-emerald-800' },
+                    { id: 'completed_late', label: 'Concluídas atrasadas', value: conversationAuditMetrics.late, tone: 'border-rose-100 bg-rose-50 text-rose-800' },
+                    { id: 'overdue', label: 'Ainda vencidas', value: conversationAuditMetrics.overdue, tone: 'border-amber-100 bg-amber-50 text-amber-800' },
+                    { id: 'extended', label: 'Prorrogadas', value: conversationAuditMetrics.extended, tone: 'border-violet-100 bg-violet-50 text-violet-800' },
+                    { id: 'reopened', label: 'Reabertas', value: conversationAuditMetrics.reopened, tone: 'border-cyan-100 bg-cyan-50 text-cyan-800' },
+                  ].map(metric => {
+                    const active = conversationAuditStatus === metric.id;
+                    return <button type="button" aria-pressed={active} onClick={() => setConversationAuditStatus(previous => previous === metric.id && metric.id !== 'all' ? 'all' : metric.id)} key={metric.id} className={`min-w-0 rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${metric.tone} ${active ? 'ring-2 ring-current ring-offset-2' : ''}`}><strong className="block text-xl leading-none">{metric.value}</strong><span className="mt-1.5 block break-words text-[9px] font-black uppercase tracking-wide [overflow-wrap:anywhere]">{metric.label}</span></button>;
+                  })}
+                </div>
+                <div className="grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">Período<select value={conversationAuditPeriod} onChange={event => setConversationAuditPeriod(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="180">Últimos 6 meses</option><option value="0">Todo o histórico</option></select></label>
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">Situação<select value={conversationAuditStatus} onChange={event => setConversationAuditStatus(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todas</option><option value="open">Em andamento</option><option value="overdue">Ainda vencidas</option><option value="completed_on_time">Concluídas no prazo</option><option value="completed_late">Concluídas em atraso</option><option value="extended">Com prorrogação</option><option value="reopened">Reabertas</option></select></label>
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">Colaborador<select value={conversationAuditPerson} onChange={event => setConversationAuditPerson(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todos</option>{messageContacts.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-100 px-4 py-3"><strong className="text-xs text-slate-900">Tickets encontrados</strong><span className="ml-2 text-[10px] text-slate-500">{conversationAuditFiltered.length} resultado(s)</span></div>
+                  <div className="max-h-[34dvh] divide-y divide-slate-100 overflow-y-auto">{conversationAuditFiltered.map(row => <div key={row.id} className="grid min-w-0 gap-3 p-4 text-xs hover:bg-slate-50 md:grid-cols-[90px_1.3fr_1fr_auto] md:items-center"><div><span className="text-[9px] font-black uppercase text-slate-400">Ticket</span><strong className="block text-blue-800">#{row.ticket}</strong></div><div className="min-w-0"><strong className="block break-words text-slate-900 [overflow-wrap:anywhere]">{row.subject}</strong><span className="mt-1 block break-words text-[10px] text-slate-500 [overflow-wrap:anywhere]">Aberta por {row.openerName} · {row.participantNames.length} participante(s)</span></div><div><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${row.deadlineClassName}`}>{row.deadlineLabel}</span><span className="mt-1 block text-[10px] text-slate-500">Prazo: {formatDueDate(row.dueDate)}</span></div><div className="text-[10px] text-slate-500 md:text-right">{row.openedAt ? new Date(row.openedAt).toLocaleDateString('pt-BR') : 'Sem data'}{row.extensions > 0 && <span className="mt-1 block text-violet-600">{row.extensions} prorrogação(ões)</span>}{row.reopened && <span className="mt-1 block text-cyan-700">Reaberta</span>}</div></div>)}{conversationAuditFiltered.length === 0 && <div className="p-8 text-center text-xs text-slate-500">Nenhuma conversa encontrada com esses filtros.</div>}</div>
+                </div>
+                <div className="border-t border-slate-200 pt-6">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">Histórico de alterações</h3>
+                    <p className="mt-1 text-xs text-slate-500">Veja quem alterou, qual ação foi realizada, a área afetada, os campos e o horário.</p>
+                  </div>
+                  <div className="mt-4 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
+                    <div className="relative md:col-span-4"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={auditSearch} onChange={event => setAuditSearch(event.target.value)} placeholder="Buscar pessoa, área, ação ou campo alterado" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs" /></div>
+                    <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">Pessoa<select value={auditPersonFilter} onChange={event => setAuditPersonFilter(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold normal-case text-slate-700"><option value="all">Todas as pessoas</option>{auditActors.map(actor => <option key={actor.id} value={actor.id}>{actor.name}</option>)}</select></label>
+                    <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">Área<select value={auditAreaFilter} onChange={event => setAuditAreaFilter(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold normal-case text-slate-700"><option value="all">Todas as áreas</option>{auditAreas.map(area => <option key={area} value={area}>{auditCollectionLabels[area] || area}</option>)}</select></label>
+                    <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">Tipo de alteração<select value={auditActionFilter} onChange={event => setAuditActionFilter(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold normal-case text-slate-700"><option value="all">Todas as ações</option>{auditActions.map(action => <option key={action} value={action}>{auditActionLabels[action] || action}</option>)}</select></label>
+                    <div className="flex items-end"><button type="button" onClick={() => { setAuditSearch(''); setAuditPersonFilter('all'); setAuditAreaFilter('all'); setAuditActionFilter('all'); }} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-600 hover:border-slate-300">Limpar filtros</button></div>
+                  </div>
+                </div>
+                <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                  <div className="max-h-[38dvh] divide-y divide-slate-100 overflow-y-auto">
+                    {filteredAuditLogs.map(entry => <div key={entry.id} className="grid min-w-0 gap-2 p-4 text-xs hover:bg-slate-50 sm:grid-cols-[1fr_1fr_auto]">
+                      <div className="min-w-0"><strong className="block break-words text-slate-900 [overflow-wrap:anywhere]">{entry.actorName || 'Usuário'}</strong><span className="break-words text-[10px] text-slate-500 [overflow-wrap:anywhere]">{entry.actorRole || 'Colaborador'} · {auditActionLabels[entry.action] || entry.action || 'realizou uma alteração'}</span></div>
+                      <div className="min-w-0"><strong className="block break-words text-slate-700 [overflow-wrap:anywhere]">{auditCollectionLabels[entry.collection] || entry.collection || 'Sistema'}</strong><span className="break-words text-[10px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{(entry.fields || []).length ? `Alterou: ${(entry.fields || []).filter(field => !['pin', 'password', 'pushTokens'].includes(field)).map(field => auditFieldLabels[field] || field).join(', ')}` : `Registro: ${entry.documentId || '—'}`}</span></div>
+                      <time className="text-[10px] font-semibold text-slate-500 sm:whitespace-nowrap">{entry.timestamp ? new Date(entry.timestamp).toLocaleString('pt-BR') : 'Data indisponível'}</time>
+                    </div>)}
+                    {filteredAuditLogs.length === 0 && <div className="p-10 text-center text-xs text-slate-500">Nenhuma alteração encontrada para os filtros selecionados.</div>}
+                  </div>
+                </div>
+              </section>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {engagementDetail && canViewEngagement && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/65 p-4" role="dialog" aria-modal="true" aria-label="Detalhes de participação">
+          <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
+              <div className="min-w-0"><span className="text-[9px] font-black uppercase tracking-widest text-blue-700">Participação</span><h3 className="mt-1 break-words text-sm font-extrabold text-slate-900">{engagementDetail.title}</h3></div>
+              <button type="button" onClick={() => setEngagementDetail(null)} aria-label="Fechar" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <section className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><div className="flex items-center justify-between gap-2"><strong className="text-xs text-emerald-900">Confirmaram leitura</strong><span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-emerald-700">{engagementDetail.readIds.length}</span></div><div className="mt-3 space-y-2">{engagementDetail.readIds.map(userId => <div key={userId} className="rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-slate-700">{engagementUserName(userId)}</div>)}{engagementDetail.readIds.length === 0 && <p className="text-[10px] text-emerald-800/70">Nenhuma confirmação registrada.</p>}</div></section>
+              <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4"><div className="flex items-center justify-between gap-2"><strong className="text-xs text-rose-900">Curtiram</strong><span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-rose-700">{engagementDetail.likedIds.length}</span></div><div className="mt-3 space-y-2">{engagementDetail.likedIds.map(userId => <div key={userId} className="rounded-xl border border-rose-100 bg-white px-3 py-2 text-xs font-semibold text-slate-700">{engagementUserName(userId)}</div>)}{engagementDetail.likedIds.length === 0 && <p className="text-[10px] text-rose-800/70">Nenhuma curtida registrada.</p>}</div></section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: MEU PERFIL DE COLABORADOR */}
+      {showProfileModal && (
+        <div className="fixed inset-0 bg-slate-950/65 flex items-center justify-center p-4 z-[999] animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <User className="h-5 w-5 text-slate-300" /> Atualizar Meu Perfil
+              </h3>
+              <button type="button" onClick={() => setShowProfileModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleMyProfileSubmit} className="p-6 flex flex-col gap-5">
+              <div className="flex flex-col items-center gap-3">
+                <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-slate-200 shadow-md">
+                  <img src={myProfileForm.avatar || DEFAULT_AVATAR} className="w-full h-full object-cover" alt="Foto Perfil" />
+                  {currentUser.isAdmin && myProfileForm.avatar && (
+                    <button
+                      type="button"
+                      onClick={() => setMyProfileForm(prev => ({ ...prev, avatar: '' }))}
+                      className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-700 transition-all"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                
+                <div className="w-full">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FOTO DO DISPOSITIVO (UPLOAD)</label>
+                  {currentUser.isAdmin ? (
+                    <label className="border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-xl px-4 py-2 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 max-w-xs mx-auto">
+                      <ImageIcon className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                      <span className="truncate">Carregar Foto Local...</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, setMyProfileForm, 'avatar')}
+                        className="hidden"
+                      />
+                    </label>
+                  ) : (
+                    <p className="max-w-xs mx-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-center text-[10px] font-medium text-slate-500">
+                      A foto do perfil só pode ser alterada por um administrador.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* CAMPOS SEPARADOS DE CONTATO DE EMERGÊNCIA */}
+              <div className="border-t border-slate-100 pt-4 flex flex-col gap-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block tracking-wider">CONTATO DE EMERGÊNCIA</span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Nome</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Maria de Souza"
+                      value={myProfileForm.emergencyName}
+                      onChange={(e) => setMyProfileForm({ ...myProfileForm, emergencyName: e.target.value })}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-550/50 bg-slate-50 font-medium text-slate-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Parentesco</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Esposa, Mãe, Filho"
+                      value={myProfileForm.emergencyRelationship}
+                      onChange={(e) => setMyProfileForm({ ...myProfileForm, emergencyRelationship: e.target.value })}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-550/50 bg-slate-50 font-medium text-slate-700"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Contato / Telefone</label>
+                  <div className="relative">
+                    <PhoneCall className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: (71) 98888-8888"
+                      value={myProfileForm.emergencyPhone}
+                      onChange={(e) => setMyProfileForm({ ...myProfileForm, emergencyPhone: e.target.value })}
+                      className="pl-9 pr-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-550/50 bg-slate-50 font-medium text-slate-700"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPinFieldsInProfile(!showPinFieldsInProfile)}
+                  className="flex items-center justify-between w-full text-left text-xs font-bold text-slate-700 hover:text-slate-900 transition-all focus:outline-none"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <KeyRound className="h-4 w-4 text-slate-500" /> Alterar PIN de Segurança (Senha)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-extrabold bg-slate-100 px-2 py-0.5 rounded-md">
+                    {showPinFieldsInProfile ? 'Recolher [-]' : 'Alterar Senha [+]'}
+                  </span>
+                </button>
+
+                {showPinFieldsInProfile && (
+                  <div className="mt-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/65 flex flex-col gap-3 animate-in slide-in-from-top-2 duration-200">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">PIN de Acesso Atual</label>
+                      <input
+                        type="password"
+                        maxLength="4"
+                        placeholder="• • • •"
+                        value={currentPinInput}
+                        onChange={(e) => setCurrentPinInput(e.target.value.replace(/\D/g, ''))}
+                        className="px-3 py-2 text-center tracking-widest text-sm font-black w-full rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-550 bg-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">Novo PIN (4 dígitos)</label>
+                        <input
+                          type="password"
+                          maxLength="4"
+                          placeholder="• • • •"
+                          value={newPinInput}
+                          onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
+                          className="px-3 py-2 text-center tracking-widest text-sm font-black w-full rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-550 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">Confirmar Novo PIN</label>
+                        <input
+                          type="password"
+                          maxLength="4"
+                          placeholder="• • • •"
+                          value={confirmNewPinInput}
+                          onChange={(e) => setConfirmNewPinInput(e.target.value.replace(/\D/g, ''))}
+                          className="px-3 py-2 text-center tracking-widest text-sm font-black w-full rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-550 bg-white"
+                        />
+                      </div>
+                    </div>
+                    <span className="text-[9px] text-slate-400 block text-center">Para alterar o seu PIN, informe a senha atual e defina um novo PIN numérico de 4 dígitos.</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 mt-2">
+                <button type="button" disabled={isChangingPin} onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={isChangingPin} className="inline-flex min-w-[112px] items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all disabled:cursor-wait disabled:opacity-60">
+                  {isChangingPin && <LoaderCircle className="h-4 w-4 animate-spin" />}{isChangingPin ? 'Alterando PIN...' : 'Salvar Perfil'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RESUMO DA INTELIGENCIA ARTIFICIAL */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 bg-slate-950/65 flex items-center justify-center p-4 z-[999] animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Sparkles className="h-5 w-5 text-slate-300" /> Boletim Informativo Semanal Inteligente
+              </h3>
+              <button type="button" onClick={() => setShowSummaryModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 max-h-[480px] overflow-y-auto">
+              {isSummaryLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <div className="w-10 h-10 border-4 border-slate-900 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs text-slate-500 font-bold">A inteligência artificial está consolidando todos os dados da semana...</p>
+                </div>
+              ) : (
+                <div className="prose text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                  {summaryContent}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-50 px-6 py-3 border-t border-slate-150 flex items-center justify-end gap-2">
+              <button 
+                type="button"
+                onClick={() => setShowSummaryModal(false)} 
+                className="px-4 py-2 text-slate-500 text-xs font-bold"
+              >
+                Fechar Painel
+              </button>
+              
+              {!isSummaryLoading && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = summaryContent;
+                    
+                    const fallbackCopy = () => {
+                      try {
+                        const textArea = document.createElement("textarea");
+                        textArea.value = text;
+                        textArea.style.position = "fixed";
+                        textArea.style.opacity = "0";
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+                        const successful = document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        
+                        if (successful) {
+                          triggerNotification('Texto copiado com sucesso! Pronto para colar no e-mail corporativo.');
+                        } else {
+                          triggerNotification('Cópia automática bloqueada. Selecione o texto acima e copie manualmente (Ctrl+C).', 'error');
+                        }
+                      } catch (err) {
+                        triggerNotification('Permissão negada pelo navegador. Selecione o texto e copie manualmente.', 'error');
+                      }
+                    };
+
+                    if (navigator.clipboard && window.isSecureContext) {
+                      navigator.clipboard.writeText(text)
+                        .then(() => triggerNotification('Texto copiado com sucesso! Pronto para colar no e-mail corporativo.'))
+                        .catch(() => fallbackCopy());
+                    } else {
+                      fallbackCopy();
+                    }
+                  }}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all"
+                >
+                  Copiar Boletim Formatado
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ALTERAR PIN DE SEGURANÇA */}
+      {showChangePinModal && (
+        <div className="fixed inset-0 bg-slate-950/75 flex items-center justify-center p-4 z-[1200] animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <KeyRound className="h-5 w-5 text-slate-300" /> Alterar PIN de Segurança
+              </h3>
+              {!forcePinChange && <button type="button" onClick={() => setShowChangePinModal(false)} className="p-1 hover:bg-slate-800 rounded"><X className="h-5 w-5" /></button>}
+            </div>
+
+            <form onSubmit={handleChangePinSubmit} className="p-6 flex flex-col gap-4">
+              {forcePinChange && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900"><strong className="block">Primeiro acesso</strong>Crie um PIN pessoal antes de continuar. O PIN provisório não poderá mais ser utilizado depois da alteração.</div>}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">PIN de Acesso Atual</label>
+                <input
+                  type="password"
+                  maxLength="4"
+                  required
+                  placeholder="• • • •"
+                  value={currentPinInput}
+                  onChange={(e) => setCurrentPinInput(e.target.value.replace(/\D/g, ''))}
+                  className="px-3.5 py-2.5 text-center tracking-widest text-lg font-black w-full rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-550/50 bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">Novo PIN de Acesso (4 Dígitos)</label>
+                <input
+                  type="password"
+                  maxLength="4"
+                  required
+                  placeholder="• • • •"
+                  value={newPinInput}
+                  onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
+                  className="px-3.5 py-2.5 text-center tracking-widest text-lg font-black w-full rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-550/50 bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">Confirmar Novo PIN</label>
+                <input
+                  type="password"
+                  maxLength="4"
+                  required
+                  placeholder="• • • •"
+                  value={confirmNewPinInput}
+                  onChange={(e) => setConfirmNewPinInput(e.target.value.replace(/\D/g, ''))}
+                  className="px-3.5 py-2.5 text-center tracking-widest text-lg font-black w-full rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-550/50 bg-slate-50"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                {!forcePinChange && <button type="button" disabled={isChangingPin} onClick={() => setShowChangePinModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40">Cancelar</button>}
+                <button type="submit" disabled={isChangingPin} className="inline-flex min-w-[150px] items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all disabled:cursor-wait disabled:opacity-60">
+                  {isChangingPin && <LoaderCircle className="h-4 w-4 animate-spin" />}{isChangingPin ? 'Atualizando...' : 'Atualizar Senha PIN'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTRO DE PRODUTIVIDADE */}
+{showProdModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Activity className="h-5 w-5 text-slate-300" /> {editingProdId ? 'Editar Produção' : 'Registrar Produção'}
+              </h3>
+              <button type="button" onClick={() => { setShowProdModal(false); setEditingProdId(null); }} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitProductivity} className="p-6 flex flex-col gap-4">
+              
+              {/* BLOCO 1: GRUPO E DATA LADO A LADO */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Grupo</label>
+                  <select
+                    required
+                    value={newProdLog.group}
+                    onChange={(e) => setNewProdLog({ ...newProdLog, group: e.target.value })}
+                    disabled={!canManageAllProductivity}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    <option value="Máquina 1">Máquina 1</option>
+                    <option value="Máquina 2">Máquina 2</option>
+                    <option value="Laje">Laje</option>
+                    <option value="Mourão">Mourão</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data</label>
+                  <input
+                    type="date"
+                    required
+                    value={newProdLog.date}
+                    onChange={(e) => setNewProdLog({ ...newProdLog, date: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-slate-50 font-medium text-slate-800"
+                  />
+                </div>
+              </div>
+
+              {/* BLOCO 2: QUANTIDADES LADO A LADO */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Qtd (Boa)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="Ex: 500"
+                    value={newProdLog.quantity}
+                    onChange={(e) => setNewProdLog({ ...newProdLog, quantity: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-sm font-black focus:outline-none text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-rose-600">Qtd Defeito</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Ex: 5"
+                    value={newProdLog.defects}
+                    onChange={(e) => setNewProdLog({ ...newProdLog, defects: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-rose-200 text-sm font-black focus:outline-none text-rose-700 bg-rose-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Descrição do produto</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: Bloco 14x19x39, laje treliçada..."
+                  value={newProdLog.productDescription || ''}
+                  onChange={(e) => setNewProdLog({ ...newProdLog, productDescription: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Foto / Comprovante</label>
+                <label className="border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                  <ImageIcon className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  <span>Anexar Foto...</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleImageUpload(e, setNewProdLog)}
+                    className="hidden"
+                  />
+                </label>
+                {newProdLog.image && (
+                  <div className="mt-2 relative w-full h-16 rounded-xl overflow-hidden border border-slate-200">
+                    <img src={newProdLog.image} className="w-full h-full object-cover" alt="Prévia" />
+                    <button type="button" onClick={() => setNewProdLog(prev => ({ ...prev, image: '' }))} className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Observações (Opcional)</label>
+                <textarea
+                  rows="2"
+                  placeholder="Alguma falha na máquina? Falta de insumo?"
+                  value={newProdLog.notes}
+                  onChange={(e) => setNewProdLog({ ...newProdLog, notes: e.target.value })}
+                  className="px-3.5 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                ></textarea>
+                <BotaoEmoji aoSelecionar={(emoji) => setNewProdLog(prev => ({ ...prev, notes: prev.notes + emoji }))} />
+                <PreviaEmojis texto={newProdLog.notes} />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => { setShowProdModal(false); setEditingProdId(null); }} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  {editingProdId ? 'Atualizar' : 'Registrar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTRO DE PRESENÇA DIÁRIA */}
+      {showPresenceModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <UserCheck className="h-5 w-5 text-slate-300" /> Registrar Escala de Trabalho Diária
+              </h3>
+              <button type="button" onClick={() => setShowPresenceModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitPresence} className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Colaborador</label>
+                {currentUser.isAdmin || currentUser.isDeveloper || isManager || effectiveAccessProfile.canPublishAbsenceForOthers === true ? (
+                  <select
+                    value={newPresence.name}
+                    onChange={(e) => {
+                      const selectedUser = usersList.find(u => u.name === e.target.value);
+                      const existingPres = presenceList.find(p => p.name === e.target.value);
+                      const primaryDept = selectedUser && selectedUser.depts && selectedUser.depts.length > 0 
+                        ? selectedUser.depts[0] 
+                        : (selectedUser?.dept || 'rh');
+                      
+                      setNewPresence({
+                        name: e.target.value,
+                        dept: primaryDept,
+                        status: existingPres ? existingPres.status : 'Presencial',
+                        notes: existingPres ? existingPres.notes : '',
+                        startDate: todayStr,
+                        endDate: todayStr
+                      });
+                    }}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    {employeesList.map(u => (
+                      <option key={u.id} value={u.name}>{u.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    readOnly
+                    value={newPresence.name}
+                    className="px-3.5 py-2.5 w-full bg-slate-50 text-slate-600 rounded-xl border border-slate-200 text-xs focus:outline-none cursor-not-allowed"
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Setor</label>
+                  <input
+                    type="text"
+                    required
+                    readOnly
+                    value={departmentsList.find(d => d.id === newPresence.dept)?.name || newPresence.dept}
+                    className="px-3.5 py-2.5 w-full bg-slate-50 text-slate-600 rounded-xl border border-slate-200 text-xs focus:outline-none cursor-not-allowed"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Status de Trabalho</label>
+                  <select
+                    value={newPresence.status}
+                    onChange={(e) => setNewPresence({ ...newPresence, status: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    {currentUser.isAdmin || currentUser.isDeveloper || isManager ? <>
+                      <option value="Presencial">Presencial (Sede)</option>
+                      <option value="Home Office">Home Office (Remoto)</option>
+                      <option value="Folga">Folga Escalonada</option>
+                    </> : null}
+                    <option value="Férias">Licença / Férias</option>
+                  </select>
+                </div>
+              </div>
+
+              {newPresence.status === 'Férias' && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 animate-in fade-in zoom-in-95">
+                  <div className="col-span-2">
+                    <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5 uppercase tracking-wider">
+                      <Calendar className="h-4 w-4" /> Registrar no Calendário Geral
+                    </span>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Data Início</label>
+                    <input
+                      type="date"
+                      required={newPresence.status === 'Férias'}
+                      value={newPresence.startDate}
+                      onChange={(e) => setNewPresence({ ...newPresence, startDate: e.target.value })}
+                      className="px-3 py-2 w-full rounded-lg border border-slate-200 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Último dia de férias</label>
+                    <input
+                      type="date"
+                      required={newPresence.status === 'Férias'}
+                      value={newPresence.endDate}
+                      onChange={(e) => setNewPresence({ ...newPresence, endDate: e.target.value })}
+                      className="px-3 py-2 w-full rounded-lg border border-slate-200 text-xs focus:outline-none"
+                    />
+                    <span className="mt-1 block text-[9px] text-slate-400">O retorno ao trabalho será no dia seguinte.</span>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Notas de Localização / Escala</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Sala de suporte técnico, Reunião externa às 15h..."
+                  value={newPresence.notes}
+                  onChange={(e) => setNewPresence({ ...newPresence, notes: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowPresenceModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  Confirmar Status
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBulkScheduleModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
+              <div><h3 className="flex items-center gap-2 text-sm font-extrabold"><Calendar className="h-5 w-5 text-violet-200" /> Escala em lote</h3><p className="mt-0.5 text-[10px] text-slate-300">Planeje folgas, presencial ou home office diretamente no calendário.</p></div>
+              <button type="button" onClick={() => setShowBulkScheduleModal(false)} className="rounded p-1 hover:bg-slate-800"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={event => { if (bulkScheduleMode === 'manual') return saveBulkSchedule(event); event.preventDefault(); generateAutomaticSchedule(); }} className="space-y-4 p-5 sm:p-6">
+              <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-1.5"><button type="button" onClick={() => setBulkScheduleMode('smart')} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${bulkScheduleMode === 'smart' ? 'bg-white text-cyan-900 shadow-sm' : 'text-slate-500'}`}><Sparkles className="mr-1.5 inline h-4 w-4" />Escala inteligente</button><button type="button" onClick={() => { setBulkScheduleMode('manual'); setAutomaticScheduleProposal([]); }} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${bulkScheduleMode === 'manual' ? 'bg-white text-violet-900 shadow-sm' : 'text-slate-500'}`}><Edit2 className="mr-1.5 inline h-4 w-4" />Marcação simples</button></div>
+              {bulkScheduleMode === 'smart' && <>
+              <section className="overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-violet-50">
+                <div className="flex flex-col gap-3 border-b border-cyan-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div><span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-100 px-2.5 py-1 text-[9px] font-black uppercase tracking-wide text-cyan-900"><Sparkles className="h-3.5 w-3.5" /> Planejamento inteligente</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Monte uma escala baseada em regras reais</h4><p className="mt-1 max-w-2xl text-[11px] leading-5 text-slate-600">Defina a política uma vez, reutilize o padrão de cada colaborador e revise o quadro antes de publicar.</p></div>
+                  <div className="grid w-full grid-cols-3 gap-1 rounded-xl border border-cyan-100 bg-white/80 p-1 sm:w-auto sm:min-w-[390px]"><button type="button" onClick={() => setAutomaticScheduleRuleTab('rules')} className={`rounded-lg px-2 py-2 text-[9px] font-extrabold sm:px-3 sm:text-[10px] ${automaticScheduleRuleTab === 'rules' ? 'bg-cyan-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Settings2 className="mr-1 inline h-3.5 w-3.5" />Conjuntos de regras</button><button type="button" onClick={() => setAutomaticScheduleRuleTab('team')} className={`rounded-lg px-2 py-2 text-[9px] font-extrabold sm:px-3 sm:text-[10px] ${automaticScheduleRuleTab === 'team' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Users className="mr-1 inline h-3.5 w-3.5" />Colaboradores</button><button type="button" onClick={() => setAutomaticScheduleRuleTab('planning')} className={`rounded-lg px-2 py-2 text-[9px] font-extrabold sm:px-3 sm:text-[10px] ${automaticScheduleRuleTab === 'planning' ? 'bg-violet-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Calendar className="mr-1 inline h-3.5 w-3.5" />Simular e publicar</button></div>
+                </div>
+                {automaticScheduleRuleTab === 'rules' ? <div className="space-y-4 p-4">
+                  <ScheduleRuleEditor key={automaticScheduleEditorFocus?.ruleId || 'editor'} initialGroupId={automaticScheduleEditorFocus?.groupId} initialRuleId={automaticScheduleEditorFocus?.ruleId} groups={automaticScheduleRules.ruleGroups || []} employees={employeesList} onChange={ruleGroups => { setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups })); setAutomaticScheduleProposal([]); }} />
+                  <h5 className="text-xs font-extrabold text-slate-800">Jornada padrão e limites gerais</h5>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <label className="text-[9px] font-bold uppercase text-slate-600 sm:col-span-2">Nome desta política<input maxLength="80" value={automaticScheduleRules.name} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, name: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" placeholder="Ex.: Escala padrão da loja" /></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Dias de trabalho por semana<input type="number" min="1" max="7" value={automaticScheduleRules.workDaysPerWeek} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, workDaysPerWeek: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Descanso a cada quantos dias<input type="number" min="2" max="14" value={automaticScheduleRules.restEveryDays} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, restEveryDays: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Carga semanal (hh:mm)<input type="text" inputMode="numeric" maxLength="6" value={automaticScheduleWeeklyHoursText} onChange={event => setAutomaticScheduleWeeklyHoursText(event.target.value.replace(/[^0-9:]/g, ''))} onBlur={() => { const hours = scheduleTextToHours(automaticScheduleWeeklyHoursText); if (/^\d{1,3}:[0-5]\d$/.test(automaticScheduleWeeklyHoursText) && hours >= 1 && hours <= 84) setAutomaticScheduleRules(previous => ({ ...previous, hoursPerWeek: hours })); }} placeholder="40:00" className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /><span className="mt-1 block normal-case font-medium text-slate-400">Use sempre horas e minutos, por exemplo 44:00.</span></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Entrada padrão<input type="time" value={automaticScheduleRules.shiftStart} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, shiftStart: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Saída padrão<input type="time" value={automaticScheduleRules.shiftEnd} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, shiftEnd: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /><span className="mt-1 block normal-case font-medium text-slate-400">Horário de fechamento; use exceções quando necessário.</span></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Início do intervalo<input type="time" value={automaticScheduleRules.breakStart} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, breakStart: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Fim do intervalo<input type="time" value={automaticScheduleRules.breakEnd} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, breakEnd: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white/80 p-3"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Dias em que a operação pode escalar pessoas</strong><p className="text-[9px] leading-4 text-slate-500">As folgas serão distribuídas entre os dias liberados, em rodízio por colaborador.</p></div><span className="text-[9px] font-bold text-slate-500">{automaticScheduleRules.allowedWeekdays.length} dia(s) liberado(s)</span></div><div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">{SCHEDULE_WEEKDAYS.map(day => { const active = automaticScheduleRules.allowedWeekdays.includes(day.value); return <button type="button" key={day.value} onClick={() => setAutomaticScheduleRules(previous => ({ ...previous, allowedWeekdays: active ? previous.allowedWeekdays.filter(value => value !== day.value) : [...previous.allowedWeekdays, day.value].sort() }))} className={`rounded-lg border px-2 py-2 text-[10px] font-black ${active ? 'border-cyan-300 bg-cyan-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>{day.label}</button>; })}</div></div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.holidaysCountAsRest ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.holidaysCountAsRest} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, holidaysCountAsRest: event.target.checked }))} className="mt-0.5 accent-amber-700" /><span><strong className="block text-[10px] text-slate-800">Feriado conta como descanso</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Quando ativo, um feriado reduz a necessidade de outra folga naquela semana.</small></span></label>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.reuseLastSchedule ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.reuseLastSchedule} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, reuseLastSchedule: event.target.checked }))} className="mt-0.5 accent-emerald-700" /><span><strong className="block text-[10px] text-slate-800">Reutilizar o último padrão individual</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Mantém entrada, saída e intervalo usados anteriormente por cada colaborador. Horas extras não são copiadas.</small></span></label>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.calculateExtraAutomatically ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" disabled={Boolean(automaticScheduleRules.ruleGroups?.length)} checked={!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, calculateExtraAutomatically: event.target.checked }))} className="mt-0.5 accent-violet-700" /><span><strong className="block text-[10px] text-slate-800">Calcular complemento automaticamente</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Se a jornada prevista ficar abaixo da carga semanal, o saldo é sugerido como hora extra para revisão.</small></span></label>
+                  </div>
+                  <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Regra persistente da empresa</strong><p className="mt-0.5 text-[9px] leading-4 text-slate-500">Ao salvar, estes critérios serão carregados automaticamente no próximo planejamento.</p></div><button type="button" disabled={isSavingScheduleRules} onClick={saveAutomaticScheduleRules} className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingScheduleRules ? <LoaderCircle className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Check className="mr-1.5 inline h-4 w-4" />}{isSavingScheduleRules ? 'Salvando...' : 'Salvar regras'}</button></div>
+                </div> : automaticScheduleRuleTab === 'team' ? <div className="space-y-4 p-4">
+                  <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3"><h5 className="text-xs font-bold text-cyan-950">Conjunto de cada colaborador</h5><p className="mt-1 text-[11px] text-cyan-800">Escolha o conjunto que define os dias, folgas e jornadas especiais de cada pessoa.</p><div className="mt-3 grid max-h-64 gap-3 overflow-auto sm:grid-cols-2">{employeesList.map(user => <label key={user.id} className="text-xs font-bold text-slate-700">{user.name}<select className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs" value={(automaticScheduleRules.ruleGroups || []).find(group => group.userIds.includes(String(user.id)))?.id || ''} onChange={event => { const targetGroup = event.target.value; setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups: (previous.ruleGroups || []).map(group => ({ ...group, userIds: group.id === targetGroup ? [...new Set([...group.userIds, String(user.id)])] : group.userIds.filter(id => id !== String(user.id)) })) })); setAutomaticScheduleProposal([]); }}><option value="">Padrão da empresa</option>{(automaticScheduleRules.ruleGroups || []).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>)}</div></div>
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><strong className="text-[11px] text-emerald-950">Ajustes individuais da jornada base</strong><p className="mt-1 text-[9px] leading-4 text-emerald-800">Estes horários ajustam a jornada base da pessoa. Para folgas, revezamentos ou mudanças em qualquer dia, use as regras individuais dentro do conjunto.</p></div>
+                  <div className="max-h-[390px] overflow-auto rounded-xl border border-slate-200 bg-white"><table className="w-full min-w-[720px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-2 py-2.5">Entrada própria</th><th className="px-2 py-2.5">Saída nos dias comuns</th><th className="px-2 py-2.5">Saída no sábado</th><th className="px-3 py-2.5 text-right">Ação</th></tr></thead><tbody>{bulkScheduleVisibleEmployees.filter(user => bulkSchedule.userIds.some(id => String(id) === String(user.id))).map(user => { const override = automaticScheduleRules.employeeOverrides?.[user.id] || {}; const updateOverride = changes => setAutomaticScheduleRules(previous => ({ ...previous, employeeOverrides: { ...(previous.employeeOverrides || {}), [user.id]: { ...(previous.employeeOverrides?.[user.id] || {}), ...changes } } })); return <tr key={user.id} className="border-t border-slate-100"><td className="px-3 py-2.5"><strong className="block text-slate-800">{user.name}</strong><span className="text-[8px] text-slate-400">{departmentsList.find(dept => dept.id === getUserDepts(user)[0])?.name || user.role}</span></td><td className="px-2 py-2"><input type="time" value={override.shiftStart || ''} onChange={event => updateOverride({ shiftStart: event.target.value })} className="w-[110px] rounded-lg border border-slate-200 px-2 py-2" /><span className="ml-2 text-[8px] text-slate-400">padrão {automaticScheduleRules.shiftStart}</span></td><td className="px-2 py-2"><input type="time" value={override.shiftEnd || ''} onChange={event => updateOverride({ shiftEnd: event.target.value })} className="w-[110px] rounded-lg border border-slate-200 px-2 py-2" /><span className="ml-2 text-[8px] text-slate-400">padrão {automaticScheduleRules.shiftEnd}</span></td><td className="px-2 py-2"><input type="time" value={override.saturdayEnd || ''} onChange={event => updateOverride({ saturdayEnd: event.target.value })} className="w-[110px] rounded-lg border border-slate-200 px-2 py-2" /><span className="ml-2 text-[8px] text-slate-400">vazio = saída comum</span></td><td className="px-3 py-2 text-right"><button type="button" onClick={() => setAutomaticScheduleRules(previous => { const employeeOverrides = { ...(previous.employeeOverrides || {}) }; delete employeeOverrides[user.id]; return { ...previous, employeeOverrides }; })} className="rounded-lg border border-slate-200 px-2.5 py-2 font-bold text-slate-500 hover:bg-slate-50">Usar padrão</button></td></tr>; })}</tbody></table></div>
+                  <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-[9px] leading-4 text-slate-500">As exceções ficam vinculadas ao colaborador e serão reutilizadas nas próximas escalas.</p><button type="button" disabled={isSavingScheduleRules} onClick={saveAutomaticScheduleRules} className="rounded-xl bg-emerald-800 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingScheduleRules ? 'Salvando...' : 'Salvar exceções'}</button></div>
+                </div> : <div className="space-y-4 p-4">
+                  <div className="grid gap-3 rounded-xl border border-cyan-100 bg-white/80 p-3 sm:grid-cols-3"><label className="text-[9px] font-bold uppercase text-slate-600">Início do planejamento<input required type="date" value={bulkSchedule.startDate} onChange={event => { setBulkSchedule(previous => ({ ...previous, startDate: event.target.value })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label><label className="text-[9px] font-bold uppercase text-slate-600">Fim do planejamento<input required type="date" value={bulkSchedule.endDate} onChange={event => { setBulkSchedule(previous => ({ ...previous, endDate: event.target.value })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label><div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"><span className="text-[9px] font-bold uppercase text-slate-500">Equipe selecionada</span><strong className="mt-1 block text-lg text-slate-900">{bulkSchedule.userIds.length}</strong><small className="text-[9px] text-slate-500">{automaticScheduleRules.reuseLastSchedule ? `${automaticScheduleReusablePatterns} com padrão anterior encontrado` : 'Uso do padrão anterior desativado'}</small></div></div>
+                  <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[9px] font-black uppercase text-blue-700">Jornada base</span><strong className="mt-1 block text-xs text-slate-900">Entrada até saída prevista</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">É o tempo regular de trabalho, já descontando o intervalo.</p></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[9px] font-black uppercase text-violet-700">Hora extra</span><strong className="mt-1 block text-xs text-slate-900">Tempo adicional do dia</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">É somada depois da saída base e altera somente a saída final.</p></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[9px] font-black uppercase text-emerald-700">Carga total</span><strong className="mt-1 block text-xs text-slate-900">Base + extra</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">Todos os totais são exibidos no padrão hh:mm.</p></div></div>
+                  <div className="flex flex-col gap-3 rounded-xl border border-amber-100 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-amber-950">Feriados do período</strong><p className="mt-0.5 text-[10px] leading-4 text-slate-600">São os dias cadastrados no calendário como “Feriado”.</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black ${automaticScheduleDetectedHolidays.length ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-500'}`}>{automaticScheduleDetectedHolidays.length ? `${automaticScheduleDetectedHolidays.length} detectado(s)` : 'Nenhum detectado'}</span></div>
+                  {(automaticScheduleRules.ruleGroups || []).length > 0 && <p className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-[11px] leading-5 text-cyan-900">As regras especiais serão respeitadas integralmente. Diferenças de carga serão indicadas para revisão; jornadas reduzidas não recebem complemento automático. Períodos que cobrem parte da semana exibem uma meta proporcional aos dias do período.</p>}
+                  <div className="flex justify-end"><button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-5 py-3 text-xs font-bold text-white shadow-sm hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro para revisão</button></div>
+                </div>}
+              </section>
+              {automaticScheduleProposal.length > 0 && <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70">
+                <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Todos os campos operacionais podem ser ajustados antes da publicação.</p></div><button type="button" disabled={automaticScheduleIssues.some(issue => issue.blocking)} onClick={saveAutomaticScheduleProposal} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />Salvar e publicar no calendário</button></div>
+                <div className="flex gap-2 overflow-x-auto border-b border-emerald-100 bg-slate-50 p-3">{automaticScheduleDates.map(date => { const rows = automaticScheduleProposal.filter(item => item.date === date); const working = rows.filter(item => ['Presencial', 'Home Office'].includes(item.status)); const hours = working.reduce((sum, item) => sum + automaticScheduleRowHours(item).total, 0); const holiday = rows.some(item => item.holiday); return <button type="button" key={date} onClick={() => setAutomaticSchedulePreviewDate(date)} className={`min-w-[118px] rounded-xl border px-3 py-2 text-left transition ${automaticScheduleVisibleDate === date ? 'border-cyan-500 bg-cyan-700 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-cyan-200'}`}><span className="block text-[9px] font-black uppercase">{new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}</span><span className={`mt-1 block text-[9px] ${automaticScheduleVisibleDate === date ? 'text-cyan-100' : 'text-slate-500'}`}>{working.length} trabalhando · {scheduleDurationToText(hours)}{holiday ? ' · feriado' : ''}</span></button>; })}</div>
+                {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => setAutomaticSchedulePreviewDate(automaticScheduleDates.includes(issue.date) ? issue.date : automaticScheduleDates.find(date => date >= issue.date) || automaticScheduleDates[0])}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
+                <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[8px] font-black uppercase text-blue-700">Equipe no quadro</span><strong className="mt-1 block text-xl text-blue-950">{automaticScheduleVisibleRows.length}</strong></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[8px] font-black uppercase text-emerald-700">Em trabalho</span><strong className="mt-1 block text-xl text-emerald-950">{automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><span className="text-[8px] font-black uppercase text-amber-700">Folga / feriado</span><strong className="mt-1 block text-xl text-amber-950">{automaticScheduleVisibleRows.length - automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[8px] font-black uppercase text-violet-700">Carga da equipe</span><strong className="mt-1 block text-xl text-violet-950">{scheduleDurationToText(automaticScheduleDayHours)}</strong></div></div>
+                <div className="max-h-[430px] overflow-auto border-y border-emerald-100 bg-white"><table className="w-full min-w-[1320px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-3 py-2.5">Regra aplicada / motivo</th><th className="px-2 py-2.5">Status</th><th className="px-2 py-2.5">Entrada</th><th className="px-2 py-2.5">Saída prevista<br/><span className="font-medium text-slate-400">sem hora extra</span></th><th className="px-2 py-2.5">Início intervalo</th><th className="px-2 py-2.5">Fim intervalo</th><th className="px-2 py-2.5">Hora extra<br/><span className="font-medium text-slate-400">hh:mm</span></th><th className="px-2 py-2.5">Saída final</th><th className="px-3 py-2.5 text-right">Carga do dia</th></tr></thead><tbody>{automaticScheduleVisibleRows.map(renderAutomaticScheduleRow)}</tbody></table></div>
+                <div className="p-3"><h5 className="text-[9px] font-black uppercase tracking-wide text-slate-500">Carga total no período por colaborador</h5><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{automaticScheduleEmployeeTotals.map(item => <div key={item.userId} className={`rounded-xl border bg-white p-3 ${Math.abs(item.balance) < 0.02 ? 'border-emerald-200' : item.balance < 0 ? 'border-rose-200' : 'border-violet-200'}`}><strong className="block truncate text-[10px] text-slate-800">{item.userName}</strong><div className="mt-1 flex items-end justify-between gap-2"><span className="text-sm font-black text-slate-950">{scheduleDurationToText(item.total)}</span><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${Math.abs(item.balance) < 0.02 ? 'bg-emerald-100 text-emerald-800' : item.balance < 0 ? 'bg-rose-100 text-rose-800' : 'bg-violet-100 text-violet-800'}`}>{Math.abs(item.balance) < 0.02 ? 'CARGA OK' : item.balance > 0 ? `EXTRA ${scheduleDurationToText(item.projectedOvertime)}` : `FALTA ${scheduleDurationToText(item.missingHours)}`}</span></div><small className="mt-1 block text-[8px] text-slate-500">Meta {scheduleDurationToText(item.target)} · jornada base {scheduleDurationToText(item.regular)} · complemento sugerido {scheduleDurationToText(item.extra)}</small></div>)}</div></div>
+                {automaticScheduleEmployeeTotals.some(item => item.missingHours > 0.02) && <p className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-semibold text-amber-800">Há colaboradores com carga abaixo da meta. Confira as folgas e jornadas especiais antes de publicar. Com conjuntos de regras, horários reduzidos são preservados e não recebem complemento automático.</p>}
+                {automaticScheduleProposal.some(item => workSchedules.some(existing => String(existing.userId) === String(item.userId) && existing.startDate <= item.date && existing.endDate >= item.date)) && <p className="m-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[10px] font-semibold text-rose-700">Há marcações já lançadas neste período. Para evitar duplicidade, ajuste ou remova as escalas existentes antes de publicar.</p>}
+              </section>}
+              </>}
+              {bulkScheduleMode === 'manual' && <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="text-[10px] font-bold uppercase text-slate-500">Início<input required type="date" value={bulkSchedule.startDate} onChange={event => setBulkSchedule(previous => ({ ...previous, startDate: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs text-slate-700" /></label>
+                <label className="text-[10px] font-bold uppercase text-slate-500">Fim<input required type="date" value={bulkSchedule.endDate} onChange={event => setBulkSchedule(previous => ({ ...previous, endDate: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs text-slate-700" /></label>
+                <label className="text-[10px] font-bold uppercase text-slate-500">Status<select value={bulkSchedule.status} onChange={event => setBulkSchedule(previous => ({ ...previous, status: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Folga">Folga</option><option value="Presencial">Presencial</option><option value="Home Office">Home Office</option></select></label>
+                <label className="text-[10px] font-bold uppercase text-slate-500">Turno<select value={bulkSchedule.shift || 'Integral'} onChange={event => setBulkSchedule(previous => ({ ...previous, shift: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Integral">Integral</option><option value="Manhã">Manhã</option><option value="Tarde">Tarde</option><option value="Noite">Noite</option><option value="Personalizado">Personalizado</option></select></label>
+              </div>
+              {bulkSchedule.shift === 'Personalizado' && <div className="grid grid-cols-1 gap-3 rounded-xl border border-violet-100 bg-violet-50 p-3 sm:grid-cols-2"><label className="text-[10px] font-bold uppercase text-violet-700">Início do turno<input required type="time" value={bulkSchedule.customShiftStart} onChange={event => setBulkSchedule(previous => ({ ...previous, customShiftStart: event.target.value }))} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-xs text-slate-700" /></label><label className="text-[10px] font-bold uppercase text-violet-700">Fim do turno<input required type="time" value={bulkSchedule.customShiftEnd} onChange={event => setBulkSchedule(previous => ({ ...previous, customShiftEnd: event.target.value }))} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-xs text-slate-700" /></label></div>}
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 sm:grid-cols-2">
+                <label className="text-[10px] font-bold uppercase text-violet-700">Repetir este período<select value={bulkSchedule.repeatInterval || 'semanal'} onChange={event => setBulkSchedule(previous => ({ ...previous, repeatInterval: event.target.value }))} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="semanal">Semanalmente</option><option value="quinzenal">A cada 15 dias</option><option value="mensal">Mensalmente</option></select></label>
+                <label className="text-[10px] font-bold uppercase text-violet-700">Quantidade de marcações<input required min="1" max="52" type="number" value={bulkSchedule.repeatCount || 1} onChange={event => setBulkSchedule(previous => ({ ...previous, repeatCount: Math.min(52, Math.max(1, Number(event.target.value) || 1)) }))} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-xs text-slate-700" /><span className="mt-1 block normal-case font-medium text-violet-600">1 significa somente este período.</span></label>
+              </div>
+              <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950"><strong>Prévia no calendário:</strong> {bulkScheduleConsecutiveDays || 0} dia(s) consecutivo(s), {bulkSchedulePreview.length} marcação(ões) por pessoa. <span className="block pt-1 text-[11px] text-violet-700">{bulkSchedulePreview.map(period => `${formatDate(period.startDate)}${period.endDate !== period.startDate ? ` a ${formatDate(period.endDate)}` : ''}`).join(' · ')}</span></div>
+              </>}
+              <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-end sm:justify-between">
+                <label className="flex-1 text-[10px] font-bold uppercase text-slate-500">Filtrar setor<select value={bulkSchedule.dept} onChange={event => { const dept = event.target.value; setBulkSchedule(previous => ({ ...previous, dept, userIds: employeesList.filter(user => dept === 'Todos' || getUserDepts(user).includes(dept)).map(user => user.id) })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"><option value="Todos">Todos os setores</option>{departmentsList.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select></label>
+                <label className="flex-1 text-[10px] font-bold uppercase text-slate-500">Buscar colaborador<input value={bulkSchedule.employeeSearch || ''} onChange={event => setBulkSchedule(previous => ({ ...previous, employeeSearch: event.target.value }))} placeholder="Digite um nome" className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" /></label>
+                <div className="flex gap-2"><button type="button" onClick={() => { setBulkSchedule(previous => ({ ...previous, userIds: [...new Set([...previous.userIds, ...bulkScheduleEligibleEmployees(previous).map(user => user.id)])] })); setAutomaticScheduleProposal([]); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Selecionar visíveis</button><button type="button" onClick={() => { setBulkSchedule(previous => ({ ...previous, userIds: [] })); setAutomaticScheduleProposal([]); }} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50">Desmarcar todos</button></div>
+              </div>
+              <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 p-2">
+                {bulkScheduleVisibleEmployees.length === 0 ? <p className="p-3 text-center text-xs text-slate-500">Nenhum colaborador encontrado para esse filtro.</p> : bulkScheduleVisibleEmployees.map(user => <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-slate-50"><input type="checkbox" checked={bulkSchedule.userIds.includes(user.id)} onChange={event => { setBulkSchedule(previous => ({ ...previous, userIds: event.target.checked ? [...new Set([...previous.userIds, user.id])] : previous.userIds.filter(id => id !== user.id) })); setAutomaticScheduleProposal([]); }} className="accent-violet-600" /><span className="min-w-0"><strong className="block truncate text-slate-800">{user.name}</strong><small className="text-slate-500">{departmentsList.find(dept => dept.id === getUserDepts(user)[0])?.name || user.role}</small></span></label>)}
+              </div>
+              <label className="block text-[10px] font-bold uppercase text-slate-500">Observação da escala (opcional)<input maxLength="250" value={bulkSchedule.notes} onChange={event => setBulkSchedule(previous => ({ ...previous, notes: event.target.value }))} placeholder="Ex.: Cobertura de feriado" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs text-slate-700" /></label>
+              <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setShowBulkScheduleModal(false)} className="px-4 py-2 text-xs font-bold text-slate-500">Cancelar</button>{bulkScheduleMode === 'manual' ? <button type="submit" className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-800">Salvar escala para {bulkSchedule.userIds.length} pessoa(s)</button> : !automaticScheduleProposal.length ? <button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-bold text-white hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro da equipe</button> : null}</div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {careerDecisionDraft && (
+        <div className="fixed inset-0 z-[1002] flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl"><div className="flex items-center justify-between bg-slate-900 px-5 py-4 text-white"><div><h3 className="text-sm font-extrabold">{careerDecisionDraft.outcome === 'approved' ? 'Pré-selecionar candidato' : 'Descartar candidatura'}</h3><p className="mt-0.5 text-[10px] text-slate-300">{careerDecisionDraft.application.name} · {careerDecisionDraft.application.vacancyTitle}</p></div><button type="button" onClick={() => setCareerDecisionDraft(null)} aria-label="Fechar"><X className="h-5 w-5" /></button></div><form onSubmit={saveCareerDecision} className="space-y-3 p-5"><label className="block text-[10px] font-bold uppercase text-slate-500">Mensagem para o candidato<textarea required maxLength="1600" value={careerDecisionDraft.message} onChange={event => setCareerDecisionDraft(previous => ({ ...previous, message: event.target.value }))} className="mt-1 min-h-28 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700" /></label><label className="block text-[10px] font-bold uppercase text-slate-500">Anotação interna (opcional)<input maxLength="400" value={careerDecisionDraft.internalNote} onChange={event => setCareerDecisionDraft(previous => ({ ...previous, internalNote: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-700" placeholder="Motivo ou observação para a equipe" /></label><label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={careerDecisionDraft.openEmail} onChange={event => setCareerDecisionDraft(previous => ({ ...previous, openEmail: event.target.checked }))} /> Abrir e-mail já preenchido após registrar</label><p className="text-[10px] leading-relaxed text-slate-500">A atualização aparece imediatamente no portal do candidato. O e-mail será preparado no aplicativo de e-mail do recrutador para revisão e envio.</p><div className="flex justify-end gap-2"><button type="button" onClick={() => setCareerDecisionDraft(null)} className="px-3 py-2 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" className={`rounded-xl px-4 py-2.5 text-xs font-bold text-white ${careerDecisionDraft.outcome === 'approved' ? 'bg-blue-700' : 'bg-rose-700'}`}>{careerDecisionDraft.outcome === 'approved' ? 'Confirmar pré-seleção' : 'Confirmar descarte'}</button></div></form></div></div>
+      )}
+
+      {careerInterviewDraft && (
+        <div className="fixed inset-0 z-[1002] flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="flex items-center justify-between bg-violet-950 px-5 py-4 text-white"><div><h3 className="text-sm font-extrabold">Agendar entrevista</h3><p className="mt-0.5 text-[10px] text-violet-200">{careerInterviewDraft.application.name} · {careerInterviewDraft.application.vacancyTitle}</p></div><button type="button" onClick={() => setCareerInterviewDraft(null)} aria-label="Fechar"><X className="h-5 w-5" /></button></div><form onSubmit={saveCareerInterview} className="space-y-3 p-5"><div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><label className="text-[10px] font-bold uppercase text-slate-500">Data<input required type="date" value={careerInterviewDraft.date} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, date: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" /></label><label className="text-[10px] font-bold uppercase text-slate-500">Horário<input required type="time" value={careerInterviewDraft.time} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, time: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" /></label><label className="text-[10px] font-bold uppercase text-slate-500">Formato<select value={careerInterviewDraft.format} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, format: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option>Online</option><option>Presencial</option><option>Telefone</option></select></label></div><label className="block text-[10px] font-bold uppercase text-slate-500">Local ou link (opcional)<input maxLength="300" value={careerInterviewDraft.location} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, location: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" placeholder="Ex.: Link da videochamada ou endereço" /></label><label className="block text-[10px] font-bold uppercase text-slate-500">Contato para confirmação<input required maxLength="160" value={careerInterviewDraft.contact} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, contact: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" placeholder="E-mail, telefone ou nome do recrutador" /></label><label className="block text-[10px] font-bold uppercase text-slate-500">Mensagem ao candidato (opcional)<textarea maxLength="1600" value={careerInterviewDraft.message} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, message: event.target.value }))} className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" placeholder="Se vazio, a plataforma gera uma mensagem com data, horário e contato." /></label><label className="block text-[10px] font-bold uppercase text-slate-500">Anotação interna (opcional)<input maxLength="400" value={careerInterviewDraft.internalNote} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, internalNote: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" /></label><label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={careerInterviewDraft.openEmail} onChange={event => setCareerInterviewDraft(previous => ({ ...previous, openEmail: event.target.checked }))} /> Abrir e-mail já preenchido após registrar</label><div className="flex justify-end gap-2"><button type="button" onClick={() => setCareerInterviewDraft(null)} className="px-3 py-2 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white">Agendar entrevista</button></div></form></div></div>
+      )}
+
+      {/* REGISTRO DE AUSÊNCIA DETALHADO */}
+      {showAbsenceModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Clock className="h-5 w-5 text-slate-300" /> Agendar Ausência no Expediente
+              </h3>
+              <button type="button" onClick={() => setShowAbsenceModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitAbsence} className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Colaborador</label>
+                {currentUser.isAdmin || currentUser.isDeveloper || isManager || effectiveAccessProfile.canPublishAbsenceForOthers === true ? (
+                  <select required value={newAbsence.targetUserId || currentUser.id} onChange={event => setNewAbsence(previous => ({ ...previous, targetUserId: event.target.value }))} className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700">
+                    {employeesList.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
+                  </select>
+                ) : <input type="text" readOnly value={currentUser.name} className="px-3.5 py-2.5 w-full bg-slate-50 text-slate-600 rounded-xl border border-slate-200 text-xs focus:outline-none cursor-not-allowed" />}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data de Início</label>
+                  <input
+                    type="date"
+                    required
+                    value={newAbsence.startDate}
+                    onChange={(e) => setNewAbsence({ ...newAbsence, startDate: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data de Término</label>
+                  <input
+                    type="date"
+                    required
+                    value={newAbsence.endDate}
+                    onChange={(e) => setNewAbsence({ ...newAbsence, endDate: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Horário de Início</label>
+                  <input
+                    type="time"
+                    required
+                    value={newAbsence.startTime}
+                    onChange={(e) => setNewAbsence({ ...newAbsence, startTime: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Horário de Término</label>
+                  <input
+                    type="time"
+                    required
+                    value={newAbsence.endTime}
+                    onChange={(e) => setNewAbsence({ ...newAbsence, endTime: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Motivação / Justificativa</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Consulta médica, Assuntos de família, Licença..."
+                  value={newAbsence.reason}
+                  onChange={(e) => setNewAbsence({ ...newAbsence, reason: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowAbsenceModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  Registrar Ausência
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTRO DE EVENTO DE CALENDÁRIO */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Calendar className="h-5 w-5 text-slate-300" /> Agendar Novo Evento de Calendário
+              </h3>
+              <button type="button" onClick={() => setShowEventModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitEvent} className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nome do Evento</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Reunião Geral de Marketing, Confraternização..."
+                  value={newEvent.title}
+                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data Prevista</label>
+                  <input
+                    type="date"
+                    required
+                    value={newEvent.date}
+                    onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tipo de Encontro</label>
+                  <select
+                    value={newEvent.type}
+                    onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    <option value="Confraternização">Confraternização</option>
+                    <option value="Aviso Técnico">Aviso Técnico</option>
+                    <option value="Regras e Políticas">Regras e Políticas</option>
+                    <option value="Reunião">Reunião de Alinhamento</option>
+                    <option value="Feriado">Feriado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Local / Link do Encontro</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Refeitório Sede, Link do Google Meet..."
+                  value={newEvent.location}
+                  onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Informações Adicionais</label>
+                <textarea
+                  required
+                  rows="3"
+                  placeholder="Insira os detalhes do cronograma e o que trazer..."
+                  value={newEvent.description}
+                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                ></textarea>
+                <BotaoEmoji aoSelecionar={(emoji) => setNewEvent(prev => ({ ...prev, description: prev.description + emoji }))} />
+                <PreviaEmojis texto={newEvent.description} />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowEventModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  Cadastrar Evento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REGISTRO OU ATUALIZAÇÃO DE COLABORADORES */}
+      {pinResetTarget && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 flex items-center justify-center p-4" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); if (!pinResetSaving) setPinResetTarget(null); } }}>
+          <form onSubmit={submitAdminPinReset} role="dialog" aria-modal="true" aria-labelledby="reset-pin-title" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="reset-pin-title" className="font-bold text-slate-900">Redefinir PIN</h2>
+              <button type="button" disabled={pinResetSaving} aria-label="Fechar" onClick={() => setPinResetTarget(null)}><X className="h-5 w-5" /></button>
+            </div>
+            <p className="my-4 text-sm text-slate-600">{pinResetTarget.userName}</p>
+            <label className="block text-sm">Novo PIN
+              <input autoFocus required type="password" autoComplete="new-password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={adminNewPin} onChange={e => setAdminNewPin(e.target.value.replace(/\D/g, ''))} className="my-2 w-full rounded-lg border p-3" />
+            </label>
+            <label className="block text-sm">Confirmar PIN
+              <input required type="password" autoComplete="new-password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={adminConfirmPin} onChange={e => setAdminConfirmPin(e.target.value.replace(/\D/g, ''))} className="my-2 w-full rounded-lg border p-3" />
+            </label>
+            <button disabled={pinResetSaving} className="mt-3 w-full rounded-lg bg-slate-900 p-3 text-white disabled:opacity-50">{pinResetSaving ? 'Salvando…' : 'Confirmar novo PIN'}</button>
+          </form>
+        </div>
+      )}
+      {pendingUserRemoval && (
+        <div className="fixed inset-0 z-[1000] bg-slate-950/65 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="remove-user-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3"><span className="rounded-xl bg-rose-50 p-2.5 text-rose-600"><Trash2 className="h-5 w-5" /></span><h2 id="remove-user-title" className="text-lg font-bold text-slate-900">Remover colaborador?</h2></div>
+              <button type="button" disabled={isRemovingUser} onClick={() => setPendingUserRemoval(null)} aria-label="Cancelar remoção" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-600"><strong className="text-slate-900">{pendingUserRemoval.name}</strong> deixará de aparecer na equipe e no painel de presença. Esta ação não pode ser desfeita por esta tela.</p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" disabled={isRemovingUser} onClick={() => setPendingUserRemoval(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
+              <button type="button" disabled={isRemovingUser} onClick={() => handleDeleteUser(pendingUserRemoval.id)} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">{isRemovingUser ? 'Removendo…' : 'Remover colaborador'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showUserModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Users className="h-5 w-5 text-slate-300" /> {editingUser ? 'Atualizar Perfil de Funcionário' : 'Cadastrar Novo Integrante na Empresa'}
+              </h3>
+              <button type="button" onClick={() => setShowUserModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitUserForm} className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: João Silva"
+                  value={userForm.name}
+                  onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Data de nascimento</label>
+                  <input type="date" value={userForm.birthDate || ''} onChange={(e) => setUserForm({ ...userForm, birthDate: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Data de admissão</label>
+                  <input type="date" value={userForm.hireDate || ''} onChange={(e) => setUserForm({ ...userForm, hireDate: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Setores Vinculados (Múltipla Escolha)</label>
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    {departmentsList.map((dept) => (
+                      <label key={dept.id} className="flex items-center gap-1.5 cursor-pointer bg-white px-2 py-1.5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition-all">
+                        <input
+                          type="checkbox"
+                          checked={(userForm.depts || []).includes(dept.id)}
+                          onChange={(e) => {
+                            const newDepts = e.target.checked 
+                              ? [...(userForm.depts || []), dept.id] 
+                              : (userForm.depts || []).filter(id => id !== dept.id);
+                            setUserForm({ ...userForm, depts: newDepts, role: '' });
+                          }}
+                          className="rounded text-slate-900 focus:ring-slate-900 h-3.5 w-3.5"
+                        />
+                        <span className="text-[10px] font-bold text-slate-700">{dept.name}</span>
+                      </label>
+                    ))}
+                    {(userForm.depts || []).length === 0 && (
+                      <span className="text-[10px] text-rose-500 font-bold w-full">⚠️ Selecione pelo menos um setor.</span>
+                    )}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 font-black text-slate-900">Cargo Principal Atribuído</label>
+                  <select
+                    required
+                    value={userForm.role}
+                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                    disabled={(userForm.depts || []).length === 0}
+                  >
+                    <option value="" disabled>Selecione um cargo...</option>
+                    {rolesList
+                      .filter(role => getRoleDepts(role).some(deptId => (userForm.depts || []).includes(deptId)))
+                      .map((role) => {
+                        const deptNames = getRoleDepts(role)
+                          .filter(deptId => (userForm.depts || []).includes(deptId))
+                          .map(deptId => departmentsList.find(d => d.id === deptId)?.name || deptId)
+                          .join(', ');
+                        return (
+                          <option key={role.id || role.name} value={role.name}>
+                            {role.name} ({deptNames})
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Vincular a Grupo de Produção (Opcional)</label>
+                  <select
+                    value={userForm.prodGroup || ''}
+                    onChange={(e) => setUserForm({ ...userForm, prodGroup: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    <option value="">Nenhum Grupo Específico</option>
+                    <option value="Máquina 1">Máquina 1</option>
+                    <option value="Máquina 2">Máquina 2</option>
+                    <option value="Laje">Laje</option>
+                    <option value="Mourão">Mourão</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Supervisor ou gestor responsável</label>
+                  <select
+                    value={userForm.managerId || ''}
+                    onChange={(e) => setUserForm({ ...userForm, managerId: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    <option value="">Nenhum gestor definido</option>
+                    {employeesList
+                      .filter(manager => manager.id !== editingUser?.id)
+                      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }))
+                      .map(manager => <option key={manager.id} value={manager.id}>{manager.name} — {manager.role || 'Cargo não informado'}</option>)}
+                  </select>
+                  <span className="mt-1 block text-[9px] text-slate-400">Esse vínculo aparecerá na ficha e na visão gerencial da equipe.</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Foto de Perfil (Upload)</label>
+                  <label className="border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-xl px-3.5 h-10 w-full flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                    <ImageIcon className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                    <span className="truncate">Escolher imagem...</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleImageUpload(e, setUserForm, 'avatar')}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{editingUser ? 'PIN preservado — use Redefinir PIN para alterar' : 'PIN numérico de Acesso'}</label>
+                  <input
+                    type="text"
+                    maxLength="4"
+                    required
+                    disabled={Boolean(editingUser)}
+                    placeholder={editingUser ? 'Não exibido por segurança' : 'PIN numérico'}
+                    value={userForm.pin}
+                    onChange={(e) => setUserForm({ ...userForm, pin: e.target.value.replace(/\D/g, '') })}
+                    className="px-3.5 h-10 w-full rounded-xl border border-slate-200 text-xs focus:outline-none tracking-widest text-center font-bold"
+                  />
+                </div>
+              </div>
+
+              {userForm.avatar && (
+                <div className="flex justify-center -mt-1 mb-1 animate-in zoom-in">
+                  <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-slate-200 bg-slate-50 shadow-sm">
+                    <img src={userForm.avatar} className="w-full h-full object-cover" alt="Prévia do Avatar" />
+                    <button
+                      type="button"
+                      onClick={() => setUserForm(prev => ({ ...prev, avatar: '' }))}
+                      className="absolute top-0.5 right-0.5 p-0.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-full shadow backdrop-blur-sm transition-all"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* CAMPOS SEPARADOS DE CONTATO DE EMERGÊNCIA (CADASTRO ADM) */}
+              <div className="border-t border-slate-100 pt-4 flex flex-col gap-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block tracking-wider">CONTATO DE EMERGÊNCIA</span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Nome</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Maria"
+                      value={userForm.emergencyName}
+                      onChange={(e) => setUserForm({ ...userForm, emergencyName: e.target.value })}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700 bg-slate-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Parentesco</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Esposa"
+                      value={userForm.emergencyRelationship}
+                      onChange={(e) => setUserForm({ ...userForm, emergencyRelationship: e.target.value })}
+                      className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700 bg-slate-50"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Contato / Telefone</label>
+                  <div className="relative">
+                    <PhoneCall className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Ex: (71) 98888-8888"
+                      value={userForm.emergencyPhone}
+                      onChange={(e) => setUserForm({ ...userForm, emergencyPhone: e.target.value })}
+                      className="pl-9 pr-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700 bg-slate-50"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="checkbox"
+                  id="isAdmin"
+                  checked={userForm.isAdmin}
+                  onChange={(e) => setUserForm({ ...userForm, isAdmin: e.target.checked })}
+                  className="rounded text-slate-900 focus:ring-slate-900 h-4 w-4"
+                />
+                <label htmlFor="isAdmin" className="text-xs font-bold text-slate-600">Conceder Acesso de Administrador</label>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowUserModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  {editingUser ? 'Salvar Alterações' : 'Cadastrar Colaborador'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ENQUETE */}
+      {showPollModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/70 p-3 sm:p-4">
+          <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-slate-950 via-blue-950 to-cyan-800 px-5 py-4 text-white sm:px-6"><div><h3 className="text-sm font-extrabold">Criar pesquisa</h3><p className="mt-0.5 text-[10px] text-blue-100/75">Monte as perguntas visualmente e publique no feed da equipe.</p></div><button type="button" onClick={() => setShowPollModal(false)} aria-label="Fechar" className="rounded-lg p-1.5 hover:bg-white/10"><X className="h-5 w-5" /></button></div>
+            <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-5 sm:px-6"><button type="button" onClick={() => setPollCreationMode('enquete')} className={`rounded-xl border p-3 text-left transition ${pollCreationMode === 'enquete' ? 'border-cyan-300 bg-cyan-50 text-cyan-950 ring-2 ring-cyan-100' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><strong className="block text-xs">Enquete rápida</strong><span className="mt-1 block text-[10px]">Uma pergunta para resposta imediata.</span></button><button type="button" onClick={() => setPollCreationMode('formulario')} className={`rounded-xl border p-3 text-left transition ${pollCreationMode === 'formulario' ? 'border-blue-300 bg-blue-50 text-blue-950 ring-2 ring-blue-100' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><strong className="block text-xs">Pesquisa completa</strong><span className="mt-1 block text-[10px]">Várias perguntas em um formulário.</span></button></div>
+
+            {pollCreationMode === 'enquete' ? <form onSubmit={handleSavePoll} className="flex flex-col gap-5 p-5 sm:p-6">
+              <section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-cyan-700 text-[10px] font-extrabold text-white">1</span><div><h4 className="text-sm font-extrabold text-slate-800">Configure a pergunta</h4><p className="text-[10px] text-slate-500">Escolha uma categoria e o formato da resposta.</p></div></div><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Categoria<select value={newPoll.category} onChange={event => setNewPoll(previous => ({ ...previous, category: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option>Pulso da equipe</option><option>Pesquisa de clima</option><option>Comunicação interna</option><option>Segurança e bem-estar</option><option>Sugestões</option><option>Outro tema</option></select></label><label className="text-xs font-bold text-slate-700">Formato da resposta<select value={newPoll.type} onChange={event => { const type = event.target.value; setNewPoll(previous => ({ ...previous, type, options: [...POLL_QUESTION_TYPES[type].options] })); }} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">{Object.entries(POLL_QUESTION_TYPES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}</select></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Pergunta<input required maxLength={240} value={newPoll.question} onChange={event => setNewPoll(previous => ({ ...previous, question: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm" placeholder="Ex.: Como você avalia a comunicação desta semana?" /></label></div><p className="mt-2 text-[10px] text-slate-500">{POLL_QUESTION_TYPES[newPoll.type]?.hint}</p></section>
+              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between"><h4 className="text-xs font-extrabold text-slate-800">Alternativas</h4><span className="text-[10px] text-slate-400">{newPoll.options.length} opções</span></div>{newPoll.type === 'single' ? <div className="mt-3 space-y-2">{newPoll.options.map((option, optionIndex) => <div key={optionIndex} className="flex items-center gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-[10px] font-bold text-slate-400">{optionIndex + 1}</span><input required value={option} onChange={event => setNewPoll(previous => ({ ...previous, options: previous.options.map((value, index) => index === optionIndex ? event.target.value : value) }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs" placeholder={`Alternativa ${optionIndex + 1}`} />{newPoll.options.length > 2 && <button type="button" onClick={() => setNewPoll(previous => ({ ...previous, options: previous.options.filter((_, index) => index !== optionIndex) }))} className="px-2 text-sm font-bold text-rose-600">×</button>}</div>)}{newPoll.options.length < 8 && <button type="button" onClick={() => setNewPoll(previous => ({ ...previous, options: [...previous.options, ''] }))} className="mt-1 text-xs font-bold text-cyan-800">+ Adicionar alternativa</button>}</div> : <div className="mt-3 flex flex-wrap gap-2">{newPoll.options.map(option => <span key={option} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"><TextoComEmojis texto={option} /></span>)}</div>}</section>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Receber respostas até (opcional)<input type="date" value={newPoll.expiresAt} onChange={event => setNewPoll(previous => ({ ...previous, expiresAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /></label><div className="rounded-xl bg-cyan-50 p-3 text-[10px] leading-relaxed text-cyan-900"><strong>Publicação automática</strong><br />A enquete aparecerá na timeline e no sino de notificações dos colaboradores.</div></div>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setShowPollModal(false)} className="px-4 py-2.5 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" className="rounded-xl bg-cyan-800 px-5 py-2.5 text-xs font-extrabold text-white shadow hover:bg-cyan-900">Publicar enquete</button></div>
+            </form> : <form onSubmit={handleSavePollForm} className="flex flex-col gap-5 p-5 sm:p-6">
+              <section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">1</span><div><h4 className="text-sm font-extrabold text-slate-800">Identificação da pesquisa</h4><p className="text-[10px] text-slate-500">Dê contexto antes de apresentar as perguntas.</p></div></div><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700 sm:col-span-2">Título<input required maxLength={140} value={newPollForm.title} onChange={event => setNewPollForm(previous => ({ ...previous, title: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Pesquisa de clima — outubro" /></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Apresentação<textarea rows={3} maxLength={600} value={newPollForm.description} onChange={event => setNewPollForm(previous => ({ ...previous, description: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Explique o objetivo e como as respostas serão utilizadas." /></label><label className="text-xs font-bold text-slate-700">Categoria<select value={newPollForm.category} onChange={event => setNewPollForm(previous => ({ ...previous, category: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option>Pesquisa de clima</option><option>Pulso da equipe</option><option>Comunicação interna</option><option>Segurança e bem-estar</option><option>Sugestões</option><option>Outro tema</option></select></label><label className="text-xs font-bold text-slate-700">Receber respostas até<input type="date" value={newPollForm.expiresAt} onChange={event => setNewPollForm(previous => ({ ...previous, expiresAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /></label></div></section>
+              <section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">2</span><div><h4 className="text-sm font-extrabold text-slate-800">Monte as perguntas</h4><p className="text-[10px] text-slate-500">Adicione até 10 perguntas e escolha o formato de cada uma.</p></div></div><div className="flex flex-wrap gap-2">{Object.entries(POLL_QUESTION_TYPES).map(([type, item]) => <button key={type} type="button" disabled={newPollForm.questions.length >= 10} onClick={() => setNewPollForm(previous => ({ ...previous, questions: [...previous.questions, createPollQuestion(type)] }))} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 disabled:opacity-40">+ {item.label}</button>)}</div><div className="mt-3 space-y-3">{newPollForm.questions.map((question, questionIndex) => <div key={questionIndex} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Pergunta {questionIndex + 1}</span>{newPollForm.questions.length > 1 && <button type="button" onClick={() => setNewPollForm(previous => ({ ...previous, questions: previous.questions.filter((_, index) => index !== questionIndex) }))} className="text-[10px] font-bold text-rose-600">Remover</button>}</div><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_170px]"><input required maxLength={240} value={question.question} onChange={event => setNewPollForm(previous => ({ ...previous, questions: previous.questions.map((item, index) => index === questionIndex ? { ...item, question: event.target.value } : item) }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs" placeholder="Escreva a pergunta" /><select value={question.type} onChange={event => { const type = event.target.value; setNewPollForm(previous => ({ ...previous, questions: previous.questions.map((item, index) => index === questionIndex ? { ...item, type, options: [...POLL_QUESTION_TYPES[type].options] } : item) })); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold">{Object.entries(POLL_QUESTION_TYPES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}</select></div><p className="mt-2 text-[10px] text-slate-500">{POLL_QUESTION_TYPES[question.type]?.hint}</p>{question.type === 'single' ? <div className="mt-3 space-y-2">{question.options.map((option, optionIndex) => <div key={optionIndex} className="flex gap-2"><input required value={option} onChange={event => setNewPollForm(previous => ({ ...previous, questions: previous.questions.map((item, index) => index === questionIndex ? { ...item, options: item.options.map((value, current) => current === optionIndex ? event.target.value : value) } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" placeholder={`Alternativa ${optionIndex + 1}`} />{question.options.length > 2 && <button type="button" onClick={() => setNewPollForm(previous => ({ ...previous, questions: previous.questions.map((item, index) => index === questionIndex ? { ...item, options: item.options.filter((_, current) => current !== optionIndex) } : item) }))} className="px-2 text-xs font-bold text-rose-600">×</button>}</div>)}{question.options.length < 8 && <button type="button" onClick={() => setNewPollForm(previous => ({ ...previous, questions: previous.questions.map((item, index) => index === questionIndex ? { ...item, options: [...item.options, ''] } : item) }))} className="text-xs font-bold text-blue-700">+ Adicionar alternativa</button>}</div> : <div className="mt-3 flex flex-wrap gap-1.5">{question.options.map(option => <span key={option} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600"><TextoComEmojis texto={option} /></span>)}</div>}</div>)}</div></section>
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-[10px] leading-relaxed text-blue-900"><strong>Uma publicação, várias perguntas</strong><br />O formulário aparecerá apenas uma vez na timeline. Ao abrir, o colaborador encontrará todas as perguntas organizadas nesta página.</div>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setShowPollModal(false)} className="px-4 py-2.5 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" className="rounded-xl bg-blue-800 px-5 py-2.5 text-xs font-extrabold text-white shadow hover:bg-blue-900">Publicar pesquisa</button></div>
+            </form>}
+          </div>
+        </div>
+      )}
+
+      {showVacancyModal && isCareerManagerUser(currentUser) && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white"><div><h3 className="text-sm font-extrabold">Publicar vaga</h3><p className="mt-0.5 text-[10px] text-slate-300">Preencha os dados e monte um questionário de forma visual.</p></div><button type="button" onClick={() => setShowVacancyModal(false)} aria-label="Fechar" className="rounded p-1 hover:bg-slate-800"><X className="h-5 w-5" /></button></div><form onSubmit={handleSaveVacancy} className="flex flex-col gap-5 p-6"><section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">1</span><h4 className="text-sm font-extrabold text-slate-800">Sobre a vaga</h4></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700 sm:col-span-2">Cargo já cadastrado<select value={newVacancy.roleId} onChange={event => { const roleId = event.target.value; const selectedRole = rolesList.find(role => role.id === roleId); setNewVacancy(previous => ({ ...previous, roleId, title: selectedRole?.name || previous.title, description: selectedRole?.description || previous.description })); }} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option value="">Criar uma vaga personalizada</option>{rolesList.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select><span className="mt-1 block text-[10px] font-medium text-slate-400">Ao selecionar, o título e o descritivo das atividades serão preenchidos automaticamente e poderão ser ajustados.</span></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Título da vaga<input required maxLength={120} value={newVacancy.title} onChange={event => setNewVacancy(previous => ({ ...previous, title: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Auxiliar de produção" /></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Descrição da vaga<textarea required rows={5} maxLength={4000} value={newVacancy.description} onChange={event => setNewVacancy(previous => ({ ...previous, description: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Explique atividades, requisitos, benefícios e condições da vaga." /></label><label className="text-xs font-bold text-slate-700">Local<input required maxLength={120} value={newVacancy.location} onChange={event => setNewVacancy(previous => ({ ...previous, location: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Salvador, BA" /></label><label className="text-xs font-bold text-slate-700">Modalidade<select value={newVacancy.mode} onChange={event => setNewVacancy(previous => ({ ...previous, mode: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select></label></div></section><section className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">2</span><div><h4 className="text-sm font-extrabold text-slate-800">Competências desejadas</h4><p className="text-[10px] text-slate-500">Usadas somente como apoio na triagem, nunca como decisão automática.</p></div></div><input value={newVacancy.skills} onChange={event => setNewVacancy(previous => ({ ...previous, skills: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs" placeholder="Ex.: Excel, Comunicação, Operação de máquina" /><p className="mt-2 text-[10px] text-slate-500">Separe cada competência por vírgula.</p></section><section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">3</span><div><h4 className="text-sm font-extrabold text-slate-800">Perguntas para a candidatura</h4><p className="text-[10px] text-slate-500">Opcional. Escolha o formato de cada pergunta antes de publicar.</p></div></div><div className="flex flex-wrap gap-2"><button type="button" disabled={newVacancy.quiz.length >= 10} onClick={() => setNewVacancy(previous => ({ ...previous, quiz: [...previous.quiz, createVacancyQuestion('single')] }))} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 disabled:opacity-50">+ Escolha única</button><button type="button" disabled={newVacancy.quiz.length >= 10} onClick={() => setNewVacancy(previous => ({ ...previous, quiz: [...previous.quiz, createVacancyQuestion('yesNo')] }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-50">+ Sim ou não</button><button type="button" disabled={newVacancy.quiz.length >= 10} onClick={() => setNewVacancy(previous => ({ ...previous, quiz: [...previous.quiz, createVacancyQuestion('scale')] }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-50">+ Escala de 1 a 5</button></div><div className="mt-3 space-y-3">{newVacancy.quiz.map((question, questionIndex) => <div key={questionIndex} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex items-center justify-between gap-3"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Pergunta {questionIndex + 1}</span><button type="button" onClick={() => setNewVacancy(previous => ({ ...previous, quiz: previous.quiz.filter((_, index) => index !== questionIndex) }))} className="text-[10px] font-bold text-rose-600">Remover</button></div><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_170px]"><input required value={question.question} onChange={event => setNewVacancy(previous => ({ ...previous, quiz: previous.quiz.map((item, index) => index === questionIndex ? { ...item, question: event.target.value } : item) }))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Escreva a pergunta para o candidato" /><select value={question.type} onChange={event => { const type = event.target.value; setNewVacancy(previous => ({ ...previous, quiz: previous.quiz.map((item, index) => index === questionIndex ? { ...item, type, options: [...VACANCY_QUESTION_TYPES[type].options] } : item) })); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold">{Object.entries(VACANCY_QUESTION_TYPES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}</select></div><p className="mt-2 text-[10px] text-slate-500">{VACANCY_QUESTION_TYPES[question.type]?.hint}</p>{question.type === 'single' ? <div className="mt-3 space-y-2">{question.options.map((option, optionIndex) => <div key={optionIndex} className="flex gap-2"><input required value={option} onChange={event => setNewVacancy(previous => ({ ...previous, quiz: previous.quiz.map((item, index) => index === questionIndex ? { ...item, options: item.options.map((value, current) => current === optionIndex ? event.target.value : value) } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs" placeholder={`Alternativa ${optionIndex + 1}`} />{question.options.length > 2 && <button type="button" onClick={() => setNewVacancy(previous => ({ ...previous, quiz: previous.quiz.map((item, index) => index === questionIndex ? { ...item, options: item.options.filter((_, current) => current !== optionIndex) } : item) }))} className="px-2 text-xs font-bold text-rose-600">×</button>}</div>)}{question.options.length < 8 && <button type="button" onClick={() => setNewVacancy(previous => ({ ...previous, quiz: previous.quiz.map((item, index) => index === questionIndex ? { ...item, options: [...item.options, ''] } : item) }))} className="text-xs font-bold text-blue-700">+ Adicionar alternativa</button>}</div> : <div className="mt-3 flex flex-wrap gap-1.5">{question.options.map(option => <span key={option} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">{option}</span>)}</div>}</div>)}</div>{!newVacancy.quiz.length && <p className="mt-3 rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-500">Nenhuma pergunta adicionada. Você pode publicar a vaga sem questionário.</p>}</section><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Inscrições até (opcional)<input type="date" value={newVacancy.closesAt} onChange={event => setNewVacancy(previous => ({ ...previous, closesAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /></label><div className="rounded-xl bg-slate-50 p-3 text-[10px] leading-relaxed text-slate-500"><strong className="text-slate-700">Antes de publicar</strong><br />Revise os requisitos e confirme se as perguntas são relevantes para a vaga.</div></div><div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setShowVacancyModal(false)} className="px-4 py-2.5 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white">Publicar vaga</button></div></form></div></div>
+      )}
+
+      {/* CENTRAL DE DOCUMENTOS */}
+      {showDocumentModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white"><h3 className="flex items-center gap-2 text-sm font-extrabold"><FileText className="h-5 w-5 text-slate-300" /> Adicionar documento</h3><button type="button" disabled={isUploadingDocument || isSavingDocument} onClick={() => setShowDocumentModal(false)} className="rounded p-1 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"><X className="h-5 w-5" /></button></div>
+            <form onSubmit={handleSaveDocument} className="flex flex-col gap-4 p-6">
+              <div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Título</label><input required value={newDocument.title} onChange={event => setNewDocument(previous => ({ ...previous, title: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" placeholder="Ex.: Manual de integração" /></div>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><label className="mb-2 block text-[10px] font-bold uppercase text-blue-800">Quem pode acessar este documento?</label><div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><button type="button" onClick={() => setNewDocument(previous => ({ ...previous, accessMode: 'company', dept: 'all', allowedUserIds: [] }))} className={`rounded-xl border p-3 text-left text-xs transition ${newDocument.accessMode === 'company' ? 'border-blue-600 bg-white text-blue-900 shadow-sm' : 'border-transparent bg-white/60 text-slate-600'}`}><strong className="block">Toda a empresa</strong><span className="mt-1 block text-[10px]">Todos os colaboradores</span></button><button type="button" onClick={() => setNewDocument(previous => ({ ...previous, accessMode: 'department', allowedUserIds: [] }))} className={`rounded-xl border p-3 text-left text-xs transition ${newDocument.accessMode === 'department' ? 'border-blue-600 bg-white text-blue-900 shadow-sm' : 'border-transparent bg-white/60 text-slate-600'}`}><strong className="block">Um setor</strong><span className="mt-1 block text-[10px]">Apenas uma equipe</span></button><button type="button" onClick={() => setNewDocument(previous => ({ ...previous, accessMode: 'people', dept: 'all' }))} className={`rounded-xl border p-3 text-left text-xs transition ${newDocument.accessMode === 'people' ? 'border-blue-600 bg-white text-blue-900 shadow-sm' : 'border-transparent bg-white/60 text-slate-600'}`}><strong className="block">Pessoas específicas</strong><span className="mt-1 block text-[10px]">Colaboradores escolhidos</span></button></div>{newDocument.accessMode === 'department' && <label className="mt-3 block text-xs font-bold text-slate-700">Setor autorizado<select required value={newDocument.dept} onChange={event => setNewDocument(previous => ({ ...previous, dept: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option value="all">Selecione o setor</option>{departmentsList.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select></label>}{newDocument.accessMode === 'people' && <div className="mt-3"><p className="text-xs font-bold text-slate-700">Colaboradores autorizados</p><div className="mt-2 grid max-h-40 grid-cols-1 gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-2">{[...employeesList].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR')).map(user => <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-slate-50"><input type="checkbox" checked={newDocument.allowedUserIds.includes(user.id)} onChange={event => setNewDocument(previous => ({ ...previous, allowedUserIds: event.target.checked ? [...previous.allowedUserIds, user.id] : previous.allowedUserIds.filter(id => id !== user.id) }))} className="accent-blue-700" /><span className="truncate"><strong>{user.name}</strong>{user.role ? ` · ${user.role}` : ''}</span></label>)}</div><p className="mt-2 text-[10px] text-slate-500">Selecionados: {newDocument.allowedUserIds.length}</p></div>}</div>
+              <div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Categoria</label><select value={newDocument.category} onChange={event => setNewDocument(previous => ({ ...previous, category: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs focus:outline-none">{DOCUMENT_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}</select></div>
+              <div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Pasta</label><input value={newDocument.folder} onChange={event => setNewDocument(previous => ({ ...previous, folder: event.target.value }))} maxLength={60} list="document-folder-suggestions" className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" placeholder="Ex.: Integração, Formulários, Procedimentos" /><p className="mt-1 text-[10px] text-slate-400">Escolha uma pasta existente ou escreva uma nova. Sem preencher, fica em “Sem pasta”.</p></div>
+              <div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Descrição</label><textarea value={newDocument.description} onChange={event => setNewDocument(previous => ({ ...previous, description: event.target.value }))} rows="3" className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" placeholder="Explique brevemente o conteúdo do arquivo." /></div>
+              <div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Etiquetas</label><input value={newDocument.tags} onChange={event => setNewDocument(previous => ({ ...previous, tags: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" placeholder="Ex.: integração, conduta, 2026" /><p className="mt-1 text-[10px] text-slate-400">Separe as etiquetas por vírgula.</p></div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Versão</label><input value={newDocument.version} onChange={event => setNewDocument(previous => ({ ...previous, version: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" placeholder="1.0" /></div><div><label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Próxima revisão</label><input type="date" value={newDocument.reviewDate} onChange={event => setNewDocument(previous => ({ ...previous, reviewDate: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" /></div></div>
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900"><input type="checkbox" checked={newDocument.requiredRead} onChange={event => setNewDocument(previous => ({ ...previous, requiredRead: event.target.checked }))} className="h-4 w-4 accent-amber-600" /> Exigir confirmação de leitura</label>
+              <label className={`flex items-center justify-between rounded-xl border border-dashed px-4 py-3 text-xs font-bold transition ${isUploadingDocument ? 'cursor-wait border-blue-300 bg-blue-50 text-blue-800' : 'cursor-pointer border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'}`}><span className="flex min-w-0 items-center gap-2">{isUploadingDocument ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" /> : <Upload className="h-4 w-4 shrink-0" />} <span className="truncate">{isUploadingDocument ? `Enviando arquivo… ${documentUploadProgress}%` : newDocument.file?.name || 'Selecionar arquivo'}</span></span><input accept={DOCUMENT_FILE_ACCEPT} disabled={isUploadingDocument || isSavingDocument} type="file" onChange={handleDocumentFile} className="hidden" /></label>
+              {isUploadingDocument && <div role="status" aria-live="polite" className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-[10px] font-semibold text-blue-900"><div className="flex items-center justify-between gap-3"><span>Enviando para a nuvem. Se a conexão oscilar, o envio continuará automaticamente.</span><button type="button" onClick={() => documentUploadTask.current?.cancel()} className="shrink-0 rounded-lg border border-blue-200 bg-white px-2 py-1 font-bold text-blue-800">Cancelar envio</button></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-700 transition-[width] duration-300" style={{ width: `${documentUploadProgress}%` }} /></div></div>}
+              {isSavingDocument && <div role="status" aria-live="polite" className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-[10px] font-semibold text-blue-900"><LoaderCircle className="h-4 w-4 animate-spin text-blue-600" /><span>Publicando e confirmando o documento no Firebase...</span></div>}
+              <div className="flex justify-end gap-2"><button type="button" disabled={isUploadingDocument || isSavingDocument} onClick={async () => { if (newDocument.file) await deleteStoredFile(newDocument.file); setNewDocument({ id: '', title: '', description: '', dept: 'all', accessMode: 'company', allowedUserIds: [], category: 'Geral', folder: '', tags: '', version: '1.0', reviewDate: '', requiredRead: false, file: null }); setShowDocumentModal(false); }} className="px-4 py-2 text-xs font-bold text-slate-500 disabled:cursor-not-allowed disabled:opacity-40">Cancelar</button><button type="submit" disabled={!newDocument.file || isUploadingDocument || isSavingDocument} className="inline-flex min-w-[142px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{isSavingDocument && <LoaderCircle className="h-4 w-4 animate-spin" />}{isSavingDocument ? 'Publicando...' : 'Publicar documento'}</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PUBLICADOR DE COMUNICADO COM INTEGRAÇÃO DE COPILOTO */}
+      {showAnnModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Megaphone className="h-5 w-5 text-slate-300" /> Publicar Comunicado Oficial
+              </h3>
+              <button type="button" onClick={() => setShowAnnModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitAnnouncement} className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Título do Comunicado</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Novas orientações ou agendamento imperdível"
+                  value={newAnn.title}
+                  onChange={(e) => setNewAnn({ ...newAnn, title: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Categoria</label>
+                  <select
+                    value={newAnn.category}
+                    onChange={(e) => setNewAnn({ ...newAnn, category: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
+                  >
+                    <option value="Aviso Geral">Aviso Geral</option>
+                    <option value="Regras e Políticas">Regras e Políticas</option>
+                    <option value="Confraternização">Confraternização</option>
+                    <option value="Aviso Técnico">Aviso Técnico</option>
+                    <option value="Emergência">🚨 Emergência — aviso prioritário</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Anexar Capa (Upload de Arquivo)</label>
+                  <label className="border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                    <ImageIcon className="h-4 w-4 text-slate-400" />
+                    <span>Selecionar imagem...</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleImageUpload(e, setNewAnn)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ou cole uma URL direta da internet</label>
+                <input
+                  type="text"
+                  placeholder="Cole um link (Ex: https://images.unsplash.com/photo-...)"
+                  value={newAnn.image}
+                  onChange={(e) => setNewAnn({ ...newAnn, image: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                />
+              </div>
+
+              {newAnn.image && (
+                <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                  <img src={newAnn.image} className="w-full h-full object-cover" alt="Prévia da Capa" />
+                  <button
+                    type="button"
+                    onClick={() => setNewAnn(prev => ({ ...prev, image: '' }))}
+                    className="absolute top-2 right-2 p-1.5 bg-rose-600 text-white rounded-full hover:bg-rose-700 shadow"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Conteúdo Completo</label>
+                <textarea
+                  required
+                  rows="4"
+                  placeholder="Escreva as diretrizes e instruções de forma detalhada..."
+                  value={newAnn.content}
+                  onChange={(e) => setNewAnn({ ...newAnn, content: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                ></textarea>
+                <BotaoEmoji aoSelecionar={(emoji) => setNewAnn(prev => ({ ...prev, content: prev.content + emoji }))} />
+                <PreviaEmojis texto={newAnn.content} />
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold text-slate-800 flex items-center gap-1">
+                    <Sparkles className="h-4 w-4 text-slate-500" /> Copiloto AI de Escrita
+                  </span>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={selectedTone}
+                      onChange={(e) => setSelectedTone(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-lg text-[9px] font-extrabold py-1 px-1.5 focus:outline-none bg-white"
+                    >
+                      <option value="profissional">Profissional</option>
+                      <option value="empolgante">Empolgante</option>
+                      <option value="leve">Leve e Simples</option>
+                      <option value="sucinto">Sucinto</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      disabled={isImprovingAnn}
+                      onClick={() => handleAICopilot('announcement')}
+                      className="bg-slate-900 hover:bg-slate-800 text-white text-[9px] font-bold px-2 py-1.5 rounded-lg transition-all"
+                    >
+                      {isImprovingAnn ? 'Reescrevendo...' : 'Aprimorar Texto ✨'}
+                    </button>
+                  </div>
+                </div>
+                {copilotWarning && <span className="text-[9px] text-rose-600 font-bold">{copilotWarning}</span>}
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowAnnModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  Publicar Comunicado
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PUBLICADOR DE COMPARTILHAMENTO SETORIAL */}
+      {showPostModal && (
+        <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <h3 className="font-extrabold flex items-center gap-2 text-sm">
+                <Layers className="h-5 w-5 text-slate-300" /> Publicar Compartilhamento Setorial
+              </h3>
+              <button type="button" onClick={() => setShowPostModal(false)} className="p-1 hover:bg-slate-800 rounded">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitSectorPost} className="p-6 flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Título do Compartilhamento</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Nova conquista do time, manual útil, novidade operacional..."
+                  value={newPost.title}
+                  onChange={(e) => setNewPost({ ...newPost, title: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none font-medium text-slate-700"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Setor(es) de Destino</label>
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
+                    {departmentsList
+                      .filter(dept => userAllowedDepts.includes(dept.id))
+                      .map((dept) => (
+                      <label key={dept.id} className="flex items-center gap-1.5 cursor-pointer bg-white px-2 py-1.5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition-all">
+                        <input
+                          type="checkbox"
+                          checked={(newPost.depts || []).includes(dept.id)}
+                          onChange={(e) => {
+                            const newDepts = e.target.checked 
+                              ? [...(newPost.depts || []), dept.id] 
+                              : (newPost.depts || []).filter(id => id !== dept.id);
+                            setNewPost({ ...newPost, depts: newDepts });
+                          }}
+                          className="rounded text-slate-900 focus:ring-slate-900 h-3.5 w-3.5"
+                        />
+                        <span className="text-[10px] font-bold text-slate-700">{dept.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {(!newPost.depts || newPost.depts.length === 0) && (
+                    <span className="text-[9px] text-rose-500 font-bold block mt-1">⚠️ Obrigatório selecionar ao menos um setor.</span>
+                  )}
+                </div>
+                
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Etiquetas / Tags (com vírgula)</label>
+                  <input
+                    type="text"
+                    placeholder="Sucesso, Campanha, Manual"
+                    value={newPost.tags}
+                    onChange={(e) => setNewPost({ ...newPost, tags: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Anexar Ilustração (Upload)</label>
+                  <label className="border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                    <ImageIcon className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                    <span>Selecionar imagem...</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleImageUpload(e, setNewPost)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ou cole uma URL de imagem</label>
+                  <input
+                    type="text"
+                    placeholder="Cole um link direto da imagem..."
+                    value={newPost.image}
+                    onChange={(e) => setNewPost({ ...newPost, image: e.target.value })}
+                    className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {newPost.image && (
+                <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                  <img src={newPost.image} className="w-full h-full object-cover" alt="Prévia do Anexo" />
+                  <button
+                    type="button"
+                    onClick={() => setNewPost(prev => ({ ...prev, image: '' }))}
+                    className="absolute top-2 right-2 p-1.5 bg-rose-600 text-white rounded-full hover:bg-rose-700 shadow"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Corpo da Mensagem</label>
+                <textarea
+                  required
+                  rows="4"
+                  placeholder="Escreva detalhes técnicos, novidades, boas notícias ou manuais..."
+                  value={newPost.content}
+                  onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
+                  className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
+                ></textarea>
+                <BotaoEmoji aoSelecionar={(emoji) => setNewPost(prev => ({ ...prev, content: prev.content + emoji }))} />
+                <PreviaEmojis texto={newPost.content} />
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold text-slate-800 flex items-center gap-1">
+                    <Sparkles className="h-4 w-4 text-slate-500" /> Copiloto AI de Escrita
+                  </span>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={selectedTone}
+                      onChange={(e) => setSelectedTone(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-lg text-[9px] font-extrabold py-1 px-1.5 focus:outline-none bg-white"
+                    >
+                      <option value="profissional">Profissional</option>
+                      <option value="empolgante">Empolgante</option>
+                      <option value="leve">Leve e Simples</option>
+                      <option value="sucinto">Sucinto</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      disabled={isImprovingPost}
+                      onClick={() => handleAICopilot('post')}
+                      className="bg-slate-900 hover:bg-slate-800 text-white text-[9px] font-bold px-2 py-1.5 rounded-lg transition-all"
+                    >
+                      {isImprovingPost ? 'Reescrevendo...' : 'Aprimorar Texto ✨'}
+                    </button>
+                  </div>
+                </div>
+                {copilotWarning && <span className="text-[9px] text-rose-600 font-bold">{copilotWarning}</span>}
+              </div>
+
+              <div className="flex justify-end gap-2 mt-2">
+                <button type="button" onClick={() => setShowPostModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                  Cancelar
+                </button>
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                  Postar Novidade
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: MENSAGENS PRIVADAS */}
+      {showMessagesModal && (
+        <div data-tour="inbox-overview" className="fixed inset-0 bg-[#f4f7fb] flex items-center justify-center p-0 z-[999] animate-fade-in">
+          <div className="bg-white w-full max-w-none shadow-none overflow-hidden flex flex-col h-dvh border-0 rounded-none">
+            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white px-4 sm:px-7 py-4 sm:py-5 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 border-b border-white/10">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-11 w-11 rounded-2xl bg-blue-500/20 border border-blue-300/20 flex items-center justify-center shrink-0 shadow-inner"><MessageSquare className="h-5 w-5 text-blue-100" /></div>
+                <div className="min-w-0">
+                  <h3 className="font-bold tracking-tight text-base sm:text-lg leading-tight">Caixa de entrada</h3>
+                  <p className="text-[11px] text-slate-300 mt-0.5">Acompanhe solicitações, responsáveis e prazos</p>
+                </div>
+              </div>
+              <div data-tour="inbox-actions" className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
+                {!isComposingMsg && !activeThreadId && (
+                  <select aria-label="Organizar conversas" value={messageOrganization} onChange={(e) => setMessageOrganization(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <option value="person">Organizar por pessoa</option>
+                    <option value="sector">Organizar por setor</option>
+                  </select>
+                )}
+                {!isComposingMsg && !activeThreadId && (
+                  <button type="button" onClick={() => { setShowArchivedThreads(value => !value); setInboxStatusFilter('all'); }} className="border border-slate-600 hover:border-slate-400 text-slate-100 text-xs font-semibold px-3 py-2 rounded-lg transition-all">
+                    {showArchivedThreads ? 'Caixa de entrada' : 'Arquivadas'}
+                  </button>
+                )}
+                {!isComposingMsg && !activeThreadId && (
+                  <button type="button" onClick={() => { setIsComposingMsg(true); setMsgSearchText(''); setMsgRecipientIds([]); setConversationDraftThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`); setMsgSubject(''); setMsgDueDate(''); setMsgText(''); setMsgAttachment(null); }} className="bg-blue-600 hover:bg-blue-500 text-xs font-semibold px-3 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5">
+                    <Plus className="h-4 w-4" /> Nova conversa
+                  </button>
+                )}
+                <button type="button" aria-label="Fechar caixa de entrada" onClick={() => { setShowMessagesModal(false); setIsComposingMsg(false); setActiveThreadId(null); setMsgAttachment(null); }} className="p-2 hover:bg-slate-800 rounded-lg ml-1">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div data-tour="inbox-content" className="flex-1 overflow-hidden p-0 bg-[#f4f7fb] flex flex-col">
+              {isComposingMsg ? (
+                <div className="p-4 sm:p-6 overflow-y-auto h-full">
+                  <form onSubmit={handleSendMessage} className="flex flex-col gap-5 bg-white p-5 sm:p-8 rounded-[24px] border border-slate-200/80 shadow-[0_18px_50px_-32px_rgba(15,23,42,.45)] max-w-3xl mx-auto">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <h4 className="font-bold text-lg text-slate-900">Nova conversa</h4>
+                      <button type="button" onClick={() => setIsComposingMsg(false)} className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-2 rounded-lg">Voltar</button>
+                    </div>
+                    
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Assunto (Obrigatório)</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Dúvida sobre fechamento, Solicitação de EPI..."
+                        value={msgSubject}
+                        onChange={(e) => setMsgSubject(e.target.value)}
+                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 font-medium text-slate-800 bg-slate-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Conclusão prevista</label>
+                      <input
+                        type="date"
+                        value={msgDueDate}
+                        min={todayStr}
+                        onChange={(e) => setMsgDueDate(e.target.value)}
+                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white text-slate-700"
+                      />
+                      <span className="mt-1 block text-[9px] text-slate-400">Opcional. Participantes poderão alterar o prazo; cada mudança ficará registrada na conversa.</span>
+                    </div>
+
+                    <div>
+                      <div className="mb-2 flex items-end justify-between gap-3">
+                        <div>
+                          <label htmlFor="message-recipient-search" className="block text-[10px] font-bold uppercase text-slate-500">Participantes da conversa</label>
+                          <p className="mt-1 text-[10px] text-slate-400">Pesquise e selecione uma ou mais pessoas antes de iniciar.</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">{msgRecipientIds.length} selecionado(s)</span>
+                      </div>
+                      <div className="relative z-20">
+                        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input id="message-recipient-search" type="text" required={msgRecipientIds.length === 0} autoComplete="off" placeholder="Digite o nome, cargo ou setor..." value={msgSearchText} onChange={event => { setMsgSearchText(event.target.value); setShowMsgSuggestions(true); }} onFocus={() => setShowMsgSuggestions(true)} onBlur={() => setTimeout(() => setShowMsgSuggestions(false), 200)} className={`w-full rounded-xl border bg-white py-3 pl-10 pr-10 text-sm font-medium focus:outline-none focus:ring-4 ${msgRecipientIds.length ? 'border-emerald-300 text-slate-800 focus:ring-emerald-50' : 'border-slate-200 text-slate-700 focus:border-blue-300 focus:ring-blue-50'}`} />
+                        {msgSearchText && <button type="button" aria-label="Limpar busca" onMouseDown={event => event.preventDefault()} onClick={() => { setMsgSearchText(''); setShowMsgSuggestions(true); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
+                        {showMsgSuggestions && (
+                          <div className="mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Selecione os participantes</span><span className="text-[10px] font-semibold text-blue-700">{getAllowedMessageRecipients().length} disponíveis</span></div>
+                            <div className="max-h-64 overflow-y-auto p-1.5">
+                              {filterMessageRecipients(msgSearchText).map(user => {
+                                const recipientDepartments = getMessageRecipientDepartments(user);
+                                const selected = msgRecipientIds.includes(user.id);
+                                return <button key={user.id} type="button" onMouseDown={event => { event.preventDefault(); setMsgRecipientIds(previous => selected ? previous.filter(id => id !== user.id) : [...new Set([...previous, user.id])]); setMsgSearchText(''); setShowMsgSuggestions(true); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition-colors focus:outline-none ${selected ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-blue-50 focus:bg-blue-50'}`}><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black ${selected ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'}`}>{String(user.name || '?').trim().charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate font-extrabold leading-tight">{user.name}</span><span className={`mt-1 block truncate text-[10px] ${selected ? 'text-blue-100' : 'text-slate-500'}`}>{[user.role, recipientDepartments.join(', ')].filter(Boolean).join(' · ') || 'Colaborador'}</span></span>{selected && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>;
+                              })}
+                              {filterMessageRecipients(msgSearchText).length === 0 && <div className="p-5 text-center"><Search className="mx-auto h-6 w-6 text-slate-300" /><p className="mt-2 text-xs font-semibold text-slate-600">Nenhum colaborador encontrado</p><p className="mt-1 text-[10px] text-slate-400">Revise o nome, cargo ou setor informado.</p></div>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {msgRecipientIds.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{msgRecipientIds.map(userId => { const selectedUser = getAllowedMessageRecipients().find(user => user.id === userId) || messageContacts.find(user => user.id === userId); if (!selectedUser) return null; return <span key={userId} className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 py-1.5 pl-3 pr-1.5 text-[10px] font-bold text-emerald-900"><span className="truncate">{selectedUser.name}</span><button type="button" onClick={() => setMsgRecipientIds(previous => previous.filter(id => id !== userId))} className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white text-emerald-700 hover:bg-emerald-100" aria-label={`Remover ${selectedUser.name}`}><X className="h-3 w-3" /></button></span>; })}</div>}
+                      {!currentUser.isAdmin && <span className="mt-2 block text-[9px] text-slate-400">Você pode selecionar os gestores do seu setor, o suporte e pessoas com quem já possui contato.</span>}
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mensagem ou Descrição</label>
+                      <textarea
+                        rows="3"
+                        placeholder="Descreva sua dúvida, envie um documento..."
+                        value={msgText}
+                        onChange={(e) => setMsgText(e.target.value)}
+                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      ></textarea>
+                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
+                      <PreviaEmojis texto={msgText} />
+                    </div>
+
+                    <div className="flex items-center gap-3 mt-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors border border-slate-200 w-max">
+                        <Paperclip className="h-4 w-4" /> 
+                        {isUploadingMessageAttachment ? 'Enviando anexo…' : msgAttachment ? 'Mudar Anexo' : 'Anexar Arquivo ou Foto'}
+                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
+                      </label>
+                      
+                      {msgAttachment && (
+                        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-800">
+                          <File className="h-3 w-3" /> <span className="truncate max-w-[120px]">{msgAttachment.name}</span>
+                          <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700 ml-1"><X className="h-3.5 w-3.5"/></button>
+                        </div>
+                      )}
+                    </div>
+
+                    <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || !msgRecipientIds.length || (!msgText.trim() && !msgAttachment)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+                      {isSendingMessage && <LoaderCircle className="h-4 w-4 animate-spin" />}{isSendingMessage ? 'Abrindo conversa...' : `Iniciar conversa com ${msgRecipientIds.length || 0} participante(s)`}
+                    </button>
+                  </form>
+                </div>
+              ) : activeThreadId ? (
+                <div className="flex min-h-0 h-full bg-white">
+                  <aside className="hidden w-[320px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 lg:flex">
+                    <div className="border-b border-slate-200 px-4 py-4">
+                      <span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas</span>
+                      <p className="mt-1 text-xs text-slate-500">Alterne sem sair da leitura atual.</p>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
+                      {(() => {
+                        const grouped = {};
+                        normMessages.filter(message => message.participants.includes(currentUser.id)).forEach(message => {
+                          if (!grouped[message.threadId]) grouped[message.threadId] = { ...message, messages: [], unread: 0 };
+                          grouped[message.threadId].messages.push(message);
+                          if (!message.readBy.includes(currentUser.id)) grouped[message.threadId].unread += 1;
+                        });
+                        return Object.values(grouped)
+                          .filter(thread => !isThreadArchived(thread.threadId))
+                          .sort((a, b) => Math.max(...b.messages.map(getMessageTimestamp)) - Math.max(...a.messages.map(getMessageTimestamp)))
+                          .map(thread => {
+                            const latest = thread.messages.reduce((last, message) => getMessageTimestamp(message) > getMessageTimestamp(last) ? message : last, thread.messages[0]);
+                            const selected = thread.threadId === activeThreadId;
+                            return <button key={thread.threadId} type="button" onClick={() => openThread(thread.threadId)} className={`mb-1.5 w-full rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-200 bg-white shadow-sm' : 'border-transparent hover:border-slate-200 hover:bg-white'}`}>
+                              <div className="flex min-w-0 items-start gap-2.5">
+                                <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-black ${selected ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-600'}`}><MessageSquare className="h-4 w-4" /></span>
+                                <span className="min-w-0 flex-1"><strong className="block break-words text-xs leading-4 text-slate-900">{thread.subject || 'Conversa'}</strong><span className="mt-1 block truncate text-[10px] text-slate-500">{latest.senderId === currentUser.id ? 'Você' : latest.senderName}: {latest.content || 'Arquivo anexo'}</span></span>
+                                {thread.unread > 0 && <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-blue-600 px-1 text-[9px] font-black text-white">{thread.unread}</span>}
+                              </div>
+                            </button>;
+                          });
+                      })()}
+                    </div>
+                  </aside>
+                  <div className="flex min-w-0 flex-1 flex-col bg-white">
+                  {/* HEADER DO CHAT ABERTO */}
+                  <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'p-4 sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
+                    <div className="flex flex-wrap items-start gap-2 sm:gap-3">
+                      <button type="button" aria-label="Voltar às conversas" onClick={() => { setActiveThreadId(null); setShowAddParticipant(false); }} className="text-slate-500 hover:text-slate-900 p-2 bg-slate-50 border border-slate-200 rounded-xl transition-all"><ChevronLeft className="h-5 w-5"/></button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversa ativa</span>{!threadHeaderExpanded && (() => { const ticket = conversationAuditRows.find(row => row.id === activeThreadId); return ticket ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-black text-blue-700">#{ticket.ticket}</span> : null; })()}</div>
+                        <h4 className={`break-words font-extrabold leading-snug text-slate-950 [overflow-wrap:anywhere] ${threadHeaderExpanded ? 'mt-0.5 text-base sm:text-lg' : 'mt-0.5 line-clamp-1 text-sm'}`}>{normMessages.find(m => m.threadId === activeThreadId)?.subject || 'Conversa'}</h4>
+                        {threadHeaderExpanded && <span className="mt-1 block break-words text-xs leading-5 text-slate-500 [overflow-wrap:anywhere]">
+                          Participantes: {normMessages.find(m => m.threadId === activeThreadId)?.participants.map(pid => pid === currentUser.id ? 'Você' : messageContacts.find(u => u.id === pid)?.name.split(' ')[0]).join(', ')}
+                        </span>}
+                      </div>
+                      {!getThreadMetadata(activeThreadId).completedAt && <button type="button" onClick={() => { setThreadHeaderExpanded(true); setShowAddParticipant(true); setParticipantSearch(''); setNewParticipantId(''); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" title="Incluir participantes" aria-label="Incluir participantes"><UserPlus className="h-4 w-4" /></button>}
+                      <div className="flex shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1"><button type="button" onClick={() => setMessageFocusFilter('all')} className={`rounded-lg px-2 py-1.5 text-[9px] font-bold ${messageFocusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button><button type="button" onClick={() => setMessageFocusFilter('saved')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'saved' ? 'bg-blue-700 text-white' : 'text-slate-500'}`} title="Mensagens salvas"><Bookmark className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setMessageFocusFilter('activities')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'activities' ? 'bg-violet-700 text-white' : 'text-slate-500'}`} title="Atividades da conversa"><ListChecks className="h-3.5 w-3.5" /></button></div>
+                      <button type="button" aria-expanded={threadHeaderExpanded} onClick={() => { setThreadHeaderExpanded(value => !value); if (threadHeaderExpanded) setShowAddParticipant(false); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-extrabold text-blue-800 hover:border-blue-200 hover:bg-blue-100" title={threadHeaderExpanded ? 'Recolher informações da conversa' : 'Exibir informações da conversa'}>{threadHeaderExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}<span className="hidden sm:inline">{threadHeaderExpanded ? 'Recolher' : 'Detalhes'}</span></button>
+                      {threadHeaderExpanded && <div className="ml-12 flex w-full flex-wrap items-center justify-end gap-2 sm:ml-0 sm:w-auto sm:shrink-0">
+                      {isThreadArchived(activeThreadId) ? (
+                        <button type="button" onClick={() => handleRestoreThread(activeThreadId)} className="bg-white border border-emerald-200 text-emerald-700 hover:text-emerald-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Restaurar conversa">
+                          Restaurar
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => handleArchiveThread(activeThreadId)} className="bg-white border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Arquivar conversa">
+                          Arquivar
+                        </button>
+                      )}
+                      </div>}
+                    </div>
+
+                    {threadHeaderExpanded && (() => {
+                      const ticket = conversationAuditRows.find(row => row.id === activeThreadId);
+                      if (!ticket) return null;
+                      return <section className="grid gap-2 sm:ml-12 sm:grid-cols-3" aria-label="Resumo do ticket">
+                        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-blue-600">Ticket</span><strong className="mt-0.5 block text-sm text-blue-950">#{ticket.ticket}</strong></div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">Responsável pela abertura</span><strong className="mt-0.5 block break-words text-xs text-slate-900 [overflow-wrap:anywhere]">{ticket.openerName}</strong></div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">Movimentações</span><strong className="mt-0.5 block text-xs text-slate-900">{ticket.messages?.length || getThreadMetadata(activeThreadId).messages.length} mensagens · {ticket.extensions} prorrogação(ões)</strong></div>
+                      </section>;
+                    })()}
+
+                    {threadHeaderExpanded && (() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.serviceRequest) return null;
+                      const status = serviceRequestStatus(metadata, todayStr);
+                      const opener = getThreadOpener(activeThreadId);
+                      const canDecide = metadata.serviceRequiresApproval && status === 'approval' && opener?.senderId !== currentUser.id && metadata.participants?.includes(currentUser.id);
+                      const canManage = canManageServiceThread(activeThreadId);
+                      const workflowStatus = metadata.serviceStatus || (metadata.serviceRequiresApproval ? 'approval' : 'open');
+                      return <section className="flex flex-col gap-3 rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 sm:ml-12" aria-label="Informações da solicitação">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><span className="block text-[9px] font-black uppercase tracking-wider text-cyan-700">Central de Serviços · {metadata.serviceCategory || 'Serviço interno'}</span><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${SERVICE_STATUS_CLASSES[status]}`}>{serviceStatusLabel[status]}</span><span className="text-[10px] font-semibold text-slate-600">Prioridade {metadata.servicePriorityLabel || 'Normal'}</span><span className="text-[10px] font-semibold text-slate-600">Responsável: {metadata.serviceAssigneeName || 'não atribuído'}</span>{metadata.serviceDecisionBy && <span className="text-[10px] text-slate-500">Decisão por {metadata.serviceDecisionBy}</span>}</div></div>{canDecide && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => handleServiceDecision(activeThreadId, 'rejected')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50">Não aprovar</button><button type="button" onClick={() => handleServiceDecision(activeThreadId, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700">Aprovar solicitação</button></div>}</div>
+                        {canManage && workflowStatus !== 'approval' && <div className="flex flex-wrap gap-2 border-t border-cyan-100 pt-3">{!['in_progress', 'waiting_requester'].includes(workflowStatus) && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'in_progress')} className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800">Iniciar atendimento</button>}{workflowStatus === 'in_progress' && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'waiting_requester')} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50">Aguardar solicitante</button>}{workflowStatus === 'waiting_requester' && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'in_progress')} className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800">Retomar atendimento</button>}</div>}
+                        <div className="grid gap-2 border-t border-cyan-100 pt-3 sm:grid-cols-3">
+                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">SLA padrão</span><strong className="mt-1 block text-xs text-slate-800">{metadata.serviceSlaDays || 0} dias úteis</strong></div>
+                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">Previsão informada</span><strong className="mt-1 block text-xs text-slate-800">{formatDueDate(metadata.servicePromisedDate)}</strong></div>
+                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">Andamento</span><strong className="mt-1 block text-xs text-slate-800">{Number(metadata.serviceProgress || 0)}%</strong>{metadata.serviceProgressNote && <p className="mt-1 break-words text-[9px] leading-4 text-slate-500">{metadata.serviceProgressNote}</p>}</div>
+                        </div>
+                        {canManage && workflowStatus !== 'approval' && <div className="grid gap-2 rounded-xl border border-cyan-100 bg-white p-3 sm:grid-cols-[160px_120px_1fr_auto] sm:items-end"><label className="text-[8px] font-black uppercase text-slate-500">Data que pretende entregar<input type="date" value={serviceDeliveryDraft} onChange={event => setServiceDeliveryDraft(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-semibold normal-case" /></label><label className="text-[8px] font-black uppercase text-slate-500">Andamento (%)<input type="number" min="0" max="100" step="5" value={serviceProgressDraft} onChange={event => setServiceProgressDraft(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-semibold normal-case" /></label><label className="text-[8px] font-black uppercase text-slate-500">Atualização para o solicitante<input maxLength="500" value={serviceProgressNoteDraft} onChange={event => setServiceProgressNoteDraft(event.target.value)} placeholder="Ex.: documentos em conferência" className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-medium normal-case" /></label><button type="button" onClick={() => handleServiceProgressUpdate(activeThreadId)} className="rounded-lg bg-cyan-700 px-3 py-2.5 text-[10px] font-bold text-white hover:bg-cyan-800">Salvar andamento</button></div>}
+                      </section>;
+                    })()}
+
+                    {threadHeaderExpanded && (() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      const deadlineStatus = getThreadDeadlineStatus(activeThreadId);
+                      const deadlineHistory = metadata.dueDateHistory || [];
+                      return (
+                        <div className="grid gap-2 text-xs sm:ml-12 md:grid-cols-[auto_1fr_auto] md:items-center">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 font-semibold ${deadlineStatus.className}`}>{deadlineStatus.label}</span><span className="break-words font-medium text-slate-500">Conclusão prevista: {formatDueDate(metadata.dueDate)}</span></div>
+                          {!metadata.completedAt && (!metadata.serviceRequest || currentUser?.isAdmin || currentUser?.isDeveloper) && (
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <input
+                                type="date"
+                                aria-label="Alterar prazo de conclusão"
+                                value={pendingThreadDueDate}
+                                onChange={(e) => setPendingThreadDueDate(e.target.value)}
+                                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-400 sm:flex-none"
+                              />
+                              {pendingThreadDueDate !== (metadata.dueDate || '') && <button type="button" onClick={() => handleUpdateThreadDeadline(pendingThreadDueDate)} className="rounded-lg bg-blue-700 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-blue-800">Salvar prazo</button>}
+                            </div>
+                          )}
+                          {!metadata.completedAt && (
+                            <button type="button" onClick={handleCompleteThread} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                              Concluir
+                            </button>
+                          )}
+                          {metadata.completedAt && <span className="break-words text-slate-400">Concluída por {metadata.completedBy || 'participante'} em {new Date(metadata.completedAt).toLocaleDateString('pt-BR')}</span>}
+                          {deadlineHistory.length > 0 && <span className="break-words text-violet-600">{deadlineHistory.length} alteração(ões) de prazo no histórico</span>}
+                        </div>
+                      );
+                    })()}
+
+                    {threadHeaderExpanded && (() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.completedAt) return null;
+                      const opener = getThreadOpener(activeThreadId);
+                      return <div className="sm:ml-12 flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-[11px] leading-5 text-emerald-900"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span className="min-w-0 break-words [overflow-wrap:anywhere]">Conversa concluída{opener ? `. A avaliação fica disponível para ${opener.senderId === currentUser.id ? 'você' : opener.senderName}.` : '.'}</span></div>;
+                    })()}
+
+                    {/* PAINEL DE BUSCA E INCLUSÃO DE PARTICIPANTE */}
+                    {threadHeaderExpanded && showAddParticipant && (
+                      <form onSubmit={handleAddParticipant} className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3 sm:ml-12 animate-in slide-in-from-top-2">
+                        <div className="flex items-start justify-between gap-3"><div><strong className="block text-xs text-slate-900">Incluir participante</strong><span className="mt-0.5 block text-[10px] text-slate-500">Pesquise por nome, cargo ou setor.</span></div><button type="button" onClick={() => setShowAddParticipant(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Fechar busca de participante"><X className="h-4 w-4" /></button></div>
+                        <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input autoFocus value={participantSearch} onChange={event => { setParticipantSearch(event.target.value); setNewParticipantId(''); }} placeholder="Digite o nome, cargo ou setor" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
+                        <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5">
+                          {messageContacts.filter(user => !normMessages.find(message => message.threadId === activeThreadId)?.participants.includes(user.id)).filter(user => normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(normalizedText(participantSearch))).map(user => <button key={user.id} type="button" onClick={() => setNewParticipantId(user.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${newParticipantId === user.id ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-blue-50'}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[11px] font-black ${newParticipantId === user.id ? 'bg-white/15' : 'bg-slate-100'}`}>{String(user.name || '?').charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block break-words text-xs [overflow-wrap:anywhere]">{user.name}</strong><span className={`mt-0.5 block break-words text-[10px] [overflow-wrap:anywhere] ${newParticipantId === user.id ? 'text-blue-100' : 'text-slate-500'}`}>{[user.role, getMessageRecipientDepartments(user).join(', ')].filter(Boolean).join(' · ') || 'Colaborador'}</span></span>{newParticipantId === user.id && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>)}
+                          {messageContacts.filter(user => !normMessages.find(message => message.threadId === activeThreadId)?.participants.includes(user.id)).filter(user => normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(normalizedText(participantSearch))).length === 0 && <div className="p-4 text-center text-xs text-slate-500">Nenhum participante encontrado.</div>}
+                        </div>
+                        <button type="submit" disabled={!newParticipantId} className="mt-3 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">Adicionar participante selecionado</button>
+                      </form>
+                    )}
+                  </div>
+                  
+                  {/* ÁREA DE MENSAGENS */}
+                  <div className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#edf6ff_0%,#e4eef9_44%,#d8e6f4_100%)] px-3 py-5 sm:px-8 sm:py-7">
+                    <div className="pointer-events-none sticky top-[46%] z-0 flex h-0 w-full -translate-y-1/2 items-center justify-center overflow-visible" aria-hidden="true">
+                      <img src="/assets/comunica-logo-transparent.png" alt="" className="max-h-[42vh] w-[min(62%,620px)] object-contain opacity-[0.105] grayscale-[20%] saturate-125" />
+                    </div>
+                    <div className="relative z-[1] mx-auto flex w-full max-w-4xl flex-col">
+                    {normMessages
+                      .filter(m => m.threadId === activeThreadId)
+                      .filter(m => messageFocusFilter === 'all' || (messageFocusFilter === 'saved' ? (m.savedBy || []).includes(currentUser.id) : Boolean(normalizeMessageActivity(m.activity))))
+                      .sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b))
+                      .map((msg, index, sortedMessages) => {
+                        const isMine = msg.senderId === currentUser.id;
+                        const isSystem = msg.senderId === 'system';
+                        const messageAuthor = isMine ? currentUser : messageContacts.find(user => user.id === msg.senderId);
+                        const messageAvatar = messageAuthor?.avatar || DEFAULT_AVATAR;
+                        const messageReadCount = isMine ? msg.readBy.filter(userId => userId !== currentUser.id).length : 0;
+                        const messageActivity = normalizeMessageActivity(msg.activity);
+                        const mentionedNames = (msg.mentions || []).map(userId => messageContacts.find(user => user.id === userId)?.name).filter(Boolean);
+                        const showDay = index === 0 || formatMessageDay(sortedMessages[index - 1]) !== formatMessageDay(msg);
+                        const dayHeading = showDay && <div className="flex items-center gap-3 my-5" aria-label={`Mensagens de ${formatMessageDay(msg)}`}><span className="h-px bg-slate-200 flex-1" /><span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">{formatMessageDay(msg)}</span><span className="h-px bg-slate-200 flex-1" /></div>;
+
+                        if (isSystem) {
+                          return (
+                            <React.Fragment key={msg.id}>
+                              {dayHeading}
+                              <div className="my-4 px-2 text-center"><span className="inline-block max-w-full break-words rounded-full bg-slate-200/80 px-4 py-2 text-xs leading-5 text-slate-600 [overflow-wrap:anywhere]">{msg.content}</span></div>
+                            </React.Fragment>
+                          );
+                        }
+
+                        return (
+                          <React.Fragment key={msg.id}>
+                            {dayHeading}
+                            <div className={`mb-2 flex w-full items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                              {!isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'participante'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
+                              <article className={`group w-fit max-w-[82%] overflow-hidden rounded-[17px] border px-3 py-2.5 shadow-[0_8px_22px_-20px_rgba(15,23,42,.5)] sm:max-w-[min(48%,36rem)] ${(msg.highlightedBy || []).includes(currentUser.id) ? 'ring-2 ring-amber-300' : ''} ${isMine ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md' : 'bg-white border-slate-200 rounded-bl-md'}`}>
+                                {!isMine && <strong className="mb-1 block break-words text-[11px] font-extrabold leading-4 text-slate-900 [overflow-wrap:anywhere]">{msg.senderName}</strong>}
+                                {msg.replyTo && <button type="button" className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left text-[10px] ${isMine ? 'border-cyan-200 bg-white/10 text-blue-50' : 'border-blue-500 bg-slate-50 text-slate-600'}`}><strong className="block">Em resposta a {msg.replyTo.senderName}</strong><span className="mt-0.5 block truncate">{msg.replyTo.content || msg.replyTo.attachmentName || 'Mensagem'}</span></button>}
+                                {msg.content && <p className={`whitespace-pre-wrap break-words text-[13px] leading-[1.35rem] [overflow-wrap:anywhere] ${isMine ? 'text-white' : 'text-slate-800'}`}><TextoComEmojis texto={msg.content} /></p>}
+                                {mentionedNames.length > 0 && <div className={`mt-2 flex flex-wrap items-center gap-1 text-[9px] font-bold ${isMine ? 'text-cyan-100' : 'text-blue-700'}`}><AtSign className="h-3 w-3" />{mentionedNames.map(name => <span key={name} className={`rounded-full px-1.5 py-0.5 ${isMine ? 'bg-white/10' : 'bg-blue-50'}`}>{name}</span>)}</div>}
+                                {msg.attachment && (
+                                  <button type="button" onClick={(e) => { e.preventDefault(); handleDownload(msg.attachment, msg.attachment.name); }} className="flex w-full sm:w-auto max-w-full items-center gap-2 mt-2.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors">
+                                    <File className="h-4 w-4 shrink-0 text-blue-600" /><span className="min-w-0 break-all text-left">{msg.attachment.name}</span><Download className="ml-auto h-4 w-4 shrink-0" />
+                                  </button>
+                                )}
+                                <div className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${isMine ? 'text-blue-100' : 'text-slate-400'}`}>
+                                  <time title={formatMessageDateTime(msg)}>{new Date(getMessageTimestamp(msg)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>
+                                  {isMine && <span title={messageReadCount ? (messageReadCount === 1 ? 'Lida por uma pessoa' : `Lida por ${messageReadCount} pessoas`) : 'Enviada; aguardando leitura'} aria-label={messageReadCount ? (messageReadCount === 1 ? 'Mensagem lida' : `Mensagem lida por ${messageReadCount} pessoas`) : 'Mensagem enviada'} className={`inline-flex items-center ${messageReadCount ? 'text-cyan-200' : 'text-blue-200'}`}>{messageReadCount ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.8} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.8} />}{messageReadCount > 1 && <span className="ml-0.5 font-bold">{messageReadCount}</span>}</span>}
+                                </div>
+                                {messageActivity && <section className={`mt-2 rounded-xl border p-2.5 ${isMine ? 'border-white/20 bg-white/10' : 'border-violet-100 bg-violet-50/80'}`}><div className="flex flex-wrap items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" /><strong className="text-[10px]">Atividade</strong><select aria-label="Prioridade da atividade" value={messageActivity.priority} onChange={event => handleUpdateMessageActivity(msg, { priority: event.target.value })} className="ml-auto rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[8px] font-bold text-slate-700"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div><div className="mt-2 flex flex-wrap gap-1">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value,label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(msg, { status: value })} className={`rounded-md px-2 py-1 text-[8px] font-bold ${messageActivity.status === value ? 'bg-violet-700 text-white' : 'bg-white text-slate-600'}`}>{label}</button>)}</div>{messageActivity.checklist.length > 0 && <div className="mt-2 space-y-1">{messageActivity.checklist.map(item => <label key={item.id} className={`flex items-start gap-1.5 text-[9px] ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(msg, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}<div className="mt-2 flex gap-1"><input value={checklistDrafts[msg.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [msg.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(msg); } }} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] text-slate-700" /><button type="button" onClick={() => handleAddMessageChecklistItem(msg)} className="rounded-md bg-slate-900 px-2 py-1 text-[8px] font-bold text-white">Adicionar</button></div></section>}
+                                <div className={`mt-2 flex flex-wrap items-center gap-1 border-t pt-1.5 ${isMine ? 'border-white/15' : 'border-slate-100'}`}><button type="button" onClick={() => { setReplyingToMessage(msg); }} title="Responder" className={`rounded-md p-1.5 ${isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><Reply className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageLike(msg)} title="Curtir" className={`inline-flex items-center gap-1 rounded-md p-1.5 ${(msg.likedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ThumbsUp className="h-3.5 w-3.5" />{(msg.likedBy || []).length > 0 && <span className="text-[8px] font-bold">{msg.likedBy.length}</span>}</button><button type="button" onClick={() => handleToggleSavedMessage(msg)} title="Salvar" className={`rounded-md p-1.5 ${(msg.savedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Bookmark className={`h-3.5 w-3.5 ${(msg.savedBy || []).includes(currentUser.id) ? 'fill-current' : ''}`} /></button><button type="button" onClick={() => handleToggleHighlightedMessage(msg)} title="Grifar" className={`rounded-md p-1.5 ${(msg.highlightedBy || []).includes(currentUser.id) ? 'bg-amber-300 text-amber-950' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Highlighter className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageActivity(msg)} title={messageActivity ? 'Remover atividade' : 'Marcar como atividade'} className={`rounded-md p-1.5 ${messageActivity ? 'bg-violet-600 text-white' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ListChecks className="h-3.5 w-3.5" /></button></div>
+                              </article>
+                              {isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'você'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
+                            </div>
+                          </React.Fragment>
+                      ); 
+})
+                    }
+                    {(() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.completedAt) return null;
+                      const opener = getThreadOpener(activeThreadId);
+                      const canEvaluate = isThreadOpenedByCurrentUser(activeThreadId);
+                      if (!canEvaluate) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-600 shadow-sm"><strong className="block text-slate-800">Conversa encerrada</strong><span className="mt-1 block">Aguardando a avaliação de {opener?.senderName || 'quem abriu a conversa'}.</span></section>;
+                      if (metadata.resolutionRating) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center text-xs text-emerald-950 shadow-sm"><strong>Avaliação registrada: {metadata.resolutionRating}/5</strong>{metadata.resolutionFeedback && <p className="mt-2 whitespace-pre-wrap text-emerald-900">{metadata.resolutionFeedback}</p>}</section>;
+                      return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm"><p className="font-bold text-slate-900">A demanda foi atendida?</p><p className="mt-1 text-xs leading-5 text-slate-600">Confirme a resolução ou reabra a conversa. Ao reabrir, todos os participantes voltam a ver o chat na Caixa de entrada.</p>{showResolutionEvaluation ? <div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-semibold text-slate-800">Como você avalia a resolução?</p><div className="mt-2 flex flex-wrap gap-1.5">{[1, 2, 3, 4, 5].map(note => <button key={note} type="button" onClick={() => setResolutionRating(note)} className={`h-9 w-9 rounded-lg text-xs font-black ${resolutionRating === note ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{note}</button>)}</div><textarea value={resolutionFeedback} onChange={event => setResolutionFeedback(event.target.value)} rows="3" maxLength={500} className="mt-3 w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-700 outline-none focus:border-emerald-500" placeholder="Comentário opcional sobre a resolução" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={handleEvaluateResolution} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Registrar avaliação</button><button type="button" onClick={() => setShowResolutionEvaluation(false)} className="px-2 text-[11px] font-semibold text-slate-500">Cancelar</button></div></div> : <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setShowResolutionEvaluation(true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Sim, avaliar resolução</button><button type="button" onClick={handleReopenThread} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-700 hover:bg-rose-50">Não, reabrir conversa</button></div>}</section>;
+                    })()}
+                    </div>
+                  </div>
+                  
+                  {/* BARRA DE ENVIO */}
+                  <div className="shrink-0 bg-white border-t border-slate-200 p-3 sm:px-7 sm:py-4 shadow-[0_-12px_35px_-30px_rgba(15,23,42,.5)]">
+                    {getThreadMetadata(activeThreadId).completedAt ? (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs leading-5 text-slate-600">
+                        <strong className="block text-slate-800">Conversa concluída</strong>
+                        Novas mensagens ficam bloqueadas até que quem abriu a conversa escolha reabri-la na avaliação.
+                      </div>
+                    ) : <>
+                    {msgAttachment && (
+                      <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2 rounded-lg mb-2 text-[10px] font-bold text-slate-700">
+                        <div className="flex items-center gap-1.5 overflow-hidden"><Paperclip className="h-3.5 w-3.5 text-blue-600" /><span className="truncate">{msgAttachment.name}</span></div>
+                        <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700"><X className="h-4 w-4"/></button>
+                      </div>
+                    )}
+                    {replyingToMessage && <div className="mx-auto mb-2 flex w-full max-w-4xl items-center gap-3 rounded-xl border-l-4 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-slate-700"><Reply className="h-4 w-4 shrink-0 text-blue-700" /><span className="min-w-0 flex-1"><strong className="block text-blue-900">Respondendo a {replyingToMessage.senderName}</strong><span className="block truncate text-[10px]">{replyingToMessage.content || replyingToMessage.attachment?.name || 'Mensagem'}</span></span><button type="button" onClick={() => setReplyingToMessage(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Cancelar resposta"><X className="h-4 w-4" /></button></div>}
+                    {(() => {
+                      const mentionMatch = msgText.match(/(?:^|\s)@([^\s@]*)$/u);
+                      if (!mentionMatch) return null;
+                      const query = normalizedText(mentionMatch[1]);
+                      const metadata = getThreadMetadata(activeThreadId);
+                      const suggestions = (metadata.participants || []).map(id => messageContacts.find(user => user.id === id)).filter(user => user && user.id !== currentUser.id && (!query || normalizedText(user.name).includes(query))).slice(0, 6);
+                      if (!suggestions.length) return null;
+                      return <div className="mx-auto mb-2 w-full max-w-4xl rounded-xl border border-blue-100 bg-white p-2 shadow-lg"><span className="px-2 text-[9px] font-black uppercase text-blue-700">Marcar participante</span><div className="mt-1 flex flex-wrap gap-1">{suggestions.map(user => <button key={user.id} type="button" onClick={() => setMsgText(previous => previous.replace(/(?:^|\s)@([^\s@]*)$/u, match => `${match.startsWith(' ') ? ' ' : ''}@${user.name} `))} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-800 hover:bg-blue-100"><AtSign className="h-3 w-3" />{user.name}</button>)}</div></div>;
+                    })()}
+                    
+                    <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-4xl min-w-0 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 transition-all focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
+                      <label className="p-2.5 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors border border-slate-200">
+                        <Paperclip className="h-5 w-5" />
+                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
+                      </label>
+                      <textarea
+                        rows="3"
+                        placeholder="Escreva sua resposta... Use @ para marcar alguém"
+                        value={msgText}
+                        onChange={(e) => setMsgText(e.target.value)}
+                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
+                        className="min-h-[78px] max-h-40 min-w-0 flex-1 resize-y overflow-y-auto border-0 bg-transparent px-2.5 py-2.5 text-sm leading-6 focus:outline-none focus:ring-0"
+                      ></textarea>
+                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
+                      <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || (!msgText.trim() && !msgAttachment)} className="bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-xl transition-all shadow-sm disabled:opacity-50" aria-label={isSendingMessage ? 'Enviando mensagem' : 'Enviar mensagem'}>
+                        {isSendingMessage ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <Send className="h-4.5 w-4.5" />}
+                      </button>
+                    </form>
+                    <PreviaEmojis texto={msgText} />
+                    </>}
+                  </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3">
+                  {(() => {
+                    const searchText = inboxSearch.trim().toLocaleLowerCase('pt-BR');
+                    const myThreads = normMessages.filter(m => m.participants.includes(currentUser.id));
+                    const groupedThreads = {};
+                    
+                    myThreads.forEach(msg => {
+                      if (!groupedThreads[msg.threadId]) {
+                        groupedThreads[msg.threadId] = { id: msg.threadId, subject: msg.subject, messages: [], participants: msg.participants, unread: 0 };
+                      }
+                      groupedThreads[msg.threadId].messages.push(msg);
+                      if (!msg.readBy.includes(currentUser.id)) {
+                        groupedThreads[msg.threadId].unread += 1;
+                      }
+                    });
+                    
+                    const threadList = Object.values(groupedThreads).sort((a, b) => {
+                      const lastA = a.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, a.messages[0]);
+                      const lastB = b.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, b.messages[0]);
+                      if (messageOrganization === 'sector') {
+                        const otherA = messageContacts.find(user => user.id === a.participants.find(id => id !== currentUser.id));
+                        const otherB = messageContacts.find(user => user.id === b.participants.find(id => id !== currentUser.id));
+                        const sectorA = otherA ? getUserDepts(otherA)[0] || '' : '';
+                        const sectorB = otherB ? getUserDepts(otherB)[0] || '' : '';
+                        const sectorOrder = sectorA.localeCompare(sectorB, 'pt-BR');
+                        if (sectorOrder !== 0) return sectorOrder;
+                      }
+                      return getMessageTimestamp(lastB) - getMessageTimestamp(lastA);
+                    });
+
+                    const visibleThreadList = threadList.filter(thread => {
+                      if (showArchivedThreads !== isThreadArchived(thread.id)) return false;
+                      const metadata = getThreadMetadata(thread.id);
+                      const deadline = getThreadDeadlineStatus(thread.id);
+                      const matchesStatus = inboxStatusFilter === 'all'
+                        || (inboxStatusFilter === 'unread' && thread.unread > 0)
+                        || (inboxStatusFilter === 'open' && !metadata.completedAt)
+                        || (inboxStatusFilter === 'overdue' && !metadata.completedAt && /atras/i.test(deadline.label || ''))
+                        || (inboxStatusFilter === 'completed' && Boolean(metadata.completedAt));
+                      if (!matchesStatus) return false;
+                      if (!searchText) return true;
+                      const names = thread.participants.map(id => messageContacts.find(user => user.id === id)?.name || '').join(' ');
+                      const content = thread.messages.map(message => message.content || '').join(' ');
+                      return `${thread.subject || ''} ${names} ${content}`.toLocaleLowerCase('pt-BR').includes(searchText);
+                    });
+
+                    const inboxTotals = threadList.reduce((totals, thread) => {
+                      const metadata = getThreadMetadata(thread.id);
+                      const deadline = getThreadDeadlineStatus(thread.id);
+                      if (thread.unread > 0) totals.unread += 1;
+                      if (metadata.completedAt) totals.completed += 1;
+                      else totals.open += 1;
+                      if (!metadata.completedAt && /atras/i.test(deadline.label || '')) totals.overdue += 1;
+                      return totals;
+                    }, { unread: 0, open: 0, overdue: 0, completed: 0 });
+
+                    const summaryBar = !showArchivedThreads && (
+                      <section className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4" aria-label="Resumo da caixa de entrada">
+                        {[
+                          { id: 'unread', label: 'Não lidas', value: inboxTotals.unread, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+                          { id: 'open', label: 'Em andamento', value: inboxTotals.open, icon: MessageSquare, tone: 'text-violet-700 bg-violet-50 border-violet-100' },
+                          { id: 'overdue', label: 'Em atraso', value: inboxTotals.overdue, icon: Clock, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
+                          { id: 'completed', label: 'Concluídas', value: inboxTotals.completed, icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+                        ].map(item => {
+                          const MetricIcon = item.icon;
+                          const active = inboxStatusFilter === item.id;
+                          return <button type="button" aria-pressed={active} onClick={() => setInboxStatusFilter(previous => previous === item.id ? 'all' : item.id)} key={item.label} className={`rounded-2xl border px-3.5 py-3 flex items-center gap-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${item.tone} ${active ? 'ring-2 ring-offset-2 ring-current shadow-md' : ''}`}><span className="h-9 w-9 rounded-xl bg-white/80 flex items-center justify-center shadow-sm"><MetricIcon className="h-4 w-4" /></span><div><strong className="block text-lg leading-none">{item.value}</strong><span className="text-[10px] font-bold uppercase tracking-wide opacity-80">{item.label}</span></div></button>;
+                        })}
+                      </section>
+                    );
+
+                    const searchBar = <div className="mb-3 flex items-center gap-2"><div className="relative min-w-0 flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input type="search" aria-label="Buscar conversas" placeholder="Buscar por assunto, pessoa ou mensagem" value={inboxSearch} onChange={event => setInboxSearch(event.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-3.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 shadow-sm" /></div>{inboxStatusFilter !== 'all' && <button type="button" onClick={() => setInboxStatusFilter('all')} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[10px] font-bold text-slate-600 shadow-sm">Limpar filtro</button>}</div>;
+
+                    if (visibleThreadList.length === 0) {
+                      return <>{summaryBar}{searchBar}<div className="text-center py-12 flex flex-col items-center gap-3 text-slate-400">
+                        <MessageSquare className="h-10 w-10 opacity-20" />
+                        <span className="text-sm">{searchText ? 'Nenhuma conversa corresponde à busca.' : inboxStatusFilter !== 'all' ? 'Nenhuma conversa corresponde ao indicador selecionado.' : showArchivedThreads ? 'Nenhuma conversa arquivada.' : 'Nenhuma conversa encontrada na sua caixa.'}</span>
+                      </div></>;
+                    }
+
+                    return <>{summaryBar}{searchBar}<div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-3">{visibleThreadList.map(thread => {
+                      const lastMsg = thread.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, thread.messages[0]);
+                      const isMine = lastMsg.senderId === currentUser.id;
+                      const hasUnread = thread.unread > 0;
+                      
+                      const partsNames = thread.participants
+                        .filter(id => id !== currentUser.id)
+                        .map(id => messageContacts.find(u => u.id === id)?.name.split(' ')[0] || 'Desconhecido')
+                        .join(', ');
+                      const deadlineStatus = getThreadDeadlineStatus(thread.id);
+                      const threadMetadata = getThreadMetadata(thread.id);
+                      return (
+                        <button 
+                          key={thread.id}
+                          type="button"
+                          onClick={() => openThread(thread.id)}
+                          className={`group p-4 sm:p-5 rounded-[22px] border flex flex-col gap-3 transition-all w-full text-left hover:-translate-y-0.5 hover:shadow-lg ${hasUnread ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-[0_14px_35px_-28px_rgba(37,99,235,.8)]' : 'bg-white border-slate-200 hover:border-blue-200 shadow-[0_14px_35px_-30px_rgba(15,23,42,.6)]'}`}
+                        >
+                          <div className="flex items-start justify-between w-full gap-2">
+                            <div className="min-w-0 flex-1">
+                              <strong className={`block break-words text-sm leading-snug transition-colors [overflow-wrap:anywhere] group-hover:text-blue-800 sm:text-base ${hasUnread ? 'text-blue-950 font-extrabold' : 'text-slate-900 font-bold'}`}>
+                                {thread.subject}
+                              </strong>
+                              <span className="mt-1 flex min-w-0 items-start gap-1 text-xs font-medium text-slate-500">
+                                <Users className="h-3 w-3" /> {partsNames || 'Você (Apenas)'}
+                              </span>
+                              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${deadlineStatus.className}`}>
+                                {deadlineStatus.label}{threadMetadata.dueDate ? ` · ${formatDueDate(threadMetadata.dueDate)}` : ''}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <span className={`text-xs font-medium ${hasUnread ? 'text-blue-700' : 'text-slate-500'}`}>
+                                {formatMessageDateTime(lastMsg)}
+                              </span>
+                              {hasUnread && <span className="flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-blue-600 text-[9px] font-black text-white">{thread.unread}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 mt-1 opacity-80">
+                            {lastMsg.attachment && <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />}
+                            <p className={`w-full min-w-0 break-words text-sm leading-5 [overflow-wrap:anywhere] ${hasUnread ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
+                              {isMine ? 'Você: ' : (lastMsg.senderName.split(' ')[0] + ': ')}{lastMsg.content || 'Arquivo anexo'}
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    })}</div></>;
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCompanyRegistration && currentUser.isDeveloper && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="company-registration-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4"><div><span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Suporte da plataforma</span><h3 id="company-registration-title" className="mt-1 text-base font-extrabold text-slate-800">Cadastrar empresa</h3><p className="mt-1 text-xs text-slate-500">Crie o acesso e o primeiro administrador da nova empresa.</p></div><button type="button" onClick={() => setShowCompanyRegistration(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Fechar cadastro"><X className="h-5 w-5" /></button></div>
+            <form onSubmit={handleCompanyRegistration} className="flex flex-col gap-3">
+              <input required placeholder="Nome da empresa" value={companyForm.name} onChange={(e) => setCompanyForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" />
+              <input required placeholder="Código de acesso (ex.: MINHA-EMPRESA)" value={companyForm.code} onChange={(e) => setCompanyForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs uppercase" />
+              <input required placeholder="Nome do administrador" value={companyForm.adminName} onChange={(e) => setCompanyForm(prev => ({ ...prev, adminName: e.target.value }))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" />
+              <input required type="password" inputMode="numeric" maxLength="4" placeholder="PIN do administrador (4 dígitos)" value={companyForm.adminPin} onChange={(e) => setCompanyForm(prev => ({ ...prev, adminPin: e.target.value.replace(/\D/g, '') }))} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" />
+              <button type="submit" className="mt-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800">Criar empresa</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <FeatureTutorial
+        tutorialId={activeTutorial}
+        userId={currentUser?.id}
+        canManage={Boolean(currentUser?.isAdmin || currentUser?.isDeveloper)}
+        availableTabs={visibleNavigationSections.flatMap(section => section.items.map(item => item.id)).concat('dashboard')}
+        onNavigate={step => {
+          if (step.tab) setActiveTab(step.tab);
+          setMobileMenuOpen(step.target === '[data-tour="platform-menu"]' && window.innerWidth < 640);
+          setShowMessagesModal(step.open === 'inbox');
+          const opensControlCenter = step.open === 'permissions' || step.open === 'audit';
+          setShowControlCenter(opensControlCenter);
+          if (step.open === 'permissions') setControlCenterTab('permissions');
+          if (step.open === 'audit') setControlCenterTab('audit');
+        }}
+        onClose={() => { setActiveTutorial(null); setMobileMenuOpen(false); setShowMessagesModal(false); setShowControlCenter(false); }}
+      />
+
+      {/* RODAPÉ DO SISTEMA */}
+      <footer className="bg-slate-900 text-slate-400 py-6 border-t border-slate-850 text-xs text-center mt-auto">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p>© 2026 Comunica. Todos os direitos reservados. Plataforma de comunicação e serviços corporativos. Emojis: <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">Twemoji (CC BY 4.0)</a>.</p>
+          <div className="flex items-center gap-4">
+            <span className="hover:text-white cursor-pointer transition-colors">Políticas e Privacidade</span>
+            {!currentUser.isDeveloper && <button type="button" onClick={openPlatformSupport} className="hover:text-white transition-colors">Acionar suporte da plataforma</button>}
+          </div>
+        </div>
+      </footer>
+
+    </div>
+  );
+}

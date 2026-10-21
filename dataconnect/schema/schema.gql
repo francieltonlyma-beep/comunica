@@ -1,0 +1,37 @@
+type User @table {
+  username: String!
+  email: String!
+  role: String!
+  avatarUrl: String
+  bio: String
+  notificationPreferences: String
+}
+
+type Announcement @table {
+  title: String!
+  content: String!
+  createdAt: Timestamp!
+  author: User!
+  isPinned: Boolean
+  imageUrl: String
+  category: Category
+}
+
+type Comment @table {
+  content: String!
+  createdAt: Timestamp!
+  announcement: Announcement!
+  user: User!
+  parentComment: Comment
+}
+
+type Category @table {
+  name: String!
+  description: String
+  colorCode: String
+}
+
+type CategorySubscription @table(key: ["user", "category"]) {
+  user: User!
+  category: Category!
+}

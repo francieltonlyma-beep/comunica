@@ -1,0 +1,72 @@
+const assert = require('node:assert/strict');
+const { createRequire } = require('node:module');
+const requireFunctions = createRequire(require.resolve('../../functions/package.json'));
+const { initializeApp, deleteApp } = requireFunctions('firebase-admin/app');
+const { getFirestore } = requireFunctions('firebase-admin/firestore');
+const { getStorage } = requireFunctions('firebase-admin/storage');
+const { getAuth } = requireFunctions('firebase-admin/auth');
+const { listPublicVacancies, saveCandidateProfile, getCandidateApplication, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, uploadCandidateResume, submitApplication, downloadCandidateResume } = require('../../functions/lib/careers.js');
+
+if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8080' || process.env.FIREBASE_STORAGE_EMULATOR_HOST !== '127.0.0.1:9199' || process.env.FIREBASE_AUTH_EMULATOR_HOST !== '127.0.0.1:9099') throw new Error('Local emulators required');
+const admin = initializeApp({ projectId: 'demo-comunica-security', storageBucket: 'demo-comunica-security.firebasestorage.app' });
+const db = getFirestore(admin);
+const path = 'artifacts/comunica-salvador/public/data/companies/company-a';
+const candidate = { uid: 'candidate-1', email: 'candidate@example.test', email_verified: true };
+const vacancy = { title: 'Analista', status: 'published', skills: ['Excel', 'Comunicação'], quiz: [{ question: 'Organização?', options: ['Lista', 'Calendário'] }] };
+
+(async () => {
+  try {
+    await db.doc(path).set({ name: 'Empresa Teste', code: 'TESTE01' });
+    await getAuth(admin).createUser({ uid: candidate.uid, email: candidate.email, emailVerified: true });
+    await db.doc(`${path}/vacancies/job-1`).set(vacancy);
+    const listed = await listPublicVacancies('company-a');
+    assert.equal(listed.jobs.length, 1);
+    await assert.rejects(() => saveCandidateProfile({ ...candidate, email_verified: false }, { name: 'Pessoa' }));
+    await saveCandidateProfile(candidate, { name: 'Pessoa Candidata', phone: '71999999999', city: 'Salvador', skills: ['excel'], resumeText: 'Experiência profissional em planilhas e relatórios por vários anos.' });
+    const pdf = Buffer.from('%PDF-1.7\nconteudo ficticio');
+    await uploadCandidateResume(candidate, { companyId: 'company-a', vacancyId: 'job-1', fileName: 'curriculo.pdf', base64: pdf.toString('base64') });
+    await assert.rejects(() => submitApplication(candidate, { companyId: 'company-a', vacancyId: 'job-1', answers: [9], consent: true }));
+    const sent = await submitApplication(candidate, { companyId: 'company-a', vacancyId: 'job-1', answers: [0], consent: true });
+    assert.equal(sent.fit.percentage, 50);
+    await assert.rejects(() => submitApplication(candidate, { companyId: 'company-a', vacancyId: 'job-1', answers: [0], consent: true }));
+    const application = await db.doc(`${path}/applications/job-1_candidate-1`).get();
+    assert.equal(application.data().resumeFileName, 'curriculo.pdf');
+    assert.ok(application.data().retentionUntil > Date.now() + 89 * 24 * 60 * 60 * 1000);
+    assert.equal((await getCandidateApplication(candidate, { companyId: 'company-a', vacancyId: 'job-1' })).application.status, 'received');
+    const adminIdentity = { uid: 'admin', token: { companyId: 'company-a', isAdmin: true } };
+    await db.doc(`${path}/users/admin`).set({ isAdmin: true });
+    const hrIdentity = { uid: 'hr', token: { companyId: 'company-a', isAdmin: false } };
+    await db.doc(`${path}/users/hr`).set({ isAdmin: false, role: 'Analista de RH' });
+    const extended = await extendApplicationRetention(adminIdentity, { companyId: 'company-a', applicationId: 'job-1_candidate-1' });
+    assert.ok(extended.retentionUntil > application.data().retentionUntil);
+    await assert.rejects(() => extendApplicationRetention(adminIdentity, { companyId: 'company-a', applicationId: 'job-1_candidate-1' }));
+    await db.doc(`${path}/applications/legacy_candidate-2`).set({ candidateUid: 'candidate-2', vacancyId: 'legacy', createdAt: new Date() });
+    assert.equal((await initializeApplicationRetention(adminIdentity, { companyId: 'company-a' })).updated, 1);
+    assert.ok((await db.doc(`${path}/applications/legacy_candidate-2`).get()).data().retentionUntil > Date.now());
+    await db.doc(`${path}/applications/expired_candidate-3`).set({ candidateUid: 'candidate-3', vacancyId: 'expired', retentionUntil: Date.now() - 1000 });
+    await db.doc('_candidateResumeAnalyses/company-a_expired_candidate-3').set({ readable: true });
+    await getStorage().bucket().file('career-resumes/company-a/expired/candidate-3/resume').save(pdf);
+    assert.equal((await purgeExpiredApplications(hrIdentity, { companyId: 'company-a' })).deleted, 1);
+    assert.equal((await db.doc(`${path}/applications/expired_candidate-3`).get()).exists, false);
+    const downloaded = await downloadCandidateResume(adminIdentity, { companyId: 'company-a', applicationId: 'job-1_candidate-1' });
+    assert.equal(Buffer.from(downloaded.base64, 'base64').toString(), pdf.toString());
+    await assert.rejects(() => downloadCandidateResume({ uid: 'other', token: { companyId: 'company-a', isAdmin: false } }, { companyId: 'company-a', applicationId: 'job-1_candidate-1' }));
+    await withdrawCandidateApplication(candidate, { companyId: 'company-a', vacancyId: 'job-1' });
+    assert.equal((await getCandidateApplication(candidate, { companyId: 'company-a', vacancyId: 'job-1' })).application, null);
+    assert.equal((await getStorage().bucket().file('career-resumes/company-a/job-1/candidate-1/resume').exists())[0], false);
+    assert.equal((await db.doc('_candidateResumeAnalyses/company-a_job-1_candidate-1').get()).exists, false);
+    await db.doc(`${path}/applications/job-2_candidate-1`).set({ candidateUid: candidate.uid, vacancyId: 'job-2' });
+    await db.doc('_candidateResumeAnalyses/company-a_job-2_candidate-1').set({ readable: true });
+    await db.doc('_candidateUploadLimits/company-a_job-2_candidate-1').set({ count: 1 });
+    await getStorage().bucket().file('career-resumes/company-a/job-2/candidate-1/resume').save(pdf);
+    await deleteCandidateAccount(candidate);
+    assert.equal((await db.doc('_candidateProfiles/candidate-1').get()).exists, false);
+    assert.equal((await db.doc(`${path}/applications/job-2_candidate-1`).get()).exists, false);
+    assert.equal((await getStorage().bucket().file('career-resumes/company-a/job-2/candidate-1/resume').exists())[0], false);
+    await assert.rejects(() => getAuth(admin).getUser(candidate.uid));
+    console.log('CAREER_FLOW_VALIDATED');
+  } finally {
+    await db.terminate();
+    await deleteApp(admin);
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

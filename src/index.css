@@ -1,0 +1,188 @@
+.comunica-emoji-panel .epr-main {
+  --epr-bg-color: #ffffff;
+  --epr-highlight-color: #128c7e;
+  --epr-category-icon-active-color: #128c7e;
+  --epr-hover-bg-color: #e8f6f0;
+  --epr-focus-bg-color: #e8f6f0;
+  --epr-emoji-hover-color: #e8f6f0;
+  --epr-search-input-bg-color: #f5f7f8;
+  --epr-picker-border-color: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.comunica-emoji-panel .epr-emoji-category-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.comunica-emoji-panel .epr-emoji:hover {
+  border-radius: 10px;
+}
+
+@keyframes comunica-login-aurora {
+  0%, 100% { transform: scale(1) translate3d(0, 0, 0); opacity: .82; }
+  50% { transform: scale(1.08) translate3d(2%, -1%, 0); opacity: 1; }
+}
+@keyframes comunica-login-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-10px) rotate(1deg); }
+}
+@keyframes comunica-login-orbit {
+  from { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.08); }
+  to { transform: rotate(360deg) scale(1); }
+}
+@keyframes comunica-login-enter {
+  from { opacity: 0; transform: translateY(24px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.login-aurora { animation: comunica-login-aurora 12s ease-in-out infinite; }
+.login-logo-float { animation: comunica-login-float 5s ease-in-out infinite; }
+.login-orbit { animation: comunica-login-orbit 26s linear infinite; }
+.login-orbit-two { animation-direction: reverse; animation-duration: 34s; }
+.login-panel-enter { animation: comunica-login-enter .7s cubic-bezier(.22,.75,.25,1) both; }
+.login-feature-card { transition: transform .25s ease, background-color .25s ease, border-color .25s ease; }
+.login-feature-card:hover { transform: translateY(-5px); background-color: rgba(255,255,255,.12); border-color: rgba(165,243,252,.3); }
+@media (prefers-reduced-motion: reduce) {
+  .login-aurora, .login-logo-float, .login-orbit, .login-panel-enter { animation: none; }
+  .login-feature-card { transition: none; }
+}
+
+/* Tema escuro persistente do Comunica. Mantém as cores semânticas de estado. */
+html.comunica-dark,
+html.comunica-dark body {
+  color-scheme: dark;
+  background: #0b1220;
+  color: #e2e8f0;
+}
+html.comunica-dark .bg-white,
+html.comunica-dark [class~="bg-white/60"],
+html.comunica-dark [class~="bg-white/70"],
+html.comunica-dark [class~="bg-white/80"],
+html.comunica-dark [class~="bg-white/90"],
+html.comunica-dark [class~="bg-white/95"] { background-color: #111c2e !important; }
+html.comunica-dark .bg-slate-50,
+html.comunica-dark [class~="bg-slate-50/50"],
+html.comunica-dark [class~="bg-slate-50/90"] { background-color: #152238 !important; }
+html.comunica-dark .bg-slate-100,
+html.comunica-dark [class~="bg-slate-100/70"] { background-color: #0b1220 !important; }
+html.comunica-dark .bg-slate-200,
+html.comunica-dark [class~="bg-slate-200/80"] { background-color: #26364d !important; }
+html.comunica-dark .bg-slate-300 { background-color: #35465e !important; }
+html.comunica-dark .bg-slate-850 { background-color: #18263a !important; }
+html.comunica-dark .text-slate-950,
+html.comunica-dark .text-slate-900,
+html.comunica-dark .text-slate-800 { color: #f1f5f9 !important; }
+html.comunica-dark .text-slate-700 { color: #d5deeb !important; }
+html.comunica-dark .text-slate-600 { color: #bdc9d8 !important; }
+html.comunica-dark .text-slate-500 { color: #9eacc0 !important; }
+html.comunica-dark .text-slate-400 { color: #8797ad !important; }
+html.comunica-dark .text-slate-300 { color: #aebbd0 !important; }
+html.comunica-dark .text-slate-850 { color: #cbd5e1 !important; }
+html.comunica-dark .border-slate-50,
+html.comunica-dark .border-slate-100,
+html.comunica-dark .border-slate-200,
+html.comunica-dark .border-slate-300 { border-color: #2b3b52 !important; }
+html.comunica-dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.comunica-dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #2b3b52 !important; }
+html.comunica-dark .hover\:bg-slate-50:hover,
+html.comunica-dark .hover\:bg-slate-100:hover,
+html.comunica-dark .hover\:bg-slate-200:hover { background-color: #26364d !important; }
+html.comunica-dark [class~="hover:bg-white/70"]:hover,
+html.comunica-dark [class~="hover:bg-white/10"]:hover { background-color: #26364d !important; }
+html.comunica-dark input:not([type="checkbox"]):not([type="radio"]),
+html.comunica-dark textarea,
+html.comunica-dark select { background-color: #111c2e; color: #e2e8f0; border-color: #34465f; }
+html.comunica-dark input::placeholder,
+html.comunica-dark textarea::placeholder { color: #8292a9; }
+html.comunica-dark option { background-color: #111c2e; color: #e2e8f0; }
+html.comunica-dark .bg-blue-50,
+html.comunica-dark [class~="bg-blue-50/20"],
+html.comunica-dark [class~="bg-blue-50/40"],
+html.comunica-dark [class~="bg-blue-50/60"],
+html.comunica-dark [class~="bg-blue-50/70"],
+html.comunica-dark .bg-blue-100 { background-color: #132c4d !important; }
+html.comunica-dark .bg-cyan-50,
+html.comunica-dark [class~="bg-cyan-50/40"] { background-color: #10333c !important; }
+html.comunica-dark .bg-emerald-50,
+html.comunica-dark [class~="bg-emerald-50/70"],
+html.comunica-dark [class~="bg-emerald-50/80"],
+html.comunica-dark .bg-emerald-100 { background-color: #12352f !important; }
+html.comunica-dark .bg-violet-50,
+html.comunica-dark [class~="bg-violet-50/60"],
+html.comunica-dark [class~="bg-violet-50/70"],
+html.comunica-dark .bg-violet-100,
+html.comunica-dark .bg-indigo-100 { background-color: #28213f !important; }
+html.comunica-dark .bg-amber-50,
+html.comunica-dark [class~="bg-amber-50/70"],
+html.comunica-dark .bg-amber-100 { background-color: #3a2d16 !important; }
+html.comunica-dark .bg-rose-50,
+html.comunica-dark .bg-rose-100 { background-color: #3b2029 !important; }
+html.comunica-dark .bg-fuchsia-50,
+html.comunica-dark .bg-fuchsia-100 { background-color: #36203d !important; }
+html.comunica-dark .bg-sky-50 { background-color: #132c3d !important; }
+html.comunica-dark .text-blue-950,
+html.comunica-dark .text-blue-900,
+html.comunica-dark .text-blue-700 { color: #bfdbfe !important; }
+html.comunica-dark .text-blue-800,
+html.comunica-dark .text-blue-600 { color: #93c5fd !important; }
+html.comunica-dark .text-cyan-950,
+html.comunica-dark .text-cyan-900,
+html.comunica-dark .text-cyan-700 { color: #a5f3fc !important; }
+html.comunica-dark .text-cyan-800 { color: #67e8f9 !important; }
+html.comunica-dark .text-emerald-950,
+html.comunica-dark .text-emerald-900,
+html.comunica-dark .text-emerald-800,
+html.comunica-dark .text-emerald-700,
+html.comunica-dark .text-emerald-600 { color: #a7f3d0 !important; }
+html.comunica-dark .text-violet-950,
+html.comunica-dark .text-violet-900,
+html.comunica-dark .text-violet-800,
+html.comunica-dark .text-violet-700,
+html.comunica-dark .text-violet-600 { color: #ddd6fe !important; }
+html.comunica-dark .text-indigo-700,
+html.comunica-dark .text-sky-950,
+html.comunica-dark .text-sky-700 { color: #c7d2fe !important; }
+html.comunica-dark .text-amber-950,
+html.comunica-dark .text-amber-900,
+html.comunica-dark .text-amber-800,
+html.comunica-dark .text-amber-700,
+html.comunica-dark .text-amber-600 { color: #fde68a !important; }
+html.comunica-dark .text-rose-950,
+html.comunica-dark .text-rose-900,
+html.comunica-dark .text-rose-700,
+html.comunica-dark .text-rose-600 { color: #fda4af !important; }
+html.comunica-dark .text-rose-800 { color: #fecdd3 !important; }
+html.comunica-dark .text-fuchsia-900,
+html.comunica-dark .text-fuchsia-800,
+html.comunica-dark .text-fuchsia-700 { color: #f5d0fe !important; }
+html.comunica-dark .border-blue-100,
+html.comunica-dark .border-blue-200,
+html.comunica-dark .border-cyan-100,
+html.comunica-dark .border-cyan-200,
+html.comunica-dark .border-emerald-100,
+html.comunica-dark .border-emerald-200,
+html.comunica-dark .border-violet-100,
+html.comunica-dark .border-violet-200,
+html.comunica-dark .border-amber-100,
+html.comunica-dark .border-amber-200,
+html.comunica-dark .border-rose-100,
+html.comunica-dark .border-rose-200,
+html.comunica-dark .border-fuchsia-100,
+html.comunica-dark .border-fuchsia-200 { border-color: #34465f !important; }
+html.comunica-dark [class~="from-white"],
+html.comunica-dark [class~="via-white"],
+html.comunica-dark [class~="to-white"],
+html.comunica-dark [class~="from-blue-50"],
+html.comunica-dark [class~="via-indigo-50/40"],
+html.comunica-dark [class~="to-cyan-50"],
+html.comunica-dark [class~="to-cyan-50/50"],
+html.comunica-dark [class~="to-cyan-50/80"] {
+  background-image: none !important;
+  background-color: #111c2e !important;
+}
+html.comunica-dark [class~="bg-white"][class~="text-white"],
+html.comunica-dark [class~="bg-white/90"][class~="text-white"],
+html.comunica-dark [class~="bg-slate-50"][class~="text-white"] { color: #e2e8f0 !important; }

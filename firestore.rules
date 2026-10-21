@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function member(company) {
+      return request.auth != null && request.auth.uid != 'platform-support-francielton'
+        && request.auth.token.get('isDeveloper', false) != true
+        && request.auth.token.get('companyId', '') == company
+        && exists(/databases/$(database)/documents/artifacts/comunica-salvador/public/data/companies/$(company)/users/$(request.auth.uid));
+    }
+    function support() {
+      return request.auth != null && request.auth.uid == 'platform-support-francielton'
+        && get(/databases/$(database)/documents/_platformSupport/$(request.auth.uid)).data.get('enabled', false) == true
+        && get(/databases/$(database)/documents/_platformSupport/$(request.auth.uid)).data.get('appId', '') == 'comunica-salvador';
+    }
+    function admin(app, company) {
+      return member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
+    }
+    function protectedUser(data, id) {
+      return data.get('isDeveloper', false) == true || id == 'platform-support-francielton';
+    }
+    match /artifacts/{app}/public/data/companies/{company}/users/{uid} {
+      allow read: if member(company) || support();
+      // Profiles and private credentials must be created atomically by the server.
+      allow create: if false;
+      // Employee offboarding is a server transaction that also removes private credentials.
+      allow delete: if false;
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pin']) && (support() || (
+        !protectedUser(resource.data, uid) && !protectedUser(request.resource.data, uid) && (
+          admin(app, company) || (member(company) && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'emergencyName', 'emergencyPhone', 'emergencyRelationship',
+              'pushTokens', 'readNotifications', 'companyId', 'id'
+            ])
+            && request.resource.data.get('companyId', company) == company
+            && request.resource.data.get('id', uid) == uid)
+        )
+      ));
+    }
+    function access(company) { return member(company) || support(); }
+    // Casos e limites de envio são acessíveis somente pelo Admin SDK no servidor.
+    match /_privateWhistleblowing/{document=**} { allow read, write: if false; }
+    match /_privateWhistleblowingRateLimits/{document=**} { allow read, write: if false; }
+    function manages(app, company) { return admin(app, company) || support(); }
+    function canEdit(app, company) {
+      return manages(app, company) || (member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canEdit', true) == true);
+    }
+    function canManageCalendar(app, company) {
+      return manages(app, company) || (member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageCalendar', true) == true);
+    }
+    function canPublishAbsenceForOthers(app, company) {
+      return member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canPublishAbsenceForOthers', false) == true;
+    }
+    function ownsAuditEntry() {
+      return request.resource.data.get('actorId', '') == request.auth.uid
+        && request.resource.data.get('timestamp', 0) is int
+        && request.resource.data.get('action', '') is string;
+    }
+    function careerManager(app, company) {
+      let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data;
+      let role = profile.get('role', '').lower();
+      let department = profile.get('department', '').lower();
+      let dept = profile.get('dept', '').lower();
+      let departments = profile.get('departments', []);
+      let depts = profile.get('depts', []);
+      return admin(app, company) || (member(company) && (
+        role == 'rh' || role.matches('.*recursos humanos.*') || role.matches('.*rh.*')
+        || department == 'rh' || department.matches('.*recursos humanos.*') || department.matches('.*rh.*')
+        || dept == 'rh' || dept.matches('.*recursos humanos.*') || dept.matches('.*rh.*')
+        || 'RH' in departments || 'rh' in departments || 'Recursos Humanos' in departments
+        || 'RH' in depts || 'rh' in depts || 'Recursos Humanos' in depts
+      ));
+    }
+    function participant(data) {
+      return request.auth.uid in data.get('participants', [])
+        || data.get('senderId', '') == request.auth.uid || data.get('receiverId', '') == request.auth.uid;
+    }
+    function addsOwnRead() {
+      let before = resource.data.get('readBy', []);
+      let after = request.resource.data.get('readBy', []);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+        && before is list && after is list
+        && !(request.auth.uid in before)
+        && after == before.concat([request.auth.uid]);
+    }
+    function addsOwnVote() {
+      let before = resource.data.get('votes', {});
+      let after = request.resource.data.get('votes', {});
+      let option = after.get(request.auth.uid, -1);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+        && before is map && after is map
+        && !(request.auth.uid in before)
+        && after.diff(before).addedKeys().hasAll([request.auth.uid])
+        && after.diff(before).affectedKeys().hasOnly([request.auth.uid])
+        && option is int && option >= 0
+        && option < resource.data.get('options', []).size();
+    }
+    function productionManager(app, company) {
+      return manages(app, company) || (member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('role', '').lower().matches('.*(encarregado.*produ|produ.*encarregado).*'));
+    }
+    function scheduleManager(app, company) {
+      let role = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('role', '').lower();
+      return manages(app, company) || (member(company)
+        && role.matches('.*(coordenador|encarregado|supervis|diretor|gestor|gestao|rh).*'));
+    }
+    function absencePostOwner(app, company, id) {
+      return id.matches('post-abs-.+') && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/absences/$(id.replace('^post-abs-', ''))).data.get('userId', '') == request.auth.uid;
+    }
+    function absencePostOwnerAfter(app, company, id) {
+      let absence = getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/absences/$(id.replace('^post-abs-', ''))).data;
+      return id.matches('post-abs-.+') && (absence.get('userId', '') == request.auth.uid
+        || (absence.get('createdBy', '') == request.auth.uid
+          && (scheduleManager(app, company) || canPublishAbsenceForOthers(app, company))));
+    }
+    function productionWorker(app, company) {
+      return productionManager(app, company) || (member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('prodGroup', '') != '');
+    }
+    function documentAudience(app, company, data) {
+      return manages(app, company) || (member(company) && (
+        data.get('accessMode', 'company') == 'company'
+        || (data.get('accessMode', 'company') == 'people' && request.auth.uid in data.get('allowedUserIds', []))
+        || (data.get('accessMode', 'company') == 'department' && data.get('dept', '') in get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('depts', []))
+      ));
+    }
+    match /artifacts/{app}/public/data/platformUpdates/{updateId} {
+      allow read: if support() || (request.auth != null
+        && member(request.auth.token.get('companyId', ''))
+        && (resource.data.get('targetCompanies', []).size() == 0
+          || request.auth.token.get('companyId', '') in resource.data.get('targetCompanies', [])));
+      allow create, update, delete: if support();
+    }
+    match /artifacts/{app}/public/data/platformUpdateReads/{uid}/updates/{updateId} {
+      allow read: if support() || (request.auth != null && request.auth.uid == uid
+        && member(request.auth.token.get('companyId', '')));
+      allow create: if request.auth != null && request.auth.uid == uid
+        && member(request.auth.token.get('companyId', ''))
+        && request.resource.data.get('userId', '') == uid
+        && request.resource.data.get('updateId', '') == updateId
+        && request.resource.data.get('readAt', 0) is int;
+      allow update, delete: if false;
+    }
+    match /artifacts/{app}/public/data/companies/{company} {
+      allow read: if access(company);
+      allow write: if false;
+      match /{kind}/{id} {
+        allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'schedules', 'settings', 'vacancies'] && access(company);
+        allow read: if kind == 'documents' && documentAudience(app, company, resource.data);
+        allow read: if kind == 'applications' && (support() || careerManager(app, company));
+        allow write: if kind in ['departments', 'roles', 'settings', 'events', 'presence'] && manages(app, company);
+        allow create, update: if kind == 'presence' && access(company) && (
+          (scheduleManager(app, company) && canManageCalendar(app, company))
+          || (canPublishAbsenceForOthers(app, company) && request.resource.data.get('status', '') == 'Férias'
+            && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.get('userId', '')))));
+        allow write: if kind == 'settings' && id == 'whistleblowing-poster' && member(company)
+          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('tabs', {}).get('whistleblowing', false) == true;
+        allow create, update: if kind == 'settings' && id == 'schedule-rules'
+          && scheduleManager(app, company) && canManageCalendar(app, company);
+        allow create, update, delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company);
+        allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
+        allow update: if kind == 'applications' && (support() || careerManager(app, company))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewNotes', 'recruitmentUpdate', 'decisionAt', 'decisionBy', 'discardReason', 'interview', 'interviewScheduledAt', 'interviewScheduledBy', 'candidateUpdatePending', 'candidateUpdateAcknowledgedAt', 'aiAssessment', 'aiAssessmentAt', 'aiAssessmentBy', 'aiAssessmentVacancyUpdatedAt'])
+          && request.resource.data.get('status', '') in ['received', 'reviewing', 'preselected', 'interview', 'rejected', 'hired', 'closed'];
+        allow create, delete: if kind in ['announcements', 'documents', 'polls'] && manages(app, company);
+        allow update: if kind == 'announcements' && access(company) && (
+          (manages(app, company) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['readBy']))
+          || addsOwnRead()
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy', 'comments']));
+        allow update: if kind == 'documents' && documentAudience(app, company, resource.data) && (
+          (manages(app, company) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['readBy']))
+          || (resource.data.get('requiredRead', false) == true && addsOwnRead()));
+        allow update: if kind == 'polls' && access(company) && (
+          (manages(app, company) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['votes']))
+          || addsOwnVote());
+        allow create: if kind == 'posts' && access(company) && ((canEdit(app, company) && (manages(app, company) || request.resource.data.get('authorId', '') == request.auth.uid)) || (request.resource.data.get('authorId', '') == 'system' && absencePostOwnerAfter(app, company, id)));
+        allow update: if kind == 'posts' && access(company) && (manages(app, company)
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy', 'comments']));
+        allow delete: if kind == 'posts' && access(company) && canEdit(app, company) && (manages(app, company) || resource.data.get('authorId', '') == request.auth.uid || absencePostOwner(app, company, id));
+        allow create: if kind == 'absences' && access(company) && (manages(app, company) || (request.resource.data.get('userId', '') == request.auth.uid && canManageCalendar(app, company)) || (request.resource.data.get('createdBy', '') == request.auth.uid && ((scheduleManager(app, company) && canManageCalendar(app, company)) || canPublishAbsenceForOthers(app, company))));
+        allow update, delete: if kind == 'absences' && access(company) && canManageCalendar(app, company) && (manages(app, company) || resource.data.get('userId', '') == request.auth.uid);
+      }
+      match /messages/{id} {
+        allow read: if support() || (member(company) && participant(resource.data));
+        allow create: if access(company) && participant(request.resource.data)
+          && request.resource.data.get('senderId', '') in [request.auth.uid, 'system'];
+        allow update: if access(company) && participant(resource.data) && participant(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy', 'resolutionRating', 'resolutionFeedback', 'resolutionEvaluatedAt', 'serviceDecision', 'serviceDecisionBy', 'serviceDecisionAt', 'serviceStatus', 'serviceAssigneeId', 'serviceAssigneeName', 'serviceStartedAt', 'serviceWaitingSince', 'servicePromisedDate', 'serviceProgress', 'serviceProgressNote', 'serviceProgressUpdatedAt', 'serviceProgressUpdatedBy', 'likedBy', 'savedBy', 'highlightedBy', 'activity']);
+        allow delete: if false;
+      }
+      match /auditLogs/{id} {
+        allow read: if manages(app, company);
+        allow create: if access(company) && ownsAuditEntry();
+        allow update, delete: if false;
+      }
+      match /productivity/{id} {
+        allow read: if productionWorker(app, company);
+        allow create: if canEdit(app, company) && (productionManager(app, company) || (productionWorker(app, company)
+          && request.resource.data.get('authorId', '') == request.auth.uid
+          && request.resource.data.get('group', '') == get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('prodGroup', '')));
+        allow update, delete: if productionManager(app, company);
+      }
+    }
+    // Regras ativas: validar no emulador antes de cada alteracao publicada.
+  }
+}

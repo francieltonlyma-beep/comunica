@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function member(company) {
+      return request.auth != null && request.auth.uid != 'platform-support-francielton'
+        && request.auth.token.get('isDeveloper', false) != true
+        && request.auth.token.get('companyId', '') == company
+        && exists(/databases/$(database)/documents/artifacts/comunica-salvador/public/data/companies/$(company)/users/$(request.auth.uid));
+    }
+    function support() {
+      return request.auth != null && request.auth.uid == 'platform-support-francielton'
+        && get(/databases/$(database)/documents/_platformSupport/$(request.auth.uid)).data.get('enabled', false) == true
+        && get(/databases/$(database)/documents/_platformSupport/$(request.auth.uid)).data.get('appId', '') == 'comunica-salvador';
+    }
+    function admin(app, company) {
+      return member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
+    }
+    function protectedUser(data, id) {
+      return data.get('isDeveloper', false) == true || id == 'platform-support-francielton';
+    }
+    match /artifacts/{app}/public/data/companies/{company}/users/{uid} {
+      allow read: if member(company) || support();
+      // Profiles and private credentials must be created atomically by the server.
+      allow create: if false;
+      allow delete: if support() || (admin(app, company) && !protectedUser(resource.data, uid));
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pin']) && (support() || (
+        !protectedUser(resource.data, uid) && !protectedUser(request.resource.data, uid) && (
+          admin(app, company) || (member(company) && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'emergencyName', 'emergencyPhone', 'emergencyRelationship',
+              'pushTokens', 'readNotifications', 'companyId', 'id'
+            ])
+            && request.resource.data.get('companyId', company) == company
+            && request.resource.data.get('id', uid) == uid)
+        )
+      ));
+    }
+    function access(company) { return member(company) || support(); }
+    function manages(app, company) { return admin(app, company) || support(); }
+    function participant(data) {
+      return request.auth.uid in data.get('participants', [])
+        || data.get('senderId', '') == request.auth.uid || data.get('receiverId', '') == request.auth.uid;
+    }
+    function productionManager(app, company) {
+      return manages(app, company) || (member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('role', '').lower().matches('.*(encarregado.*produ|produ.*encarregado).*'));
+    }
+    function absencePostOwner(app, company, id) {
+      return id.matches('post-abs-.+') && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/absences/$(id.replace('^post-abs-', ''))).data.get('userId', '') == request.auth.uid;
+    }
+    function productionWorker(app, company) {
+      return productionManager(app, company) || (member(company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('prodGroup', '') != '');
+    }
+    match /artifacts/{app}/public/data/companies/{company} {
+      allow read: if access(company);
+      allow write: if false;
+      match /{kind}/{id} {
+        allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'documents', 'polls', 'events', 'absences', 'presence', 'settings'] && access(company);
+        allow write: if kind in ['departments', 'roles', 'settings', 'events', 'presence'] && manages(app, company);
+        allow create, delete: if kind in ['announcements', 'documents', 'polls'] && manages(app, company);
+        allow update: if kind in ['announcements', 'documents', 'polls'] && access(company) && (manages(app, company)
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy', 'readBy', 'comments', 'votes']));
+        allow create: if kind == 'posts' && access(company) && (manages(app, company) || request.resource.data.get('authorId', '') == request.auth.uid || (request.resource.data.get('authorId', '') == 'system' && absencePostOwner(app, company, id)));
+        allow update: if kind == 'posts' && access(company) && (manages(app, company)
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy', 'comments']));
+        allow delete: if kind == 'posts' && access(company) && (manages(app, company) || resource.data.get('authorId', '') == request.auth.uid || absencePostOwner(app, company, id));
+        allow create: if kind == 'absences' && access(company) && (manages(app, company) || request.resource.data.get('userId', '') == request.auth.uid);
+        allow update, delete: if kind == 'absences' && access(company) && (manages(app, company) || resource.data.get('userId', '') == request.auth.uid);
+      }
+      match /messages/{id} {
+        allow read: if support() || (member(company) && participant(resource.data));
+        allow create: if access(company) && participant(request.resource.data)
+          && request.resource.data.get('senderId', '') in [request.auth.uid, 'system'];
+        allow update: if access(company) && participant(resource.data) && participant(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy']);
+        allow delete: if false;
+      }
+      match /productivity/{id} {
+        allow read: if productionWorker(app, company);
+        allow create: if productionManager(app, company) || (productionWorker(app, company)
+          && request.resource.data.get('authorId', '') == request.auth.uid
+          && request.resource.data.get('group', '') == get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('prodGroup', ''));
+        allow update, delete: if productionManager(app, company);
+      }
+    }
+    // Candidato exclusivo para testes. Nao publicar sem validacao de todas as areas.
+    // Nao publicar: credenciais ainda precisam sair dos perfis legiveis.
+  }
+}

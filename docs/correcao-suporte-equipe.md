@@ -1,0 +1,13 @@
+# Separacao do suporte da equipe
+
+Publicacao do contato de suporte concluida nos dois sites; verificacao HTTP 200 confirmou index-CfueZRpM.js em comunica-info.web.app e comunica-salvador.web.app. Verificacao final inicialmente bloqueada por limite da revisao automatica, retomada e concluida apos novo comando do usuario. Nenhuma mensagem real foi enviada para teste; confirmar jornada autenticada e tratar push separadamente.
+
+12/10 - acionamento: contato sintetico PLATFORM_SUPPORT no diretorio de mensagens, sem gravar users. Botao no menu e rodape abre composicao com destinatario fixo e assunto com empresa. Central do desenvolvedor agrega conversas com participants contendo suporte, por empresa, via listeners separados. Clique troca empresa e abre a thread; envio bloqueado enquanto participantes nao carregam. Identidade de suporte resolve nomes na caixa de entrada. Historico legado sem participants nao entra no agregado. Dezessete testes locais passaram e build index-CfueZRpM.js aprovado. Nao houve envio de mensagem real de teste nem teste visual autenticado. Push do suporte continua pendente: registro/consulta de tokens ainda precisam migrar para identidade independente. Esta entrega nao garante aviso fora do site. Listeners carregam historico completo das empresas enquanto suporte conectado; paginacao permanece pendente.
+
+Atualizacao: foi constatado em producao que o perfil de funcionario do suporte nao existe (404), embora autorizacao e credencial privadas estejam ativas e sem bloqueio. O login ainda exigia esse perfil e por isso falhava. authenticateDeveloper foi corrigido para construir a identidade do suporte independentemente da colecao users e registrar ultimo acesso na autorizacao privada. Nao recria funcionario nem altera PIN. O ambiente inicial ainda usa a empresa configurada na autorizacao privada.
+
+A interface usa isCompanyEmployee para excluir o UID reservado platform-support-francielton, contas isDeveloper e registros isEmployee=false das listas de funcionarios, presenca, contagens de equipe/setores/cargos/grupos, destaques e contexto de colaboradores da IA. O diretorio completo continua disponivel para mensagens.
+
+Testes: node --test tests/teamMembership.test.mjs (2 testes aprovados). Build aprovado. A regra nao exclui funcionarios reais pelo nome ou cargo Suporte TI. Nao modifica credenciais nem autorizacoes.
+
+Teste adicional em emulador: functions/tests/callables.test.cjs passou com 3 testes, incluindo suporte sem documento users, sessao isEmployee=false, ausencia de recriacao do perfil e rejeicao apos revogar autorizacao. Login real com PIN nao foi repetido automaticamente porque a credencial em texto nao esta mais disponivel; nao recuperar segredo de backup para esse teste.

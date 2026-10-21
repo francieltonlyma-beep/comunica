@@ -1,0 +1,40 @@
+query ListAnnouncements @auth(level: PUBLIC) {
+  announcements {
+    title
+    content
+    createdAt
+    author {
+      username
+    }
+    category {
+      name
+    }
+  }
+}
+
+query GetUserSubscriptions @auth(level: USER) {
+  categorySubscriptions(where: { userId: { eq_expr: "auth.uid" } }) {
+    category {
+      name
+      colorCode
+    }
+  }
+}
+
+mutation CreateComment($announcementId: UUID!, $content: String!) @auth(level: USER) {
+  comment_insert(data: {
+    announcementId: $announcementId,
+    content: $content,
+    userId_expr: "auth.uid",
+    createdAt: "2023-10-27T10:00:00Z"
+  })
+}
+
+mutation DeleteSubscription($categoryId: UUID!) @auth(level: USER) {
+  categorySubscription_delete(
+    key: { 
+      userId_expr: "auth.uid", 
+      categoryId: $categoryId 
+    }
+  )
+}

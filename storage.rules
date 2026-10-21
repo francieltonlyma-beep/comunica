@@ -1,0 +1,196 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function userPath(companyId, uid) {
+      return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/users/$(uid);
+    }
+
+    function activeEmployee(companyId) {
+      return request.auth != null
+        && request.auth.uid != 'platform-support-francielton'
+        && request.auth.token.get('isDeveloper', false) != true
+        && request.auth.token.get('companyId', '') == companyId
+        && firestore.exists(userPath(companyId, request.auth.uid));
+    }
+
+    function activeAdmin(companyId) {
+      return activeEmployee(companyId)
+        && firestore.get(userPath(companyId, request.auth.uid)).data.get('isAdmin', false) == true;
+    }
+
+    function activePlatformSupport() {
+      return request.auth != null
+        && request.auth.uid == 'platform-support-francielton'
+        && firestore.get(/databases/(default)/documents/_platformSupport/$(request.auth.uid)).data.get('enabled', false) == true
+        && firestore.get(/databases/(default)/documents/_platformSupport/$(request.auth.uid)).data.get('appId', '') == 'comunica-salvador';
+    }
+
+    // Each write receives a short, path-bound authorization from the server.
+    // Reads keep using the live company records below.
+    function authorizedUpload(companyId, userId, folder, fileName) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.get('uploadAuthorized', false) == true
+        && request.auth.token.get('uploadCompanyId', '') == companyId
+        && request.auth.token.get('uploadFolder', '') == folder
+        && request.auth.token.get('uploadFileName', '') == fileName
+        && request.auth.token.get('uploadSize', 0) == request.resource.size
+        && request.auth.token.get('uploadContentType', '') == request.resource.contentType;
+    }
+
+    function authorizedEmployeeUpload(companyId, userId, folder, fileName) {
+      return authorizedUpload(companyId, userId, folder, fileName)
+        && request.auth.uid != 'platform-support-francielton'
+        && request.auth.token.get('isDeveloper', false) != true
+        && request.auth.token.get('companyId', '') == companyId;
+    }
+
+    function authorizedAdminUpload(companyId, userId, folder, fileName) {
+      return authorizedEmployeeUpload(companyId, userId, folder, fileName)
+        && request.auth.token.get('isAdmin', false) == true;
+    }
+
+    function authorizedSupportUpload(companyId, userId, folder, fileName) {
+      return authorizedUpload(companyId, userId, folder, fileName)
+        && request.auth.uid == 'platform-support-francielton'
+        && request.auth.token.get('isDeveloper', false) == true;
+    }
+
+    function documentPath(companyId, documentId) {
+      return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/documents/$(documentId);
+    }
+
+    function messagePath(companyId, messageId) {
+      return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/messages/$(messageId);
+    }
+
+    function documentAudience(companyId, data) {
+      return activeAdmin(companyId) || activePlatformSupport() || (activeEmployee(companyId) && (
+        data.get('accessMode', 'company') == 'company'
+        || (data.get('accessMode', 'company') == 'people' && request.auth.uid in data.get('allowedUserIds', []))
+        || (data.get('accessMode', 'company') == 'department'
+          && data.get('dept', '') in firestore.get(userPath(companyId, request.auth.uid)).data.get('depts', []))
+      ));
+    }
+
+    function canReadDocument(companyId) {
+      let documentId = resource.metadata.get('documentId', '');
+      return activePlatformSupport()
+        || (request.auth != null && resource.metadata.get('ownerUid', '') == request.auth.uid)
+        || (documentId != '' && firestore.exists(documentPath(companyId, documentId))
+          && documentAudience(companyId, firestore.get(documentPath(companyId, documentId)).data));
+    }
+
+    function canReadAttachment(companyId) {
+      let messageId = resource.metadata.get('messageId', '');
+      return activePlatformSupport()
+        || (request.auth != null && resource.metadata.get('ownerUid', '') == request.auth.uid)
+        || (activeEmployee(companyId) && messageId != '' && firestore.exists(messagePath(companyId, messageId))
+          && (request.auth.uid in firestore.get(messagePath(companyId, messageId)).data.get('participants', [])
+            || firestore.get(messagePath(companyId, messageId)).data.get('senderId', '') == request.auth.uid
+            || firestore.get(messagePath(companyId, messageId)).data.get('receiverId', '') == request.auth.uid));
+    }
+
+    function businessFileType() {
+      return request.resource.contentType is string && (
+        request.resource.contentType.matches('image/.*')
+        || request.resource.contentType.matches('audio/.*')
+        || request.resource.contentType.matches('video/.*')
+        || request.resource.contentType.matches('text/.*')
+        || request.resource.contentType in [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        ]
+      );
+    }
+
+    function safeUpload(folder) {
+      return request.resource.size > 0 && (
+        ((folder == 'avatars' || folder == 'images' || folder == 'whistleblowing-poster')
+          && request.resource.size <= 25 * 1024 * 1024
+          && request.resource.contentType is string
+          && request.resource.contentType.matches('image/.*'))
+        || ((folder == 'documents' || folder == 'attachments')
+          && request.resource.size <= 50 * 1024 * 1024
+          && businessFileType())
+      );
+    }
+
+    function boundUpload(companyId, userId, folder, fileName) {
+      return request.auth != null
+        && request.resource.metadata.get('ownerUid', '') == request.auth.uid
+        && authorizedUpload(companyId, userId, folder, fileName)
+        && (
+          (folder == 'documents'
+            && request.auth.token.get('isAdmin', false) == true
+            && request.resource.metadata.get('documentId', '').matches('document-.+'))
+          || (folder == 'attachments'
+            && request.resource.metadata.get('messageId', '').matches('msg-.+'))
+          || (folder == 'avatars' && request.auth.token.get('isAdmin', false) == true)
+          || folder == 'images'
+          || (folder == 'whistleblowing-poster' && request.auth.token.get('isAdmin', false) == true)
+        );
+    }
+
+    // Normal uploads use the already authenticated corporate session. Access
+    // is checked against the live employee/support record, so removing access
+    // revokes uploads immediately even while an old browser token still exists.
+    function currentSessionUpload(companyId, userId, folder) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && (
+          (folder == 'documents'
+            && ((request.auth.uid != 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) != true
+                && request.auth.token.get('companyId', '') == companyId
+                && request.auth.token.get('isAdmin', false) == true)
+              || (request.auth.uid == 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) == true))
+            && request.resource.metadata.get('documentId', '').matches('document-.+'))
+          || (folder == 'attachments'
+            && ((request.auth.uid != 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) != true
+                && request.auth.token.get('companyId', '') == companyId)
+              || (request.auth.uid == 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) == true))
+            && request.resource.metadata.get('messageId', '').matches('msg-.+'))
+          || ((folder == 'avatars' || folder == 'whistleblowing-poster')
+            && ((request.auth.uid != 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) != true
+                && request.auth.token.get('companyId', '') == companyId
+                && request.auth.token.get('isAdmin', false) == true)
+              || (request.auth.uid == 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) == true)))
+          || (folder == 'images'
+            && ((request.auth.uid != 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) != true
+                && request.auth.token.get('companyId', '') == companyId)
+              || (request.auth.uid == 'platform-support-francielton'
+                && request.auth.token.get('isDeveloper', false) == true)))
+        );
+    }
+
+    match /companies/{companyId}/users/{userId}/{folder}/{fileName} {
+      allow read: if (folder == 'documents' && canReadDocument(companyId))
+        || (folder == 'attachments' && canReadAttachment(companyId))
+        || (folder in ['avatars', 'images', 'whistleblowing-poster']
+          && ((request.auth != null && request.auth.uid == userId
+              && request.auth.token.get('companyId', '') == companyId)
+            || activeEmployee(companyId) || activePlatformSupport()));
+
+      allow create: if request.auth != null
+        && boundUpload(companyId, userId, folder, fileName);
+
+      // Objetos são imutáveis: uma troca cria outro nome e o anterior é removido.
+      allow update: if false;
+      allow delete: if activePlatformSupport() || activeAdmin(companyId)
+        || (activeEmployee(companyId) && request.auth.uid == userId);
+    }
+  }
+}

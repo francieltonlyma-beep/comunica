@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "comunica-salvador",
+    "production": "comunica-salvador",
+    "staging": "comunica-info-staging"
+  }
+}

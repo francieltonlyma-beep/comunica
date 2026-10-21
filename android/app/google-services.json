@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "328110966548",
+    "project_id": "comunica-salvador",
+    "storage_bucket": "comunica-salvador.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:328110966548:android:fb36ec5491ad6f7c422401",
+        "android_client_info": {
+          "package_name": "com.comunicasalvador.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBe1SHqSGZxb4JCzmUeA0PqWJbBSXqRbQc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
