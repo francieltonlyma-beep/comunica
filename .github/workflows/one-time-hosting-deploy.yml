@@ -8,7 +8,7 @@ permissions:
   contents: read
   checks: write
 concurrency:
-  group: firebase-hosting-production
+  group: firebase-hosting-production-one-time
   cancel-in-progress: false
 jobs:
   deploy_hosting:
