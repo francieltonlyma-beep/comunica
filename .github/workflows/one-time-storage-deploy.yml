@@ -21,5 +21,31 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
-      - name: Publish verified Storage rules
-        run: npx firebase-tools@15.34.0 deploy --project comunica-salvador --only storage
+      - name: Install Firebase Admin SDK
+        run: npm --prefix functions ci --omit=dev
+      - name: Publish verified Storage rules to the configured bucket
+        run: |
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+          const { initializeApp } = require('./functions/node_modules/firebase-admin/app');
+          const { getSecurityRules } = require('./functions/node_modules/firebase-admin/security-rules');
+
+          async function publish() {
+            initializeApp({
+              projectId: 'comunica-salvador',
+              storageBucket: 'comunica-salvador.firebasestorage.app',
+            });
+
+            const source = readFileSync('storage.rules', 'utf8');
+            const ruleset = await getSecurityRules().releaseStorageRulesetFromSource(
+              source,
+              'comunica-salvador.firebasestorage.app',
+            );
+            console.log(`Published Storage ruleset: ${ruleset.name}`);
+          }
+
+          publish().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
