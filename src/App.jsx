@@ -528,11 +528,13 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     // regras do Storage em cada abertura, inclusive após mudança de permissão.
     const isFirebaseFile = Boolean(file.storagePath) || /firebasestorage\.googleapis\.com|storage\.googleapis\.com/i.test(fileUrl);
     if (storage && isFirebaseFile) {
+      const fileRef = ref(storage, file.storagePath || fileUrl);
+      const isMobileBrowser = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       // Abre a aba ainda durante o gesto do usuário. Em navegadores móveis e
       // PWAs, uma nova janela criada somente depois do download assíncrono pode
       // ser bloqueada silenciosamente.
       const expectsInlinePreview = /\.pdf(?:$|[?#])/i.test(fileName) || file.type === 'application/pdf';
-      if (expectsInlinePreview) {
+      if (expectsInlinePreview && !isMobileBrowser) {
         previewWindow = window.open('about:blank', '_blank');
         if (previewWindow) {
           previewWindow.opener = null;
@@ -546,7 +548,16 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
         }
       }
 
-      const blob = await getBlob(ref(storage, file.storagePath || fileUrl));
+      // No Android/iOS, uma aba about:blank pode virar um Custom Tab separado e
+      // não consegue acessar a URL blob criada pelo PWA. Obtemos uma URL atual
+      // com o SDK autenticado e navegamos na própria janela, sem popup.
+      if (expectsInlinePreview && isMobileBrowser) {
+        const authenticatedUrl = await getDownloadURL(fileRef);
+        window.location.assign(authenticatedUrl);
+        return;
+      }
+
+      const blob = await getBlob(fileRef);
       const objectUrl = window.URL.createObjectURL(blob);
       const canPreviewInline = expectsInlinePreview || blob.type === 'application/pdf' || blob.type.startsWith('image/');
 
@@ -563,7 +574,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
       // Em WebViews/PWAs móveis que bloqueiam a aba intermediária, navega na
       // própria janela. O botão Voltar retorna ao Comunica.
-      if (canPreviewInline && /Mobi|Android/i.test(navigator.userAgent)) {
+      if (canPreviewInline && isMobileBrowser) {
         window.location.assign(objectUrl);
         window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
         return;
