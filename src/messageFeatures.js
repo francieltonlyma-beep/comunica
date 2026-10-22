@@ -26,10 +26,14 @@ export const createMessageActivity = (actor = {}) => ({
   status: 'pending',
   priority: 'normal',
   assigneeIds: [],
+  dueDate: '',
   checklist: [],
   createdAt: Date.now(),
   createdBy: actor.id || '',
   createdByName: actor.name || '',
+  updatedAt: Date.now(),
+  updatedBy: actor.id || '',
+  updatedByName: actor.name || '',
   resolvedAt: null,
   resolvedBy: '',
 });
@@ -38,6 +42,7 @@ export const normalizeMessageActivity = activity => activity && typeof activity 
   status: ['pending', 'in_progress', 'resolved'].includes(activity.status) ? activity.status : 'pending',
   priority: ['low', 'normal', 'high', 'urgent'].includes(activity.priority) ? activity.priority : 'normal',
   assigneeIds: normalizeMessageFeatureList(activity.assigneeIds),
+  dueDate: /^\d{4}-\d{2}-\d{2}$/.test(String(activity.dueDate || '')) ? String(activity.dueDate) : '',
   checklist: Array.isArray(activity.checklist) ? activity.checklist.map(item => ({
     id: String(item?.id || ''),
     text: String(item?.text || '').slice(0, 180),
@@ -46,6 +51,22 @@ export const normalizeMessageActivity = activity => activity && typeof activity 
   createdAt: Number(activity.createdAt || 0),
   createdBy: String(activity.createdBy || ''),
   createdByName: String(activity.createdByName || ''),
+  updatedAt: Number(activity.updatedAt || activity.createdAt || 0),
+  updatedBy: String(activity.updatedBy || ''),
+  updatedByName: String(activity.updatedByName || ''),
   resolvedAt: Number(activity.resolvedAt || 0) || null,
   resolvedBy: String(activity.resolvedBy || ''),
 }) : null;
+
+export const messageActivityProgress = activity => {
+  const normalized = normalizeMessageActivity(activity);
+  if (!normalized) return 0;
+  if (normalized.status === 'resolved') return 100;
+  if (!normalized.checklist.length) return normalized.status === 'in_progress' ? 25 : 0;
+  return Math.round((normalized.checklist.filter(item => item.completed).length / normalized.checklist.length) * 100);
+};
+
+export const isMessageActivityOverdue = (activity, today) => {
+  const normalized = normalizeMessageActivity(activity);
+  return Boolean(normalized && normalized.status !== 'resolved' && normalized.dueDate && normalized.dueDate < today);
+};
