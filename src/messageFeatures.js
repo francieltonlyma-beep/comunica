@@ -70,3 +70,12 @@ export const isMessageActivityOverdue = (activity, today) => {
   const normalized = normalizeMessageActivity(activity);
   return Boolean(normalized && normalized.status !== 'resolved' && normalized.dueDate && normalized.dueDate < today);
 };
+
+export const messageActivitySchedule = (activity, today) => {
+  const normalized = normalizeMessageActivity(activity);
+  if (!normalized || normalized.status === 'resolved') return 'resolved';
+  if (!normalized.dueDate) return 'no_due';
+  if (normalized.dueDate < today) return 'overdue';
+  if (normalized.dueDate === today) return 'today';
+  return 'upcoming';
+};

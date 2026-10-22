@@ -13,9 +13,12 @@ test('inbox exposes reply, reactions, saved messages and activity checklist', ()
 });
 
 test('conversation activities are synchronized with the service center', () => {
-  for (const feature of ['serviceWorkspace', 'serviceActivityRows', 'filteredServiceActivities', 'serviceActivityMetrics', 'openActivityConversation']) assert.match(app, new RegExp(feature));
+  for (const feature of ['serviceWorkspace', 'serviceActivityRows', 'filteredServiceActivities', 'serviceActivityMetrics', 'serviceActivityPeriodFilter', 'openActivityConversation']) assert.match(app, new RegExp(feature));
   assert.match(app, /Sincronizada com a Central de Serviços/);
   assert.match(app, /Atividades das conversas/);
+  assert.match(app, /Hoje/);
+  assert.match(app, /Próximas/);
+  assert.match(app, /Vencidas/);
   assert.match(app, /data-message-id=\{msg\.id\}/);
   assert.doesNotMatch(app, /collection\(['"]activities['"]\)/);
 });

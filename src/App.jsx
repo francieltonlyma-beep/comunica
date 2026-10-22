@@ -13,7 +13,7 @@ import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule,
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
 import PlatformUpdates from './PlatformUpdates.jsx';
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
-import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
+import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
 import { createPortal } from 'react-dom';
 import { 
@@ -866,7 +866,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     const params = new URLSearchParams(window.location.search);
     const companyId = params.get('messageCompany');
     const threadId = params.get('messageThread');
-    return companyId && threadId ? {companyId, threadId} : null;
+    const messageId = params.get('messageId');
+    return companyId && threadId ? {companyId, threadId, messageId} : null;
   });
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [newParticipantId, setNewParticipantId] = useState('');
@@ -882,6 +883,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [serviceActivityStatusFilter, setServiceActivityStatusFilter] = useState('active');
   const [serviceActivityPriorityFilter, setServiceActivityPriorityFilter] = useState('all');
   const [serviceActivityAssigneeFilter, setServiceActivityAssigneeFilter] = useState('all');
+  const [serviceActivityPeriodFilter, setServiceActivityPeriodFilter] = useState('all');
   const [isCreatingServiceRequest, setIsCreatingServiceRequest] = useState(false);
   const [serviceCatalogSettings, setServiceCatalogSettings] = useState(() => sanitizeServiceCatalogSettings({}));
   const [serviceSettingsDraft, setServiceSettingsDraft] = useState(() => sanitizeServiceCatalogSettings({}));
@@ -1372,18 +1374,19 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             // No Android, a própria mensagem FCM já é exibida pelo sistema.
             // Não criamos uma segunda notificação dentro do aplicativo.
             const eventId = notification?.data?.eventId;
-            if (shouldDisplayPush(eventId) && notification?.data?.type === 'message_deadline') {
-              sendNativeNotification(notification.title || 'Prazo de conversa', notification.body || 'Uma conversa exige sua atenção.');
+            if (shouldDisplayPush(eventId) && ['message_deadline', 'activity_deadline'].includes(notification?.data?.type)) {
+              sendNativeNotification(notification.title || 'Prazo no Comunica', notification.body || 'Uma atividade exige sua atenção.');
             }
           }),
           FirebaseMessaging.addListener('notificationActionPerformed', ({ notification }) => {
             const type = notification?.data?.type;
             if (type === 'announcement') setActiveTab('announcements');
             if (type === 'sector_post') setActiveTab('sectors');
-            if (type === 'message' || type === 'message_deadline') {
+            if (['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'].includes(type)) {
               setPendingMessageNavigation({
                 companyId: notification?.data?.companyId,
                 threadId: notification?.data?.threadId,
+                messageId: notification?.data?.messageId,
               });
             }
           }),
@@ -1413,15 +1416,15 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             const eventId = payload.data?.eventId || payload.messageId;
             if (shouldDisplayPush(eventId)) {
               triggerNotification(payload.notification?.title || 'Você recebeu uma nova notificação.', "success");
-              if (payload.data?.type === 'message_deadline' && 'Notification' in window && Notification.permission === 'granted') {
-                const desktopNotification = new Notification(payload.notification?.title || 'Prazo de conversa', {
-                  body: payload.notification?.body || 'Uma conversa exige sua atenção.',
+              if (['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'].includes(payload.data?.type) && 'Notification' in window && Notification.permission === 'granted') {
+                const desktopNotification = new Notification(payload.notification?.title || 'Atualização no Comunica', {
+                  body: payload.notification?.body || 'Uma atividade exige sua atenção.',
                   icon: '/pwa/icon-192.png',
-                  tag: eventId || `comunica-deadline-${payload.data?.threadId || 'conversation'}`,
+                  tag: eventId || `comunica-activity-${payload.data?.messageId || payload.data?.threadId || 'update'}`,
                 });
                 desktopNotification.onclick = () => {
                   window.focus();
-                  setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId});
+                  setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId});
                   desktopNotification.close();
                 };
               }
@@ -1444,7 +1447,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     if (!navigator.serviceWorker) return;
     const onWorkerMessage = event => {
       if (event.data?.type === 'comunica-open-message') {
-        setPendingMessageNavigation({companyId: event.data.companyId, threadId: event.data.threadId});
+        setPendingMessageNavigation({companyId: event.data.companyId, threadId: event.data.threadId, messageId: event.data.messageId});
       }
     };
     navigator.serviceWorker.addEventListener('message', onWorkerMessage);
@@ -1453,7 +1456,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   useEffect(() => {
     if (!pendingMessageNavigation || !dbUser || !currentUser) return;
-    const {companyId, threadId} = pendingMessageNavigation;
+    const {companyId, threadId, messageId} = pendingMessageNavigation;
     if (!/^[a-zA-Z0-9_-]+$/.test(companyId || '') || !/^[a-zA-Z0-9_-]+$/.test(threadId || '')) {
       setPendingMessageNavigation(null);
       return;
@@ -1466,6 +1469,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         setActiveCompany({id: companySnapshot.id, ...companySnapshot.data()});
         setIsComposingMsg(false);
         setActiveThreadId(threadId);
+        setActivityMessageTargetId(messageId || '');
+        if (messageId) setMessageFocusFilter('activities');
         setShowMessagesModal(true);
       } catch (error) {
         console.error('Não foi possível abrir a conversa da notificação', error);
@@ -1475,6 +1480,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           const url = new URL(window.location.href);
           url.searchParams.delete('messageCompany');
           url.searchParams.delete('messageThread');
+          url.searchParams.delete('messageId');
           window.history.replaceState(window.history.state, '', url);
         }
       }
@@ -5878,6 +5884,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (!activity || !message.threadId) return null;
     const metadata = getThreadMetadata(message.threadId);
     const status = isMessageActivityOverdue(activity, todayStr) ? 'overdue' : activity.status;
+    const schedule = messageActivitySchedule(activity, todayStr);
     const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user.id === userId)).filter(Boolean);
     const checklistCompleted = activity.checklist.filter(item => item.completed).length;
     return {
@@ -5890,6 +5897,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       participantIds: message.participants || [],
       activity,
       status,
+      schedule,
       assignees,
       progress: messageActivityProgress(activity),
       checklistCompleted,
@@ -5914,17 +5922,21 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       || (serviceActivityAssigneeFilter === 'mine' && row.activity.assigneeIds.includes(currentUser.id))
       || (serviceActivityAssigneeFilter === 'unassigned' && !row.activity.assigneeIds.length)
       || row.activity.assigneeIds.includes(serviceActivityAssigneeFilter);
-    return matchesText && matchesStatus && matchesPriority && matchesAssignee;
+    const matchesPeriod = serviceActivityPeriodFilter === 'all' || row.schedule === serviceActivityPeriodFilter;
+    return matchesText && matchesStatus && matchesPriority && matchesAssignee && matchesPeriod;
   });
   const serviceActivityMetrics = serviceActivityRows.reduce((totals, row) => {
     totals.total += 1;
     if (row.status !== 'resolved') totals.active += 1;
     if (row.status === 'overdue') totals.overdue += 1;
     if (row.status === 'resolved') totals.resolved += 1;
+    if (row.schedule === 'today') totals.today += 1;
+    if (row.schedule === 'upcoming') totals.upcoming += 1;
+    if (row.schedule === 'no_due') totals.noDue += 1;
     if (row.activity.assigneeIds.includes(currentUser.id) && row.status !== 'resolved') totals.mine += 1;
     if (!row.activity.assigneeIds.length && row.status !== 'resolved') totals.unassigned += 1;
     return totals;
-  }, { total: 0, active: 0, overdue: 0, resolved: 0, mine: 0, unassigned: 0 });
+  }, { total: 0, active: 0, overdue: 0, resolved: 0, mine: 0, unassigned: 0, today: 0, upcoming: 0, noDue: 0 });
   const serviceRequestRows = Object.values(normMessages.reduce((threads, message) => {
     if (!message.threadId) return threads;
     if (!threads[message.threadId]) threads[message.threadId] = { id: message.threadId, messages: [] };
@@ -6080,7 +6092,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: `${pendingPollResponses} votação(ões) disponíveis`, tone: 'cyan', icon: Activity, action: () => { setPollViewFilter('Ativas'); setActiveTab('polls'); } } : null,
     dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setShowMessagesModal(true) } : null,
     serviceMetrics.overdue > 0 ? { id: 'overdue-services', label: 'Serviços em atraso', detail: `${serviceMetrics.overdue} chamado(s) fora do prazo`, tone: 'rose', icon: CheckCircle2, action: () => { setServiceWorkspace('requests'); setServiceStatusFilter('overdue'); setActiveTab('services'); } } : null,
-    serviceActivityMetrics.overdue > 0 ? { id: 'overdue-activities', label: 'Atividades em atraso', detail: `${serviceActivityMetrics.overdue} atividade(s) com prazo ultrapassado`, tone: 'rose', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('overdue'); setServiceActivityAssigneeFilter('all'); setActiveTab('services'); } } : null,
+    serviceActivityMetrics.today > 0 ? { id: 'today-activities', label: 'Atividades para hoje', detail: `${serviceActivityMetrics.today} atividade(s) vencem hoje`, tone: 'amber', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('today'); setActiveTab('services'); } } : null,
+    serviceActivityMetrics.overdue > 0 ? { id: 'overdue-activities', label: 'Atividades em atraso', detail: `${serviceActivityMetrics.overdue} atividade(s) com prazo ultrapassado`, tone: 'rose', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('overdue'); setActiveTab('services'); } } : null,
     (currentUser?.isAdmin || currentUser?.isDeveloper) && serviceMetrics.unassigned > 0 ? { id: 'unassigned-services', label: 'Chamados sem responsável', detail: `${serviceMetrics.unassigned} solicitação(ões) precisam de atribuição`, tone: 'violet', icon: UserPlus, action: () => { setServiceWorkspace('requests'); setServiceAssigneeFilter('unassigned'); setServiceStatusFilter('active'); setActiveTab('services'); } } : null,
     canOpenModule('careers') && careerPendingCandidateUpdates > 0 ? { id: 'candidate-updates', label: 'Currículos atualizados', detail: `${careerPendingCandidateUpdates} candidatura(s) precisam de nova análise`, tone: 'fuchsia', icon: Briefcase, action: () => setActiveTab('careers') } : null,
   ].filter(Boolean);
@@ -6094,7 +6107,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   };
   const dashboardQuickActions = [
     canOpenModule('services') && activeServiceCatalog.length ? { id: 'new-service', label: 'Abrir solicitação', detail: 'Novo chamado interno', icon: Plus, action: () => openServiceRequestForm(activeServiceCatalog[0].id) } : null,
-    canOpenModule('services') && serviceActivityMetrics.active ? { id: 'activities', label: 'Atividades pendentes', detail: `${serviceActivityMetrics.active} atividade(s) pendente(s)`, icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setActiveTab('services'); } } : null,
+    canOpenModule('services') && serviceActivityMetrics.active ? { id: 'activities', label: 'Atividades pendentes', detail: `${serviceActivityMetrics.active} atividade(s) pendente(s)`, icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityPeriodFilter('all'); setActiveTab('services'); } } : null,
     { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setShowMessagesModal(true) },
     canOpenModule('documents') ? { id: 'documents', label: 'Documentos', detail: pendingDocumentReads ? `${pendingDocumentReads} leitura(s) pendente(s)` : 'Consultar arquivos', icon: FileText, action: () => setActiveTab('documents') } : null,
     canOpenModule('scale') ? { id: 'calendar', label: 'Calendário', detail: `${dashboardUpcomingEvents.length} evento(s) futuro(s)`, icon: Calendar, action: () => setActiveTab('scale') } : null,
@@ -7032,7 +7045,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     const active = metric.id === 'mine'
                       ? serviceActivityAssigneeFilter === 'mine' && serviceActivityStatusFilter === 'active'
                       : serviceActivityStatusFilter === metric.id && serviceActivityAssigneeFilter === 'all';
-                    return <button key={metric.id} type="button" aria-pressed={active} onClick={() => { setServiceActivityStatusFilter(metric.id === 'mine' ? 'active' : metric.id); setServiceActivityAssigneeFilter(metric.id === 'mine' ? 'mine' : 'all'); }} className={`rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md ${active ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className={`mt-1 block text-2xl font-black ${metric.color}`}>{metric.value}</strong><span className="mt-1 block text-[9px] font-semibold text-slate-400">Clique para filtrar</span></button>;
+                    return <button key={metric.id} type="button" aria-pressed={active} onClick={() => { setServiceActivityStatusFilter(metric.id === 'mine' ? 'active' : metric.id); setServiceActivityAssigneeFilter(metric.id === 'mine' ? 'mine' : 'all'); setServiceActivityPeriodFilter('all'); }} className={`rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md ${active ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className={`mt-1 block text-2xl font-black ${metric.color}`}>{metric.value}</strong><span className="mt-1 block text-[9px] font-semibold text-slate-400">Clique para filtrar</span></button>;
                   })}
                 </section>
 
@@ -7041,11 +7054,20 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-600">Sincronização automática</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Atividades das conversas</h4><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Ao marcar uma mensagem como atividade, ela aparece aqui automaticamente. Status, prazo, responsável e checklist são os mesmos nos dois lugares.</p></div>
                     <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[620px] lg:grid-cols-4">
                       <div className="relative sm:col-span-2 lg:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={serviceActivitySearch} onChange={event => setServiceActivitySearch(event.target.value)} placeholder="Buscar atividade" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs outline-none focus:border-violet-300" /></div>
-                      <select value={serviceActivityStatusFilter} onChange={event => setServiceActivityStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="active">Pendentes</option><option value="all">Todos os status</option><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="overdue">Em atraso</option><option value="resolved">Resolvida</option></select>
+                      <select value={serviceActivityStatusFilter} onChange={event => { setServiceActivityStatusFilter(event.target.value); setServiceActivityPeriodFilter('all'); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="active">Pendentes</option><option value="all">Todos os status</option><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="overdue">Em atraso</option><option value="resolved">Resolvida</option></select>
                       <select value={serviceActivityPriorityFilter} onChange={event => setServiceActivityPriorityFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todas as prioridades</option>{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
                       <select value={serviceActivityAssigneeFilter} onChange={event => setServiceActivityAssigneeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todos os responsáveis</option><option value="mine">Atribuídas a mim</option><option value="unassigned">Sem responsável</option>{employeesList.filter(user => serviceActivityRows.some(row => row.activity.assigneeIds.includes(user.id))).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select>
                     </div>
                   </div>
+                </section>
+
+                <section data-tour="activity-routine" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    { id: 'today', label: 'Hoje', value: serviceActivityMetrics.today, detail: 'vence hoje', tone: 'border-amber-200 bg-amber-50 text-amber-900' },
+                    { id: 'upcoming', label: 'Próximas', value: serviceActivityMetrics.upcoming, detail: 'com prazo futuro', tone: 'border-blue-200 bg-blue-50 text-blue-900' },
+                    { id: 'overdue', label: 'Vencidas', value: serviceActivityMetrics.overdue, detail: 'exigem atenção', tone: 'border-rose-200 bg-rose-50 text-rose-900' },
+                    { id: 'no_due', label: 'Sem prazo', value: serviceActivityMetrics.noDue, detail: 'aguardam definição', tone: 'border-slate-200 bg-slate-50 text-slate-800' },
+                  ].map(period => <button key={period.id} type="button" aria-pressed={serviceActivityPeriodFilter === period.id} onClick={() => { setServiceActivityPeriodFilter(previous => previous === period.id ? 'all' : period.id); setServiceActivityStatusFilter('active'); }} className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${period.tone} ${serviceActivityPeriodFilter === period.id ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span><strong className="block text-xs">{period.label}</strong><span className="mt-0.5 block text-[9px] opacity-70">{period.detail}</span></span><strong className="text-xl font-black">{period.value}</strong></button>)}
                 </section>
 
                 <section className="grid gap-4 xl:grid-cols-2">
@@ -7054,7 +7076,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     const assigneeCandidates = employeesList.filter(user => row.participantIds.includes(user.id));
                     return <article key={row.id} className={`rounded-[1.5rem] border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${row.status === 'overdue' ? 'border-rose-200' : 'border-slate-200'}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span><span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-600">Prioridade {MESSAGE_ACTIVITY_PRIORITY_LABELS[activity.priority].toLowerCase()}</span>{row.checklistTotal > 0 && <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal} itens</span>}</div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{row.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{row.preview}</p><span className="mt-2 block text-[9px] font-semibold text-slate-400">Mensagem de {row.authorName} · atividade criada por {activity.createdByName || 'participante'}</span></div>
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span>{row.schedule === 'today' && <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-bold text-amber-800">Vence hoje</span>}{row.schedule === 'upcoming' && <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">Prazo {formatDueDate(activity.dueDate)}</span>}<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-600">Prioridade {MESSAGE_ACTIVITY_PRIORITY_LABELS[activity.priority].toLowerCase()}</span>{row.checklistTotal > 0 && <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal} itens</span>}</div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{row.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{row.preview}</p><span className="mt-2 block text-[9px] font-semibold text-slate-400">Mensagem de {row.authorName} · atividade criada por {activity.createdByName || 'participante'}</span></div>
                         <button type="button" onClick={() => openActivityConversation(row.message)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir conversa</button>
                       </div>
 

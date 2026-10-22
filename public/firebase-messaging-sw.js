@@ -51,7 +51,7 @@ firebase.initializeApp({
 // Handle message clicks before the Firebase SDK consumes the click event.
 self.addEventListener('notificationclick', (event) => {
   const data = event.notification?.data?.FCM_MSG?.data;
-  if (!['message', 'message_deadline'].includes(data?.type)) return;
+  if (!['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'].includes(data?.type)) return;
   event.stopImmediatePropagation();
   event.notification.close();
   event.waitUntil((async () => {
@@ -59,11 +59,12 @@ self.addEventListener('notificationclick', (event) => {
     const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
     if (existing) {
       await existing.focus();
-      existing.postMessage({type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId});
+      existing.postMessage({type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId, messageId: data.messageId});
     } else {
       const url = new URL('/', self.location.origin);
       url.searchParams.set('messageCompany', data.companyId || '');
       url.searchParams.set('messageThread', data.threadId || '');
+      if (data.messageId) url.searchParams.set('messageId', data.messageId);
       await clients.openWindow(url.href);
     }
   })());
