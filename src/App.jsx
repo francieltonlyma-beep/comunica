@@ -531,11 +531,50 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     if (storage && isFirebaseFile) {
       const fileRef = ref(storage, file.storagePath || fileUrl);
       const isMobileBrowser = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      // Abre a aba ainda durante o gesto do usuário. Em navegadores móveis e
-      // PWAs, uma nova janela criada somente depois do download assíncrono pode
-      // ser bloqueada silenciosamente.
+      const isNativeContainer = Boolean(window.cordova || window.Capacitor);
       const expectsInlinePreview = /\.pdf(?:$|[?#])/i.test(fileName) || file.type === 'application/pdf';
-      if (expectsInlinePreview && !isMobileBrowser) {
+
+      // Mantenha a Caixa de Entrada carregada. Em celulares, abra a URL HTTPS
+      // autenticada fora da janela atual; navegar com location.assign desmontava
+      // o app e fazia as conversas parecerem ter desaparecido ao retornar.
+      if (isMobileBrowser) {
+        if (!isNativeContainer) {
+          previewWindow = window.open('about:blank', '_blank');
+          if (previewWindow) {
+            previewWindow.opener = null;
+            try {
+              previewWindow.document.title = 'Abrindo arquivo';
+              previewWindow.document.body.style.cssText = 'margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f8fafc;color:#334155';
+              previewWindow.document.body.textContent = 'Carregando arquivo…';
+            } catch {
+              // Alguns navegadores não permitem personalizar a aba intermediária.
+            }
+          }
+        }
+
+        const authenticatedUrl = await getDownloadURL(fileRef);
+        if (isNativeContainer) {
+          window.open(authenticatedUrl, '_system');
+          return;
+        }
+        if (previewWindow) {
+          previewWindow.location.replace(authenticatedUrl);
+          return;
+        }
+
+        // Fallback para navegadores que bloquearam a aba criada no gesto inicial.
+        const mobileLink = document.createElement('a');
+        mobileLink.href = authenticatedUrl;
+        mobileLink.target = '_blank';
+        mobileLink.rel = 'noopener noreferrer';
+        mobileLink.download = fileName;
+        document.body.appendChild(mobileLink);
+        mobileLink.click();
+        document.body.removeChild(mobileLink);
+        return;
+      }
+
+      if (expectsInlinePreview) {
         previewWindow = window.open('about:blank', '_blank');
         if (previewWindow) {
           previewWindow.opener = null;
@@ -544,18 +583,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
             previewWindow.document.body.style.cssText = 'margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f8fafc;color:#334155';
             previewWindow.document.body.textContent = 'Carregando arquivo…';
           } catch {
-            // Alguns WebViews não permitem personalizar a aba intermediária.
+            // Alguns navegadores não permitem personalizar a aba intermediária.
           }
         }
-      }
-
-      // No Android/iOS, uma aba about:blank pode virar um Custom Tab separado e
-      // não consegue acessar a URL blob criada pelo PWA. Obtemos uma URL atual
-      // com o SDK autenticado e navegamos na própria janela, sem popup.
-      if (expectsInlinePreview && isMobileBrowser) {
-        const authenticatedUrl = await getDownloadURL(fileRef);
-        window.location.assign(authenticatedUrl);
-        return;
       }
 
       const blob = await getBlob(fileRef);
@@ -571,14 +601,6 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
       if (previewWindow) {
         previewWindow.close();
         previewWindow = null;
-      }
-
-      // Em WebViews/PWAs móveis que bloqueiam a aba intermediária, navega na
-      // própria janela. O botão Voltar retorna ao Comunica.
-      if (canPreviewInline && isMobileBrowser) {
-        window.location.assign(objectUrl);
-        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
-        return;
       }
 
       const link = document.createElement('a');

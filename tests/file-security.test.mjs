@@ -30,10 +30,13 @@ test('restricted files are downloaded through authenticated storage reads', () =
   assert.match(appSource, /handleDownload\(msg\.attachment, msg\.attachment\.name\)/);
 });
 
-test('mobile PDF previews avoid cross-context blob URLs', () => {
-  assert.match(appSource, /expectsInlinePreview && !isMobileBrowser/);
+test('mobile Firebase files open outside the inbox without replacing the app', () => {
+  assert.match(appSource, /const isNativeContainer = Boolean\(window\.cordova \|\| window\.Capacitor\)/);
   assert.match(appSource, /const authenticatedUrl = await getDownloadURL\(fileRef\)/);
-  assert.match(appSource, /window\.location\.assign\(authenticatedUrl\)/);
+  assert.match(appSource, /previewWindow = window\.open\('about:blank', '_blank'\)/);
+  assert.match(appSource, /previewWindow\.location\.replace\(authenticatedUrl\)/);
+  assert.match(appSource, /window\.open\(authenticatedUrl, '_system'\)/);
+  assert.doesNotMatch(appSource, /window\.location\.assign\(authenticatedUrl\)/);
 });
 
 test('document deletion also removes its physical object', () => {
