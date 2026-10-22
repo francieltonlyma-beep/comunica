@@ -44,12 +44,12 @@ test('file access has a timeout and closes the temporary preview on errors', () 
   assert.match(appSource, /Tempo esgotado ao preparar o arquivo/);
   assert.match(appSource, /if \(previewWindow && !previewWindow\.closed\) previewWindow\.close\(\)/);
 });
-test('legacy Firebase attachment links remain downloadable', () => {
-  assert.match(appSource, /const isLegacyTokenUrl = !file\.storagePath/);
-  assert.match(appSource, /legacyLink\.href = fileUrl/);
-  assert.match(appSource, /legacyLink\.click\(\)/);
+test('Firebase download URLs open directly during the original click', () => {
+  assert.match(appSource, /const hasDirectFirebaseUrl = \/\^https:/);
+  assert.match(appSource, /const directWindow = window\.open\(fileUrl, '_blank'\)/);
+  assert.match(appSource, /directLink\.href = fileUrl/);
+  assert.doesNotMatch(appSource, /const isLegacyTokenUrl/);
 });
-
 test('document deletion also removes its physical object', () => {
   assert.match(appSource, /deleteStoredFile\(documentItem\?\.file\)/);
   assert.match(functionsSource, /export const cleanupDeletedDocumentFile = onDocumentDeleted/);

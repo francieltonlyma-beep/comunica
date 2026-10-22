@@ -554,27 +554,30 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
         || normalizedType.startsWith('image/')
         || /\.(?:pdf|png|jpe?g|gif|webp|bmp|svg|avif)(?:$|[?#])/i.test(fileName);
 
-      const isLegacyTokenUrl = !file.storagePath
+      const hasDirectFirebaseUrl = /^https:\/\//i.test(fileUrl)
         && /firebasestorage\.googleapis\.com|storage\.googleapis\.com/i.test(fileUrl)
         && /[?&]token=/.test(fileUrl);
 
-      // Anexos criados antes da adoção de storagePath não possuem os metadados
-      // usados pelas regras atuais. A própria URL antiga já contém o token
-      // individual do objeto; abrimos essa URL diretamente durante o clique para
-      // manter esses arquivos acessíveis sem enfraquecer a regra dos novos anexos.
-      if (isLegacyTokenUrl) {
+      // O upload já salva uma URL individual autorizada no registro da mensagem.
+      // Abra-a durante o clique original: navegadores podem impedir que uma aba
+      // about:blank seja redirecionada depois de uma operação assíncrona.
+      if (hasDirectFirebaseUrl) {
         if (isNativeContainer) {
           window.open(fileUrl, '_system');
           return;
         }
-        const legacyLink = document.createElement('a');
-        legacyLink.href = fileUrl;
-        legacyLink.target = '_blank';
-        legacyLink.rel = 'noopener noreferrer';
-        legacyLink.download = fileName;
-        document.body.appendChild(legacyLink);
-        legacyLink.click();
-        document.body.removeChild(legacyLink);
+        const directWindow = window.open(fileUrl, '_blank');
+        if (directWindow) {
+          directWindow.opener = null;
+          return;
+        }
+        const directLink = document.createElement('a');
+        directLink.href = fileUrl;
+        directLink.target = '_blank';
+        directLink.rel = 'noopener noreferrer';
+        document.body.appendChild(directLink);
+        directLink.click();
+        document.body.removeChild(directLink);
         return;
       }
 
