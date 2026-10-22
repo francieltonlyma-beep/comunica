@@ -13,7 +13,7 @@ import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule,
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
 import PlatformUpdates from './PlatformUpdates.jsx';
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
-import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
+import { activityProductivityMetrics, activityRecurrenceLabel, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
 import { createPortal } from 'react-dom';
 import { 
@@ -75,7 +75,7 @@ const ACCESS_MODULES = [
   { id: 'whistleblowing', label: 'Central de Denúncias' },
   { id: 'updates', label: 'Novidades do Comunica' },
 ];
-const fullAccessProfile = () => ({ tabs: Object.fromEntries(ACCESS_MODULES.map(item => [item.id, item.id !== 'whistleblowing'])), canEdit: true, canManageCalendar: true, canManageScheduleRules: true, canPublishAbsenceForOthers: false, canViewEngagement: false });
+const fullAccessProfile = () => ({ tabs: Object.fromEntries(ACCESS_MODULES.map(item => [item.id, item.id !== 'whistleblowing'])), canEdit: true, canManageCalendar: true, canManageScheduleRules: true, canManageActivities: true, canManageActivityTemplates: true, canViewActivityInsights: true, canPublishAbsenceForOthers: false, canViewEngagement: false });
 const DEFAULT_AUTOMATIC_SCHEDULE_RULES = {
   name: 'Regra padrão da empresa',
   workDaysPerWeek: 5,
@@ -124,6 +124,9 @@ const sanitizeAutomaticScheduleRules = (value = {}) => ({
 const normalizeAccessProfile = (profile = {}) => ({
   ...fullAccessProfile(),
   ...profile,
+  canManageActivities: profile.canEdit === false ? false : profile.canManageActivities !== false,
+  canManageActivityTemplates: profile.canManageActivityTemplates === true,
+  canViewActivityInsights: profile.canViewActivityInsights === true,
   canManageScheduleRules: profile.canManageCalendar === false ? false : profile.canManageScheduleRules !== false,
   canPublishAbsenceForOthers: profile.canPublishAbsenceForOthers === true,
   tabs: { ...fullAccessProfile().tabs, ...(profile.tabs || {}) },
@@ -715,6 +718,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [sectorPosts, setSectorPosts] = useState(() => getLocalStorageItem('comunica_sector_posts', INITIAL_SECTOR_POSTS));
   const [productivityLogs, setProductivityLogs] = useState(() => getLocalStorageItem('comunica_productivity', INITIAL_PRODUCTIVITY));
   const [privateMessages, setPrivateMessages] = useState(() => getLocalStorageItem('comunica_messages', INITIAL_MESSAGES));
+  const [standaloneActivities, setStandaloneActivities] = useState([]);
+  const [activityTemplates, setActivityTemplates] = useState([]);
   const [presenceList, setPresenceList] = useState(() => getLocalStorageItem('comunica_presence', INITIAL_PRESENCE));
   const [calendarEvents, setCalendarEvents] = useState(() => getLocalStorageItem('comunica_calendar_events', INITIAL_CALENDAR_EVENTS));
   const [absences, setAbsences] = useState(() => getLocalStorageItem('comunica_absences', INITIAL_ABSENCES));
@@ -867,6 +872,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     const companyId = params.get('messageCompany');
     const threadId = params.get('messageThread');
     const messageId = params.get('messageId');
+    const activityCompany = params.get('activityCompany');
+    const activityId = params.get('activityId');
+    if (activityCompany && activityId) return {companyId: activityCompany, activityId};
     return companyId && threadId ? {companyId, threadId, messageId} : null;
   });
   const [showAddParticipant, setShowAddParticipant] = useState(false);
@@ -884,6 +892,11 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [serviceActivityPriorityFilter, setServiceActivityPriorityFilter] = useState('all');
   const [serviceActivityAssigneeFilter, setServiceActivityAssigneeFilter] = useState('all');
   const [serviceActivityPeriodFilter, setServiceActivityPeriodFilter] = useState('all');
+  const [standaloneActivityFormOpen, setStandaloneActivityFormOpen] = useState(false);
+  const [standaloneActivityDraft, setStandaloneActivityDraft] = useState({ title: '', description: '', priority: 'normal', dueDate: '', assigneeId: '', recurrence: 'none', templateId: '', checklistText: '' });
+  const [activityTemplateDraft, setActivityTemplateDraft] = useState({ name: '', description: '', priority: 'normal', checklistText: '' });
+  const [activityTemplatesOpen, setActivityTemplatesOpen] = useState(false);
+  const [isSavingStandaloneActivity, setIsSavingStandaloneActivity] = useState(false);
   const [isCreatingServiceRequest, setIsCreatingServiceRequest] = useState(false);
   const [serviceCatalogSettings, setServiceCatalogSettings] = useState(() => sanitizeServiceCatalogSettings({}));
   const [serviceSettingsDraft, setServiceSettingsDraft] = useState(() => sanitizeServiceCatalogSettings({}));
@@ -1387,6 +1400,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 companyId: notification?.data?.companyId,
                 threadId: notification?.data?.threadId,
                 messageId: notification?.data?.messageId,
+                activityId: notification?.data?.threadId ? '' : notification?.data?.messageId,
               });
             }
           }),
@@ -1424,7 +1438,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 });
                 desktopNotification.onclick = () => {
                   window.focus();
-                  setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId});
+                  setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId, activityId: payload.data?.threadId ? '' : payload.data?.messageId});
                   desktopNotification.close();
                 };
               }
@@ -1449,6 +1463,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       if (event.data?.type === 'comunica-open-message') {
         setPendingMessageNavigation({companyId: event.data.companyId, threadId: event.data.threadId, messageId: event.data.messageId});
       }
+      if (event.data?.type === 'comunica-open-activity') {
+        setPendingMessageNavigation({companyId: event.data.companyId, activityId: event.data.activityId});
+      }
     };
     navigator.serviceWorker.addEventListener('message', onWorkerMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onWorkerMessage);
@@ -1456,8 +1473,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   useEffect(() => {
     if (!pendingMessageNavigation || !dbUser || !currentUser) return;
-    const {companyId, threadId, messageId} = pendingMessageNavigation;
-    if (!/^[a-zA-Z0-9_-]+$/.test(companyId || '') || !/^[a-zA-Z0-9_-]+$/.test(threadId || '')) {
+    const {companyId, threadId, messageId, activityId} = pendingMessageNavigation;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId || '') || (!activityId && !/^[a-zA-Z0-9_-]+$/.test(threadId || ''))) {
       setPendingMessageNavigation(null);
       return;
     }
@@ -1467,6 +1484,15 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         const companySnapshot = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId));
         if (!companySnapshot.exists() || cancelled) return;
         setActiveCompany({id: companySnapshot.id, ...companySnapshot.data()});
+        if (activityId) {
+          setShowMessagesModal(false);
+          setActiveThreadId(null);
+          setServiceWorkspace('activities');
+          setServiceActivityStatusFilter('all');
+          setServiceActivityPeriodFilter('all');
+          setActiveTab('services');
+          return;
+        }
         setIsComposingMsg(false);
         setActiveThreadId(threadId);
         setActivityMessageTargetId(messageId || '');
@@ -1481,6 +1507,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           url.searchParams.delete('messageCompany');
           url.searchParams.delete('messageThread');
           url.searchParams.delete('messageId');
+          url.searchParams.delete('activityCompany');
+          url.searchParams.delete('activityId');
           window.history.replaceState(window.history.state, '', url);
         }
       }
@@ -1745,6 +1773,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     const unsubPosts = setupSync('posts', INITIAL_SECTOR_POSTS, setSectorPosts, 'comunica_sector_posts');
     const unsubProd = setupSync('productivity', INITIAL_PRODUCTIVITY, setProductivityLogs, 'comunica_productivity');
     const unsubMessages = setupSync('messages', INITIAL_MESSAGES, setPrivateMessages, 'comunica_messages');
+    const unsubActivities = setupSync('activities', [], setStandaloneActivities, 'comunica_activities');
+    const unsubActivityTemplates = setupSync('activityTemplates', [], setActivityTemplates, 'comunica_activity_templates');
     const unsubEvents = setupSync('events', INITIAL_CALENDAR_EVENTS, setCalendarEvents, 'comunica_calendar_events');
     const unsubAbsences = setupSync('absences', INITIAL_ABSENCES, setAbsences, 'comunica_absences');
     const unsubSchedules = setupSync('schedules', [], setWorkSchedules, 'comunica_work_schedules');
@@ -1762,6 +1792,8 @@ setDbLoading(false);
       unsubPosts();
       unsubProd();
       unsubMessages();
+      unsubActivities();
+      unsubActivityTemplates();
       unsubEvents();
       unsubAbsences();
       unsubSchedules();
@@ -2052,11 +2084,19 @@ const getStatusEmTempoReal = (colaborador) => {
   };
 
   const saveDoc = async (colName, docId, data) => {
-    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles'];
+    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles', 'activities', 'activityTemplates'];
     const accessUser = typeof currentUser === 'undefined' ? null : currentUser;
     const accessProfile = typeof effectiveAccessProfile === 'undefined' ? { canEdit: true, canManageCalendar: true } : effectiveAccessProfile;
     if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && controlledCollections.includes(colName) && accessProfile.canEdit === false) {
       triggerNotification('Seu perfil possui acesso apenas para consulta nesta área.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && colName === 'activities' && accessProfile.canManageActivities === false) {
+      triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && colName === 'activityTemplates' && accessProfile.canManageActivityTemplates !== true) {
+      triggerNotification('Seu perfil não possui permissão para administrar modelos de checklist.', 'error');
       return false;
     }
     if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && ['events', 'absences', 'presence', 'schedules'].includes(colName) && accessProfile.canManageCalendar === false) {
@@ -2117,11 +2157,19 @@ const getStatusEmTempoReal = (colaborador) => {
   };
 
   const updateDocField = async (colName, docId, data) => {
-    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles'];
+    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles', 'activities', 'activityTemplates'];
     const accessUser = typeof currentUser === 'undefined' ? null : currentUser;
     const accessProfile = typeof effectiveAccessProfile === 'undefined' ? { canEdit: true, canManageCalendar: true } : effectiveAccessProfile;
     if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && controlledCollections.includes(colName) && accessProfile.canEdit === false) {
       triggerNotification('Seu perfil possui acesso apenas para consulta nesta área.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && colName === 'activities' && accessProfile.canManageActivities === false) {
+      triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && colName === 'activityTemplates' && accessProfile.canManageActivityTemplates !== true) {
+      triggerNotification('Seu perfil não possui permissão para administrar modelos de checklist.', 'error');
       return false;
     }
     if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && ['events', 'absences', 'presence', 'schedules'].includes(colName) && accessProfile.canManageCalendar === false) {
@@ -2152,11 +2200,19 @@ const getStatusEmTempoReal = (colaborador) => {
   };
 
   const removeDoc = async (colName, docId) => {
-    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles'];
+    const controlledCollections = ['announcements', 'posts', 'documents', 'polls', 'productivity', 'events', 'absences', 'presence', 'schedules', 'vacancies', 'departments', 'roles', 'activities', 'activityTemplates'];
     const accessUser = typeof currentUser === 'undefined' ? null : currentUser;
     const accessProfile = typeof effectiveAccessProfile === 'undefined' ? { canEdit: true, canManageCalendar: true } : effectiveAccessProfile;
     if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && controlledCollections.includes(colName) && accessProfile.canEdit === false) {
       triggerNotification('Seu perfil possui acesso apenas para consulta nesta área.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && colName === 'activities' && accessProfile.canManageActivities === false) {
+      triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
+      return false;
+    }
+    if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && colName === 'activityTemplates' && accessProfile.canManageActivityTemplates !== true) {
+      triggerNotification('Seu perfil não possui permissão para administrar modelos de checklist.', 'error');
       return false;
     }
     if (accessUser && !accessUser.isAdmin && !accessUser.isDeveloper && ['events', 'absences', 'presence', 'schedules'].includes(colName) && accessProfile.canManageCalendar === false) {
@@ -5218,8 +5274,12 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   const handleToggleMessageLike = message => updateMessageFeatures(message, { likedBy: toggleMessageUser(message.likedBy, currentUser.id) });
   const handleToggleSavedMessage = message => updateMessageFeatures(message, { savedBy: toggleMessageUser(message.savedBy, currentUser.id) }, (message.savedBy || []).includes(currentUser.id) ? 'Mensagem removida dos itens salvos.' : 'Mensagem salva para consultar depois.');
   const handleToggleHighlightedMessage = message => updateMessageFeatures(message, { highlightedBy: toggleMessageUser(message.highlightedBy, currentUser.id) });
-  const handleToggleMessageActivity = message => updateMessageFeatures(message, { activity: normalizeMessageActivity(message.activity) ? null : createMessageActivity(currentUser) }, normalizeMessageActivity(message.activity) ? 'Marcação de atividade removida.' : 'Mensagem marcada como atividade.');
+  const handleToggleMessageActivity = message => {
+    if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
+    return updateMessageFeatures(message, { activity: normalizeMessageActivity(message.activity) ? null : createMessageActivity(currentUser) }, normalizeMessageActivity(message.activity) ? 'Marcação de atividade removida.' : 'Mensagem marcada como atividade.');
+  };
   const handleUpdateMessageActivity = async (message, changes) => {
+    if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
     const current = normalizeMessageActivity(message.activity) || createMessageActivity(currentUser);
     const nextStatus = changes.status || current.status;
     const activity = normalizeMessageActivity({
@@ -5244,6 +5304,97 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const activity = normalizeMessageActivity(message.activity);
     if (!activity) return;
     handleUpdateMessageActivity(message, { checklist: activity.checklist.map(item => item.id === itemId ? { ...item, completed: !item.completed } : item) });
+  };
+
+  const resetStandaloneActivityDraft = () => setStandaloneActivityDraft({ title: '', description: '', priority: 'normal', dueDate: '', assigneeId: '', recurrence: 'none', templateId: '', checklistText: '' });
+  const handleCreateStandaloneActivity = async event => {
+    event.preventDefault();
+    if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para criar atividades.', 'error');
+    const title = standaloneActivityDraft.title.trim();
+    if (!title) return triggerNotification('Informe um título para a atividade.', 'error');
+    if (standaloneActivityDraft.recurrence !== 'none' && !standaloneActivityDraft.dueDate) return triggerNotification('Defina um primeiro prazo para a atividade recorrente.', 'error');
+    const template = availableActivityTemplates.find(item => item.id === standaloneActivityDraft.templateId);
+    const typedChecklist = standaloneActivityDraft.checklistText.split('\n').map(text => text.trim()).filter(Boolean);
+    const checklistTexts = [...new Set([...(template?.checklist || []).map(item => item.text), ...typedChecklist])].slice(0, 30);
+    const now = Date.now();
+    const id = `activity-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    const base = createMessageActivity(currentUser);
+    const payload = {
+      ...base,
+      id,
+      title,
+      description: standaloneActivityDraft.description.trim().slice(0, 1200),
+      priority: standaloneActivityDraft.priority,
+      dueDate: standaloneActivityDraft.dueDate,
+      assigneeIds: standaloneActivityDraft.assigneeId ? [standaloneActivityDraft.assigneeId] : [],
+      recurrence: { frequency: standaloneActivityDraft.recurrence, interval: 1 },
+      checklist: checklistTexts.map((text, index) => ({ id: `item-${now}-${index}`, text, completed: false })),
+      source: 'standalone',
+      createdAt: now,
+      updatedAt: now,
+    };
+    setIsSavingStandaloneActivity(true);
+    try {
+      if (!await saveDoc('activities', id, payload)) return;
+      resetStandaloneActivityDraft();
+      setStandaloneActivityFormOpen(false);
+      triggerNotification('Atividade avulsa criada na Central de Serviços.');
+    } finally {
+      setIsSavingStandaloneActivity(false);
+    }
+  };
+  const handleUpdateStandaloneActivity = async (record, changes) => {
+    if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
+    const current = normalizeMessageActivity(record) || createMessageActivity(currentUser);
+    const nextStatus = changes.status || current.status;
+    return updateDocField('activities', record.id, {
+      ...changes,
+      updatedAt: Date.now(),
+      updatedBy: currentUser.id,
+      updatedByName: currentUser.name,
+      resolvedAt: nextStatus === 'resolved' ? (current.resolvedAt || Date.now()) : null,
+      resolvedBy: nextStatus === 'resolved' ? currentUser.name : '',
+    });
+  };
+  const handleUpdateServiceActivity = (row, changes) => row.source === 'standalone'
+    ? handleUpdateStandaloneActivity(row.record, changes)
+    : handleUpdateMessageActivity(row.message, changes);
+  const handleAddServiceChecklistItem = async row => {
+    const text = String(checklistDrafts[row.id] || '').trim();
+    if (!text) return;
+    await handleUpdateServiceActivity(row, { checklist: [...row.activity.checklist, { id: `item-${Date.now()}`, text, completed: false }] });
+    setChecklistDrafts(previous => ({ ...previous, [row.id]: '' }));
+  };
+  const handleToggleServiceChecklistItem = (row, itemId) => handleUpdateServiceActivity(row, {
+    checklist: row.activity.checklist.map(item => item.id === itemId ? { ...item, completed: !item.completed } : item),
+  });
+  const handleActivityRecurrenceChange = (row, frequency) => {
+    if (frequency !== 'none' && !row.activity.dueDate) return triggerNotification('Defina o prazo inicial antes de ativar a recorrência.', 'error');
+    handleUpdateServiceActivity(row, { recurrence: { frequency, interval: 1 } });
+  };
+  const handleApplyActivityTemplate = async (row, templateId) => {
+    const template = availableActivityTemplates.find(item => item.id === templateId);
+    if (!template) return;
+    const existingTexts = new Set(row.activity.checklist.map(item => item.text.toLocaleLowerCase('pt-BR')));
+    const additions = template.checklist.filter(item => !existingTexts.has(item.text.toLocaleLowerCase('pt-BR'))).map((item, index) => ({ id: `item-${Date.now()}-${index}`, text: item.text, completed: false }));
+    await handleUpdateServiceActivity(row, { checklist: [...row.activity.checklist, ...additions].slice(0, 30), priority: template.priority });
+    triggerNotification(additions.length ? 'Modelo aplicado ao checklist.' : 'O checklist já possui todos os itens desse modelo.');
+  };
+  const handleCreateActivityTemplate = async event => {
+    event.preventDefault();
+    if (!canManageActivityTemplates) return triggerNotification('Seu perfil não possui permissão para administrar modelos.', 'error');
+    const name = activityTemplateDraft.name.trim();
+    const checklist = activityTemplateDraft.checklistText.split('\n').map(text => text.trim()).filter(Boolean).slice(0, 30);
+    if (!name || !checklist.length) return triggerNotification('Informe o nome e pelo menos um item do modelo.', 'error');
+    const now = Date.now();
+    const id = `template-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!await saveDoc('activityTemplates', id, {
+      id, name, description: activityTemplateDraft.description.trim().slice(0, 240), priority: activityTemplateDraft.priority,
+      checklist: checklist.map((text, index) => ({ id: `template-item-${now}-${index}`, text, completed: false })),
+      createdAt: now, createdBy: currentUser.id, createdByName: currentUser.name,
+    })) return;
+    setActivityTemplateDraft({ name: '', description: '', priority: 'normal', checklistText: '' });
+    triggerNotification('Modelo de checklist criado.');
   };
 
   const openThread = async (threadId, targetMessageId = '') => {
@@ -5767,6 +5918,9 @@ const notificationsToShow = [...allNotifications]
   };
   const effectiveAccessProfile = accessProfileForUser(currentUser);
   const canConfigureScheduleRules = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageScheduleRules !== false);
+  const canManageActivities = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageActivities !== false);
+  const canManageActivityTemplates = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageActivityTemplates === true);
+  const canViewActivityInsights = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canViewActivityInsights === true);
   const canOpenModule = moduleId => moduleId === 'careers'
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
     : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false;
@@ -5879,7 +6033,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (row.reopened) totals.reopened += 1;
     return totals;
   }, { total: 0, onTime: 0, late: 0, overdue: 0, extended: 0, reopened: 0 });
-  const serviceActivityRows = normMessages.map(message => {
+  const availableActivityTemplates = activityTemplates.map(normalizeActivityTemplate).filter(template => template.id && template.name);
+  const conversationActivityRows = normMessages.map(message => {
     const activity = normalizeMessageActivity(message.activity);
     if (!activity || !message.threadId) return null;
     const metadata = getThreadMetadata(message.threadId);
@@ -5895,6 +6050,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       preview: String(message.content || message.attachment?.name || 'Atividade vinculada à conversa').trim(),
       authorName: message.senderId === currentUser.id ? 'Você' : (message.senderName || 'Participante'),
       participantIds: message.participants || [],
+      source: 'conversation',
       activity,
       status,
       schedule,
@@ -5904,7 +6060,34 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       checklistTotal: activity.checklist.length,
       updatedAt: activity.updatedAt || activity.createdAt || getMessageTimestamp(message),
     };
-  }).filter(Boolean).sort((a, b) => {
+  }).filter(Boolean);
+  const standaloneActivityRows = standaloneActivities.map(record => {
+    const activity = normalizeMessageActivity(record);
+    if (!activity) return null;
+    const status = isMessageActivityOverdue(activity, todayStr) ? 'overdue' : activity.status;
+    const schedule = messageActivitySchedule(activity, todayStr);
+    const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user.id === userId)).filter(Boolean);
+    return {
+      id: record.id,
+      threadId: '',
+      record,
+      message: null,
+      source: 'standalone',
+      subject: String(record.title || 'Atividade avulsa'),
+      preview: String(record.description || 'Criada diretamente na Central de Serviços').trim(),
+      authorName: activity.createdBy === currentUser.id ? 'Você' : (activity.createdByName || 'Participante'),
+      participantIds: employeesList.map(user => user.id),
+      activity,
+      status,
+      schedule,
+      assignees,
+      progress: messageActivityProgress(activity),
+      checklistCompleted: activity.checklist.filter(item => item.completed).length,
+      checklistTotal: activity.checklist.length,
+      updatedAt: activity.updatedAt || activity.createdAt,
+    };
+  }).filter(Boolean);
+  const serviceActivityRows = [...conversationActivityRows, ...standaloneActivityRows].sort((a, b) => {
     if (a.status === 'resolved' && b.status !== 'resolved') return 1;
     if (a.status !== 'resolved' && b.status === 'resolved') return -1;
     if (a.activity.dueDate && b.activity.dueDate && a.activity.dueDate !== b.activity.dueDate) return a.activity.dueDate.localeCompare(b.activity.dueDate);
@@ -5937,6 +6120,16 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (!row.activity.assigneeIds.length && row.status !== 'resolved') totals.unassigned += 1;
     return totals;
   }, { total: 0, active: 0, overdue: 0, resolved: 0, mine: 0, unassigned: 0, today: 0, upcoming: 0, noDue: 0 });
+  const serviceActivityProductivity = activityProductivityMetrics(serviceActivityRows.map(row => row.activity), todayStr);
+  const serviceActivityLeaderboard = Object.values(serviceActivityRows.reduce((people, row) => {
+    if (row.activity.status !== 'resolved') return people;
+    const ids = row.activity.assigneeIds.length ? row.activity.assigneeIds : [row.activity.createdBy].filter(Boolean);
+    ids.forEach(userId => {
+      if (!people[userId]) people[userId] = { id: userId, name: messageContacts.find(user => user.id === userId)?.name || row.activity.createdByName || 'Colaborador', completed: 0 };
+      people[userId].completed += 1;
+    });
+    return people;
+  }, {})).sort((a, b) => b.completed - a.completed || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 5);
   const serviceRequestRows = Object.values(normMessages.reduce((threads, message) => {
     if (!message.threadId) return threads;
     if (!threads[message.threadId]) threads[message.threadId] = { id: message.threadId, messages: [] };
@@ -7051,7 +7244,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
                 <section className="rounded-[1.5rem] border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-600">Sincronização automática</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Atividades das conversas</h4><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Ao marcar uma mensagem como atividade, ela aparece aqui automaticamente. Status, prazo, responsável e checklist são os mesmos nos dois lugares.</p></div>
+                    <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-600">Central integrada</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Atividades e checklists</h4><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Reúna atividades criadas nas conversas e tarefas avulsas. Filtros, responsáveis, prazos, recorrência e checklists funcionam no mesmo fluxo.</p><div className="mt-3 flex flex-wrap gap-2">{canManageActivities && <button type="button" onClick={() => setStandaloneActivityFormOpen(previous => !previous)} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-violet-800"><Plus className="h-3.5 w-3.5" /> Nova atividade</button>}<button type="button" onClick={() => setActivityTemplatesOpen(previous => !previous)} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50"><ListChecks className="h-3.5 w-3.5" /> Modelos ({availableActivityTemplates.length})</button></div></div>
                     <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[620px] lg:grid-cols-4">
                       <div className="relative sm:col-span-2 lg:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={serviceActivitySearch} onChange={event => setServiceActivitySearch(event.target.value)} placeholder="Buscar atividade" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs outline-none focus:border-violet-300" /></div>
                       <select value={serviceActivityStatusFilter} onChange={event => { setServiceActivityStatusFilter(event.target.value); setServiceActivityPeriodFilter('all'); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="active">Pendentes</option><option value="all">Todos os status</option><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="overdue">Em atraso</option><option value="resolved">Resolvida</option></select>
@@ -7060,6 +7253,12 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     </div>
                   </div>
                 </section>
+
+                {standaloneActivityFormOpen && <form onSubmit={handleCreateStandaloneActivity} className="rounded-[1.5rem] border border-violet-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-start justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-600">Criação direta</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Nova atividade ou checklist avulso</h4><p className="mt-1 text-xs text-slate-500">Não precisa estar vinculada a uma conversa.</p></div><button type="button" onClick={() => { resetStandaloneActivityDraft(); setStandaloneActivityFormOpen(false); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Fechar"><X className="h-4 w-4" /></button></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><label className="text-[9px] font-black uppercase text-slate-500 sm:col-span-2">Título<input required maxLength="120" value={standaloneActivityDraft.title} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, title: event.target.value }))} placeholder="Ex.: Conferir documentos do fechamento" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium normal-case" /></label><label className="text-[9px] font-black uppercase text-slate-500">Responsável<select value={standaloneActivityDraft.assigneeId} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, assigneeId: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium normal-case"><option value="">Sem responsável</option>{employeesList.slice().sort((a,b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label><label className="text-[9px] font-black uppercase text-slate-500">Prazo<input type="date" value={standaloneActivityDraft.dueDate} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, dueDate: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium normal-case" /></label><label className="text-[9px] font-black uppercase text-slate-500 sm:col-span-2">Descrição<textarea rows="3" maxLength="1200" value={standaloneActivityDraft.description} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, description: event.target.value }))} placeholder="Resultado esperado, contexto ou instruções" className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium leading-5 normal-case" /></label><label className="text-[9px] font-black uppercase text-slate-500">Prioridade<select value={standaloneActivityDraft.priority} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, priority: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium normal-case">{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-[9px] font-black uppercase text-slate-500">Recorrência<select value={standaloneActivityDraft.recurrence} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, recurrence: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium normal-case"><option value="none">Não se repete</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option><option value="monthly">Mensalmente</option></select></label><label className="text-[9px] font-black uppercase text-slate-500 sm:col-span-2">Modelo de checklist<select value={standaloneActivityDraft.templateId} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, templateId: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium normal-case"><option value="">Sem modelo</option>{availableActivityTemplates.map(template => <option key={template.id} value={template.id}>{template.name} · {template.checklist.length} itens</option>)}</select></label><label className="text-[9px] font-black uppercase text-slate-500 sm:col-span-2">Itens adicionais do checklist<textarea rows="4" value={standaloneActivityDraft.checklistText} onChange={event => setStandaloneActivityDraft(previous => ({ ...previous, checklistText: event.target.value }))} placeholder={'Um item por linha\nEx.: Conferir notas fiscais\nValidar pagamentos'} className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-medium leading-5 normal-case" /></label></div><div className="mt-4 flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => { resetStandaloneActivityDraft(); setStandaloneActivityFormOpen(false); }} className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" disabled={isSavingStandaloneActivity} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-2.5 text-xs font-bold text-white disabled:opacity-50">{isSavingStandaloneActivity ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}Criar atividade</button></div></form>}
+
+                {activityTemplatesOpen && <section className="rounded-[1.5rem] border border-fuchsia-100 bg-fuchsia-50/50 p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-fuchsia-700">Biblioteca compartilhada</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Modelos de checklist</h4><p className="mt-1 text-xs text-slate-500">Aplique rotinas prontas em atividades de conversa ou avulsas.</p></div><button type="button" onClick={() => setActivityTemplatesOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white"><X className="h-4 w-4" /></button></div>{canManageActivityTemplates && <form onSubmit={handleCreateActivityTemplate} className="mt-4 grid gap-3 rounded-2xl border border-fuchsia-100 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4"><input required maxLength="80" value={activityTemplateDraft.name} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, name: event.target.value }))} placeholder="Nome do modelo" className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /><input maxLength="240" value={activityTemplateDraft.description} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, description: event.target.value }))} placeholder="Descrição opcional" className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /><select value={activityTemplateDraft.priority} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, priority: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id, label]) => <option key={id} value={id}>Prioridade {label.toLowerCase()}</option>)}</select><button type="submit" className="rounded-xl bg-fuchsia-700 px-4 py-2.5 text-xs font-bold text-white">Salvar modelo</button><textarea required rows="3" value={activityTemplateDraft.checklistText} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, checklistText: event.target.value }))} placeholder={'Um item por linha\nEx.: Conferir dados\nAnexar comprovante'} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs leading-5 sm:col-span-2 lg:col-span-4" /></form>}<div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{availableActivityTemplates.map(template => <article key={template.id} className="rounded-2xl border border-fuchsia-100 bg-white p-3"><div className="flex items-start justify-between gap-2"><div><strong className="text-xs text-slate-900">{template.name}</strong><p className="mt-1 text-[10px] text-slate-500">{template.description || `${template.checklist.length} itens · prioridade ${MESSAGE_ACTIVITY_PRIORITY_LABELS[template.priority].toLowerCase()}`}</p></div>{canManageActivityTemplates && <button type="button" onClick={() => removeDoc('activityTemplates', template.id)} className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50" aria-label={`Excluir modelo ${template.name}`}><Trash2 className="h-3.5 w-3.5" /></button>}</div><div className="mt-2 space-y-1">{template.checklist.slice(0, 4).map(item => <div key={item.id} className="flex items-center gap-1.5 text-[9px] text-slate-500"><Check className="h-3 w-3 text-fuchsia-500" />{item.text}</div>)}{template.checklist.length > 4 && <span className="text-[9px] font-bold text-fuchsia-700">+ {template.checklist.length - 4} itens</span>}</div></article>)}{availableActivityTemplates.length === 0 && <div className="rounded-2xl border border-dashed border-fuchsia-200 bg-white p-6 text-center text-xs text-slate-500 md:col-span-2 xl:col-span-3">Nenhum modelo criado ainda.</div>}</div></section>}
+
+                {canViewActivityInsights && <section className="rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-indigo-950 to-violet-900 p-4 text-white shadow-sm sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-indigo-200">Indicadores das atividades visíveis</span><h4 className="mt-1 text-base font-extrabold">Produtividade e cumprimento</h4></div><span className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-bold">{serviceActivityProductivity.total} atividades analisadas</span></div><div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">{[{label:'Concluídas 30d',value:serviceActivityProductivity.resolvedLast30Days},{label:'Conclusão geral',value:`${serviceActivityProductivity.completionRate}%`},{label:'No prazo',value:`${serviceActivityProductivity.onTimeRate}%`},{label:'Tempo médio',value:serviceActivityProductivity.averageCompletionHours ? `${serviceActivityProductivity.averageCompletionHours}h` : '—'},{label:'Recorrentes',value:serviceActivityProductivity.recurring}].map(metric => <div key={metric.label} className="rounded-xl bg-white/10 p-3"><span className="text-[8px] font-bold uppercase text-indigo-200">{metric.label}</span><strong className="mt-1 block text-xl">{metric.value}</strong></div>)}</div>{serviceActivityLeaderboard.length > 0 && <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-3"><span className="w-full text-[9px] font-bold uppercase text-indigo-200">Mais conclusões</span>{serviceActivityLeaderboard.map((person, index) => <span key={person.id} className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-semibold">{index + 1}. {person.name} · {person.completed}</span>)}</div>}</section>}
 
                 <section data-tour="activity-routine" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {[
@@ -7073,30 +7272,32 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 <section className="grid gap-4 xl:grid-cols-2">
                   {filteredServiceActivities.map(row => {
                     const activity = row.activity;
-                    const assigneeCandidates = employeesList.filter(user => row.participantIds.includes(user.id));
+                    const assigneeCandidates = row.source === 'standalone' ? employeesList : employeesList.filter(user => row.participantIds.includes(user.id));
                     return <article key={row.id} className={`rounded-[1.5rem] border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${row.status === 'overdue' ? 'border-rose-200' : 'border-slate-200'}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span>{row.schedule === 'today' && <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-bold text-amber-800">Vence hoje</span>}{row.schedule === 'upcoming' && <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">Prazo {formatDueDate(activity.dueDate)}</span>}<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-600">Prioridade {MESSAGE_ACTIVITY_PRIORITY_LABELS[activity.priority].toLowerCase()}</span>{row.checklistTotal > 0 && <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal} itens</span>}</div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{row.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{row.preview}</p><span className="mt-2 block text-[9px] font-semibold text-slate-400">Mensagem de {row.authorName} · atividade criada por {activity.createdByName || 'participante'}</span></div>
-                        <button type="button" onClick={() => openActivityConversation(row.message)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir conversa</button>
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${row.source === 'standalone' ? 'border-cyan-100 bg-cyan-50 text-cyan-800' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>{row.source === 'standalone' ? 'Atividade avulsa' : 'Da conversa'}</span>{row.schedule === 'today' && <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-bold text-amber-800">Vence hoje</span>}{row.schedule === 'upcoming' && <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">Prazo {formatDueDate(activity.dueDate)}</span>}<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-600">Prioridade {MESSAGE_ACTIVITY_PRIORITY_LABELS[activity.priority].toLowerCase()}</span>{activity.recurrence.frequency !== 'none' && <span className="rounded-full border border-fuchsia-100 bg-fuchsia-50 px-2.5 py-1 text-[9px] font-bold text-fuchsia-700">{activityRecurrenceLabel(activity.recurrence)}</span>}{row.checklistTotal > 0 && <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal} itens</span>}</div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{row.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{row.preview}</p><span className="mt-2 block text-[9px] font-semibold text-slate-400">{row.source === 'standalone' ? `Criada diretamente por ${activity.createdByName || row.authorName}` : `Mensagem de ${row.authorName} · atividade criada por ${activity.createdByName || 'participante'}`}</span></div>
+                        {row.source === 'conversation' && <button type="button" onClick={() => openActivityConversation(row.message)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir conversa</button>}
                       </div>
 
                       <div className="mt-4"><div className="mb-1.5 flex items-center justify-between text-[9px] font-bold text-slate-500"><span>Progresso</span><span>{row.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${row.status === 'resolved' ? 'bg-emerald-500' : row.status === 'overdue' ? 'bg-rose-500' : 'bg-violet-600'}`} style={{ width: `${row.progress}%` }} /></div></div>
 
-                      <div className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 sm:grid-cols-2">
-                        <label className="text-[9px] font-black uppercase text-slate-400">Prazo<input type="date" value={activity.dueDate} onChange={event => handleUpdateMessageActivity(row.message, { dueDate: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700" /></label>
-                        <label className="text-[9px] font-black uppercase text-slate-400">Responsável<select value={activity.assigneeIds[0] || ''} onChange={event => handleUpdateMessageActivity(row.message, { assigneeIds: event.target.value ? [event.target.value] : [] })} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700"><option value="">Sem responsável</option>{assigneeCandidates.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+                      <div className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <label className="text-[9px] font-black uppercase text-slate-400">Prazo<input disabled={!canManageActivities} type="date" value={activity.dueDate} onChange={event => handleUpdateServiceActivity(row, { dueDate: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700 disabled:opacity-60" /></label>
+                        <label className="text-[9px] font-black uppercase text-slate-400">Responsável<select disabled={!canManageActivities} value={activity.assigneeIds[0] || ''} onChange={event => handleUpdateServiceActivity(row, { assigneeIds: event.target.value ? [event.target.value] : [] })} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700 disabled:opacity-60"><option value="">Sem responsável</option>{assigneeCandidates.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+                        <label className="text-[9px] font-black uppercase text-slate-400">Recorrência<select disabled={!canManageActivities} value={activity.recurrence.frequency} onChange={event => handleActivityRecurrenceChange(row, event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700 disabled:opacity-60"><option value="none">Não se repete</option><option value="daily">Diária</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option></select></label>
+                        <label className="text-[9px] font-black uppercase text-slate-400">Aplicar modelo<select disabled={!canManageActivities || !availableActivityTemplates.length} defaultValue="" onChange={event => { handleApplyActivityTemplate(row, event.target.value); event.target.value = ''; }} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700 disabled:opacity-60"><option value="">Escolher modelo</option>{availableActivityTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
                       </div>
 
                       <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/50 p-3">
                         <div className="flex items-center justify-between gap-2"><strong className="flex items-center gap-1.5 text-[10px] text-violet-950"><ListChecks className="h-3.5 w-3.5" /> Checklist</strong><span className="text-[9px] font-bold text-violet-600">{row.checklistCompleted} de {row.checklistTotal} concluídos</span></div>
-                        {activity.checklist.length > 0 && <div className="mt-2 space-y-1.5">{activity.checklist.map(item => <label key={item.id} className={`flex items-start gap-2 rounded-lg bg-white px-2.5 py-2 text-[10px] text-slate-700 ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(row.message, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}
-                        <div className="mt-2 flex gap-1.5"><input value={checklistDrafts[row.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [row.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(row.message); } }} placeholder="Adicionar item" className="min-w-0 flex-1 rounded-lg border border-violet-100 bg-white px-2.5 py-2 text-[10px] text-slate-700 outline-none focus:border-violet-300" /><button type="button" onClick={() => handleAddMessageChecklistItem(row.message)} className="rounded-lg bg-violet-700 px-3 py-2 text-[9px] font-bold text-white hover:bg-violet-800">Adicionar</button></div>
+                        {activity.checklist.length > 0 && <div className="mt-2 space-y-1.5">{activity.checklist.map(item => <label key={item.id} className={`flex items-start gap-2 rounded-lg bg-white px-2.5 py-2 text-[10px] text-slate-700 ${item.completed ? 'line-through opacity-60' : ''}`}><input disabled={!canManageActivities} type="checkbox" checked={item.completed} onChange={() => handleToggleServiceChecklistItem(row, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}
+                        {canManageActivities && <div className="mt-2 flex gap-1.5"><input value={checklistDrafts[row.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [row.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddServiceChecklistItem(row); } }} placeholder="Adicionar item" className="min-w-0 flex-1 rounded-lg border border-violet-100 bg-white px-2.5 py-2 text-[10px] text-slate-700 outline-none focus:border-violet-300" /><button type="button" onClick={() => handleAddServiceChecklistItem(row)} className="rounded-lg bg-violet-700 px-3 py-2 text-[9px] font-bold text-white hover:bg-violet-800">Adicionar</button></div>}
                       </div>
 
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3"><span className="text-[9px] text-slate-400">Alterações sincronizadas com a mensagem original</span><div className="flex flex-wrap gap-1.5">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value, label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(row.message, { status: value })} className={`rounded-lg px-2.5 py-2 text-[9px] font-bold ${activity.status === value ? 'bg-violet-700 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}</div></div>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3"><span className="text-[9px] text-slate-400">{row.source === 'conversation' ? 'Alterações sincronizadas com a mensagem original' : 'Atividade administrada diretamente nesta central'}{activity.recurrence.frequency !== 'none' ? ' · a próxima ocorrência será criada ao concluir' : ''}</span><div className="flex flex-wrap gap-1.5">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value, label]) => <button disabled={!canManageActivities} key={value} type="button" onClick={() => handleUpdateServiceActivity(row, { status: value })} className={`rounded-lg px-2.5 py-2 text-[9px] font-bold disabled:opacity-60 ${activity.status === value ? 'bg-violet-700 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}{row.source === 'standalone' && canManageActivities && <button type="button" onClick={() => removeDoc('activities', row.id)} className="rounded-lg border border-rose-200 bg-white px-2.5 py-2 text-[9px] font-bold text-rose-600 hover:bg-rose-50">Excluir</button>}</div></div>
                     </article>;
                   })}
-                  {filteredServiceActivities.length === 0 && <div className="xl:col-span-2 rounded-[1.5rem] border border-dashed border-slate-300 bg-white p-10 text-center"><ListChecks className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma atividade encontrada</h5><p className="mt-1 text-xs leading-5 text-slate-500">Na Caixa de Entrada, clique no ícone de checklist de qualquer mensagem para criar a primeira atividade.</p></div>}
+                  {filteredServiceActivities.length === 0 && <div className="xl:col-span-2 rounded-[1.5rem] border border-dashed border-slate-300 bg-white p-10 text-center"><ListChecks className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma atividade encontrada</h5><p className="mt-1 text-xs leading-5 text-slate-500">Crie uma atividade avulsa aqui ou marque uma mensagem da Caixa de Entrada como atividade.</p></div>}
                 </section>
               </>}
 
@@ -8566,12 +8767,12 @@ const handleDownload = async (fileUrl, fileName) => {
                   <label className="mt-4 block text-[10px] font-bold uppercase text-slate-500">Selecionar
                     <select value={permissionTargetId} onChange={event => loadPermissionTarget(permissionScope, event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-700"><option value="">Escolha uma opção</option>{permissionScope === 'user' ? employeesList.slice().sort((a,b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name} — {user.role || 'Sem cargo'}</option>) : departmentsList.slice().sort((a,b) => a.name.localeCompare(b.name, 'pt-BR')).map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select>
                   </label>
-                  <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[10px] leading-5 text-blue-900"><strong className="block">Como funciona</strong>Abas desmarcadas desaparecem do menu. “Alterar informações” transforma as áreas liberadas em somente leitura. A escala possui controles separados para publicação e para configuração das regras inteligentes.</div>
+                  <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-[10px] leading-5 text-blue-900"><strong className="block">Como funciona</strong>Abas desmarcadas desaparecem do menu. “Alterar informações” transforma as áreas liberadas em somente leitura. Escalas, atividades, modelos e indicadores possuem controles específicos.</div>
                 </section>
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                   <h3 className="text-sm font-extrabold text-slate-900">Áreas e ações permitidas</h3><p className="mt-1 text-xs text-slate-500">Selecione apenas o necessário para o trabalho dessa pessoa ou setor.</p>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">{ACCESS_MODULES.map(module => <label key={module.id} className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-semibold ${permissionDraft.tabs?.[module.id] !== false ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>{module.label}</span><input type="checkbox" checked={permissionDraft.tabs?.[module.id] !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, tabs: { ...previous.tabs, [module.id]: event.target.checked } }))} className="accent-blue-700" /></label>)}</div>
-                  <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2"><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar informações</span><input type="checkbox" checked={permissionDraft.canEdit !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canEdit: event.target.checked }))} className="accent-emerald-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageCalendar ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar escalas e calendário</span><input type="checkbox" checked={permissionDraft.canManageCalendar !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageCalendar: event.target.checked, ...(!event.target.checked ? { canManageScheduleRules: false } : {}) }))} className="accent-amber-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageScheduleRules !== false ? 'border-cyan-200 bg-cyan-50 text-cyan-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageCalendar === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Configurar regras da escala inteligente</span><input type="checkbox" disabled={permissionDraft.canManageCalendar === false} checked={permissionDraft.canManageScheduleRules !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageScheduleRules: event.target.checked }))} className="accent-cyan-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canPublishAbsenceForOthers ? 'border-sky-200 bg-sky-50 text-sky-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Publicar ausência de outras pessoas</span><input type="checkbox" checked={permissionDraft.canPublishAbsenceForOthers === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canPublishAbsenceForOthers: event.target.checked }))} className="accent-sky-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewEngagement ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver confirmações e curtidas</span><input type="checkbox" checked={permissionDraft.canViewEngagement === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewEngagement: event.target.checked }))} className="accent-violet-700" /></label></div>
+                  <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2"><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar informações</span><input type="checkbox" checked={permissionDraft.canEdit !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canEdit: event.target.checked, ...(!event.target.checked ? { canManageActivities: false, canManageActivityTemplates: false } : {}) }))} className="accent-emerald-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageCalendar ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar escalas e calendário</span><input type="checkbox" checked={permissionDraft.canManageCalendar !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageCalendar: event.target.checked, ...(!event.target.checked ? { canManageScheduleRules: false } : {}) }))} className="accent-amber-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageScheduleRules !== false ? 'border-cyan-200 bg-cyan-50 text-cyan-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageCalendar === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Configurar regras da escala inteligente</span><input type="checkbox" disabled={permissionDraft.canManageCalendar === false} checked={permissionDraft.canManageScheduleRules !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageScheduleRules: event.target.checked }))} className="accent-cyan-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageActivities !== false ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canEdit === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Criar e alterar atividades</span><input type="checkbox" disabled={permissionDraft.canEdit === false} checked={permissionDraft.canManageActivities !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageActivities: event.target.checked, ...(!event.target.checked ? { canManageActivityTemplates: false } : {}) }))} className="accent-violet-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageActivityTemplates ? 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageActivities === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Administrar modelos de checklist</span><input type="checkbox" disabled={permissionDraft.canManageActivities === false} checked={permissionDraft.canManageActivityTemplates === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageActivityTemplates: event.target.checked }))} className="accent-fuchsia-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewActivityInsights ? 'border-indigo-200 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver indicadores das atividades</span><input type="checkbox" checked={permissionDraft.canViewActivityInsights === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewActivityInsights: event.target.checked }))} className="accent-indigo-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canPublishAbsenceForOthers ? 'border-sky-200 bg-sky-50 text-sky-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Publicar ausência de outras pessoas</span><input type="checkbox" checked={permissionDraft.canPublishAbsenceForOthers === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canPublishAbsenceForOthers: event.target.checked }))} className="accent-sky-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewEngagement ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver confirmações e curtidas</span><input type="checkbox" checked={permissionDraft.canViewEngagement === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewEngagement: event.target.checked }))} className="accent-violet-700" /></label></div>
                   <div className="mt-5 flex justify-end"><button type="button" onClick={savePermissionTarget} disabled={!permissionTargetId} className="rounded-xl bg-slate-900 px-5 py-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Salvar permissões</button></div>
                 </section>
               </div> : <section data-tour="control-audit" className="space-y-6">

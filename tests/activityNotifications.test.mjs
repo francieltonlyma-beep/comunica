@@ -18,6 +18,17 @@ test('scheduled deadline scan includes message activities without duplicating de
   assert.match(functionsSource, /activity-deadline-\$\{activity\.messageId\}/);
   assert.match(functionsSource, /type: 'activity_deadline'/);
   assert.match(functionsSource, /notificationReceipts\/\$\{receiptId\}/);
+  assert.match(functionsSource, /collection\('activities'\)\.where\('dueDate', 'in'/);
+});
+
+test('standalone and recurring activities are generated and notified by the server', () => {
+  assert.match(functionsSource, /export const notifyStandaloneActivityCreated = onDocumentCreated/);
+  assert.match(functionsSource, /export const notifyStandaloneActivityChange = onDocumentUpdated/);
+  assert.match(functionsSource, /nextRecurringActivityDate/);
+  assert.match(functionsSource, /recurringActivityPayload/);
+  assert.match(functionsSource, /recurring-\$\{activityId\}-\$\{nextDueDate\}/);
+  assert.match(workerSource, /comunica-open-activity/);
+  assert.match(appSource, /activityCompany/);
 });
 
 test('activity notifications open the exact source message', () => {

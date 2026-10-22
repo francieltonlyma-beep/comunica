@@ -6,21 +6,29 @@ const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const careers = fs.readFileSync(new URL('../src/Careers.jsx', import.meta.url), 'utf8');
 const careerFunctions = fs.readFileSync(new URL('../functions/src/careers.ts', import.meta.url), 'utf8');
 const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+const publishWorkflow = fs.readFileSync(new URL('../.github/workflows/firebase-hosting-merge.yml', import.meta.url), 'utf8');
 
 test('inbox exposes reply, reactions, saved messages and activity checklist', () => {
   for (const feature of ['replyTo', 'likedBy', 'savedBy', 'highlightedBy', 'activity', 'checklist']) assert.match(app, new RegExp(feature));
   for (const field of ['likedBy', 'savedBy', 'highlightedBy', 'activity']) assert.match(rules, new RegExp(`'${field}'`));
 });
 
-test('conversation activities are synchronized with the service center', () => {
+test('conversation and standalone activities share the service center', () => {
   for (const feature of ['serviceWorkspace', 'serviceActivityRows', 'filteredServiceActivities', 'serviceActivityMetrics', 'serviceActivityPeriodFilter', 'openActivityConversation']) assert.match(app, new RegExp(feature));
   assert.match(app, /Sincronizada com a Central de Serviços/);
-  assert.match(app, /Atividades das conversas/);
+  assert.match(app, /Atividades e checklists/);
+  assert.match(app, /Nova atividade ou checklist avulso/);
+  assert.match(app, /standaloneActivities/);
+  assert.match(app, /activityTemplates/);
+  assert.match(app, /serviceActivityProductivity/);
   assert.match(app, /Hoje/);
   assert.match(app, /Próximas/);
   assert.match(app, /Vencidas/);
   assert.match(app, /data-message-id=\{msg\.id\}/);
-  assert.doesNotMatch(app, /collection\(['"]activities['"]\)/);
+  for (const permission of ['canManageActivities', 'canManageActivityTemplates', 'canViewActivityInsights']) assert.match(app, new RegExp(permission));
+  assert.match(rules, /kind == 'activities'/);
+  assert.match(rules, /kind == 'activityTemplates'/);
+  assert.match(publishWorkflow, /--only firestore:rules/);
 });
 
 test('public careers always derives talent pool opportunities from company roles', () => {
