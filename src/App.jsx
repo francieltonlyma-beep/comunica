@@ -519,11 +519,28 @@ export default function App() {
 
 const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   let previewWindow = null;
+  const waitForFileAccess = promise => new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error('Tempo esgotado ao preparar o arquivo.')), 20000);
+    promise.then(
+      value => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      error => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+
   try {
     const file = typeof fileOrUrl === 'string' ? { data: fileOrUrl, name: fallbackName } : (fileOrUrl || {});
     const fileUrl = file.data || file.url || '';
     const fileName = file.name || fallbackName;
-    if (!fileUrl) return;
+    if (!fileUrl && !file.storagePath) {
+      triggerNotification('Este anexo não possui um arquivo disponível.', 'error');
+      return;
+    }
 
     // Arquivos internos são sempre lidos pelo SDK autenticado. Isso revalida as
     // regras do Storage em cada abertura, inclusive após mudança de permissão.
@@ -532,16 +549,18 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
       const fileRef = ref(storage, file.storagePath || fileUrl);
       const isMobileBrowser = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const isNativeContainer = Boolean(window.cordova || window.Capacitor);
-      const expectsInlinePreview = /\.pdf(?:$|[?#])/i.test(fileName) || file.type === 'application/pdf';
+      const normalizedType = String(file.type || '').toLowerCase();
+      const expectsInlinePreview = normalizedType === 'application/pdf'
+        || normalizedType.startsWith('image/')
+        || /\.(?:pdf|png|jpe?g|gif|webp|bmp|svg|avif)(?:$|[?#])/i.test(fileName);
 
-      // Mantenha a Caixa de Entrada carregada. Em celulares, abra a URL HTTPS
-      // autenticada fora da janela atual; navegar com location.assign desmontava
-      // o app e fazia as conversas parecerem ter desaparecido ao retornar.
-      if (isMobileBrowser) {
+      // No celular, só criamos uma nova aba para formatos que o navegador
+      // realmente consegue visualizar. Documentos de escritório e outros
+      // formatos seguem direto para download, sem deixar uma aba em branco.
+      if (isMobileBrowser && (isNativeContainer || expectsInlinePreview)) {
         if (!isNativeContainer) {
           previewWindow = window.open('about:blank', '_blank');
           if (previewWindow) {
-            previewWindow.opener = null;
             try {
               previewWindow.document.title = 'Abrindo arquivo';
               previewWindow.document.body.style.cssText = 'margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f8fafc;color:#334155';
@@ -552,32 +571,22 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
           }
         }
 
-        const authenticatedUrl = await getDownloadURL(fileRef);
+        const authenticatedUrl = await waitForFileAccess(getDownloadURL(fileRef));
         if (isNativeContainer) {
           window.open(authenticatedUrl, '_system');
           return;
         }
-        if (previewWindow) {
-          previewWindow.location.replace(authenticatedUrl);
+        if (previewWindow && !previewWindow.closed) {
+          previewWindow.location.href = authenticatedUrl;
           return;
         }
 
-        // Fallback para navegadores que bloquearam a aba criada no gesto inicial.
-        const mobileLink = document.createElement('a');
-        mobileLink.href = authenticatedUrl;
-        mobileLink.target = '_blank';
-        mobileLink.rel = 'noopener noreferrer';
-        mobileLink.download = fileName;
-        document.body.appendChild(mobileLink);
-        mobileLink.click();
-        document.body.removeChild(mobileLink);
-        return;
+        throw new Error('O navegador bloqueou a abertura do arquivo. Permita pop-ups para o Comunica e tente novamente.');
       }
 
       if (expectsInlinePreview) {
         previewWindow = window.open('about:blank', '_blank');
         if (previewWindow) {
-          previewWindow.opener = null;
           try {
             previewWindow.document.title = 'Abrindo arquivo';
             previewWindow.document.body.style.cssText = 'margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f8fafc;color:#334155';
@@ -588,12 +597,12 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
         }
       }
 
-      const blob = await getBlob(fileRef);
+      const blob = await waitForFileAccess(getBlob(fileRef));
       const objectUrl = window.URL.createObjectURL(blob);
       const canPreviewInline = expectsInlinePreview || blob.type === 'application/pdf' || blob.type.startsWith('image/');
 
       if (previewWindow && canPreviewInline) {
-        previewWindow.location.replace(objectUrl);
+        previewWindow.location.href = objectUrl;
         window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5 * 60 * 1000);
         return;
       }
@@ -605,7 +614,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
       const link = document.createElement('a');
       link.href = objectUrl;
-      if (canPreviewInline) {
+      if (canPreviewInline && !isMobileBrowser) {
         link.target = '_blank';
         link.rel = 'noopener';
       } else {
@@ -627,21 +636,21 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     const link = document.createElement("a");
     link.href = fileUrl;
     link.target = "_blank";
+    link.rel = "noopener noreferrer";
     link.download = fileName;
-    
-    // Pequeno atraso para garantir que o WebView processe o clique
-    setTimeout(() => {
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }, 100);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
   } catch (error) {
     if (previewWindow && !previewWindow.closed) previewWindow.close();
     console.error("Erro ao abrir o arquivo:", error);
-    triggerNotification(error?.code === 'storage/unauthorized'
+    const errorMessage = error?.code === 'storage/unauthorized'
       ? 'Você não possui mais permissão para abrir este arquivo.'
-      : 'Não foi possível abrir o arquivo. Verifique a conexão e tente novamente.', 'error');
+      : (error?.message?.includes('pop-ups')
+        ? error.message
+        : 'Não foi possível abrir o arquivo. Verifique a conexão e tente novamente.');
+    triggerNotification(errorMessage, 'error');
   }
 };
   const [departmentsList, setDepartmentsList] = useState(() => getLocalStorageItem('comunica_departments', INITIAL_DEPARTMENTS));

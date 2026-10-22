@@ -30,15 +30,20 @@ test('restricted files are downloaded through authenticated storage reads', () =
   assert.match(appSource, /handleDownload\(msg\.attachment, msg\.attachment\.name\)/);
 });
 
-test('mobile Firebase files open outside the inbox without replacing the app', () => {
+test('mobile attachments separate preview from direct downloads', () => {
   assert.match(appSource, /const isNativeContainer = Boolean\(window\.cordova \|\| window\.Capacitor\)/);
-  assert.match(appSource, /const authenticatedUrl = await getDownloadURL\(fileRef\)/);
-  assert.match(appSource, /previewWindow = window\.open\('about:blank', '_blank'\)/);
-  assert.match(appSource, /previewWindow\.location\.replace\(authenticatedUrl\)/);
-  assert.match(appSource, /window\.open\(authenticatedUrl, '_system'\)/);
+  assert.match(appSource, /isMobileBrowser && \(isNativeContainer \|\| expectsInlinePreview\)/);
+  assert.match(appSource, /const authenticatedUrl = await waitForFileAccess\(getDownloadURL\(fileRef\)\)/);
+  assert.match(appSource, /previewWindow\.location\.href = authenticatedUrl/);
+  assert.match(appSource, /const blob = await waitForFileAccess\(getBlob\(fileRef\)\)/);
+  assert.match(appSource, /link\.download = fileName/);
   assert.doesNotMatch(appSource, /window\.location\.assign\(authenticatedUrl\)/);
 });
 
+test('file access has a timeout and closes the temporary preview on errors', () => {
+  assert.match(appSource, /Tempo esgotado ao preparar o arquivo/);
+  assert.match(appSource, /if \(previewWindow && !previewWindow\.closed\) previewWindow\.close\(\)/);
+});
 test('document deletion also removes its physical object', () => {
   assert.match(appSource, /deleteStoredFile\(documentItem\?\.file\)/);
   assert.match(functionsSource, /export const cleanupDeletedDocumentFile = onDocumentDeleted/);
