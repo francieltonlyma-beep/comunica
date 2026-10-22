@@ -554,6 +554,30 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
         || normalizedType.startsWith('image/')
         || /\.(?:pdf|png|jpe?g|gif|webp|bmp|svg|avif)(?:$|[?#])/i.test(fileName);
 
+      const isLegacyTokenUrl = !file.storagePath
+        && /firebasestorage\.googleapis\.com|storage\.googleapis\.com/i.test(fileUrl)
+        && /[?&]token=/.test(fileUrl);
+
+      // Anexos criados antes da adoção de storagePath não possuem os metadados
+      // usados pelas regras atuais. A própria URL antiga já contém o token
+      // individual do objeto; abrimos essa URL diretamente durante o clique para
+      // manter esses arquivos acessíveis sem enfraquecer a regra dos novos anexos.
+      if (isLegacyTokenUrl) {
+        if (isNativeContainer) {
+          window.open(fileUrl, '_system');
+          return;
+        }
+        const legacyLink = document.createElement('a');
+        legacyLink.href = fileUrl;
+        legacyLink.target = '_blank';
+        legacyLink.rel = 'noopener noreferrer';
+        legacyLink.download = fileName;
+        document.body.appendChild(legacyLink);
+        legacyLink.click();
+        document.body.removeChild(legacyLink);
+        return;
+      }
+
       // No celular, só criamos uma nova aba para formatos que o navegador
       // realmente consegue visualizar. Documentos de escritório e outros
       // formatos seguem direto para download, sem deixar uma aba em branco.
