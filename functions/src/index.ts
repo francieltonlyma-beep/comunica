@@ -8,7 +8,7 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
-import {onDocumentCreated, onDocumentDeleted} from "firebase-functions/v2/firestore";
+import {onDocumentCreated, onDocumentDeleted, onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {defineSecret} from "firebase-functions/params";
@@ -801,6 +801,85 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
   });
 };
 
+type MessageActivityData = {
+  status: string;
+  assigneeIds: string[];
+  dueDate: string;
+  createdBy: string;
+  updatedBy: string;
+};
+
+const messageActivityData = (value: unknown): MessageActivityData | null => {
+  if (!value || typeof value !== 'object') return null;
+  const activity = value as Record<string, unknown>;
+  return {
+    status: typeof activity.status === 'string' ? activity.status : 'pending',
+    assigneeIds: Array.isArray(activity.assigneeIds)
+      ? [...new Set(activity.assigneeIds.filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id)))]
+      : [],
+    dueDate: typeof activity.dueDate === 'string' ? activity.dueDate : '',
+    createdBy: typeof activity.createdBy === 'string' ? activity.createdBy : '',
+    updatedBy: typeof activity.updatedBy === 'string' ? activity.updatedBy : '',
+  };
+};
+
+const sendActivityPush = async ({
+  database, appId, companyId, recipientIds, actorId, title, body, type, threadId, messageId, eventId,
+}: {
+  database: ReturnType<typeof getFirestore>;
+  appId: string;
+  companyId: string;
+  recipientIds: string[];
+  actorId: string;
+  title: string;
+  body: string;
+  type: 'activity_assignment' | 'activity_update' | 'activity_deadline';
+  threadId: string;
+  messageId: string;
+  eventId: string;
+}) => {
+  const usersPath = `artifacts/${appId}/public/data/companies/${companyId}/users`;
+  const recipients = [...new Set(recipientIds)].filter((id) => id && id !== actorId);
+  if (recipients.length === 0) return {successCount: 0, failureCount: 0};
+  const usersSnapshot = await database.collection(usersPath).get();
+  const tokenOwners = new Map<string, string[]>();
+  usersSnapshot.docs.filter((user) => recipients.includes(user.id)).forEach((user) => {
+    const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
+    savedTokens.forEach((token: unknown) => {
+      if (typeof token !== 'string' || !token) return;
+      tokenOwners.set(token, [...(tokenOwners.get(token) || []), user.id]);
+    });
+  });
+  const tokens = [...tokenOwners.keys()];
+  if (tokens.length === 0) return {successCount: 0, failureCount: 0};
+  let successCount = 0;
+  let failureCount = 0;
+  const staleTokens: string[] = [];
+  for (let index = 0; index < tokens.length; index += 500) {
+    const batchTokens = tokens.slice(index, index + 500);
+    const response = await getMessaging().sendEachForMulticast({
+      tokens: batchTokens,
+      notification: {title, body: body.slice(0, 220)},
+      data: {type, companyId, threadId, messageId, eventId},
+      webpush: {
+        headers: {Urgency: 'high', TTL: '3600'},
+        notification: {icon: '/pwa/icon-192.png', tag: eventId, renotify: false},
+        fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(companyId)}&messageThread=${encodeURIComponent(threadId)}&messageId=${encodeURIComponent(messageId)}`},
+      },
+      android: {priority: 'high', ttl: 60 * 60 * 1000, notification: {tag: eventId, sound: 'default'}},
+    });
+    successCount += response.successCount;
+    failureCount += response.failureCount;
+    response.responses.forEach((item, responseIndex) => {
+      const code = item.error?.code || '';
+      if (!item.success && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token')) staleTokens.push(batchTokens[responseIndex]);
+    });
+  }
+  await Promise.all(staleTokens.flatMap((token) => (tokenOwners.get(token) || []).map((userId) =>
+    database.doc(`${usersPath}/${userId}`).update({pushTokens: FieldValue.arrayRemove(token)}))));
+  return {successCount, failureCount};
+};
+
 export const notifyNewAnnouncement = onDocumentCreated(
   "artifacts/{appId}/public/data/companies/{companyId}/announcements/{announcementId}",
   async (event) => {
@@ -834,6 +913,51 @@ export const notifyNewMessage = onDocumentCreated(
   },
 );
 
+export const notifyMessageActivityChange = onDocumentUpdated(
+  "artifacts/{appId}/public/data/companies/{companyId}/messages/{messageId}",
+  async (event) => {
+    const before = event.data?.before.data() ?? {};
+    const after = event.data?.after.data() ?? {};
+    const previous = messageActivityData(before.activity);
+    const activity = messageActivityData(after.activity);
+    if (!activity) return;
+
+    const newAssignees = activity.assigneeIds.filter((id) => !previous?.assigneeIds.includes(id));
+    const subject = String(after.subject || after.content || 'Atividade da conversa').slice(0, 160);
+    const threadId = String(after.threadId || '');
+    const messageId = String(event.params.messageId || '');
+    const actorId = activity.updatedBy || String(after.actorId || after.senderId || '');
+    if (!/^[a-zA-Z0-9_-]+$/.test(threadId) || !/^[a-zA-Z0-9_-]+$/.test(messageId)) return;
+
+    let recipientIds: string[] = [];
+    let title = '';
+    let body = '';
+    let type: 'activity_assignment' | 'activity_update' = 'activity_update';
+    if (newAssignees.length > 0) {
+      recipientIds = newAssignees;
+      title = '📋 Nova atividade atribuída a você';
+      body = subject;
+      type = 'activity_assignment';
+    } else if (previous && previous.status !== activity.status) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = activity.status === 'resolved' ? '✅ Atividade concluída' : '🔄 Situação da atividade atualizada';
+      body = subject;
+    } else if (previous && previous.dueDate !== activity.dueDate && activity.assigneeIds.length > 0) {
+      recipientIds = activity.assigneeIds;
+      title = activity.dueDate ? '📅 Prazo da atividade atualizado' : '📅 Prazo removido da atividade';
+      body = activity.dueDate ? `${subject} · ${activity.dueDate.split('-').reverse().join('/')}` : subject;
+    } else {
+      return;
+    }
+
+    await sendActivityPush({
+      database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds, actorId, title, body, type, threadId, messageId,
+      eventId: `activity-change-${messageId}-${Number(after.activity?.updatedAt || Date.now())}`,
+    });
+  },
+);
+
 export const cleanupDeletedDocumentFile = onDocumentDeleted(
   "artifacts/{appId}/public/data/companies/{companyId}/documents/{documentId}",
   async (event) => {
@@ -857,6 +981,17 @@ type ConversationDeadlineItem = {
   timestamp: number;
 };
 
+type ActivityDeadlineItem = {
+  appId: string;
+  companyId: string;
+  threadId: string;
+  messageId: string;
+  dueDate: string;
+  stage: ConversationDeadlineStage;
+  subject: string;
+  recipientIds: string[];
+};
+
 const saoPauloCivilDate = (dayOffset = 0) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -872,6 +1007,12 @@ const deadlineNotificationCopy = (stage: ConversationDeadlineStage) => {
   return {title: '🚨 Conversa com prazo vencido', prefix: 'Em atraso'};
 };
 
+const activityDeadlineNotificationCopy = (stage: ConversationDeadlineStage) => {
+  if (stage === 'due_soon') return {title: '⏰ Atividade vence amanhã', prefix: 'Prazo amanhã'};
+  if (stage === 'due_today') return {title: '⚠️ Atividade vence hoje', prefix: 'Prazo hoje'};
+  return {title: '🚨 Atividade com prazo vencido', prefix: 'Em atraso'};
+};
+
 export const notifyConversationDeadlines = onSchedule({
   schedule: '0 9 * * *',
   timeZone: 'America/Sao_Paulo',
@@ -885,6 +1026,7 @@ export const notifyConversationDeadlines = onSchedule({
     [saoPauloCivilDate(-1), 'overdue'],
   ]);
   const conversations = new Map<string, ConversationDeadlineItem>();
+  const activities = new Map<string, ActivityDeadlineItem>();
   const appId = 'comunica-salvador';
   const companies = await database.collection(`artifacts/${appId}/public/data/companies`).get();
   for (const company of companies.docs) {
@@ -912,6 +1054,22 @@ export const notifyConversationDeadlines = onSchedule({
           timestamp,
         });
       }
+    });
+
+    const activitySnapshot = await company.ref.collection('messages').where('activity.dueDate', 'in', [...dateStages.keys()]).get();
+    activitySnapshot.docs.forEach((messageDocument) => {
+      const content = messageDocument.data();
+      const activity = messageActivityData(content.activity);
+      const threadId = String(content.threadId || '');
+      const dueDate = activity?.dueDate || '';
+      const stage = dateStages.get(dueDate);
+      if (!activity || activity.status === 'resolved' || !stage || !/^[a-zA-Z0-9_-]+$/.test(threadId)) return;
+      const recipientIds = activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean);
+      if (recipientIds.length === 0) return;
+      activities.set(`${appId}/${companyId}/${messageDocument.id}`, {
+        appId, companyId, threadId, messageId: messageDocument.id, dueDate, stage, recipientIds,
+        subject: String(content.subject || content.content || 'Atividade da conversa').slice(0, 160),
+      });
     });
   }
 
@@ -975,6 +1133,40 @@ export const notifyConversationDeadlines = onSchedule({
     } catch (error) {
       console.error('Conversation deadline notification failed', {
         companyId: conversation.companyId, threadId: conversation.threadId, stage: conversation.stage, error,
+      });
+      await receiptRef.delete();
+      throw error;
+    }
+  }
+
+  for (const activity of activities.values()) {
+    const receiptId = `activity-deadline-${activity.messageId}-${activity.dueDate}-${activity.stage}`;
+    const receiptRef = database.doc(`artifacts/${activity.appId}/public/data/companies/${activity.companyId}/notificationReceipts/${receiptId}`);
+    const acquired = await database.runTransaction(async (transaction) => {
+      if ((await transaction.get(receiptRef)).exists) return false;
+      transaction.create(receiptRef, {
+        type: 'activity_deadline', threadId: activity.threadId, messageId: activity.messageId,
+        dueDate: activity.dueDate, stage: activity.stage, status: 'processing', createdAt: Date.now(),
+      });
+      return true;
+    });
+    if (!acquired) continue;
+
+    try {
+      const copy = activityDeadlineNotificationCopy(activity.stage);
+      const delivery = await sendActivityPush({
+        database, appId: activity.appId, companyId: activity.companyId,
+        recipientIds: activity.recipientIds, actorId: '', title: copy.title,
+        body: `${copy.prefix}: ${activity.subject}`, type: 'activity_deadline',
+        threadId: activity.threadId, messageId: activity.messageId, eventId: receiptId,
+      });
+      await receiptRef.set({
+        status: delivery.successCount > 0 ? 'delivered' : 'no_registered_devices',
+        ...delivery, completedAt: Date.now(),
+      }, {merge: true});
+    } catch (error) {
+      console.error('Activity deadline notification failed', {
+        companyId: activity.companyId, messageId: activity.messageId, stage: activity.stage, error,
       });
       await receiptRef.delete();
       throw error;

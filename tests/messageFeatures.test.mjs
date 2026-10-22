@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
+import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
 
 test('message reactions are toggled without duplicate users', () => {
   assert.deepEqual(toggleMessageUser(['u1', 'u1'], 'u2'), ['u1', 'u2']);
@@ -33,6 +33,11 @@ test('activity exposes deadline and checklist progress to the service center', (
   assert.equal(messageActivityProgress(activity), 50);
   assert.equal(isMessageActivityOverdue(activity, '2026-10-23'), true);
   assert.equal(isMessageActivityOverdue({ ...activity, status: 'resolved' }, '2026-10-23'), false);
+  assert.equal(messageActivitySchedule(activity, '2026-10-21'), 'upcoming');
+  assert.equal(messageActivitySchedule(activity, '2026-10-22'), 'today');
+  assert.equal(messageActivitySchedule(activity, '2026-10-23'), 'overdue');
+  assert.equal(messageActivitySchedule({ ...activity, dueDate: '' }, '2026-10-22'), 'no_due');
+  assert.equal(messageActivitySchedule({ ...activity, status: 'resolved' }, '2026-10-22'), 'resolved');
 });
 
 
