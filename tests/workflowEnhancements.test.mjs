@@ -12,6 +12,14 @@ test('inbox exposes reply, reactions, saved messages and activity checklist', ()
   for (const field of ['likedBy', 'savedBy', 'highlightedBy', 'activity']) assert.match(rules, new RegExp(`'${field}'`));
 });
 
+test('conversation activities are synchronized with the service center', () => {
+  for (const feature of ['serviceWorkspace', 'serviceActivityRows', 'filteredServiceActivities', 'serviceActivityMetrics', 'openActivityConversation']) assert.match(app, new RegExp(feature));
+  assert.match(app, /Sincronizada com a Central de Serviços/);
+  assert.match(app, /Atividades das conversas/);
+  assert.match(app, /data-message-id=\{msg\.id\}/);
+  assert.doesNotMatch(app, /collection\(['"]activities['"]\)/);
+});
+
 test('public careers always derives talent pool opportunities from company roles', () => {
   assert.match(careers, /talentPoolRoles/);
   assert.match(careers, /talent-pool--/);

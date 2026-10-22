@@ -9,7 +9,7 @@ const functionsSource = await readFile(new URL('../functions/src/index.ts', impo
 test('central de serviços faz parte da navegação e das permissões', () => {
   assert.match(appSource, /id: 'services', label: 'Central de serviços'/);
   assert.match(appSource, /activeTab === 'services'/);
-  assert.match(appSource, /Solicitações e aprovações/);
+  assert.match(appSource, /Solicitações, atividades e checklists/);
 });
 
 test('solicitações usam chamados sequenciais e a conversa existente', () => {

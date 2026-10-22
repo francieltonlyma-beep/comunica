@@ -13,7 +13,7 @@ import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule,
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
 import PlatformUpdates from './PlatformUpdates.jsx';
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
-import { createMessageActivity, findMentionedParticipantIds, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
+import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
 import { createPortal } from 'react-dom';
 import { 
@@ -147,6 +147,24 @@ const SERVICE_STATUS_CLASSES = {
   rejected: 'border-rose-200 bg-rose-50 text-rose-800',
   overdue: 'border-red-200 bg-red-50 text-red-800',
   completed: 'border-slate-200 bg-slate-100 text-slate-700',
+};
+const MESSAGE_ACTIVITY_STATUS_LABELS = {
+  pending: 'Pendente',
+  in_progress: 'Em andamento',
+  overdue: 'Em atraso',
+  resolved: 'Resolvida',
+};
+const MESSAGE_ACTIVITY_STATUS_CLASSES = {
+  pending: 'border-amber-200 bg-amber-50 text-amber-800',
+  in_progress: 'border-cyan-200 bg-cyan-50 text-cyan-800',
+  overdue: 'border-rose-200 bg-rose-50 text-rose-800',
+  resolved: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+};
+const MESSAGE_ACTIVITY_PRIORITY_LABELS = {
+  low: 'Baixa',
+  normal: 'Normal',
+  high: 'Alta',
+  urgent: 'Urgente',
 };
 const triggerNotification = (message, type = 'success') => {
   if (notificationDispatcher) {
@@ -838,6 +856,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [checklistDrafts, setChecklistDrafts] = useState({});
   const [messageFocusFilter, setMessageFocusFilter] = useState('all');
+  const [activityMessageTargetId, setActivityMessageTargetId] = useState('');
   const [isUploadingMessageAttachment, setIsUploadingMessageAttachment] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const messageUploadInFlight = useRef(false);
@@ -855,9 +874,14 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [serviceDraft, setServiceDraft] = useState(() => emptyServiceRequest());
   const [serviceFormOpen, setServiceFormOpen] = useState(false);
   const [serviceSearch, setServiceSearch] = useState('');
+  const [serviceWorkspace, setServiceWorkspace] = useState('requests');
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all');
   const [serviceStatusFilter, setServiceStatusFilter] = useState('active');
   const [serviceAssigneeFilter, setServiceAssigneeFilter] = useState('all');
+  const [serviceActivitySearch, setServiceActivitySearch] = useState('');
+  const [serviceActivityStatusFilter, setServiceActivityStatusFilter] = useState('active');
+  const [serviceActivityPriorityFilter, setServiceActivityPriorityFilter] = useState('all');
+  const [serviceActivityAssigneeFilter, setServiceActivityAssigneeFilter] = useState('all');
   const [isCreatingServiceRequest, setIsCreatingServiceRequest] = useState(false);
   const [serviceCatalogSettings, setServiceCatalogSettings] = useState(() => sanitizeServiceCatalogSettings({}));
   const [serviceSettingsDraft, setServiceSettingsDraft] = useState(() => sanitizeServiceCatalogSettings({}));
@@ -4674,7 +4698,12 @@ try {
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
         const messageList = messageListRef.current;
-        if (messageList) messageList.scrollTop = messageList.scrollHeight;
+        if (!messageList) return;
+        const target = activityMessageTargetId
+          ? [...messageList.querySelectorAll('[data-message-id]')].find(element => element.dataset.messageId === activityMessageTargetId)
+          : null;
+        if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        else messageList.scrollTop = messageList.scrollHeight;
       });
     });
 
@@ -4682,7 +4711,7 @@ try {
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
-  }, [showMessagesModal, activeThreadId, activeThreadMessageKey, isComposingMsg, messageFocusFilter]);
+  }, [showMessagesModal, activeThreadId, activeThreadMessageKey, isComposingMsg, messageFocusFilter, activityMessageTargetId]);
   const formatMessageDateTime = (message) => {
     const timestamp = getMessageTimestamp(message);
     if (!timestamp) return message.date || '';
@@ -5190,6 +5219,9 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const activity = normalizeMessageActivity({
       ...current,
       ...changes,
+      updatedAt: Date.now(),
+      updatedBy: currentUser.id,
+      updatedByName: currentUser.name,
       resolvedAt: nextStatus === 'resolved' ? (current.resolvedAt || Date.now()) : null,
       resolvedBy: nextStatus === 'resolved' ? currentUser.name : '',
     });
@@ -5208,8 +5240,9 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     handleUpdateMessageActivity(message, { checklist: activity.checklist.map(item => item.id === itemId ? { ...item, completed: !item.completed } : item) });
   };
 
-  const openThread = async (threadId) => {
+  const openThread = async (threadId, targetMessageId = '') => {
     setActiveThreadId(threadId);
+    setActivityMessageTargetId(targetMessageId);
     setThreadHeaderExpanded(false);
     setPendingThreadDueDate(getThreadMetadata(threadId).dueDate || '');
     setShowResolutionEvaluation(false);
@@ -5234,6 +5267,12 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
           : { readBy: [...new Set([...(message.readBy || []), currentUser.id])] },
       })), 'A conversa abriu, mas não foi possível confirmar a leitura na nuvem. Tente novamente.');
     }
+  };
+
+  const openActivityConversation = (message) => {
+    setMessageFocusFilter('activities');
+    openThread(message.threadId, message.id);
+    setShowMessagesModal(true);
   };
 
   const createThreadSystemMessage = (threadId, metadata, content) => ({
@@ -5834,6 +5873,58 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (row.reopened) totals.reopened += 1;
     return totals;
   }, { total: 0, onTime: 0, late: 0, overdue: 0, extended: 0, reopened: 0 });
+  const serviceActivityRows = normMessages.map(message => {
+    const activity = normalizeMessageActivity(message.activity);
+    if (!activity || !message.threadId) return null;
+    const metadata = getThreadMetadata(message.threadId);
+    const status = isMessageActivityOverdue(activity, todayStr) ? 'overdue' : activity.status;
+    const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user.id === userId)).filter(Boolean);
+    const checklistCompleted = activity.checklist.filter(item => item.completed).length;
+    return {
+      id: message.id,
+      threadId: message.threadId,
+      message,
+      subject: metadata.subject || message.subject || 'Conversa sem assunto',
+      preview: String(message.content || message.attachment?.name || 'Atividade vinculada à conversa').trim(),
+      authorName: message.senderId === currentUser.id ? 'Você' : (message.senderName || 'Participante'),
+      participantIds: message.participants || [],
+      activity,
+      status,
+      assignees,
+      progress: messageActivityProgress(activity),
+      checklistCompleted,
+      checklistTotal: activity.checklist.length,
+      updatedAt: activity.updatedAt || activity.createdAt || getMessageTimestamp(message),
+    };
+  }).filter(Boolean).sort((a, b) => {
+    if (a.status === 'resolved' && b.status !== 'resolved') return 1;
+    if (a.status !== 'resolved' && b.status === 'resolved') return -1;
+    if (a.activity.dueDate && b.activity.dueDate && a.activity.dueDate !== b.activity.dueDate) return a.activity.dueDate.localeCompare(b.activity.dueDate);
+    if (a.activity.dueDate && !b.activity.dueDate) return -1;
+    if (!a.activity.dueDate && b.activity.dueDate) return 1;
+    return b.updatedAt - a.updatedAt;
+  });
+  const filteredServiceActivities = serviceActivityRows.filter(row => {
+    const matchesText = normalizedText(`${row.subject} ${row.preview} ${row.authorName} ${row.assignees.map(user => user.name).join(' ')}`).includes(normalizedText(serviceActivitySearch));
+    const matchesStatus = serviceActivityStatusFilter === 'all'
+      || (serviceActivityStatusFilter === 'active' && row.status !== 'resolved')
+      || row.status === serviceActivityStatusFilter;
+    const matchesPriority = serviceActivityPriorityFilter === 'all' || row.activity.priority === serviceActivityPriorityFilter;
+    const matchesAssignee = serviceActivityAssigneeFilter === 'all'
+      || (serviceActivityAssigneeFilter === 'mine' && row.activity.assigneeIds.includes(currentUser.id))
+      || (serviceActivityAssigneeFilter === 'unassigned' && !row.activity.assigneeIds.length)
+      || row.activity.assigneeIds.includes(serviceActivityAssigneeFilter);
+    return matchesText && matchesStatus && matchesPriority && matchesAssignee;
+  });
+  const serviceActivityMetrics = serviceActivityRows.reduce((totals, row) => {
+    totals.total += 1;
+    if (row.status !== 'resolved') totals.active += 1;
+    if (row.status === 'overdue') totals.overdue += 1;
+    if (row.status === 'resolved') totals.resolved += 1;
+    if (row.activity.assigneeIds.includes(currentUser.id) && row.status !== 'resolved') totals.mine += 1;
+    if (!row.activity.assigneeIds.length && row.status !== 'resolved') totals.unassigned += 1;
+    return totals;
+  }, { total: 0, active: 0, overdue: 0, resolved: 0, mine: 0, unassigned: 0 });
   const serviceRequestRows = Object.values(normMessages.reduce((threads, message) => {
     if (!message.threadId) return threads;
     if (!threads[message.threadId]) threads[message.threadId] = { id: message.threadId, messages: [] };
@@ -5988,8 +6079,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     pendingDocumentReads > 0 ? { id: 'document-reads', label: 'Leituras obrigatórias', detail: `${pendingDocumentReads} documento(s) aguardando confirmação`, tone: 'amber', icon: FileText, action: () => { setDocumentReadingFilter('Pendentes'); setActiveTab('documents'); } } : null,
     pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: `${pendingPollResponses} votação(ões) disponíveis`, tone: 'cyan', icon: Activity, action: () => { setPollViewFilter('Ativas'); setActiveTab('polls'); } } : null,
     dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setShowMessagesModal(true) } : null,
-    serviceMetrics.overdue > 0 ? { id: 'overdue-services', label: 'Serviços em atraso', detail: `${serviceMetrics.overdue} chamado(s) fora do prazo`, tone: 'rose', icon: CheckCircle2, action: () => { setServiceStatusFilter('overdue'); setActiveTab('services'); } } : null,
-    (currentUser?.isAdmin || currentUser?.isDeveloper) && serviceMetrics.unassigned > 0 ? { id: 'unassigned-services', label: 'Chamados sem responsável', detail: `${serviceMetrics.unassigned} solicitação(ões) precisam de atribuição`, tone: 'violet', icon: UserPlus, action: () => { setServiceAssigneeFilter('unassigned'); setServiceStatusFilter('active'); setActiveTab('services'); } } : null,
+    serviceMetrics.overdue > 0 ? { id: 'overdue-services', label: 'Serviços em atraso', detail: `${serviceMetrics.overdue} chamado(s) fora do prazo`, tone: 'rose', icon: CheckCircle2, action: () => { setServiceWorkspace('requests'); setServiceStatusFilter('overdue'); setActiveTab('services'); } } : null,
+    serviceActivityMetrics.overdue > 0 ? { id: 'overdue-activities', label: 'Atividades em atraso', detail: `${serviceActivityMetrics.overdue} atividade(s) com prazo ultrapassado`, tone: 'rose', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('overdue'); setServiceActivityAssigneeFilter('all'); setActiveTab('services'); } } : null,
+    (currentUser?.isAdmin || currentUser?.isDeveloper) && serviceMetrics.unassigned > 0 ? { id: 'unassigned-services', label: 'Chamados sem responsável', detail: `${serviceMetrics.unassigned} solicitação(ões) precisam de atribuição`, tone: 'violet', icon: UserPlus, action: () => { setServiceWorkspace('requests'); setServiceAssigneeFilter('unassigned'); setServiceStatusFilter('active'); setActiveTab('services'); } } : null,
     canOpenModule('careers') && careerPendingCandidateUpdates > 0 ? { id: 'candidate-updates', label: 'Currículos atualizados', detail: `${careerPendingCandidateUpdates} candidatura(s) precisam de nova análise`, tone: 'fuchsia', icon: Briefcase, action: () => setActiveTab('careers') } : null,
   ].filter(Boolean);
   const dashboardAttentionTone = {
@@ -6002,6 +6094,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   };
   const dashboardQuickActions = [
     canOpenModule('services') && activeServiceCatalog.length ? { id: 'new-service', label: 'Abrir solicitação', detail: 'Novo chamado interno', icon: Plus, action: () => openServiceRequestForm(activeServiceCatalog[0].id) } : null,
+    canOpenModule('services') && serviceActivityMetrics.active ? { id: 'activities', label: 'Atividades pendentes', detail: `${serviceActivityMetrics.active} atividade(s) pendente(s)`, icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setActiveTab('services'); } } : null,
     { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setShowMessagesModal(true) },
     canOpenModule('documents') ? { id: 'documents', label: 'Documentos', detail: pendingDocumentReads ? `${pendingDocumentReads} leitura(s) pendente(s)` : 'Consultar arquivos', icon: FileText, action: () => setActiveTab('documents') } : null,
     canOpenModule('scale') ? { id: 'calendar', label: 'Calendário', detail: `${dashboardUpcomingEvents.length} evento(s) futuro(s)`, icon: Calendar, action: () => setActiveTab('scale') } : null,
@@ -6239,7 +6332,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     {
       label: 'Trabalho',
       items: [
-        { id: 'services', label: 'Central de serviços', description: 'Solicitações e aprovações', icon: CheckCircle2, badge: serviceMetrics.active || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
+        { id: 'services', label: 'Central de serviços', description: 'Solicitações, atividades e checklists', icon: CheckCircle2, badge: (serviceMetrics.active + serviceActivityMetrics.active) || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
         { id: 'documents', label: 'Documentos', description: 'Arquivos e políticas', icon: FileText, badge: pendingDocumentReads || null, activeClass: 'from-emerald-800 to-teal-700', accent: 'text-emerald-600' },
         { id: 'scale', label: 'Escalas e calendário', description: 'Agenda e disponibilidade', icon: Calendar, activeClass: 'from-orange-700 to-amber-600', accent: 'text-orange-600' },
         canAccessProductivity ? { id: 'productivity', label: 'Produtividade', description: 'Registros de produção', icon: TrendingUp, activeClass: 'from-indigo-800 to-violet-700', accent: 'text-indigo-600' } : null,
@@ -6842,7 +6935,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   <div className="max-w-2xl">
                     <span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-cyan-100"><CheckCircle2 className="h-3.5 w-3.5" /> Atendimento interno</span>
                     <h3 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Central de Serviços</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-blue-100/80">Abra solicitações para as áreas responsáveis, acompanhe prazos e aprovações e mantenha todo o histórico em um único chamado.</p>
+                    <p className="mt-2 text-sm leading-relaxed text-blue-100/80">Abra solicitações, acompanhe prazos e organize em um só lugar as atividades e checklists criados diretamente nas conversas.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => setActiveTutorial('services')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15"><BookOpen className="h-4 w-4" /> Como usar</button>
@@ -6851,6 +6944,13 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   </div>
                 </div>
               </section>
+
+              <nav data-tour="services-workspaces" aria-label="Áreas da Central de Serviços" className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:w-fit">
+                <button type="button" onClick={() => setServiceWorkspace('requests')} className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${serviceWorkspace === 'requests' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><MessageSquare className="h-4 w-4" /> Solicitações <span className={`rounded-full px-2 py-0.5 text-[9px] ${serviceWorkspace === 'requests' ? 'bg-white/15' : 'bg-slate-100 text-slate-600'}`}>{serviceMetrics.active}</span></button>
+                <button type="button" onClick={() => setServiceWorkspace('activities')} className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${serviceWorkspace === 'activities' ? 'bg-violet-700 text-white shadow-sm' : 'text-slate-600 hover:bg-violet-50'}`}><ListChecks className="h-4 w-4" /> Atividades <span className={`rounded-full px-2 py-0.5 text-[9px] ${serviceWorkspace === 'activities' ? 'bg-white/15' : 'bg-violet-50 text-violet-700'}`}>{serviceActivityMetrics.active}</span></button>
+              </nav>
+
+              {serviceWorkspace === 'requests' && <>
 
               <section data-tour="services-metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                 {[
@@ -6918,6 +7018,65 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   {filteredServiceRequests.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma solicitação encontrada</h5><p className="mt-1 text-xs text-slate-500">Abra um novo chamado ou altere os filtros para consultar o histórico.</p></div>}
                 </div>
               </section>
+              </>}
+
+              {serviceWorkspace === 'activities' && <>
+                <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  {[
+                    { id: 'all', label: 'Total', value: serviceActivityMetrics.total, color: 'text-slate-900' },
+                    { id: 'active', label: 'Pendentes', value: serviceActivityMetrics.active, color: 'text-violet-700' },
+                    { id: 'mine', label: 'Minhas', value: serviceActivityMetrics.mine, color: 'text-blue-700' },
+                    { id: 'overdue', label: 'Em atraso', value: serviceActivityMetrics.overdue, color: 'text-rose-700' },
+                    { id: 'resolved', label: 'Resolvidas', value: serviceActivityMetrics.resolved, color: 'text-emerald-700' },
+                  ].map(metric => {
+                    const active = metric.id === 'mine'
+                      ? serviceActivityAssigneeFilter === 'mine' && serviceActivityStatusFilter === 'active'
+                      : serviceActivityStatusFilter === metric.id && serviceActivityAssigneeFilter === 'all';
+                    return <button key={metric.id} type="button" aria-pressed={active} onClick={() => { setServiceActivityStatusFilter(metric.id === 'mine' ? 'active' : metric.id); setServiceActivityAssigneeFilter(metric.id === 'mine' ? 'mine' : 'all'); }} className={`rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-md ${active ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className={`mt-1 block text-2xl font-black ${metric.color}`}>{metric.value}</strong><span className="mt-1 block text-[9px] font-semibold text-slate-400">Clique para filtrar</span></button>;
+                  })}
+                </section>
+
+                <section className="rounded-[1.5rem] border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-600">Sincronização automática</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Atividades das conversas</h4><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Ao marcar uma mensagem como atividade, ela aparece aqui automaticamente. Status, prazo, responsável e checklist são os mesmos nos dois lugares.</p></div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[620px] lg:grid-cols-4">
+                      <div className="relative sm:col-span-2 lg:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={serviceActivitySearch} onChange={event => setServiceActivitySearch(event.target.value)} placeholder="Buscar atividade" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs outline-none focus:border-violet-300" /></div>
+                      <select value={serviceActivityStatusFilter} onChange={event => setServiceActivityStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="active">Pendentes</option><option value="all">Todos os status</option><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="overdue">Em atraso</option><option value="resolved">Resolvida</option></select>
+                      <select value={serviceActivityPriorityFilter} onChange={event => setServiceActivityPriorityFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todas as prioridades</option>{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+                      <select value={serviceActivityAssigneeFilter} onChange={event => setServiceActivityAssigneeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todos os responsáveis</option><option value="mine">Atribuídas a mim</option><option value="unassigned">Sem responsável</option>{employeesList.filter(user => serviceActivityRows.some(row => row.activity.assigneeIds.includes(user.id))).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="grid gap-4 xl:grid-cols-2">
+                  {filteredServiceActivities.map(row => {
+                    const activity = row.activity;
+                    const assigneeCandidates = employeesList.filter(user => row.participantIds.includes(user.id));
+                    return <article key={row.id} className={`rounded-[1.5rem] border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${row.status === 'overdue' ? 'border-rose-200' : 'border-slate-200'}`}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span><span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-600">Prioridade {MESSAGE_ACTIVITY_PRIORITY_LABELS[activity.priority].toLowerCase()}</span>{row.checklistTotal > 0 && <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal} itens</span>}</div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{row.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{row.preview}</p><span className="mt-2 block text-[9px] font-semibold text-slate-400">Mensagem de {row.authorName} · atividade criada por {activity.createdByName || 'participante'}</span></div>
+                        <button type="button" onClick={() => openActivityConversation(row.message)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir conversa</button>
+                      </div>
+
+                      <div className="mt-4"><div className="mb-1.5 flex items-center justify-between text-[9px] font-bold text-slate-500"><span>Progresso</span><span>{row.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${row.status === 'resolved' ? 'bg-emerald-500' : row.status === 'overdue' ? 'bg-rose-500' : 'bg-violet-600'}`} style={{ width: `${row.progress}%` }} /></div></div>
+
+                      <div className="mt-4 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 sm:grid-cols-2">
+                        <label className="text-[9px] font-black uppercase text-slate-400">Prazo<input type="date" value={activity.dueDate} onChange={event => handleUpdateMessageActivity(row.message, { dueDate: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700" /></label>
+                        <label className="text-[9px] font-black uppercase text-slate-400">Responsável<select value={activity.assigneeIds[0] || ''} onChange={event => handleUpdateMessageActivity(row.message, { assigneeIds: event.target.value ? [event.target.value] : [] })} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold normal-case text-slate-700"><option value="">Sem responsável</option>{assigneeCandidates.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/50 p-3">
+                        <div className="flex items-center justify-between gap-2"><strong className="flex items-center gap-1.5 text-[10px] text-violet-950"><ListChecks className="h-3.5 w-3.5" /> Checklist</strong><span className="text-[9px] font-bold text-violet-600">{row.checklistCompleted} de {row.checklistTotal} concluídos</span></div>
+                        {activity.checklist.length > 0 && <div className="mt-2 space-y-1.5">{activity.checklist.map(item => <label key={item.id} className={`flex items-start gap-2 rounded-lg bg-white px-2.5 py-2 text-[10px] text-slate-700 ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(row.message, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}
+                        <div className="mt-2 flex gap-1.5"><input value={checklistDrafts[row.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [row.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(row.message); } }} placeholder="Adicionar item" className="min-w-0 flex-1 rounded-lg border border-violet-100 bg-white px-2.5 py-2 text-[10px] text-slate-700 outline-none focus:border-violet-300" /><button type="button" onClick={() => handleAddMessageChecklistItem(row.message)} className="rounded-lg bg-violet-700 px-3 py-2 text-[9px] font-bold text-white hover:bg-violet-800">Adicionar</button></div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3"><span className="text-[9px] text-slate-400">Alterações sincronizadas com a mensagem original</span><div className="flex flex-wrap gap-1.5">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value, label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(row.message, { status: value })} className={`rounded-lg px-2.5 py-2 text-[9px] font-bold ${activity.status === value ? 'bg-violet-700 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}</div></div>
+                    </article>;
+                  })}
+                  {filteredServiceActivities.length === 0 && <div className="xl:col-span-2 rounded-[1.5rem] border border-dashed border-slate-300 bg-white p-10 text-center"><ListChecks className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma atividade encontrada</h5><p className="mt-1 text-xs leading-5 text-slate-500">Na Caixa de Entrada, clique no ícone de checklist de qualquer mensagem para criar a primeira atividade.</p></div>}
+                </section>
+              </>}
 
               {serviceFormOpen && (() => {
                 const category = getCompanyServiceCategory(serviceDraft.categoryId) || activeServiceCatalog[0] || SERVICE_CATALOG[0];
@@ -10234,7 +10393,7 @@ const handleDownload = async (fileUrl, fileName) => {
                             {dayHeading}
                             <div className={`mb-2 flex w-full items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                               {!isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'participante'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
-                              <article className={`group w-fit max-w-[82%] overflow-hidden rounded-[17px] border px-3 py-2.5 shadow-[0_8px_22px_-20px_rgba(15,23,42,.5)] sm:max-w-[min(48%,36rem)] ${(msg.highlightedBy || []).includes(currentUser.id) ? 'ring-2 ring-amber-300' : ''} ${isMine ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md' : 'bg-white border-slate-200 rounded-bl-md'}`}>
+                              <article data-message-id={msg.id} className={`group w-fit max-w-[82%] overflow-hidden rounded-[17px] border px-3 py-2.5 shadow-[0_8px_22px_-20px_rgba(15,23,42,.5)] sm:max-w-[min(48%,36rem)] ${(msg.highlightedBy || []).includes(currentUser.id) ? 'ring-2 ring-amber-300' : ''} ${isMine ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md' : 'bg-white border-slate-200 rounded-bl-md'}`}>
                                 {!isMine && <strong className="mb-1 block break-words text-[11px] font-extrabold leading-4 text-slate-900 [overflow-wrap:anywhere]">{msg.senderName}</strong>}
                                 {msg.replyTo && <button type="button" className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left text-[10px] ${isMine ? 'border-cyan-200 bg-white/10 text-blue-50' : 'border-blue-500 bg-slate-50 text-slate-600'}`}><strong className="block">Em resposta a {msg.replyTo.senderName}</strong><span className="mt-0.5 block truncate">{msg.replyTo.content || msg.replyTo.attachmentName || 'Mensagem'}</span></button>}
                                 {msg.content && <p className={`whitespace-pre-wrap break-words text-[13px] leading-[1.35rem] [overflow-wrap:anywhere] ${isMine ? 'text-white' : 'text-slate-800'}`}><TextoComEmojis texto={msg.content} /></p>}
@@ -10248,7 +10407,14 @@ const handleDownload = async (fileUrl, fileName) => {
                                   <time title={formatMessageDateTime(msg)}>{new Date(getMessageTimestamp(msg)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>
                                   {isMine && <span title={messageReadCount ? (messageReadCount === 1 ? 'Lida por uma pessoa' : `Lida por ${messageReadCount} pessoas`) : 'Enviada; aguardando leitura'} aria-label={messageReadCount ? (messageReadCount === 1 ? 'Mensagem lida' : `Mensagem lida por ${messageReadCount} pessoas`) : 'Mensagem enviada'} className={`inline-flex items-center ${messageReadCount ? 'text-cyan-200' : 'text-blue-200'}`}>{messageReadCount ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.8} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.8} />}{messageReadCount > 1 && <span className="ml-0.5 font-bold">{messageReadCount}</span>}</span>}
                                 </div>
-                                {messageActivity && <section className={`mt-2 rounded-xl border p-2.5 ${isMine ? 'border-white/20 bg-white/10' : 'border-violet-100 bg-violet-50/80'}`}><div className="flex flex-wrap items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" /><strong className="text-[10px]">Atividade</strong><select aria-label="Prioridade da atividade" value={messageActivity.priority} onChange={event => handleUpdateMessageActivity(msg, { priority: event.target.value })} className="ml-auto rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[8px] font-bold text-slate-700"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div><div className="mt-2 flex flex-wrap gap-1">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value,label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(msg, { status: value })} className={`rounded-md px-2 py-1 text-[8px] font-bold ${messageActivity.status === value ? 'bg-violet-700 text-white' : 'bg-white text-slate-600'}`}>{label}</button>)}</div>{messageActivity.checklist.length > 0 && <div className="mt-2 space-y-1">{messageActivity.checklist.map(item => <label key={item.id} className={`flex items-start gap-1.5 text-[9px] ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(msg, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}<div className="mt-2 flex gap-1"><input value={checklistDrafts[msg.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [msg.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(msg); } }} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] text-slate-700" /><button type="button" onClick={() => handleAddMessageChecklistItem(msg)} className="rounded-md bg-slate-900 px-2 py-1 text-[8px] font-bold text-white">Adicionar</button></div></section>}
+                                {messageActivity && <section className={`mt-2 rounded-xl border p-2.5 ${isMine ? 'border-white/20 bg-white/10' : 'border-violet-100 bg-violet-50/80'}`}>
+                                  <div className="flex flex-wrap items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" /><strong className="text-[10px]">Atividade</strong><select aria-label="Prioridade da atividade" value={messageActivity.priority} onChange={event => handleUpdateMessageActivity(msg, { priority: event.target.value })} className="ml-auto rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[8px] font-bold text-slate-700"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div>
+                                  <div className="mt-2 flex flex-wrap gap-1">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value,label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(msg, { status: value })} className={`rounded-md px-2 py-1 text-[8px] font-bold ${messageActivity.status === value ? 'bg-violet-700 text-white' : 'bg-white text-slate-600'}`}>{label}</button>)}</div>
+                                  <div className="mt-2 grid gap-1.5 sm:grid-cols-2"><label className={`text-[8px] font-bold ${isMine ? 'text-blue-100' : 'text-slate-500'}`}>Prazo<input type="date" value={messageActivity.dueDate} onChange={event => handleUpdateMessageActivity(msg, { dueDate: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[8px] text-slate-700" /></label><label className={`text-[8px] font-bold ${isMine ? 'text-blue-100' : 'text-slate-500'}`}>Responsável<select value={messageActivity.assigneeIds[0] || ''} onChange={event => handleUpdateMessageActivity(msg, { assigneeIds: event.target.value ? [event.target.value] : [] })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[8px] text-slate-700"><option value="">Sem responsável</option>{messageContacts.filter(user => (msg.participants || []).includes(user.id)).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label></div>
+                                  {messageActivity.checklist.length > 0 && <div className="mt-2 space-y-1">{messageActivity.checklist.map(item => <label key={item.id} className={`flex items-start gap-1.5 text-[9px] ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(msg, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}
+                                  <div className="mt-2 flex gap-1"><input value={checklistDrafts[msg.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [msg.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(msg); } }} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] text-slate-700" /><button type="button" onClick={() => handleAddMessageChecklistItem(msg)} className="rounded-md bg-slate-900 px-2 py-1 text-[8px] font-bold text-white">Adicionar</button></div>
+                                  <button type="button" onClick={() => { setShowMessagesModal(false); setActiveThreadId(null); setActiveTab('services'); setServiceWorkspace('activities'); }} className={`mt-2 inline-flex items-center gap-1 text-[8px] font-extrabold ${isMine ? 'text-cyan-100' : 'text-violet-700'}`}><ListChecks className="h-3 w-3" /> Sincronizada com a Central de Serviços</button>
+                                </section>}
                                 <div className={`mt-2 flex flex-wrap items-center gap-1 border-t pt-1.5 ${isMine ? 'border-white/15' : 'border-slate-100'}`}><button type="button" onClick={() => { setReplyingToMessage(msg); }} title="Responder" className={`rounded-md p-1.5 ${isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><Reply className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageLike(msg)} title="Curtir" className={`inline-flex items-center gap-1 rounded-md p-1.5 ${(msg.likedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ThumbsUp className="h-3.5 w-3.5" />{(msg.likedBy || []).length > 0 && <span className="text-[8px] font-bold">{msg.likedBy.length}</span>}</button><button type="button" onClick={() => handleToggleSavedMessage(msg)} title="Salvar" className={`rounded-md p-1.5 ${(msg.savedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Bookmark className={`h-3.5 w-3.5 ${(msg.savedBy || []).includes(currentUser.id) ? 'fill-current' : ''}`} /></button><button type="button" onClick={() => handleToggleHighlightedMessage(msg)} title="Grifar" className={`rounded-md p-1.5 ${(msg.highlightedBy || []).includes(currentUser.id) ? 'bg-amber-300 text-amber-950' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Highlighter className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageActivity(msg)} title={messageActivity ? 'Remover atividade' : 'Marcar como atividade'} className={`rounded-md p-1.5 ${messageActivity ? 'bg-violet-600 text-white' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ListChecks className="h-3.5 w-3.5" /></button></div>
                               </article>
                               {isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'você'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}

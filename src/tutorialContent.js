@@ -12,7 +12,7 @@ export const PLATFORM_TUTORIALS = {
       { title: 'Avisos e políticas', description: 'Consulte comunicados oficiais, políticas e orientações publicadas pela empresa.', target: '[data-tour="announcements"]', tab: 'announcements' },
       { title: 'Canais de setores', description: 'Acompanhe publicações das equipes e informações direcionadas aos setores em que você participa.', target: '[data-tour="sectors"]', tab: 'sectors' },
       { title: 'Enquetes e clima', description: 'Participe de pesquisas e acompanhe indicadores de escuta organizacional conforme sua autorização.', target: '[data-tour="polls-overview"]', tab: 'polls' },
-      { title: 'Central de Serviços', description: 'Abra solicitações internas, acompanhe responsáveis, prazo, andamento e aprovação em um único chamado.', target: '[data-tour="services-overview"]', tab: 'services' },
+      { title: 'Central de Serviços', description: 'Abra solicitações e acompanhe também as atividades e checklists criados nas conversas.', target: '[data-tour="services-overview"]', tab: 'services' },
       { title: 'Central de Documentos', description: 'Encontre políticas, formulários e arquivos liberados para você, com busca, pastas e confirmação de leitura.', target: '[data-tour="documents-overview"]', tab: 'documents' },
       { title: 'Escalas e calendário', description: 'Consulte eventos, ausências, folgas e escalas. Gestores autorizados também podem planejar e publicar alterações.', target: '[data-tour="scale"]', tab: 'scale' },
       { title: 'Produtividade', description: 'Registre e consulte informações de produção quando seu perfil estiver vinculado a essa área.', target: '[data-tour="productivity"]', tab: 'productivity' },
@@ -45,10 +45,11 @@ export const PLATFORM_TUTORIALS = {
   services: {
     title: 'Central de Serviços',
     icon: 'services',
-    summary: 'Abra solicitações internas, acompanhe responsáveis, prazos e aprovações e converse dentro do próprio chamado.',
+    summary: 'Abra solicitações internas e organize atividades e checklists vinculados às conversas.',
     audience: 'Todos os colaboradores podem solicitar serviços. Responsáveis selecionados atendem e aprovam quando o fluxo exigir.',
     steps: [
       { title: 'Conheça a Central de Serviços', description: 'Aqui você abre solicitações e acompanha o atendimento sem perder prazos ou histórico.', target: '[data-tour="services-overview"]' },
+      { title: 'Alterne entre solicitações e atividades', description: 'A visão de atividades reúne automaticamente as mensagens marcadas com checklist. Qualquer atualização é refletida também na conversa original.', target: '[data-tour="services-workspaces"]' },
       { title: 'Escolha o serviço', description: 'Selecione RH, Tecnologia, Manutenção, Uniformes e EPIs, Escala, Documentos, Compras ou Sugestões.', target: '[data-tour="services-catalog"]', action: 'Após o tour, escolha o cartão que melhor representa sua necessidade.' },
       { title: 'Consulte as orientações', description: 'Antes de abrir o chamado, confira as respostas rápidas publicadas pela empresa. Elas podem resolver dúvidas e procedimentos simples imediatamente.' },
       { title: 'Descreva a necessidade', description: 'Informe um assunto objetivo, explique o impacto e adicione os detalhes específicos que ajudam a área responsável.' },
@@ -59,7 +60,7 @@ export const PLATFORM_TUTORIALS = {
       { title: 'Personalize o catálogo', description: 'Administradores podem ativar serviços, ajustar o prazo, exigir aprovação e definir responsáveis padrão somente para a própria empresa.' },
       { title: 'Conclua e avalie', description: 'Quando o atendimento terminar, conclua o chamado. Quem abriu poderá confirmar a solução, avaliar ou reabrir a solicitação.' },
     ],
-    tips: ['Use prioridade urgente somente quando houver impacto imediato.', 'Mantenha documentos e informações relacionados dentro do chamado.', 'Acompanhe SLA, chamados sem responsável e satisfação nos indicadores da central.', 'Evite abrir solicitações duplicadas para a mesma necessidade.'],
+    tips: ['Use prioridade urgente somente quando houver impacto imediato.', 'Transforme uma mensagem em atividade quando ela exigir acompanhamento.', 'Mantenha documentos e informações relacionados dentro do chamado.', 'Acompanhe SLA, chamados sem responsável e satisfação nos indicadores da central.', 'Evite abrir solicitações duplicadas para a mesma necessidade.'],
   },
   polls: {
     title: 'Enquetes e Clima',
