@@ -59,12 +59,19 @@ self.addEventListener('notificationclick', (event) => {
     const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
     if (existing) {
       await existing.focus();
-      existing.postMessage({type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId, messageId: data.messageId});
+      existing.postMessage(data.threadId
+        ? {type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId, messageId: data.messageId}
+        : {type: 'comunica-open-activity', companyId: data.companyId, activityId: data.messageId});
     } else {
       const url = new URL('/', self.location.origin);
-      url.searchParams.set('messageCompany', data.companyId || '');
-      url.searchParams.set('messageThread', data.threadId || '');
-      if (data.messageId) url.searchParams.set('messageId', data.messageId);
+      if (data.threadId) {
+        url.searchParams.set('messageCompany', data.companyId || '');
+        url.searchParams.set('messageThread', data.threadId || '');
+        if (data.messageId) url.searchParams.set('messageId', data.messageId);
+      } else {
+        url.searchParams.set('activityCompany', data.companyId || '');
+        if (data.messageId) url.searchParams.set('activityId', data.messageId);
+      }
       await clients.openWindow(url.href);
     }
   })());

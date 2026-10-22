@@ -809,6 +809,48 @@ type MessageActivityData = {
   updatedBy: string;
 };
 
+type ActivityRecurrenceData = {frequency: 'none' | 'daily' | 'weekly' | 'monthly'; interval: number};
+
+const activityRecurrenceData = (value: unknown): ActivityRecurrenceData => {
+  const recurrence = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const frequency = ['daily', 'weekly', 'monthly'].includes(String(recurrence.frequency || ''))
+    ? String(recurrence.frequency) as ActivityRecurrenceData['frequency'] : 'none';
+  return {frequency, interval: Math.max(1, Math.min(12, Number(recurrence.interval) || 1))};
+};
+
+const nextRecurringActivityDate = (dueDate: string, recurrenceValue: unknown) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return '';
+  const recurrence = activityRecurrenceData(recurrenceValue);
+  if (recurrence.frequency === 'none') return '';
+  const [year, month, day] = dueDate.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (recurrence.frequency === 'daily') date.setUTCDate(date.getUTCDate() + recurrence.interval);
+  if (recurrence.frequency === 'weekly') date.setUTCDate(date.getUTCDate() + (7 * recurrence.interval));
+  if (recurrence.frequency === 'monthly') {
+    const targetMonth = date.getUTCMonth() + recurrence.interval;
+    const targetYear = date.getUTCFullYear() + Math.floor(targetMonth / 12);
+    const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+    date.setUTCFullYear(targetYear, normalizedMonth, Math.min(day, lastDay));
+  }
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+};
+
+const recurringActivityPayload = (activityValue: unknown, nextDueDate: string, sourceId: string) => {
+  const activity = activityValue && typeof activityValue === 'object' ? activityValue as Record<string, unknown> : {};
+  const now = Date.now();
+  const checklist = Array.isArray(activity.checklist) ? activity.checklist.map((item, index) => {
+    const entry = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    return {id: `item-${now}-${index}`, text: String(entry.text || '').slice(0, 180), completed: false};
+  }).filter((item) => item.text).slice(0, 30) : [];
+  return {
+    ...activity,
+    status: 'pending', dueDate: nextDueDate, checklist,
+    createdAt: now, updatedAt: now, resolvedAt: null, resolvedBy: '',
+    recurringSourceId: sourceId, recurringGeneratedAt: now,
+  };
+};
+
 const messageActivityData = (value: unknown): MessageActivityData | null => {
   if (!value || typeof value !== 'object') return null;
   const activity = value as Record<string, unknown>;
@@ -864,7 +906,9 @@ const sendActivityPush = async ({
       webpush: {
         headers: {Urgency: 'high', TTL: '3600'},
         notification: {icon: '/pwa/icon-192.png', tag: eventId, renotify: false},
-        fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(companyId)}&messageThread=${encodeURIComponent(threadId)}&messageId=${encodeURIComponent(messageId)}`},
+        fcmOptions: {link: threadId
+          ? `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(companyId)}&messageThread=${encodeURIComponent(threadId)}&messageId=${encodeURIComponent(messageId)}`
+          : `https://comunica-info.web.app/?activityCompany=${encodeURIComponent(companyId)}&activityId=${encodeURIComponent(messageId)}`},
       },
       android: {priority: 'high', ttl: 60 * 60 * 1000, notification: {tag: eventId, sound: 'default'}},
     });
@@ -929,6 +973,27 @@ export const notifyMessageActivityChange = onDocumentUpdated(
     const actorId = activity.updatedBy || String(after.actorId || after.senderId || '');
     if (!/^[a-zA-Z0-9_-]+$/.test(threadId) || !/^[a-zA-Z0-9_-]+$/.test(messageId)) return;
 
+    if (previous && previous.status !== 'resolved' && activity.status === 'resolved') {
+      const nextDueDate = nextRecurringActivityDate(activity.dueDate, after.activity?.recurrence);
+      if (nextDueDate) {
+        const database = getFirestore();
+        const nextId = `recurring-${messageId}-${nextDueDate}`;
+        const nextRef = database.doc(`artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/messages/${nextId}`);
+        await database.runTransaction(async (transaction) => {
+          if ((await transaction.get(nextRef)).exists) return;
+          transaction.create(nextRef, {
+            ...after,
+            id: nextId,
+            timestamp: Date.now(),
+            date: new Intl.DateTimeFormat('pt-BR', {timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'}).format(new Date()),
+            readBy: [actorId].filter(Boolean),
+            likedBy: [], savedBy: [], highlightedBy: [], replyTo: null, attachment: null,
+            activity: recurringActivityPayload(after.activity, nextDueDate, messageId),
+          });
+        });
+      }
+    }
+
     let recipientIds: string[] = [];
     let title = '';
     let body = '';
@@ -954,6 +1019,73 @@ export const notifyMessageActivityChange = onDocumentUpdated(
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId, messageId,
       eventId: `activity-change-${messageId}-${Number(after.activity?.updatedAt || Date.now())}`,
+    });
+  },
+);
+
+export const notifyStandaloneActivityCreated = onDocumentCreated(
+  "artifacts/{appId}/public/data/companies/{companyId}/activities/{activityId}",
+  async (event) => {
+    const content = event.data?.data() ?? {};
+    const activity = messageActivityData(content);
+    if (!activity || activity.assigneeIds.length === 0) return;
+    await sendActivityPush({
+      database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds: activity.assigneeIds, actorId: activity.createdBy,
+      title: '📋 Nova atividade avulsa atribuída a você', body: String(content.title || 'Atividade na Central de Serviços'),
+      type: 'activity_assignment', threadId: '', messageId: event.params.activityId,
+      eventId: `standalone-activity-created-${event.params.activityId}`,
+    });
+  },
+);
+
+export const notifyStandaloneActivityChange = onDocumentUpdated(
+  "artifacts/{appId}/public/data/companies/{companyId}/activities/{activityId}",
+  async (event) => {
+    const before = event.data?.before.data() ?? {};
+    const after = event.data?.after.data() ?? {};
+    const previous = messageActivityData(before);
+    const activity = messageActivityData(after);
+    if (!activity) return;
+    const activityId = String(event.params.activityId || '');
+    const actorId = activity.updatedBy || activity.createdBy;
+    const database = getFirestore();
+
+    if (previous && previous.status !== 'resolved' && activity.status === 'resolved') {
+      const nextDueDate = nextRecurringActivityDate(activity.dueDate, after.recurrence);
+      if (nextDueDate) {
+        const nextId = `recurring-${activityId}-${nextDueDate}`;
+        const nextRef = database.doc(`artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/activities/${nextId}`);
+        await database.runTransaction(async (transaction) => {
+          if ((await transaction.get(nextRef)).exists) return;
+          transaction.create(nextRef, {
+            ...after, ...recurringActivityPayload(after, nextDueDate, activityId), id: nextId,
+          });
+        });
+      }
+    }
+
+    const newAssignees = activity.assigneeIds.filter((id) => !previous?.assigneeIds.includes(id));
+    let recipientIds: string[] = [];
+    let title = '';
+    let body = String(after.title || 'Atividade na Central de Serviços');
+    let type: 'activity_assignment' | 'activity_update' = 'activity_update';
+    if (newAssignees.length > 0) {
+      recipientIds = newAssignees;
+      title = '📋 Nova atividade avulsa atribuída a você';
+      type = 'activity_assignment';
+    } else if (previous && previous.status !== activity.status) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = activity.status === 'resolved' ? '✅ Atividade avulsa concluída' : '🔄 Situação da atividade atualizada';
+    } else if (previous && previous.dueDate !== activity.dueDate) {
+      recipientIds = activity.assigneeIds;
+      title = activity.dueDate ? '📅 Prazo da atividade atualizado' : '📅 Prazo removido da atividade';
+      if (activity.dueDate) body = `${body} · ${activity.dueDate.split('-').reverse().join('/')}`;
+    } else return;
+    await sendActivityPush({
+      database, appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds, actorId, title, body, type, threadId: '', messageId: activityId,
+      eventId: `standalone-activity-change-${activityId}-${Number(after.updatedAt || Date.now())}`,
     });
   },
 );
@@ -1069,6 +1201,21 @@ export const notifyConversationDeadlines = onSchedule({
       activities.set(`${appId}/${companyId}/${messageDocument.id}`, {
         appId, companyId, threadId, messageId: messageDocument.id, dueDate, stage, recipientIds,
         subject: String(content.subject || content.content || 'Atividade da conversa').slice(0, 160),
+      });
+    });
+
+    const standaloneActivitySnapshot = await company.ref.collection('activities').where('dueDate', 'in', [...dateStages.keys()]).get();
+    standaloneActivitySnapshot.docs.forEach((activityDocument) => {
+      const content = activityDocument.data();
+      const activity = messageActivityData(content);
+      const dueDate = activity?.dueDate || '';
+      const stage = dateStages.get(dueDate);
+      if (!activity || activity.status === 'resolved' || !stage) return;
+      const recipientIds = activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean);
+      if (recipientIds.length === 0) return;
+      activities.set(`${appId}/${companyId}/standalone/${activityDocument.id}`, {
+        appId, companyId, threadId: '', messageId: activityDocument.id, dueDate, stage, recipientIds,
+        subject: String(content.title || 'Atividade avulsa').slice(0, 160),
       });
     });
   }

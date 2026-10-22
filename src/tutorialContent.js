@@ -45,12 +45,12 @@ export const PLATFORM_TUTORIALS = {
   services: {
     title: 'Central de Serviços',
     icon: 'services',
-    summary: 'Abra solicitações internas e organize atividades e checklists vinculados às conversas.',
+    summary: 'Abra solicitações internas e organize atividades, recorrências e checklists vinculados às conversas ou criados diretamente na central.',
     audience: 'Todos os colaboradores podem solicitar serviços. Responsáveis selecionados atendem e aprovam quando o fluxo exigir.',
     steps: [
       { title: 'Conheça a Central de Serviços', description: 'Aqui você abre solicitações e acompanha o atendimento sem perder prazos ou histórico.', target: '[data-tour="services-overview"]' },
-      { title: 'Alterne entre solicitações e atividades', description: 'A visão de atividades reúne automaticamente as mensagens marcadas com checklist. Qualquer atualização é refletida também na conversa original.', target: '[data-tour="services-workspaces"]' },
-      { title: 'Organize sua rotina', description: 'Use as visões Hoje, Próximas, Vencidas e Sem prazo para decidir rapidamente o que precisa de atenção.', target: '[data-tour="activity-routine"]' },
+      { title: 'Alterne entre solicitações e atividades', description: 'A visão de atividades reúne mensagens marcadas e tarefas avulsas criadas diretamente na central. As atividades de conversa continuam sincronizadas com a mensagem original.', target: '[data-tour="services-workspaces"]' },
+      { title: 'Organize sua rotina', description: 'Use Hoje, Próximas, Vencidas e Sem prazo; aplique modelos de checklist e defina recorrência diária, semanal ou mensal.', target: '[data-tour="activity-routine"]' },
       { title: 'Escolha o serviço', description: 'Selecione RH, Tecnologia, Manutenção, Uniformes e EPIs, Escala, Documentos, Compras ou Sugestões.', target: '[data-tour="services-catalog"]', action: 'Após o tour, escolha o cartão que melhor representa sua necessidade.' },
       { title: 'Consulte as orientações', description: 'Antes de abrir o chamado, confira as respostas rápidas publicadas pela empresa. Elas podem resolver dúvidas e procedimentos simples imediatamente.' },
       { title: 'Descreva a necessidade', description: 'Informe um assunto objetivo, explique o impacto e adicione os detalhes específicos que ajudam a área responsável.' },

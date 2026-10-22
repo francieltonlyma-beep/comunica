@@ -50,6 +50,8 @@ jobs:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
       - name: Install Firebase Functions dependencies
         run: npm --prefix functions ci
+      - name: Deploy Firestore rules
+        run: npx --yes firebase-tools deploy --only firestore:rules --project comunica-salvador --non-interactive
       - name: Deploy Firebase Storage rules
         working-directory: functions
         run: |

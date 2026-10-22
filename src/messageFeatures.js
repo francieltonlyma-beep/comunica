@@ -36,6 +36,12 @@ export const createMessageActivity = (actor = {}) => ({
   updatedByName: actor.name || '',
   resolvedAt: null,
   resolvedBy: '',
+  recurrence: { frequency: 'none', interval: 1 },
+});
+
+export const normalizeActivityRecurrence = value => ({
+  frequency: ['none', 'daily', 'weekly', 'monthly'].includes(value?.frequency) ? value.frequency : 'none',
+  interval: Math.max(1, Math.min(12, Number(value?.interval) || 1)),
 });
 
 export const normalizeMessageActivity = activity => activity && typeof activity === 'object' ? ({
@@ -56,7 +62,74 @@ export const normalizeMessageActivity = activity => activity && typeof activity 
   updatedByName: String(activity.updatedByName || ''),
   resolvedAt: Number(activity.resolvedAt || 0) || null,
   resolvedBy: String(activity.resolvedBy || ''),
+  recurrence: normalizeActivityRecurrence(activity.recurrence),
 }) : null;
+
+export const activityRecurrenceLabel = recurrence => {
+  const normalized = normalizeActivityRecurrence(recurrence);
+  if (normalized.frequency === 'daily') return normalized.interval === 1 ? 'Diariamente' : `A cada ${normalized.interval} dias`;
+  if (normalized.frequency === 'weekly') return normalized.interval === 1 ? 'Semanalmente' : `A cada ${normalized.interval} semanas`;
+  if (normalized.frequency === 'monthly') return normalized.interval === 1 ? 'Mensalmente' : `A cada ${normalized.interval} meses`;
+  return 'Não se repete';
+};
+
+export const nextActivityDueDate = (dueDate, recurrence) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dueDate || ''))) return '';
+  const normalized = normalizeActivityRecurrence(recurrence);
+  if (normalized.frequency === 'none') return '';
+  const [year, month, day] = dueDate.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (normalized.frequency === 'daily') date.setUTCDate(date.getUTCDate() + normalized.interval);
+  if (normalized.frequency === 'weekly') date.setUTCDate(date.getUTCDate() + (7 * normalized.interval));
+  if (normalized.frequency === 'monthly') {
+    const targetMonth = date.getUTCMonth() + normalized.interval;
+    const targetYear = date.getUTCFullYear() + Math.floor(targetMonth / 12);
+    const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+    date.setUTCFullYear(targetYear, normalizedMonth, Math.min(day, lastDay));
+  }
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+};
+
+export const normalizeActivityTemplate = template => ({
+  id: String(template?.id || ''),
+  name: String(template?.name || '').trim().slice(0, 80),
+  description: String(template?.description || '').trim().slice(0, 240),
+  priority: ['low', 'normal', 'high', 'urgent'].includes(template?.priority) ? template.priority : 'normal',
+  checklist: Array.isArray(template?.checklist) ? template.checklist.map((item, index) => ({
+    id: String(item?.id || `template-item-${index}`),
+    text: String(item?.text || '').trim().slice(0, 180),
+    completed: false,
+  })).filter(item => item.text).slice(0, 30) : [],
+  createdAt: Number(template?.createdAt || 0),
+  createdBy: String(template?.createdBy || ''),
+  createdByName: String(template?.createdByName || ''),
+});
+
+export const activityProductivityMetrics = (activities = [], today = '', now = Date.now()) => {
+  const normalized = activities.map(normalizeMessageActivity).filter(Boolean);
+  const resolved = normalized.filter(activity => activity.status === 'resolved');
+  const resolvedWithDueDate = resolved.filter(activity => activity.dueDate && activity.resolvedAt);
+  const onTime = resolvedWithDueDate.filter(activity => {
+    const completed = new Date(activity.resolvedAt);
+    const completedDate = `${completed.getFullYear()}-${String(completed.getMonth() + 1).padStart(2, '0')}-${String(completed.getDate()).padStart(2, '0')}`;
+    return completedDate <= activity.dueDate;
+  }).length;
+  const completionDurations = resolved
+    .filter(activity => activity.createdAt && activity.resolvedAt && activity.resolvedAt >= activity.createdAt)
+    .map(activity => activity.resolvedAt - activity.createdAt);
+  const last30Days = now - (30 * 24 * 60 * 60 * 1000);
+  return {
+    total: normalized.length,
+    resolved: resolved.length,
+    resolvedLast30Days: resolved.filter(activity => Number(activity.resolvedAt || 0) >= last30Days).length,
+    completionRate: normalized.length ? Math.round((resolved.length / normalized.length) * 100) : 0,
+    onTimeRate: resolvedWithDueDate.length ? Math.round((onTime / resolvedWithDueDate.length) * 100) : 0,
+    averageCompletionHours: completionDurations.length ? Math.round(completionDurations.reduce((sum, value) => sum + value, 0) / completionDurations.length / 3600000) : 0,
+    overdue: normalized.filter(activity => activity.status !== 'resolved' && activity.dueDate && today && activity.dueDate < today).length,
+    recurring: normalized.filter(activity => activity.recurrence.frequency !== 'none').length,
+  };
+};
 
 export const messageActivityProgress = activity => {
   const normalized = normalizeMessageActivity(activity);

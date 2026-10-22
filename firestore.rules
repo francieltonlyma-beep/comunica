@@ -55,6 +55,16 @@ service cloud.firestore {
         && canManageCalendar(app, company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageScheduleRules', true) == true);
     }
+    function canManageActivities(app, company) {
+      return manages(app, company) || (member(company)
+        && canEdit(app, company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageActivities', true) == true);
+    }
+    function canManageActivityTemplates(app, company) {
+      return manages(app, company) || (member(company)
+        && canManageActivities(app, company)
+        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageActivityTemplates', false) == true);
+    }
     function canPublishAbsenceForOthers(app, company) {
       return member(company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canPublishAbsenceForOthers', false) == true;
@@ -153,7 +163,7 @@ service cloud.firestore {
       allow read: if access(company);
       allow write: if false;
       match /{kind}/{id} {
-        allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'schedules', 'settings', 'vacancies'] && access(company);
+        allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'schedules', 'settings', 'vacancies', 'activities', 'activityTemplates'] && access(company);
         allow read: if kind == 'documents' && documentAudience(app, company, resource.data);
         allow read: if kind == 'applications' && (support() || careerManager(app, company));
         allow write: if kind in ['departments', 'roles', 'settings', 'events', 'presence'] && manages(app, company);
@@ -166,6 +176,8 @@ service cloud.firestore {
         allow create, update: if kind == 'settings' && id == 'schedule-rules'
           && scheduleManager(app, company) && canManageScheduleRules(app, company);
         allow create, update, delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company);
+        allow create, update, delete: if kind == 'activities' && canManageActivities(app, company);
+        allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
         allow update: if kind == 'applications' && (support() || careerManager(app, company))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewNotes', 'recruitmentUpdate', 'decisionAt', 'decisionBy', 'discardReason', 'interview', 'interviewScheduledAt', 'interviewScheduledBy', 'candidateUpdatePending', 'candidateUpdateAcknowledgedAt', 'aiAssessment', 'aiAssessmentAt', 'aiAssessmentBy', 'aiAssessmentVacancyUpdatedAt'])
@@ -193,7 +205,8 @@ service cloud.firestore {
         allow create: if access(company) && participant(request.resource.data)
           && request.resource.data.get('senderId', '') in [request.auth.uid, 'system'];
         allow update: if access(company) && participant(resource.data) && participant(request.resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy', 'resolutionRating', 'resolutionFeedback', 'resolutionEvaluatedAt', 'serviceDecision', 'serviceDecisionBy', 'serviceDecisionAt', 'serviceStatus', 'serviceAssigneeId', 'serviceAssigneeName', 'serviceStartedAt', 'serviceWaitingSince', 'servicePromisedDate', 'serviceProgress', 'serviceProgressNote', 'serviceProgressUpdatedAt', 'serviceProgressUpdatedBy', 'likedBy', 'savedBy', 'highlightedBy', 'activity']);
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy', 'resolutionRating', 'resolutionFeedback', 'resolutionEvaluatedAt', 'serviceDecision', 'serviceDecisionBy', 'serviceDecisionAt', 'serviceStatus', 'serviceAssigneeId', 'serviceAssigneeName', 'serviceStartedAt', 'serviceWaitingSince', 'servicePromisedDate', 'serviceProgress', 'serviceProgressNote', 'serviceProgressUpdatedAt', 'serviceProgressUpdatedBy', 'likedBy', 'savedBy', 'highlightedBy', 'activity'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activity']) || canManageActivities(app, company));
         allow delete: if false;
       }
       match /auditLogs/{id} {
