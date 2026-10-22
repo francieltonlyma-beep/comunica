@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createMessageActivity, findMentionedParticipantIds, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
+import { createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageReplySnapshot, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
 
 test('message reactions are toggled without duplicate users', () => {
   assert.deepEqual(toggleMessageUser(['u1', 'u1'], 'u2'), ['u1', 'u2']);
@@ -19,6 +19,20 @@ test('reply snapshot is compact and activity supports checklist workflow', () =>
   const activity = createMessageActivity({ id: 'u1', name: 'Ana' });
   assert.equal(activity.status, 'pending');
   assert.equal(normalizeMessageActivity({ ...activity, priority: 'urgent', checklist: [{ id: 'i1', text: 'Conferir', completed: true }] }).checklist[0].completed, true);
+});
+
+test('activity exposes deadline and checklist progress to the service center', () => {
+  const activity = normalizeMessageActivity({
+    ...createMessageActivity({ id: 'u1', name: 'Ana' }),
+    dueDate: '2026-10-22',
+    checklist: [
+      { id: 'i1', text: 'Conferir', completed: true },
+      { id: 'i2', text: 'Responder', completed: false },
+    ],
+  });
+  assert.equal(messageActivityProgress(activity), 50);
+  assert.equal(isMessageActivityOverdue(activity, '2026-10-23'), true);
+  assert.equal(isMessageActivityOverdue({ ...activity, status: 'resolved' }, '2026-10-23'), false);
 });
 
 
