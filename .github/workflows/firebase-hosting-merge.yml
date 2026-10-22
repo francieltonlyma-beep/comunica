@@ -48,8 +48,10 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
-      - name: Install Firebase Admin SDK for rules deployment
-        run: npm --prefix functions ci --omit=dev
+      - name: Install Firebase Functions dependencies
+        run: npm --prefix functions ci
+      - name: Deploy Firebase Functions
+        run: npx --yes firebase-tools deploy --only functions --project comunica-salvador --non-interactive
       - name: Deploy Firebase Storage rules
         working-directory: functions
         run: |

@@ -736,6 +736,8 @@ const notifyCompany = async (
     // Mantém o mesmo identificador em qualquer tentativa de entrega. O app
     // ignora uma segunda chegada da mesma publicação no mesmo dispositivo.
     data: {type, companyId: event.params.companyId, eventId: event.id ?? ""},
+    android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
+    webpush: {headers: {Urgency: "high", TTL: "3600"}},
   });
 };
 
@@ -778,7 +780,9 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
       body: `${String(content.senderName ?? "Alguém")}: ${String(content.subject ?? content.content ?? "Você recebeu uma nova mensagem.")}`,
     },
     data: {type: "message", companyId: event.params.companyId, threadId, eventId: event.id ?? ""},
+    android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
     webpush: {
+      headers: {Urgency: "high", TTL: "3600"},
       notification: {icon: "/favicon.png", tag: `comunica-message-${threadId || event.id || "new"}`, renotify: true},
       fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(event.params.companyId)}&messageThread=${encodeURIComponent(threadId)}`},
     },
@@ -958,10 +962,11 @@ export const notifyConversationDeadlines = onSchedule({
             dueDate: conversation.dueDate, stage: conversation.stage, eventId: receiptId,
           },
           webpush: {
+            headers: {Urgency: 'high', TTL: '3600'},
             notification: {icon: '/pwa/icon-192.png', tag: receiptId, renotify: false},
             fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(conversation.companyId)}&messageThread=${encodeURIComponent(conversation.threadId)}`},
           },
-          android: {notification: {tag: receiptId, sound: 'default'}},
+          android: {priority: 'high', ttl: 60 * 60 * 1000, notification: {tag: receiptId, sound: 'default'}},
         });
         successCount += response.successCount;
         failureCount += response.failureCount;

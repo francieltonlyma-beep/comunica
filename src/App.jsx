@@ -806,6 +806,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const messageUploadInFlight = useRef(false);
   const messageSendInFlight = useRef(false);
+  const messageListRef = useRef(null);
   const [pendingMessageNavigation, setPendingMessageNavigation] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const companyId = params.get('messageCompany');
@@ -4625,6 +4626,27 @@ try {
     const parsed = new Date(`${year}-${month}-${day}T${timePart}`).getTime();
     return Number.isNaN(parsed) ? 0 : parsed;
   };
+  const activeThreadMessageKey = normMessages
+    .filter((message) => message.threadId === activeThreadId)
+    .map((message) => `${message.id || ''}:${getMessageTimestamp(message)}`)
+    .join('|');
+
+  useEffect(() => {
+    if (!showMessagesModal || !activeThreadId || isComposingMsg) return undefined;
+
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const messageList = messageListRef.current;
+        if (messageList) messageList.scrollTop = messageList.scrollHeight;
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [showMessagesModal, activeThreadId, activeThreadMessageKey, isComposingMsg, messageFocusFilter]);
   const formatMessageDateTime = (message) => {
     const timestamp = getMessageTimestamp(message);
     if (!timestamp) return message.date || '';
@@ -10142,7 +10164,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   </div>
                   
                   {/* ÁREA DE MENSAGENS */}
-                  <div className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#edf6ff_0%,#e4eef9_44%,#d8e6f4_100%)] px-3 py-5 sm:px-8 sm:py-7">
+                  <div ref={messageListRef} className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#edf6ff_0%,#e4eef9_44%,#d8e6f4_100%)] px-3 py-5 sm:px-8 sm:py-7">
                     <div className="pointer-events-none sticky top-[46%] z-0 flex h-0 w-full -translate-y-1/2 items-center justify-center overflow-visible" aria-hidden="true">
                       <img src="/assets/comunica-logo-transparent.png" alt="" className="max-h-[42vh] w-[min(62%,620px)] object-contain opacity-[0.105] grayscale-[20%] saturate-125" />
                     </div>
