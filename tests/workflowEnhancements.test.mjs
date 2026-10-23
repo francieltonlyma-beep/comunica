@@ -79,3 +79,12 @@ test('hosting prevents stale deploys from leaving a blank page', () => {
   assert.match(main, /window\.location\.replace/);
   assert.match(firebaseConfig, /no-cache, must-revalidate/);
 });
+
+
+test('service activity derivation tolerates session restoration before the user is available', () => {
+  const start = app.indexOf('const conversationActivityRows');
+  const end = app.indexOf('const handle', start);
+  const activityDerivations = app.slice(start, end);
+  assert.doesNotMatch(activityDerivations, /currentUser\.id/);
+  assert.match(activityDerivations, /currentUser\?\.id/);
+});

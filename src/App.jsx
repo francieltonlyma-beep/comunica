@@ -6130,7 +6130,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       message,
       subject: metadata.subject || message.subject || 'Conversa sem assunto',
       preview: String(message.content || message.attachment?.name || 'Atividade vinculada à conversa').trim(),
-      authorName: message.senderId === currentUser.id ? 'Você' : (message.senderName || 'Participante'),
+      authorName: message.senderId === currentUser?.id ? 'Você' : (message.senderName || 'Participante'),
       participantIds: message.participants || [],
       source: 'conversation',
       activity,
@@ -6157,7 +6157,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       source: 'standalone',
       subject: String(record.title || 'Atividade avulsa'),
       preview: String(record.description || 'Criada diretamente na Central de Serviços').trim(),
-      authorName: activity.createdBy === currentUser.id ? 'Você' : (activity.createdByName || 'Participante'),
+      authorName: activity.createdBy === currentUser?.id ? 'Você' : (activity.createdByName || 'Participante'),
       participantIds: employeesList.filter(Boolean).map(user => user.id),
       activity,
       status,
@@ -6185,7 +6185,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       || row.status === serviceActivityStatusFilter;
     const matchesPriority = serviceActivityPriorityFilter === 'all' || row.activity.priority === serviceActivityPriorityFilter;
     const matchesAssignee = serviceActivityAssigneeFilter === 'all'
-      || (serviceActivityAssigneeFilter === 'mine' && row.activity.assigneeIds.includes(currentUser.id))
+      || (serviceActivityAssigneeFilter === 'mine' && row.activity.assigneeIds.includes(currentUser?.id))
       || (serviceActivityAssigneeFilter === 'unassigned' && !row.activity.assigneeIds.length)
       || row.activity.assigneeIds.includes(serviceActivityAssigneeFilter);
     const matchesPeriod = serviceActivityPeriodFilter === 'all' || row.schedule === serviceActivityPeriodFilter;
@@ -6212,7 +6212,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (row.schedule === 'today') totals.today += 1;
     if (row.schedule === 'upcoming') totals.upcoming += 1;
     if (row.schedule === 'no_due') totals.noDue += 1;
-    if (row.activity.assigneeIds.includes(currentUser.id) && row.status !== 'resolved') totals.mine += 1;
+    if (row.activity.assigneeIds.includes(currentUser?.id) && row.status !== 'resolved') totals.mine += 1;
     if (!row.activity.assigneeIds.length && row.status !== 'resolved') totals.unassigned += 1;
     return totals;
   }, { total: 0, active: 0, overdue: 0, resolved: 0, mine: 0, unassigned: 0, today: 0, upcoming: 0, noDue: 0 });
@@ -6269,7 +6269,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       || (serviceStatusFilter === 'active' && !['completed', 'rejected'].includes(request.status))
       || request.status === serviceStatusFilter;
     const matchesAssignee = serviceAssigneeFilter === 'all'
-      || (serviceAssigneeFilter === 'mine' && request.assigneeId === currentUser.id)
+      || (serviceAssigneeFilter === 'mine' && request.assigneeId === currentUser?.id)
       || (serviceAssigneeFilter === 'unassigned' && !request.assigneeId)
       || request.assigneeId === serviceAssigneeFilter;
     return matchesText && matchesCategory && matchesStatus && matchesAssignee;
