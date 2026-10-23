@@ -719,6 +719,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [sectorPosts, setSectorPosts] = useState(() => getLocalStorageItem('comunica_sector_posts', INITIAL_SECTOR_POSTS));
   const [productivityLogs, setProductivityLogs] = useState(() => getLocalStorageItem('comunica_productivity', INITIAL_PRODUCTIVITY));
   const [privateMessages, setPrivateMessages] = useState(() => getLocalStorageItem('comunica_messages', INITIAL_MESSAGES));
+  const [serviceManagementMessages, setServiceManagementMessages] = useState([]);
   const [standaloneActivities, setStandaloneActivities] = useState([]);
   const [activityTemplates, setActivityTemplates] = useState([]);
   const [presenceList, setPresenceList] = useState(() => getLocalStorageItem('comunica_presence', INITIAL_PRESENCE));
@@ -888,6 +889,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all');
   const [serviceStatusFilter, setServiceStatusFilter] = useState('active');
   const [serviceAssigneeFilter, setServiceAssigneeFilter] = useState('all');
+  const [serviceManagementPeriod, setServiceManagementPeriod] = useState('30');
+  const [serviceManagementEmployee, setServiceManagementEmployee] = useState('all');
+  const [serviceManagementStatus, setServiceManagementStatus] = useState('all');
   const [serviceActivitySearch, setServiceActivitySearch] = useState('');
   const [serviceActivityStatusFilter, setServiceActivityStatusFilter] = useState('active');
   const [serviceActivityPriorityFilter, setServiceActivityPriorityFilter] = useState('all');
@@ -1855,6 +1859,28 @@ setDbLoading(false);
       setServiceCatalogSettings(sanitizeServiceCatalogSettings(snapshot.exists() ? snapshot.data() : {}));
     }, error => console.error('Falha ao carregar catálogo de serviços', error));
   }, [dbUser, activeCompany?.id]);
+
+
+  useEffect(() => {
+    setServiceManagementMessages([]);
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return undefined;
+    const snapshots = { requests: [], activities: [] };
+    const publish = () => setServiceManagementMessages(
+      [...new Map([...snapshots.requests, ...snapshots.activities].filter(Boolean).map(item => [item.id, item])).values()]
+    );
+    const messagesRef = getTenantCollection('messages');
+    const stopRequests = onSnapshot(
+      query(messagesRef, where('serviceRequest', '==', true)),
+      snapshot => { snapshots.requests = snapshot.docs.map(item => ({ id: item.id, ...item.data() })); publish(); },
+      error => console.error('Falha ao carregar demandas gerenciais', error),
+    );
+    const stopActivities = onSnapshot(
+      query(messagesRef, where('activity.status', 'in', ['pending', 'in_progress', 'resolved'])),
+      snapshot => { snapshots.activities = snapshot.docs.map(item => ({ id: item.id, ...item.data() })); publish(); },
+      error => console.error('Falha ao carregar atividades gerenciais', error),
+    );
+    return () => { stopRequests(); stopActivities(); };
+  }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper]);
 
   useEffect(() => {
     setAutomaticScheduleRules(sanitizeAutomaticScheduleRules({}));
@@ -6258,6 +6284,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       participantIds: metadata.participants || [],
       completedAt: Number(metadata.completedAt || 0),
       resolutionRating: Number(metadata.resolutionRating || 0),
+      createdAt: Number(metadata.serviceRequestedAt || getMessageTimestamp(opener) || getMessageTimestamp(thread.messages[0])),
       updatedAt: getMessageTimestamp(latest),
       preview: latest.content || 'Atualização registrada na solicitação.',
     };
@@ -6298,6 +6325,150 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     slaRate: serviceMetricTotals.completedWithDeadline ? Math.round((serviceMetricTotals.completedOnTime / serviceMetricTotals.completedWithDeadline) * 100) : 0,
     averageRating: serviceMetricTotals.rated ? (serviceMetricTotals.ratingSum / serviceMetricTotals.rated).toFixed(1) : '—',
   };
+
+  const serviceManagementRequestRows = Object.values(serviceManagementMessages.reduce((threads, message) => {
+    if (!message?.threadId || message.serviceRequest !== true) return threads;
+    if (!threads[message.threadId]) threads[message.threadId] = [];
+    threads[message.threadId].push(message);
+    return threads;
+  }, {})).map(messages => {
+    const ordered = [...messages].sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
+    const opener = ordered.find(message => message.senderId !== 'system') || ordered[0];
+    const latest = ordered[ordered.length - 1];
+    const status = serviceRequestStatus(latest, todayStr);
+    const completedAt = Number(latest.completedAt || 0);
+    const createdAt = Number(latest.serviceRequestedAt || getMessageTimestamp(opener) || 0);
+    const onTime = status === 'completed' && latest.dueDate && completedAt
+      ? new Date(completedAt).toISOString().slice(0, 10) <= latest.dueDate
+      : null;
+    return {
+      id: latest.threadId,
+      kind: 'request',
+      kindLabel: 'Solicitação',
+      subject: latest.subject || 'Solicitação de serviço',
+      assigneeIds: [latest.serviceAssigneeId].filter(Boolean),
+      assigneeNames: [latest.serviceAssigneeName].filter(Boolean),
+      status: status === 'completed' ? 'resolved' : status === 'overdue' ? 'overdue' : 'active',
+      statusLabel: status === 'completed' ? 'Concluída' : status === 'overdue' ? 'Em atraso' : serviceStatusLabel[status] || 'Pendente',
+      dueDate: latest.dueDate || '',
+      createdAt,
+      completedAt,
+      updatedAt: getMessageTimestamp(latest),
+      onTime,
+      resolutionHours: completedAt && createdAt && completedAt >= createdAt ? Math.round((completedAt - createdAt) / 3600000) : null,
+      sourceRow: null,
+    };
+  });
+  const serviceManagementConversationActivities = serviceManagementMessages
+    .filter(message => message?.activity && message.serviceRequest !== true)
+    .map(message => {
+      const activity = normalizeMessageActivity(message.activity);
+      if (!activity) return null;
+      const status = isMessageActivityOverdue(activity, todayStr) ? 'overdue' : activity.status === 'resolved' ? 'resolved' : 'active';
+      const completedAt = Number(activity.resolvedAt || 0);
+      const createdAt = Number(activity.createdAt || getMessageTimestamp(message) || 0);
+      const onTime = status === 'resolved' && activity.dueDate && completedAt
+        ? new Date(completedAt).toISOString().slice(0, 10) <= activity.dueDate
+        : null;
+      return {
+        id: message.id,
+        kind: 'activity',
+        kindLabel: 'Atividade',
+        subject: message.subject || message.content || 'Atividade de conversa',
+        assigneeIds: activity.assigneeIds,
+        assigneeNames: activity.assigneeIds.map(userId => employeesList.find(user => user?.id === userId)?.name).filter(Boolean),
+        status,
+        statusLabel: status === 'resolved' ? 'Resolvida' : status === 'overdue' ? 'Em atraso' : activity.status === 'in_progress' ? 'Em andamento' : 'Pendente',
+        dueDate: activity.dueDate || '',
+        createdAt,
+        completedAt,
+        updatedAt: Number(activity.updatedAt || getMessageTimestamp(message) || 0),
+        onTime,
+        resolutionHours: completedAt && createdAt && completedAt >= createdAt ? Math.round((completedAt - createdAt) / 3600000) : null,
+        sourceRow: serviceActivityRows.find(row => row.source === 'conversation' && row.id === message.id) || null,
+      };
+    }).filter(Boolean);
+  const serviceManagementStandaloneActivities = standaloneActivityRows.map(row => {
+    const completedAt = Number(row.activity.resolvedAt || 0);
+    const createdAt = Number(row.activity.createdAt || 0);
+    const status = row.status === 'resolved' ? 'resolved' : row.status === 'overdue' ? 'overdue' : 'active';
+    const onTime = status === 'resolved' && row.activity.dueDate && completedAt
+      ? new Date(completedAt).toISOString().slice(0, 10) <= row.activity.dueDate
+      : null;
+    return {
+      id: row.id,
+      kind: 'activity',
+      kindLabel: 'Atividade avulsa',
+      subject: row.subject,
+      assigneeIds: row.activity.assigneeIds,
+      assigneeNames: row.assignees.map(user => user.name),
+      status,
+      statusLabel: status === 'resolved' ? 'Resolvida' : status === 'overdue' ? 'Em atraso' : row.activity.status === 'in_progress' ? 'Em andamento' : 'Pendente',
+      dueDate: row.activity.dueDate || '',
+      createdAt,
+      completedAt,
+      updatedAt: Number(row.updatedAt || createdAt),
+      onTime,
+      resolutionHours: completedAt && createdAt && completedAt >= createdAt ? Math.round((completedAt - createdAt) / 3600000) : null,
+      sourceRow: row,
+    };
+  });
+  const serviceManagementAllDemands = [
+    ...serviceManagementRequestRows,
+    ...serviceManagementConversationActivities,
+    ...serviceManagementStandaloneActivities,
+  ];
+  const serviceManagementCutoff = serviceManagementPeriod === 'all'
+    ? 0
+    : Date.now() - Number(serviceManagementPeriod) * 24 * 60 * 60 * 1000;
+  const serviceManagementPeriodDemands = serviceManagementAllDemands.filter(demand =>
+    !serviceManagementCutoff || Math.max(demand.updatedAt, demand.completedAt, demand.createdAt) >= serviceManagementCutoff);
+  const serviceManagementPeople = employeesList.filter(user => user?.id && !user.isDeveloper)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+  const serviceManagementEmployeeRows = serviceManagementPeople.map(user => {
+    const demands = serviceManagementPeriodDemands.filter(demand => demand.assigneeIds.includes(user.id));
+    const resolved = demands.filter(demand => demand.status === 'resolved');
+    const deadlines = resolved.filter(demand => demand.onTime !== null);
+    const resolutionTimes = resolved.map(demand => demand.resolutionHours).filter(Number.isFinite);
+    return {
+      id: user.id,
+      name: user.name || 'Colaborador',
+      role: user.role || 'Cargo não informado',
+      assigned: demands.length,
+      active: demands.filter(demand => demand.status === 'active').length,
+      overdue: demands.filter(demand => demand.status === 'overdue').length,
+      resolved: resolved.length,
+      completionRate: demands.length ? Math.round((resolved.length / demands.length) * 100) : 0,
+      onTimeRate: deadlines.length ? Math.round((deadlines.filter(demand => demand.onTime).length / deadlines.length) * 100) : null,
+      averageResolutionHours: resolutionTimes.length ? Math.round(resolutionTimes.reduce((sum, value) => sum + value, 0) / resolutionTimes.length) : null,
+      lastActivityAt: demands.reduce((latest, demand) => Math.max(latest, demand.updatedAt || 0), 0),
+    };
+  }).filter(row => row.assigned > 0)
+    .sort((a, b) => b.overdue - a.overdue || b.active - a.active || b.resolved - a.resolved || a.name.localeCompare(b.name, 'pt-BR'));
+  const serviceManagementVisibleDemands = serviceManagementPeriodDemands
+    .filter(demand => serviceManagementEmployee === 'all' || demand.assigneeIds.includes(serviceManagementEmployee))
+    .filter(demand => serviceManagementStatus === 'all' || demand.status === serviceManagementStatus)
+    .sort((a, b) => {
+      const priority = { overdue: 0, active: 1, resolved: 2 };
+      return priority[a.status] - priority[b.status] || b.updatedAt - a.updatedAt;
+    });
+  const serviceManagementTotals = serviceManagementPeriodDemands.reduce((totals, demand) => {
+    totals.total += 1;
+    if (demand.status === 'active') totals.active += 1;
+    if (demand.status === 'overdue') totals.overdue += 1;
+    if (demand.status === 'resolved') totals.resolved += 1;
+    if (demand.onTime !== null) {
+      totals.withDeadline += 1;
+      if (demand.onTime) totals.onTime += 1;
+    }
+    return totals;
+  }, { total: 0, active: 0, overdue: 0, resolved: 0, withDeadline: 0, onTime: 0 });
+  serviceManagementTotals.onTimeRate = serviceManagementTotals.withDeadline
+    ? Math.round((serviceManagementTotals.onTime / serviceManagementTotals.withDeadline) * 100)
+    : 0;
+  const formatManagementTimestamp = timestamp => timestamp
+    ? new Date(timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+    : 'Sem movimentação';
   const careerStageDefinitions = [
     { id: 'received', label: 'Recebidas', color: 'bg-sky-500' },
     { id: 'reviewing', label: 'Em análise', color: 'bg-amber-500' },
@@ -7247,9 +7418,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 </div>
               </section>
 
-              <nav data-tour="services-workspaces" aria-label="Áreas da Central de Serviços" className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:w-fit">
+              <nav data-tour="services-workspaces" aria-label="Áreas da Central de Serviços" className={`grid gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:w-fit ${currentUser?.isAdmin || currentUser?.isDeveloper ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <button type="button" onClick={() => setServiceWorkspace('requests')} className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${serviceWorkspace === 'requests' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}><MessageSquare className="h-4 w-4" /> Solicitações <span className={`rounded-full px-2 py-0.5 text-[9px] ${serviceWorkspace === 'requests' ? 'bg-white/15' : 'bg-slate-100 text-slate-600'}`}>{serviceMetrics.active}</span></button>
                 <button type="button" onClick={() => setServiceWorkspace('activities')} className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${serviceWorkspace === 'activities' ? 'bg-violet-700 text-white shadow-sm' : 'text-slate-600 hover:bg-violet-50'}`}><ListChecks className="h-4 w-4" /> Atividades <span className={`rounded-full px-2 py-0.5 text-[9px] ${serviceWorkspace === 'activities' ? 'bg-white/15' : 'bg-violet-50 text-violet-700'}`}>{serviceActivityMetrics.active}</span></button>
+                {(currentUser?.isAdmin || currentUser?.isDeveloper) && <button type="button" onClick={() => setServiceWorkspace('management')} className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${serviceWorkspace === 'management' ? 'bg-emerald-700 text-white shadow-sm' : 'text-slate-600 hover:bg-emerald-50'}`}><TrendingUp className="h-4 w-4" /> Gestão <span className={`rounded-full px-2 py-0.5 text-[9px] ${serviceWorkspace === 'management' ? 'bg-white/15' : 'bg-emerald-50 text-emerald-700'}`}>{serviceManagementTotals.overdue}</span></button>}
               </nav>
 
               {serviceWorkspace === 'requests' && <>
@@ -7321,6 +7493,39 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 </div>
               </section>
               </>}
+
+              {serviceWorkspace === 'management' && (currentUser?.isAdmin || currentUser?.isDeveloper) && <div data-tour="management-dashboard" className="space-y-4">
+                <section className="overflow-hidden rounded-[1.5rem] border border-emerald-100 bg-gradient-to-br from-emerald-950 via-teal-900 to-slate-950 p-4 text-white shadow-sm sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div><span className="text-[9px] font-black uppercase tracking-[.18em] text-emerald-200">Painel administrativo</span><h4 className="mt-1 text-lg font-extrabold">Demandas e resoluções da equipe</h4><p className="mt-1 max-w-2xl text-xs leading-5 text-emerald-100/75">Acompanhe carga atribuída, pendências, atrasos, entregas e cumprimento de prazo por colaborador.</p></div>
+                    <div className="flex flex-wrap gap-2">
+                      <select aria-label="Período do painel de gestão" value={serviceManagementPeriod} onChange={event => setServiceManagementPeriod(event.target.value)} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-bold text-white outline-none"><option className="text-slate-900" value="7">Últimos 7 dias</option><option className="text-slate-900" value="30">Últimos 30 dias</option><option className="text-slate-900" value="90">Últimos 90 dias</option><option className="text-slate-900" value="all">Todo o histórico</option></select>
+                      <select aria-label="Colaborador do painel de gestão" value={serviceManagementEmployee} onChange={event => setServiceManagementEmployee(event.target.value)} className="max-w-56 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-xs font-bold text-white outline-none"><option className="text-slate-900" value="all">Todos os colaboradores</option>{serviceManagementPeople.map(user => <option className="text-slate-900" key={user.id} value={user.id}>{user.name}</option>)}</select>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-5">
+                    {[
+                      { label: 'Demandas', value: serviceManagementTotals.total },
+                      { label: 'Pendentes', value: serviceManagementTotals.active },
+                      { label: 'Em atraso', value: serviceManagementTotals.overdue },
+                      { label: 'Resolvidas', value: serviceManagementTotals.resolved },
+                      { label: 'No prazo', value: `${serviceManagementTotals.onTimeRate}%` },
+                    ].map(metric => <div key={metric.label} className="rounded-xl border border-white/10 bg-white/10 p-3"><span className="text-[8px] font-black uppercase tracking-wide text-emerald-200">{metric.label}</span><strong className="mt-1 block text-2xl font-black">{metric.value}</strong></div>)}
+                  </div>
+                </section>
+
+                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex flex-wrap items-end justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-wide text-emerald-700">Desempenho operacional</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Indicadores por colaborador</h4><p className="mt-1 text-[10px] leading-4 text-slate-500">A ordenação destaca primeiro quem possui atrasos e pendências que exigem acompanhamento.</p></div><span className="rounded-full bg-slate-100 px-3 py-1.5 text-[9px] font-bold text-slate-600">{serviceManagementEmployeeRows.length} colaborador(es) com demanda no período</span></div>
+                  <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs"><thead><tr className="border-b border-slate-200 text-[9px] font-black uppercase tracking-wide text-slate-400"><th className="px-3 py-3">Colaborador</th><th className="px-3 py-3 text-center">Atribuídas</th><th className="px-3 py-3 text-center">Pendentes</th><th className="px-3 py-3 text-center">Atrasadas</th><th className="px-3 py-3 text-center">Resolvidas</th><th className="px-3 py-3 text-center">Conclusão</th><th className="px-3 py-3 text-center">No prazo</th><th className="px-3 py-3 text-right">Tempo médio</th></tr></thead><tbody>{serviceManagementEmployeeRows.map(row => <tr key={row.id} className={`border-b border-slate-100 transition hover:bg-slate-50 ${serviceManagementEmployee === row.id ? 'bg-emerald-50/70' : ''}`}><td className="px-3 py-3"><button type="button" onClick={() => setServiceManagementEmployee(previous => previous === row.id ? 'all' : row.id)} className="text-left"><strong className="block text-xs text-slate-900">{row.name}</strong><span className="mt-0.5 block text-[9px] text-slate-400">{row.role} · última movimentação {formatManagementTimestamp(row.lastActivityAt)}</span></button></td><td className="px-3 py-3 text-center font-bold text-slate-700">{row.assigned}</td><td className="px-3 py-3 text-center font-bold text-amber-700">{row.active}</td><td className="px-3 py-3 text-center"><span className={`rounded-full px-2 py-1 font-black ${row.overdue ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-500'}`}>{row.overdue}</span></td><td className="px-3 py-3 text-center font-bold text-emerald-700">{row.resolved}</td><td className="px-3 py-3 text-center font-black text-blue-700">{row.completionRate}%</td><td className="px-3 py-3 text-center font-black text-emerald-700">{row.onTimeRate === null ? '—' : `${row.onTimeRate}%`}</td><td className="px-3 py-3 text-right font-semibold text-slate-600">{row.averageResolutionHours === null ? '—' : row.averageResolutionHours < 24 ? `${row.averageResolutionHours}h` : `${Math.round(row.averageResolutionHours / 24)}d`}</td></tr>)}{serviceManagementEmployeeRows.length === 0 && <tr><td colSpan="8" className="px-4 py-10 text-center text-xs text-slate-500">Nenhuma demanda atribuída no período selecionado.</td></tr>}</tbody></table></div>
+                  <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3 text-[10px] leading-5 text-amber-900"><strong className="block">Leitura responsável dos indicadores</strong>Use estes números para acompanhar fluxo, remover impedimentos e orientar cobranças. Prazos, complexidade e dependências devem ser considerados; o painel não substitui uma avaliação humana completa.</div>
+                </section>
+
+                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex flex-wrap items-end justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-wide text-blue-700">Rastreabilidade</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Todas as demandas do período</h4></div><select aria-label="Situação das demandas gerenciais" value={serviceManagementStatus} onChange={event => setServiceManagementStatus(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todas as situações</option><option value="active">Pendentes</option><option value="overdue">Em atraso</option><option value="resolved">Resolvidas</option></select></div>
+                  <div className="mt-4 space-y-2">{serviceManagementVisibleDemands.slice(0, 100).map(demand => <article key={`${demand.kind}:${demand.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="rounded-full bg-slate-900 px-2 py-1 text-[8px] font-black text-white">{demand.kindLabel}</span><span className={`rounded-full px-2 py-1 text-[8px] font-black ${demand.status === 'overdue' ? 'bg-rose-100 text-rose-800' : demand.status === 'resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{demand.statusLabel}</span></div><strong className="mt-2 block truncate text-xs text-slate-900">{demand.subject}</strong><span className="mt-1 block text-[9px] text-slate-500">{demand.assigneeNames.length ? demand.assigneeNames.join(', ') : 'Sem responsável'} · {demand.dueDate ? `prazo ${formatDueDate(demand.dueDate)}` : 'sem prazo'} · movimentada em {formatManagementTimestamp(demand.updatedAt)}</span></div><button type="button" onClick={() => { if (demand.kind === 'request') { openThread(demand.id); setShowMessagesModal(true); } else if (demand.sourceRow) openServiceActivityFromView(demand.sourceRow); }} disabled={demand.kind === 'activity' && !demand.sourceRow} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-700 hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40">Ver detalhes</button></article>)}{serviceManagementVisibleDemands.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-xs text-slate-500">Nenhuma demanda encontrada com estes filtros.</p></div>}</div>
+                  {serviceManagementVisibleDemands.length > 100 && <p className="mt-3 text-center text-[9px] font-semibold text-slate-400">Exibindo as 100 demandas mais recentes de {serviceManagementVisibleDemands.length}.</p>}
+                </section>
+              </div>}
 
               {serviceWorkspace === 'activities' && <>
                 <section data-tour="activity-metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-5">

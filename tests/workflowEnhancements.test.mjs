@@ -88,3 +88,14 @@ test('service activity derivation tolerates session restoration before the user 
   assert.doesNotMatch(activityDerivations, /currentUser\.id/);
   assert.match(activityDerivations, /currentUser\?\.id/);
 });
+
+
+test('administrator management panel combines demands and resolutions without exposing unrelated conversations', () => {
+  for (const feature of ['serviceManagementMessages', 'serviceManagementEmployeeRows', 'serviceManagementVisibleDemands', 'serviceManagementTotals', 'management-dashboard']) assert.match(app, new RegExp(feature));
+  assert.match(app, /where\('serviceRequest', '==', true\)/);
+  assert.match(app, /where\('activity\.status', 'in', \['pending', 'in_progress', 'resolved'\]\)/);
+  assert.match(app, /Demandas e resoluções da equipe/);
+  assert.match(app, /Leitura responsável dos indicadores/);
+  assert.match(rules, /manages\(app, company\).*serviceRequest/s);
+  assert.match(rules, /activity.*status.*pending.*in_progress.*resolved/s);
+});

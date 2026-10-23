@@ -201,7 +201,10 @@ service cloud.firestore {
         allow update, delete: if kind == 'absences' && access(company) && canManageCalendar(app, company) && (manages(app, company) || resource.data.get('userId', '') == request.auth.uid);
       }
       match /messages/{id} {
-        allow read: if support() || (member(company) && participant(resource.data));
+        allow read: if support()
+          || (manages(app, company) && (resource.data.get('serviceRequest', false) == true
+            || resource.data.get('activity', {}).get('status', '') in ['pending', 'in_progress', 'resolved']))
+          || (member(company) && participant(resource.data));
         allow create: if access(company) && participant(request.resource.data)
           && request.resource.data.get('senderId', '') in [request.auth.uid, 'system'];
         allow update: if access(company) && participant(resource.data) && participant(request.resource.data)
