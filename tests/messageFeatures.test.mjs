@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { activityProductivityMetrics, activityRecurrenceLabel, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, nextActivityDueDate, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
+import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, nextActivityDueDate, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
 
 test('message reactions are toggled without duplicate users', () => {
   assert.deepEqual(toggleMessageUser(['u1', 'u1'], 'u2'), ['u1', 'u2']);
@@ -18,7 +18,21 @@ test('reply snapshot is compact and activity supports checklist workflow', () =>
   assert.equal(reply.content.length, 240);
   const activity = createMessageActivity({ id: 'u1', name: 'Ana' });
   assert.equal(activity.status, 'pending');
+  assert.equal(activity.history[0].text, 'Atividade criada');
   assert.equal(normalizeMessageActivity({ ...activity, priority: 'urgent', checklist: [{ id: 'i1', text: 'Conferir', completed: true }] }).checklist[0].completed, true);
+});
+
+test('activity details normalize comments, attachments and audit history', () => {
+  const activity = normalizeMessageActivity({
+    ...createMessageActivity({ id: 'u1', name: 'Ana' }),
+    comments: [{ id: 'c1', text: ' Atualização concluída ', authorId: 'u2', authorName: 'Bruno', createdAt: 10 }],
+    attachments: [{ id: 'f1', name: 'relatorio.pdf', type: 'application/pdf', size: 1200, url: 'https://files.test/report', uploadedAt: 20, uploadedBy: 'u2', uploadedByName: 'Bruno' }],
+  });
+  assert.equal(activity.comments[0].text, 'Atualização concluída');
+  assert.equal(activity.attachments[0].name, 'relatorio.pdf');
+  assert.equal(activity.history.length, 1);
+  assert.equal(activityUpdateDescription(activity, { status: 'in_progress' }), 'Situação alterada para em andamento');
+  assert.equal(activityUpdateDescription(activity, { assigneeIds: ['u2'] }, [{ id: 'u2', name: 'Bruno' }]), 'Responsável definido: Bruno');
 });
 
 test('activity exposes deadline and checklist progress to the service center', () => {

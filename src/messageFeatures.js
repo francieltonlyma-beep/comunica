@@ -22,22 +22,37 @@ export const findMentionedParticipantIds = (text, participants = []) => {
   }).map(person => person.id);
 };
 
-export const createMessageActivity = (actor = {}) => ({
-  status: 'pending',
-  priority: 'normal',
-  assigneeIds: [],
-  dueDate: '',
-  checklist: [],
-  createdAt: Date.now(),
-  createdBy: actor.id || '',
-  createdByName: actor.name || '',
-  updatedAt: Date.now(),
-  updatedBy: actor.id || '',
-  updatedByName: actor.name || '',
-  resolvedAt: null,
-  resolvedBy: '',
-  recurrence: { frequency: 'none', interval: 1 },
+export const createActivityHistoryEntry = (actor = {}, text = 'Atividade criada', type = 'created', timestamp = Date.now()) => ({
+  id: `history-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+  type: String(type || 'update').slice(0, 40),
+  text: String(text || 'Atividade atualizada').trim().slice(0, 240),
+  actorId: String(actor.id || ''),
+  actorName: String(actor.name || 'Participante').slice(0, 120),
+  timestamp: Number(timestamp || Date.now()),
 });
+
+export const createMessageActivity = (actor = {}) => {
+  const now = Date.now();
+  return {
+    status: 'pending',
+    priority: 'normal',
+    assigneeIds: [],
+    dueDate: '',
+    checklist: [],
+    comments: [],
+    attachments: [],
+    history: [createActivityHistoryEntry(actor, 'Atividade criada', 'created', now)],
+    createdAt: now,
+    createdBy: actor.id || '',
+    createdByName: actor.name || '',
+    updatedAt: now,
+    updatedBy: actor.id || '',
+    updatedByName: actor.name || '',
+    resolvedAt: null,
+    resolvedBy: '',
+    recurrence: { frequency: 'none', interval: 1 },
+  };
+};
 
 export const normalizeActivityRecurrence = value => ({
   frequency: ['none', 'daily', 'weekly', 'monthly'].includes(value?.frequency) ? value.frequency : 'none',
@@ -54,6 +69,32 @@ export const normalizeMessageActivity = activity => activity && typeof activity 
     text: String(item?.text || '').slice(0, 180),
     completed: item?.completed === true,
   })).filter(item => item.id && item.text).slice(0, 30) : [],
+  comments: Array.isArray(activity.comments) ? activity.comments.map(comment => ({
+    id: String(comment?.id || ''),
+    text: String(comment?.text || '').trim().slice(0, 1000),
+    authorId: String(comment?.authorId || ''),
+    authorName: String(comment?.authorName || 'Participante').slice(0, 120),
+    createdAt: Number(comment?.createdAt || 0),
+  })).filter(comment => comment.id && comment.text && comment.createdAt).slice(-100) : [],
+  attachments: Array.isArray(activity.attachments) ? activity.attachments.map(file => ({
+    id: String(file?.id || ''),
+    name: String(file?.name || 'arquivo').slice(0, 180),
+    type: String(file?.type || 'application/octet-stream').slice(0, 120),
+    size: Math.max(0, Number(file?.size || 0)),
+    url: String(file?.url || ''),
+    storagePath: String(file?.storagePath || ''),
+    uploadedAt: Number(file?.uploadedAt || 0),
+    uploadedBy: String(file?.uploadedBy || ''),
+    uploadedByName: String(file?.uploadedByName || 'Participante').slice(0, 120),
+  })).filter(file => file.id && file.name && (file.url || file.storagePath)).slice(-30) : [],
+  history: Array.isArray(activity.history) ? activity.history.map(entry => ({
+    id: String(entry?.id || ''),
+    type: String(entry?.type || 'update').slice(0, 40),
+    text: String(entry?.text || '').trim().slice(0, 240),
+    actorId: String(entry?.actorId || ''),
+    actorName: String(entry?.actorName || 'Participante').slice(0, 120),
+    timestamp: Number(entry?.timestamp || 0),
+  })).filter(entry => entry.id && entry.text && entry.timestamp).slice(-100) : [],
   createdAt: Number(activity.createdAt || 0),
   createdBy: String(activity.createdBy || ''),
   createdByName: String(activity.createdByName || ''),
@@ -64,6 +105,29 @@ export const normalizeMessageActivity = activity => activity && typeof activity 
   resolvedBy: String(activity.resolvedBy || ''),
   recurrence: normalizeActivityRecurrence(activity.recurrence),
 }) : null;
+
+export const activityUpdateDescription = (currentValue, changes = {}, people = []) => {
+  const current = normalizeMessageActivity(currentValue);
+  if (!current) return 'Atividade atualizada';
+  if (changes.status && changes.status !== current.status) {
+    return `Situação alterada para ${{ pending: 'pendente', in_progress: 'em andamento', resolved: 'resolvida' }[changes.status] || changes.status}`;
+  }
+  if (Object.hasOwn(changes, 'dueDate') && changes.dueDate !== current.dueDate) {
+    return changes.dueDate ? `Prazo alterado para ${String(changes.dueDate).split('-').reverse().join('/')}` : 'Prazo removido';
+  }
+  if (changes.priority && changes.priority !== current.priority) {
+    return `Prioridade alterada para ${{ low: 'baixa', normal: 'normal', high: 'alta', urgent: 'urgente' }[changes.priority] || changes.priority}`;
+  }
+  if (changes.assigneeIds && JSON.stringify(changes.assigneeIds) !== JSON.stringify(current.assigneeIds)) {
+    const names = changes.assigneeIds.map(id => people.find(person => person.id === id)?.name).filter(Boolean);
+    return names.length ? `Responsável definido: ${names.join(', ')}` : 'Responsável removido';
+  }
+  if (changes.recurrence && changes.recurrence.frequency !== current.recurrence.frequency) {
+    return `Recorrência alterada para ${activityRecurrenceLabel(changes.recurrence).toLocaleLowerCase('pt-BR')}`;
+  }
+  if (changes.checklist) return 'Checklist atualizado';
+  return 'Atividade atualizada';
+};
 
 export const activityRecurrenceLabel = recurrence => {
   const normalized = normalizeActivityRecurrence(recurrence);

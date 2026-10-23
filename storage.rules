@@ -65,6 +65,10 @@ service firebase.storage {
       return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/messages/$(messageId);
     }
 
+    function activityPath(companyId, activityId) {
+      return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/activities/$(activityId);
+    }
+
     function documentAudience(companyId, data) {
       return activeAdmin(companyId) || activePlatformSupport() || (activeEmployee(companyId) && (
         data.get('accessMode', 'company') == 'company'
@@ -84,12 +88,14 @@ service firebase.storage {
 
     function canReadAttachment(companyId) {
       let messageId = resource.metadata.get('messageId', '');
+      let activityId = resource.metadata.get('activityId', '');
       return activePlatformSupport()
         || (request.auth != null && resource.metadata.get('ownerUid', '') == request.auth.uid)
         || (activeEmployee(companyId) && messageId != '' && firestore.exists(messagePath(companyId, messageId))
           && (request.auth.uid in firestore.get(messagePath(companyId, messageId)).data.get('participants', [])
             || firestore.get(messagePath(companyId, messageId)).data.get('senderId', '') == request.auth.uid
-            || firestore.get(messagePath(companyId, messageId)).data.get('receiverId', '') == request.auth.uid));
+            || firestore.get(messagePath(companyId, messageId)).data.get('receiverId', '') == request.auth.uid))
+        || (activeEmployee(companyId) && activityId != '' && firestore.exists(activityPath(companyId, activityId)));
     }
 
     function businessFileType() {
@@ -131,7 +137,8 @@ service firebase.storage {
             && request.auth.token.get('isAdmin', false) == true
             && request.resource.metadata.get('documentId', '').matches('document-.+'))
           || (folder == 'attachments'
-            && request.resource.metadata.get('messageId', '').matches('msg-.+'))
+            && (request.resource.metadata.get('messageId', '').matches('msg-.+')
+              || request.resource.metadata.get('activityId', '').matches('(activity|recurring)-.+')))
           || (folder == 'avatars' && request.auth.token.get('isAdmin', false) == true)
           || folder == 'images'
           || (folder == 'whistleblowing-poster' && request.auth.token.get('isAdmin', false) == true)
@@ -159,7 +166,8 @@ service firebase.storage {
                 && request.auth.token.get('companyId', '') == companyId)
               || (request.auth.uid == 'platform-support-francielton'
                 && request.auth.token.get('isDeveloper', false) == true))
-            && request.resource.metadata.get('messageId', '').matches('msg-.+'))
+            && (request.resource.metadata.get('messageId', '').matches('msg-.+')
+              || request.resource.metadata.get('activityId', '').matches('(activity|recurring)-.+')))
           || ((folder == 'avatars' || folder == 'whistleblowing-poster')
             && ((request.auth.uid != 'platform-support-francielton'
                 && request.auth.token.get('isDeveloper', false) != true
