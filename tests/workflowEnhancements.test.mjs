@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const main = fs.readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+const firebaseConfig = fs.readFileSync(new URL('../firebase.json', import.meta.url), 'utf8');
 const careers = fs.readFileSync(new URL('../src/Careers.jsx', import.meta.url), 'utf8');
 const careerFunctions = fs.readFileSync(new URL('../functions/src/careers.ts', import.meta.url), 'utf8');
 const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
@@ -69,4 +71,11 @@ test('service activities ignore empty legacy records', () => {
   assert.match(app, /standaloneActivities\.filter\(Boolean\)\.map\(record =>/);
   assert.match(app, /employeesList\.filter\(Boolean\)\.map\(user => user\.id\)/);
   assert.match(app, /messageContacts\.find\(user => user\?\.id === userId\)/);
+});
+
+
+test('hosting prevents stale deploys from leaving a blank page', () => {
+  assert.match(main, /vite:preloadError/);
+  assert.match(main, /window\.location\.replace/);
+  assert.match(firebaseConfig, /no-cache, must-revalidate/);
 });
