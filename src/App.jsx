@@ -9,6 +9,7 @@ import { DEFAULT_DOCUMENT_FOLDER, normalizeDocumentFolder, documentFileType, doc
 import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion, normalizePollQuestions, pollTimelineItems } from './pollInsights';
 import FeatureTutorial from './FeatureTutorial';
 import ScheduleRuleEditor from './ScheduleRuleEditor';
+import ScheduleCalendar from './ScheduleCalendar.jsx';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
 import PlatformUpdates from './PlatformUpdates.jsx';
@@ -810,8 +811,6 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [announcementFilter, setAnnouncementFilter] = useState('Todos');
   const [sectorFilter, setSectorFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [presenceSearchText, setPresenceSearchText] = useState('');
-  const [showAllPresence, setShowAllPresence] = useState(false);
   
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -934,8 +933,6 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const todayStr = `${todayYYYY}-${todayMM}-${todayDD}`;
 
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(todayStr);
-  const [currentCalYear, setCurrentCalYear] = useState(todayYYYY);
-  const [currentCalMonth, setCurrentCalMonth] = useState(todayObj.getMonth());
 
   const [newAnn, setNewAnn] = useState({ title: '', content: '', category: 'Aviso Geral', image: '' });
   const [newDocument, setNewDocument] = useState({ id: '', title: '', description: '', dept: 'all', accessMode: 'company', allowedUserIds: [], category: 'Geral', folder: '', tags: '', version: '1.0', reviewDate: '', requiredRead: false, file: null });
@@ -4354,57 +4351,6 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     e.target.value = ''; // Reseta o input de arquivo
   };
 
-  const generateMonthDays = (year, month) => {
-    const days = [];
-    const firstDay = new Date(year, month, 1).getDay(); 
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
-    for (let i = 0; i < firstDay; i++) {
-      days.push({ dayNumber: null }); 
-    }
-    
-    for (let i = 1; i <= daysInMonth; i++) {
-      const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const dayEvents = calendarEvents.filter(ev => ev.date === dateString);
-      const dayAbsences = absences.filter(abs => {
-        const start = abs.startDate || abs.date;
-        const end = abs.endDate || abs.date || start;
-        return dateString >= start && dateString <= end;
-      }).filter((absence, index, list) => list.findIndex(item =>
-        `${item.userId || item.userName}|${item.startDate || item.date}|${item.endDate || item.date}|${normalizedText(item.reason)}` ===
-        `${absence.userId || absence.userName}|${absence.startDate || absence.date}|${absence.endDate || absence.date}|${normalizedText(absence.reason)}`
-      ) === index);
-      const daySchedules = workSchedules.filter(schedule => dateString >= schedule.startDate && dateString <= schedule.endDate);
-      days.push({
-        dayNumber: i,
-        dateString,
-        events: dayEvents,
-        absences: dayAbsences,
-        schedules: daySchedules
-      });
-    }
-    return days;
-  };
-
-  const handlePrevMonth = () => {
-    if (currentCalMonth === 0) {
-      setCurrentCalMonth(11);
-      setCurrentCalYear(currentCalYear - 1);
-    } else {
-      setCurrentCalMonth(currentCalMonth - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (currentCalMonth === 11) {
-      setCurrentCalMonth(0);
-      setCurrentCalYear(currentCalYear + 1);
-    } else {
-      setCurrentCalMonth(currentCalMonth + 1);
-    }
-  };
-
-  const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const handleAICopilot = async (type) => {
     const isAnn = type === 'announcement';
     const title = isAnn ? newAnn.title : newPost.title;
@@ -4641,8 +4587,6 @@ try {
     }
   };
 
-  const calendarDays = generateMonthDays(currentCalYear, currentCalMonth);
-  const activeDayData = calendarDays.find(d => d.dateString === selectedCalendarDay) || { dayNumber: null, events: [], absences: [], schedules: [] };
 
   const teamStatus = employeesList.map(user => ({ ...user, currentStatus: getStatusEmTempoReal(user) }));
   const teamPresenceList = teamStatus.map(user => {
@@ -4654,10 +4598,6 @@ try {
       status: savedPresence?.status || user.currentStatus
     };
   });
-  const filteredTeamPresenceList = teamPresenceList
-    .filter(colab => colab.name?.toLocaleLowerCase('pt-BR').includes(presenceSearchText.toLocaleLowerCase('pt-BR')))
-    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
-  const isPresenceListExpanded = showAllPresence || Boolean(presenceSearchText.trim());
   const activeMembers = teamStatus.filter(user => user.currentStatus === 'Presencial' || user.currentStatus === 'Home Office');
   const offDutyMembers = teamStatus.filter(user => user.currentStatus === 'Folga');
   const vacationMembers = teamStatus.filter(user => user.currentStatus === 'Férias');
@@ -8159,327 +8099,32 @@ const handleDownload = async (fileUrl, fileName) => {
 
           {/* TAB: SCALE & CALENDAR */}
           {activeTab === 'scale' && (
-            <div data-tour="scale" className="flex flex-col gap-6 animate-in fade-in duration-300">
-              
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-full bg-slate-100 text-slate-800 border border-slate-200">
-                    <UserCheck className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-slate-800 text-sm">Meu Status de Presença Diária</h3>
-                    <p className="text-slate-500 text-xs">Mantenha sua equipe atualizada se você está trabalhando remotamente ou presencialmente na sede de Comunica hoje.</p>
-                  </div>
-                </div>
-                
-                <button
-                  onClick={() => {
-                    const existingPresence = presenceList.find(p => p.name.toLowerCase() === currentUser.name.toLowerCase());
-                    const primaryDeptId = getUserDepts(currentUser)[0] || 'rh';
-                    setNewPresence({
-                      name: currentUser.name,
-                      dept: primaryDeptId,
-                      status: existingPresence ? existingPresence.status : 'Presencial',
-                      notes: existingPresence ? existingPresence.notes : '',
-                      startDate: todayStr,
-                      endDate: todayStr
-                    });
-                    setShowPresenceModal(true);
-                  }}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow transition-all"
-                  type="button"
-                >
-                  <Plus className="h-4 w-4" /> {currentUser.isAdmin ? 'Atualizar Status (Equipe)' : 'Atualizar Meu Status de Trabalho'}
-                </button>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                  <h4 className="text-slate-800 font-extrabold text-xs uppercase tracking-wider">
-                    Escala de Trabalho Hoje ({todayDD}/{todayMM}/{todayYYYY})
-                  </h4>
-                  <div className="relative w-full sm:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                      type="search"
-                      value={presenceSearchText}
-                      onChange={(e) => setPresenceSearchText(e.target.value)}
-                      placeholder="Buscar colaborador..."
-                      className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400"
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredTeamPresenceList.map((colab, idx) => (
-                    <div
-                      key={colab.id || colab.name}
-                      className={`p-3 rounded-xl border border-slate-150 items-center justify-between bg-slate-50/50 hover:bg-slate-50 transition-all relative group ${
-                        isPresenceListExpanded || idx < 2
-                          ? 'flex'
-                          : idx < 4
-                            ? 'hidden sm:flex'
-                            : idx < 6
-                              ? 'hidden lg:flex'
-                              : 'hidden'
-                      }`}
-                    >
-                      
-                      {currentUser.isAdmin && (
-                        <button
-                          onClick={() => {
-                            setNewPresence({
-                              name: colab.name,
-                              dept: colab.dept,
-                              status: colab.status,
-                              notes: colab.notes || '',
-                              startDate: todayStr,
-                              endDate: todayStr
-                            });
-                            setShowPresenceModal(true);
-                          }}
-                          title="Editar Status do Colaborador"
-                          className="absolute -top-2 -right-2 p-1.5 bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition-all z-10"
-                          type="button"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-
-                      <div>
-                        <strong className="text-slate-800 text-xs block font-bold">{colab.name}</strong>
-                        <span className="text-[10px] text-slate-400 font-bold block">
-                          {departmentsList.find(d => d.id === colab.dept)?.name || colab.dept}
-                        </span>
-                        {colab.notes && <span className="text-[10px] text-slate-600 font-medium block mt-1">📍 {colab.notes}</span>}
-                      </div>
-
-<span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
-  getStatusEmTempoReal(colab) === 'Presencial' ? 'bg-slate-900 text-white border border-slate-800' :
-  getStatusEmTempoReal(colab) === 'Home Office' ? 'bg-slate-100 text-slate-700 border border-slate-350' :
-  getStatusEmTempoReal(colab) === 'Folga' ? 'bg-slate-50 text-slate-600 border border-slate-200' :
-  getStatusEmTempoReal(colab) === 'Férias' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-  'bg-slate-100 text-slate-500'
-}`}>
-  {getStatusEmTempoReal(colab)}
-</span>
-                    </div>
-                  ))}
-                </div>
-                {filteredTeamPresenceList.length > 2 && !presenceSearchText.trim() && (
-                  <div className="mt-4 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowAllPresence(prev => !prev)}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
-                    >
-                      {showAllPresence ? 'Ver menos' : 'Ver mais'}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-extrabold text-slate-800 text-sm">Cronograma Mensal Integrado</h4>
-                      <p className="text-slate-500 text-xs">Monitore eventos oficiais e as indisponibilidades agendadas de toda a equipe.</p>
-                    </div>
-                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
-                      <button onClick={handlePrevMonth} className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 transition-all"><ChevronLeft className="h-4 w-4" /></button>
-                      <strong className="text-slate-800 font-black text-xs uppercase w-28 text-center">
-                        {monthNames[currentCalMonth]} {currentCalYear}
-                      </strong>
-                      <button onClick={handleNextMonth} className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 transition-all"><ChevronRight className="h-4 w-4" /></button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1 text-center font-bold text-slate-400 text-[10px] uppercase">
-                    <div>Dom</div>
-                    <div>Seg</div>
-                    <div>Ter</div>
-                    <div>Qua</div>
-                    <div>Qui</div>
-                    <div>Sex</div>
-                    <div>Sáb</div>
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1.5">
-                    {calendarDays.map((day, idx) => {
-                      if (day.dayNumber === null) {
-                          return <div key={`empty-${idx}`} className="h-14 bg-slate-50 rounded-lg"></div>;
-                      }
-
-                      const isSelected = selectedCalendarDay === day.dateString;
-                      const hasEvents = day.events.length > 0;
-                      const hasAbsences = day.absences.length > 0;
-                      const hasSchedules = day.schedules.length > 0;
-
-                      return (
-                        <button
-                          key={day.dayNumber}
-                          type="button"
-                          onClick={() => setSelectedCalendarDay(day.dateString)}
-                          className={`h-14 p-1 rounded-xl flex flex-col justify-between transition-all border relative ${
-                            isSelected 
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
-                              : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="text-[10px] font-extrabold">{day.dayNumber}</span>
-                          
-                          <div className="flex flex-col gap-0.5 w-full">
-                            {hasEvents && (
-                              <div className="h-1.5 w-full rounded-sm bg-slate-850" title={`${day.events.length} Evento(s)`}></div>
-                            )}
-                            {hasAbsences && (
-                              <div className="h-1.5 w-full rounded-sm bg-slate-400" title={`${day.absences.length} Ausência(s)`}></div>
-                            )}
-                            {hasSchedules && (
-                              <div className="h-1.5 w-full rounded-sm bg-violet-500" title={`${day.schedules.length} Escala(s)`}></div>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold border-t border-slate-100 pt-3">
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-slate-850"></span> Evento Cadastrado
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-slate-400"></span> Ausência Programada
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded bg-violet-500"></span> Escala planejada
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-4">
-                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
-                    <h5 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                      Agenda: Dia {selectedCalendarDay.split('-').reverse().join('/')}
-                    </h5>
-
-                    <div className="flex flex-col gap-2">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase">Eventos Oficiais:</span>
-                      {activeDayData.events.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic">Sem eventos previstos para esta data.</p>
-                      ) : (
-                        activeDayData.events.map((ev) => (
-                          <div key={ev.id} className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-xs relative group">
-                            {currentUser.isAdmin && (
-                              <button
-                                onClick={() => handleDeleteEvent(ev.id)}
-                                title="Cancelar Evento"
-                                className="absolute top-2 right-2 p-1 text-slate-400 hover:text-rose-600 bg-white shadow-xs rounded border border-slate-200 opacity-0 group-hover:opacity-100 transition-all"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            )}
-                            <strong className="text-slate-800 block font-bold">{ev.title}</strong>
-                            <span className="text-[10px] text-slate-500 block">📍 Local: {ev.location}</span>
-                            <p className="text-slate-600 text-[11px] mt-1 leading-tight"><TextoComEmojis texto={ev.description} /></p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase">Indisponibilidades de Horário:</span>
-                      {activeDayData.absences.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic">Ninguém agendou ausência neste dia.</p>
-                      ) : (
-                        activeDayData.absences.map((abs) => {
-                          const isOwnAbsence = abs.userId === currentUser.id;
-                          const canDeleteAbs = isOwnAbsence || currentUser.isAdmin;
-                          
-                          const s = abs.startDate || abs.date;
-                          const e = abs.endDate || abs.date || s;
-                          const dateSpan = s === e 
-                            ? `Horário: ${abs.startTime} às ${abs.endTime}` 
-                            : `De ${s.split('-').reverse().join('/')} a ${e.split('-').reverse().join('/')} (${abs.startTime} às ${abs.endTime})`;
-
-                          return (
-                            <div key={abs.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs relative group">
-                              
-                              {canDeleteAbs && (
-                                <button
-                                  onClick={() => handleDeleteAbsence(abs.id, abs.userId)}
-                                  title="Remover Agendamento"
-                                  className="absolute top-2 right-2 p-1 text-slate-400 hover:text-rose-600 bg-white shadow-xs rounded border border-slate-200 opacity-0 group-hover:opacity-100 transition-all"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              )}
-
-                              <strong className="text-slate-800 block font-bold">{abs.userName}</strong>
-                              <span className="text-[10px] text-slate-600 font-bold block">🕒 {dateSpan}</span>
-                              <span className="text-slate-500 text-[10px] block italic mt-0.5">Motivo: {abs.reason}</span>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
-                      <span className="text-[9px] font-bold text-violet-500 uppercase">Escala de trabalho:</span>
-                      {activeDayData.schedules.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 italic">Nenhuma escala planejada para esta data.</p>
-                      ) : activeDayData.schedules.map(schedule => (
-                        <div key={schedule.id} className="group relative rounded-lg border border-violet-100 bg-violet-50 p-2.5 pr-10 text-xs">
-                          <strong className="block text-violet-950">{schedule.userName}</strong>
-                          <span className="mt-0.5 block text-[10px] font-bold text-violet-700">{schedule.status} · {schedule.shift || 'Integral'}{schedule.shift === 'Personalizado' && schedule.shiftStart && schedule.shiftEnd ? ` (${schedule.shiftStart}–${schedule.shiftEnd})` : ''}{Number(schedule.plannedHours) > 0 ? ` · ${scheduleDurationToText(schedule.plannedHours)}` : ''}{Number(schedule.extraHours) > 0 ? ` (${scheduleDurationToText(schedule.extraHours)} extra)` : ''}{schedule.breakStart && schedule.breakEnd ? ` · intervalo ${schedule.breakStart}–${schedule.breakEnd}` : Number(schedule.breakMinutes) > 0 ? ` · intervalo ${scheduleDurationToText(Number(schedule.breakMinutes) / 60)}` : ''}{schedule.notes ? ` · ${schedule.notes}` : ''}</span>
-                          {schedule.ruleReason && <span className="mt-1 block text-[10px] text-slate-600">{schedule.ruleGroupName ? `${schedule.ruleGroupName} · ` : ''}{schedule.ruleReason}</span>}
-                          {(isManager || currentUser.isAdmin) && <button type="button" disabled={Boolean(deletingScheduleId)} onClick={() => handleDeleteSchedule(schedule)} title="Excluir esta escala e todo o período vinculado" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-violet-100 bg-white p-1.5 text-slate-400 shadow-sm transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-wait disabled:opacity-50">{deletingScheduleId === schedule.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewAbsence(prev => ({ ...prev, targetUserId: currentUser.id, startDate: selectedCalendarDay, endDate: selectedCalendarDay }));
-                          setShowAbsenceModal(true);
-                        }}
-                        className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 py-2 rounded-xl text-xs font-bold transition-all border border-slate-250 text-center"
-                      >
-                        {isManager || effectiveAccessProfile.canPublishAbsenceForOthers === true ? 'Agendar ausência' : 'Agendar Minha Ausência'}
-                      </button>
-                      
-                      {currentUser.isAdmin && (
-                        <div className="grid grid-cols-2 gap-2"><button
-                          type="button"
-                          onClick={() => {
-                            setNewEvent(prev => ({ ...prev, date: selectedCalendarDay }));
-                            setShowEventModal(true);
-                          }}
-                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold transition-all text-center"
-                        >
-                          Criar evento
-                        </button><button type="button" onClick={() => { setNewEvent({ title: 'Feriado', date: selectedCalendarDay, type: 'Feriado', location: 'Calendário oficial', description: 'Dia marcado como feriado para o planejamento das escalas.' }); setShowEventModal(true); }} className="w-full rounded-xl border border-amber-200 bg-amber-50 py-2 text-center text-xs font-bold text-amber-900 transition-all hover:bg-amber-100">Marcar feriado</button></div>
-                      )}
-                      {isManager && (
-                        <button
-                          type="button"
-                          onClick={openBulkSchedule}
-                          className="w-full border border-violet-200 bg-violet-50 py-2 text-center text-xs font-bold text-violet-800 transition-all hover:bg-violet-100 rounded-xl"
-                        >
-                          Organizar escala em lote
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-            </div>
+            <ScheduleCalendar
+              key={activeCompany?.id || 'local'}
+              today={todayStr} selectedDate={selectedCalendarDay} onSelectDate={setSelectedCalendarDay}
+              schedules={workSchedules} absences={absences} events={calendarEvents}
+              employees={employeesList} departments={departmentsList} getDepartments={getUserDepts}
+              currentUser={currentUser} canManage={Boolean(isManager || currentUser.isAdmin)}
+              canWrite={Boolean(currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))}
+              deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule}
+              onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
+              onPlan={openBulkSchedule} formatDuration={scheduleDurationToText} presence={teamPresenceList}
+              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal}
+              onAbsence={() => {
+                setNewAbsence(previous => ({ ...previous, targetUserId: currentUser.id, startDate: selectedCalendarDay, endDate: selectedCalendarDay }));
+                setShowAbsenceModal(true);
+              }}
+              onEvent={holiday => {
+                if (holiday) setNewEvent({ title: 'Feriado', date: selectedCalendarDay, type: 'Feriado', location: 'Calendário oficial', description: 'Dia marcado como feriado para o planejamento das escalas.' });
+                else setNewEvent(previous => ({ ...previous, date: selectedCalendarDay }));
+                setShowEventModal(true);
+              }}
+              onPresence={date => {
+                const existingPresence = presenceList.find(item => item.name.toLowerCase() === currentUser.name.toLowerCase());
+                setNewPresence({ name: currentUser.name, dept: getUserDepts(currentUser)[0] || 'rh', status: existingPresence?.status || 'Presencial', notes: existingPresence?.notes || '', startDate: date, endDate: date });
+                setShowPresenceModal(true);
+              }}
+            />
           )}
 
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
