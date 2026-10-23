@@ -10,6 +10,8 @@ import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion
 import FeatureTutorial from './FeatureTutorial';
 import ScheduleRuleEditor from './ScheduleRuleEditor';
 import ScheduleCalendar from './ScheduleCalendar.jsx';
+import ScheduleOptimizationSummary from './ScheduleOptimizationSummary.jsx';
+import { balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
@@ -33,7 +35,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath, serverTimestamp, runTransaction, getDocsFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -992,8 +994,10 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [isSavingScheduleRules, setIsSavingScheduleRules] = useState(false);
   const [automaticScheduleProposal, setAutomaticScheduleProposal] = useState([]);
   const [automaticScheduleProposalInput, setAutomaticScheduleProposalInput] = useState('');
+  const [automaticScheduleOptimization, setAutomaticScheduleOptimization] = useState(null);
+  const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
   const [automaticScheduleEditorFocus, setAutomaticScheduleEditorFocus] = useState(null);
-  const automaticScheduleInput = JSON.stringify({ rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
+  const automaticScheduleInput = JSON.stringify({ company: activeCompany?.id, history: workSchedules, absences, employees: employeesList.map(user => ({ id: user.id, name: user.name, departments: getUserDepts(user) })), rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
   const [automaticSchedulePreviewDate, setAutomaticSchedulePreviewDate] = useState('');
   const [newEvent, setNewEvent] = useState({ title: '', date: todayStr, type: 'Confraternização', location: '', description: '' });
   
@@ -2191,11 +2195,26 @@ const getStatusEmTempoReal = (colaborador) => {
     }
   };
 
-  const saveRelatedRecords = async (records, failureMessage = 'Não foi possível publicar. Nenhum dos registros desta operação foi salvo. Seu formulário foi preservado.') => {
+  const saveRelatedRecords = async (records, failureMessage = 'Não foi possível publicar. Nenhum dos registros desta operação foi salvo. Seu formulário foi preservado.', scheduleGuard = null) => {
     const finishActivity = typeof beginCloudActivity === 'function' ? (beginCloudActivity('Publicando informações...'), endCloudActivity) : () => {};
     try {
       if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
-      await commitAtomicRecords(records, () => writeBatch(db), (collectionName, id) => {
+      if (scheduleGuard) {
+        if (scheduleGuard.companyId !== activeCompany?.id || !records.length || records.length > 450 || records.some(record => record.collection !== 'schedules')) throw new Error('Publicação de escala inválida.');
+        const schedulesCollection = getTenantCollection('schedules');
+        const fresh = await getDocsFromServer(schedulesCollection);
+        const currentSchedules = fresh.docs.map(item => ({ id: item.id, ...item.data() }));
+        if (scheduleSignature(currentSchedules) !== scheduleSignature(scheduleGuard.history)) throw Object.assign(new Error('Escalas alteradas durante a revisão'), { code: 'planning-stale' });
+        await runTransaction(db, async transaction => {
+          const checks = await Promise.all(scheduleGuard.replaced.map(item => transaction.get(doc(schedulesCollection, item.id))));
+          if (checks.some((snapshot, index) => !snapshot.exists() || scheduleSignature([{ id: snapshot.id, ...snapshot.data() }]) !== scheduleSignature([scheduleGuard.replaced[index]]))) throw Object.assign(new Error('Uma escala foi alterada durante a publicação'), { code: 'planning-stale' });
+          for (const record of records) {
+            const reference = doc(schedulesCollection, record.id);
+            if (record.operation === 'delete') transaction.delete(reference);
+            else transaction.set(reference, record.data);
+          }
+        });
+      } else await commitAtomicRecords(records, () => writeBatch(db), (collectionName, id) => {
         const target = getTenantCollection(collectionName);
         if (!target) throw new Error('Nenhuma empresa selecionada.');
         return doc(target, id);
@@ -2211,7 +2230,7 @@ const getStatusEmTempoReal = (colaborador) => {
       return true;
     } catch (error) {
       console.error('Falha na gravação conjunta', error);
-      triggerNotification(failureMessage, 'error');
+      triggerNotification(error?.code === 'planning-stale' ? 'A escala mudou em outra sessão. Gere uma nova simulação; nenhuma alteração desta publicação foi salva.' : failureMessage, 'error');
       return false;
     } finally {
       finishActivity();
@@ -3509,12 +3528,12 @@ const submitPresence = async (e) => {
     }).sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
   };
 
-  const openBulkSchedule = () => {
+  const openBulkSchedule = (period = 'day') => {
     const eligible = bulkScheduleEligibleEmployees({ ...bulkSchedule, employeeSearch: '', selectionFilter: 'Todos' });
     setBulkSchedule(previous => ({
       ...previous,
-      startDate: selectedCalendarDay,
-      endDate: selectedCalendarDay,
+      startDate: period === 'month' ? selectedCalendarDay.slice(0, 7) + '-01' : selectedCalendarDay,
+      endDate: period === 'month' ? `${selectedCalendarDay.slice(0, 7)}-${String(new Date(Number(selectedCalendarDay.slice(0, 4)), Number(selectedCalendarDay.slice(5, 7)), 0).getDate()).padStart(2, '0')}` : selectedCalendarDay,
       employeeSearch: '',
       selectionFilter: 'Todos',
       userIds: eligible.map(user => user.id),
@@ -3522,7 +3541,8 @@ const submitPresence = async (e) => {
     setAutomaticScheduleProposal([]);
     setAutomaticSchedulePreviewDate(selectedCalendarDay);
     setBulkScheduleMode('smart');
-    setAutomaticScheduleRuleTab((currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageScheduleRules !== false) ? 'rules' : 'planning');
+    setAutomaticScheduleRuleTab('planning');
+    setAutomaticScheduleOptimization(null);
     setShowBulkScheduleModal(true);
   };
 
@@ -3566,13 +3586,13 @@ const submitPresence = async (e) => {
     return { regular, extra, total: regular + extra, actualEnd: scheduleMinutesToTime(end + extra * 60), breakMinutes };
   };
   const updateAutomaticScheduleRow = (key, changes) => {
-    setAutomaticScheduleProposal(previous => previous.map(row => row.key === key ? { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true } : row));
+    setAutomaticScheduleProposal(previous => previous.map(row => row.key === key && !isProtectedProposalRow(row) ? { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true, locked: true } : row));
   };
   const repeatAutomaticScheduleOvertime = source => {
     const extraHours = Math.max(0, Number(source.extraHours) || 0);
     setAutomaticScheduleProposal(previous => previous.map(row => (
-      row.userId === source.userId && row.date >= source.date && ['Presencial', 'Home Office'].includes(row.status)
-        ? { ...row, extraHours }
+      row.userId === source.userId && row.date >= source.date && !isProtectedProposalRow(row) && ['Presencial', 'Home Office'].includes(row.status)
+        ? { ...row, extraHours, locked: true, manuallyAdjusted: true }
         : row
     )));
     triggerNotification(`Horas extras repetidas para os próximos dias de trabalho de ${source.userName}.`);
@@ -3627,7 +3647,45 @@ const submitPresence = async (e) => {
     return saved;
   };
 
+  const schedulePlanningContext = () => ({ history: workSchedules, absences, employees: employeesList, getDepartments: getUserDepts });
+  const schedulePlanningDataReady = () => scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready');
+  const finishAutomaticScheduleGeneration = (proposal, dates) => {
+    const preserved = prepareScheduleProposal(proposal, { history: workSchedules, absences, rules: automaticScheduleRules, draftPins: automaticScheduleProposal });
+    const prepared = balancePreparedScheduleProposal(preserved, proposal, automaticScheduleRules.coverageRequirements || [], schedulePlanningContext());
+    if (!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically) {
+      const groups = new Map();
+      prepared.forEach(row => { const key = row.userId + '|' + row.weekKey; groups.set(key, [...(groups.get(key) || []), row]); });
+      for (const rows of groups.values()) {
+        if (rows.some(row => ['Presencial', 'Home Office'].includes(row.status) && (!row.shiftStart || !row.shiftEnd))) continue;
+        const target = Number(rows[0].weekHoursTarget) || 0;
+        let remaining = Math.max(0, target - rows.reduce((sum, row) => sum + automaticScheduleRowHours(row).total, 0));
+        rows.filter(row => ['Presencial', 'Home Office'].includes(row.status) && !isFixedProposalRow(row)).reverse().forEach(row => {
+          const assigned = Math.min(Math.max(0, 4 - Number(row.extraHours || 0)), remaining);
+          if (assigned > 0) { row.extraHours = Number((Number(row.extraHours || 0) + assigned).toFixed(2)); row.autoExtra = true; remaining -= assigned; }
+        });
+        rows.forEach(row => { row.unallocatedHours = Number(Math.max(0, remaining).toFixed(2)); });
+      }
+    }
+    const result = optimizeScheduleCoverage(prepared, automaticScheduleRules.coverageRequirements || [], schedulePlanningContext());
+    setAutomaticScheduleProposalInput(automaticScheduleInput);
+    setAutomaticScheduleProposal(result.rows);
+    setAutomaticScheduleOptimization({ before: result.before, swaps: result.swaps, limited: result.limited });
+    setAutomaticSchedulePreviewDate(dates[0] || '');
+    triggerNotification(`Simulação criada: ${result.swaps} troca(s) de folga para melhorar a cobertura. Revise antes de publicar.`);
+  };
+  const reorganizeAutomaticSchedule = () => {
+    if (!schedulePlanningDataReady() || automaticScheduleProposalInput !== automaticScheduleInput) return triggerNotification('Os dados ou as regras mudaram. Gere o quadro novamente antes de reorganizar.', 'error');
+    const result = optimizeScheduleCoverage(automaticScheduleProposal, automaticScheduleRules.coverageRequirements || [], schedulePlanningContext());
+    setAutomaticScheduleProposal(result.rows);
+    setAutomaticScheduleOptimization({ before: result.before, swaps: result.swaps, limited: result.limited });
+    triggerNotification(result.swaps ? `${result.swaps} troca(s) aplicadas na prévia. Confira a cobertura e publique quando estiver pronta.` : 'As trocas testadas não melhoraram a cobertura sem alterar dias fixos ou os limites configurados.');
+  };
+  const toggleAutomaticScheduleDayLock = key => {
+    setAutomaticScheduleProposal(previous => previous.map(row => row.key !== key || isProtectedProposalRow(row) || row.pinned || row.ruleApplied || row.constraintLocked ? row : { ...row, locked: !(row.locked || row.manuallyAdjusted), manuallyAdjusted: false }));
+  };
+
   const generateAutomaticSchedule = () => {
+    if (!schedulePlanningDataReady()) return triggerNotification('Aguarde o carregamento das regras, equipe e ausências antes de gerar.', 'error');
     if (!bulkSchedule.startDate || !bulkSchedule.endDate || bulkSchedule.endDate < bulkSchedule.startDate) {
       triggerNotification('Informe um período válido para gerar a sugestão.', 'error');
       return;
@@ -3649,12 +3707,9 @@ const submitPresence = async (e) => {
     const holidayDates = new Set(calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date));
     const ruleErrors = validateRuleGroups(automaticScheduleRules.ruleGroups || []);
     if (ruleErrors.length) return triggerNotification(ruleErrors[0], 'error');
-    if (automaticScheduleRules.ruleGroups?.length) {
+    if (automaticScheduleRules.ruleGroups?.length || automaticScheduleRules.coverageRequirements?.length) {
       const proposal = buildRuleSchedule({ dates: allDays, users: targets, rules: { ...automaticScheduleRules, hoursPerWeek: weeklyHours }, holidays: [...holidayDates], history: workSchedules, getDepartment: user => getUserDepts(user)[0] || '' });
-      setAutomaticScheduleProposalInput(automaticScheduleInput);
-      setAutomaticScheduleProposal(proposal);
-      setAutomaticSchedulePreviewDate(allDays[0] || '');
-      triggerNotification('Simulação criada. Confira as regras aplicadas, jornadas e pendências antes de publicar.');
+      finishAutomaticScheduleGeneration(proposal, allDays);
       return;
     }
     const proposal = targets.flatMap((user, userIndex) => {
@@ -3734,14 +3789,13 @@ const submitPresence = async (e) => {
       });
       return employeeProposal;
     });
-    setAutomaticScheduleProposalInput(automaticScheduleInput);
-    setAutomaticScheduleProposal(proposal);
-    setAutomaticSchedulePreviewDate(allDays[0] || '');
-    if (proposal.length) triggerNotification(`Sugestão criada para ${targets.length} colaborador(es). Revise cada dia antes de salvar.`);
+    finishAutomaticScheduleGeneration(proposal, allDays);
   };
 
   const saveAutomaticScheduleProposal = async () => {
-    if (!isManager || !automaticScheduleProposal.length) return;
+    if (isSavingScheduleProposal || !isManager || !automaticScheduleProposal.length) return;
+    if (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false)) return triggerNotification('Seu perfil não pode publicar escalas.', 'error');
+    if (!schedulePlanningDataReady()) return triggerNotification('Aguarde a confirmação dos dados da empresa.', 'error');
     if (automaticScheduleProposalInput !== automaticScheduleInput) return triggerNotification('As regras ou o período mudaram. Gere uma nova simulação antes de publicar.', 'error');
     const ruleIssues = scheduleRuleIssues(automaticScheduleProposal, workSchedules).filter(issue => issue.blocking);
     if (ruleIssues.length) {
@@ -3749,7 +3803,7 @@ const submitPresence = async (e) => {
       return triggerNotification(ruleIssues[0].message, 'error');
     }
     const invalidWorkRows = automaticScheduleProposal.filter(item => {
-      if (!['Presencial', 'Home Office'].includes(item.status)) return false;
+      if (isProtectedProposalRow(item) || !['Presencial', 'Home Office'].includes(item.status)) return false;
       const hours = automaticScheduleRowHours(item);
       const hasIncompleteBreak = Boolean(item.breakStart) !== Boolean(item.breakEnd);
       const hasInvalidBreak = Boolean(item.breakStart && item.breakEnd) && (hours.breakMinutes <= 0 || hours.breakMinutes > 360 || !scheduleTimeWithinShift(item.breakStart, item.shiftStart, item.shiftEnd) || !scheduleTimeWithinShift(item.breakEnd, item.shiftStart, item.shiftEnd));
@@ -3760,27 +3814,20 @@ const submitPresence = async (e) => {
       setAutomaticSchedulePreviewDate(invalidWorkRows[0].date);
       return;
     }
-    const collisions = automaticScheduleProposal.filter(item => workSchedules.some(existing =>
-      String(existing.userId) === String(item.userId) && existing.startDate <= item.date && existing.endDate >= item.date
-    ));
-    if (collisions.length) {
-      triggerNotification(`Há ${collisions.length} dia(s) com escala já lançada. Remova ou ajuste as marcações existentes antes de publicar a sugestão.`, 'error');
-      return;
-    }
-    const rows = automaticScheduleProposal.slice().sort((a, b) => a.userId.localeCompare(b.userId) || a.date.localeCompare(b.date));
+    const rows = automaticScheduleProposal.filter(item => !isProtectedProposalRow(item)).slice().sort((a, b) => a.userId.localeCompare(b.userId) || a.date.localeCompare(b.date));
     const segments = [];
     rows.forEach(item => {
       const hours = automaticScheduleRowHours(item);
       const previous = segments[segments.length - 1];
       const nextDate = previous ? civilDateShift(previous.endDate, { days: 1 }) : '';
-      if (previous && previous.ruleReason === (item.ruleReason || '') && previous.ruleGroupId === (item.groupId || '') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
+      if (previous && previous.locked === Boolean(item.locked || item.manuallyAdjusted) && previous.manuallyAdjusted === Boolean(item.manuallyAdjusted) && previous.ruleApplied === Boolean(item.ruleApplied) && previous.ruleReason === (item.ruleReason || '') && previous.ruleGroupId === (item.groupId || '') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
         previous.endDate = item.date;
       } else {
         segments.push({
           id: `schedule-${item.userId}-${item.date}-${item.date}`,
           userId: item.userId, userName: item.userName, dept: item.dept,
           ruleReason: item.ruleReason || '', ruleGroupId: item.groupId || '', ruleGroupName: item.groupName || '',
-          ruleApplied: Boolean(item.ruleApplied), manuallyAdjusted: Boolean(item.manuallyAdjusted),
+          ruleApplied: Boolean(item.ruleApplied), manuallyAdjusted: Boolean(item.manuallyAdjusted), locked: Boolean(item.locked || item.manuallyAdjusted),
           startDate: item.date, endDate: item.date, status: item.status,
           shift: ['Presencial', 'Home Office'].includes(item.status) ? `${item.shiftStart}–${hours.actualEnd}` : item.status,
           shiftStart: item.shiftStart, baseShiftEnd: item.shiftEnd, shiftEnd: hours.actualEnd,
@@ -3791,20 +3838,26 @@ const submitPresence = async (e) => {
       }
     });
     const now = Date.now();
-    const schedules = segments.map(segment => {
-      const id = `schedule-${segment.userId}-${segment.startDate}-${segment.endDate}`;
+    const publicationId = globalThis.crypto.randomUUID();
+    const schedules = segments.map((segment, index) => {
+      const id = `schedule-${publicationId}-${index}`;
       return { ...segment, id, createdAt: now, updatedAt: now, updatedBy: currentUser.name, autoGenerated: true };
     });
-    if (schedules.length > 450) {
-      triggerNotification('Esta sugestão ultrapassa o limite seguro de gravação por lote. Reduza o período ou selecione menos colaboradores.', 'error');
-      return;
-    }
-    if (!await saveRelatedRecords(schedules.map(schedule => ({ collection: 'schedules', id: schedule.id, data: schedule })), 'Não foi possível salvar a sugestão de escala. Nenhuma alteração foi confirmada.')) return;
-    const ids = new Set(schedules.map(schedule => schedule.id));
-    setWorkSchedules(previous => [...schedules, ...previous.filter(schedule => !ids.has(schedule.id))]);
-    setAutomaticScheduleProposal([]);
-    setShowBulkScheduleModal(false);
-    triggerNotification(`Sugestão revisada e publicada no calendário: ${schedules.length} blocos de escala.`);
+    let plan;
+    try { plan = planSchedulePublication(automaticScheduleProposal, workSchedules, schedules, publicationId); }
+    catch (error) { return triggerNotification(error.message, 'error'); }
+    if (!plan.records.length) return triggerNotification('Este período contém apenas marcações preservadas. Nenhuma alteração é necessária.');
+    setIsSavingScheduleProposal(true);
+    try {
+      if (!await saveRelatedRecords(plan.records, 'Não foi possível publicar a reorganização. Nenhuma alteração foi confirmada.', { companyId: activeCompany.id, history: workSchedules, replaced: plan.replaced })) return;
+      const removedIds = new Set(plan.deletedIds);
+      const createdIds = new Set(plan.schedules.map(item => item.id));
+      setWorkSchedules(previous => [...plan.schedules, ...previous.filter(item => !removedIds.has(item.id) && !createdIds.has(item.id))]);
+      setAutomaticScheduleProposal([]);
+      setAutomaticScheduleOptimization(null);
+      setShowBulkScheduleModal(false);
+      triggerNotification('Escala publicada. Dias manuais e marcações fora do período foram preservados.');
+    } finally { setIsSavingScheduleProposal(false); }
   };
 
   const saveBulkSchedule = async (event) => {
@@ -3835,6 +3888,7 @@ const submitPresence = async (e) => {
         startDate: period.startDate,
         endDate: period.endDate,
         status: bulkSchedule.status,
+        locked: true, manuallyAdjusted: true, autoGenerated: false,
         shift: bulkSchedule.shift || 'Integral',
         shiftStart: bulkSchedule.shift === 'Personalizado' ? bulkSchedule.customShiftStart : '',
         shiftEnd: bulkSchedule.shift === 'Personalizado' ? bulkSchedule.customShiftEnd : '',
@@ -4699,6 +4753,7 @@ try {
     return { userId, userName: rows[0]?.userName || '', ...totals, target, balance: total - target, total, projectedOvertime: Math.max(0, total - target), missingHours: Math.max(0, target - total) };
   }).sort((a, b) => a.userName.localeCompare(b.userName, 'pt-BR'));
   const automaticScheduleDetectedHolidays = calendarEvents.filter(event => event.date >= bulkSchedule.startDate && event.date <= bulkSchedule.endDate && normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).sort((a, b) => a.date.localeCompare(b.date));
+  const automaticScheduleCoverage = analyzeProposalCoverage(automaticScheduleProposal, automaticScheduleRules.coverageRequirements || [], schedulePlanningContext());
   const automaticScheduleIssues = [
     ...scheduleRuleIssues(automaticScheduleProposal, workSchedules),
     ...(automaticScheduleProposal.length && automaticScheduleProposalInput !== automaticScheduleInput ? [{ key: 'stale', date: automaticScheduleProposal[0].date, blocking: true, message: 'As regras ou os dados do planejamento mudaram. Gere uma nova simulação.' }] : []),
@@ -4718,16 +4773,18 @@ try {
   const renderAutomaticScheduleRow = item => {
     const hours = automaticScheduleRowHours(item);
     const working = ['Presencial', 'Home Office'].includes(item.status);
+    const preserved = isProtectedProposalRow(item);
+    const fixed = isFixedProposalRow(item);
     const fieldClass = 'w-[94px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-slate-700 disabled:bg-slate-100 disabled:text-slate-300';
     return <tr key={item.key} className="border-t border-slate-100 align-middle hover:bg-slate-50/70">
-      <td className="px-3 py-2.5"><strong className="block text-slate-800">{item.userName}</strong><span className="text-[8px] text-slate-400">{departmentsList.find(dept => dept.id === item.dept)?.name || 'Sem setor'}{item.holiday ? ' · feriado' : ''}</span><div className="mt-1 flex flex-wrap gap-1">{item.reusedPattern && <span className="w-fit rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black uppercase text-emerald-700">Padrão anterior</span>}{item.autoExtra && <span className="w-fit rounded-full bg-violet-100 px-1.5 py-0.5 text-[7px] font-black uppercase text-violet-700">Complemento automático</span>}</div></td>
-      <td className="max-w-[230px] px-3 py-2 text-[10px]"><strong className="block text-cyan-900">{item.groupName || 'Padrão da empresa'}</strong><span className="mt-1 block text-slate-600">{item.ruleReason || 'Jornada padrão e distribuição de folgas'}</span>{item.ruleConflicts?.length > 0 && <span className="mt-1 block font-bold text-rose-700">Conflito: {item.ruleConflicts.join(' / ')}. Corrija a regra ou ajuste este dia.</span>}<span className="mt-1 block text-[9px] text-slate-400">Editar os campos altera somente este dia.</span><button type="button" className="mt-2 text-[10px] font-bold text-cyan-800 underline" onClick={() => createRecurringRuleFromDay(item)}>Criar regra recorrente a partir deste dia</button></td>
-      <td className="px-2 py-2"><select value={item.status} onChange={event => { const status = event.target.value; const becomesWorking = ['Presencial', 'Home Office'].includes(status); const start = item.shiftStart || automaticScheduleRules.shiftStart; const breakStart = item.breakStart || automaticScheduleRules.breakStart; const breakEnd = item.breakEnd || automaticScheduleRules.breakEnd; const interval = scheduleIntervalMinutes(breakStart, breakEnd); const baseMinutes = scheduleTimeToMinutes(start) + Math.round((scheduleTextToHours(automaticScheduleWeeklyHoursText) / Number(automaticScheduleRules.workDaysPerWeek)) * 60) + interval; updateAutomaticScheduleRow(item.key, { status, shiftStart: becomesWorking ? start : '', shiftEnd: becomesWorking ? (item.shiftEnd || scheduleMinutesToTime(baseMinutes)) : '', breakStart: becomesWorking ? breakStart : '', breakEnd: becomesWorking ? breakEnd : '', breakMinutes: becomesWorking ? interval : 0, extraHours: becomesWorking ? Number(item.extraHours || 0) : 0 }); }} className="w-full min-w-[112px] rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold text-slate-700"><option>Presencial</option><option>Home Office</option><option>Folga</option><option>Feriado</option></select></td>
-      <td className="px-2 py-2"><input aria-label={`Entrada de ${item.userName}`} type="time" disabled={!working} value={item.shiftStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftStart: event.target.value })} className={fieldClass} /></td>
-      <td className="px-2 py-2"><input aria-label={`Saída base de ${item.userName}`} type="time" disabled={!working} value={item.shiftEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftEnd: event.target.value })} className={fieldClass} /></td>
-      <td className="px-2 py-2"><input aria-label={`Início do intervalo de ${item.userName}`} type="time" disabled={!working} value={item.breakStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakStart: event.target.value, breakMinutes: scheduleIntervalMinutes(event.target.value, item.breakEnd) })} className={fieldClass} /></td>
-      <td className="px-2 py-2"><input aria-label={`Fim do intervalo de ${item.userName}`} type="time" disabled={!working} value={item.breakEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakEnd: event.target.value, breakMinutes: scheduleIntervalMinutes(item.breakStart, event.target.value) })} className={fieldClass} /></td>
-      <td className="px-2 py-2"><div className="flex items-center gap-1"><input aria-label={`Hora extra de ${item.userName}`} type="time" disabled={!working} min="00:00" max="12:00" value={scheduleDurationToText(item.extraHours)} onChange={event => updateAutomaticScheduleRow(item.key, { extraHours: scheduleTextToHours(event.target.value) })} className={fieldClass} /><button type="button" disabled={!working || !(Number(item.extraHours) > 0)} onClick={() => repeatAutomaticScheduleOvertime(item)} title="Repetir a hora extra nos próximos dias de trabalho" className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-2 font-bold text-violet-700 disabled:cursor-not-allowed disabled:opacity-30">Repetir →</button></div></td>
+      <td className="px-3 py-2.5"><strong className="block text-slate-800">{item.userName}</strong><span className="text-[8px] text-slate-400">{departmentsList.find(dept => dept.id === item.dept)?.name || 'Sem setor'}{item.holiday ? ' · feriado' : ''}</span><div className="mt-1 flex flex-wrap gap-1">{item.reusedPattern && <span className="w-fit rounded-full bg-emerald-100 px-1.5 py-0.5 text-[7px] font-black uppercase text-emerald-700">Padrão anterior</span>}{item.autoExtra && <span className="w-fit rounded-full bg-violet-100 px-1.5 py-0.5 text-[7px] font-black uppercase text-violet-700">Complemento automático</span>}</div><button type="button" disabled={preserved || item.pinned || item.ruleApplied || item.constraintLocked} aria-pressed={fixed} onClick={() => toggleAutomaticScheduleDayLock(item.key)} className="mt-2 rounded-lg border border-slate-200 px-2 py-1 text-[9px] font-bold text-cyan-800 disabled:text-slate-400">{preserved ? 'Preservado' : item.pinned || item.ruleApplied || item.constraintLocked ? 'Regra fixa' : fixed ? 'Liberar dia' : 'Fixar dia'}</button></td>
+      <td className="max-w-[230px] px-3 py-2 text-[10px]"><strong className="block text-cyan-900">{item.groupName || 'Padrão da empresa'}</strong><span className="mt-1 block text-slate-600">{item.ruleReason || 'Jornada padrão e distribuição de folgas'}</span>{item.ruleConflicts?.length > 0 && <span className="mt-1 block font-bold text-rose-700">Conflito: {item.ruleConflicts.join(' / ')}. Corrija a regra ou ajuste este dia.</span>}<span className="mt-1 block text-[9px] text-slate-400">{preserved ? 'Este lançamento será mantido como está no calendário.' : 'Editar fixa este dia nas próximas reorganizações.'}</span><button type="button" className="mt-2 text-[10px] font-bold text-cyan-800 underline" disabled={preserved} onClick={() => createRecurringRuleFromDay(item)}>Criar regra recorrente a partir deste dia</button></td>
+      <td className="px-2 py-2"><select disabled={preserved} value={item.status} onChange={event => { const status = event.target.value; const becomesWorking = ['Presencial', 'Home Office'].includes(status); const start = item.shiftStart || automaticScheduleRules.shiftStart; const breakStart = item.breakStart || automaticScheduleRules.breakStart; const breakEnd = item.breakEnd || automaticScheduleRules.breakEnd; const interval = scheduleIntervalMinutes(breakStart, breakEnd); const baseMinutes = scheduleTimeToMinutes(start) + Math.round((scheduleTextToHours(automaticScheduleWeeklyHoursText) / Number(automaticScheduleRules.workDaysPerWeek)) * 60) + interval; updateAutomaticScheduleRow(item.key, { status, shiftStart: becomesWorking ? start : '', shiftEnd: becomesWorking ? (item.shiftEnd || scheduleMinutesToTime(baseMinutes)) : '', breakStart: becomesWorking ? breakStart : '', breakEnd: becomesWorking ? breakEnd : '', breakMinutes: becomesWorking ? interval : 0, extraHours: becomesWorking ? Number(item.extraHours || 0) : 0 }); }} className="w-full min-w-[112px] rounded-lg border border-slate-200 bg-white px-2 py-2 font-semibold text-slate-700"><option>Presencial</option><option>Home Office</option><option>Folga</option><option>Feriado</option>{preserved && !['Presencial', 'Home Office', 'Folga', 'Feriado'].includes(item.status) && <option>{item.status}</option>}</select></td>
+      <td className="px-2 py-2"><input aria-label={`Entrada de ${item.userName}`} type="time" disabled={!working || preserved} value={item.shiftStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftStart: event.target.value })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><input aria-label={`Saída base de ${item.userName}`} type="time" disabled={!working || preserved} value={item.shiftEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftEnd: event.target.value })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><input aria-label={`Início do intervalo de ${item.userName}`} type="time" disabled={!working || preserved} value={item.breakStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakStart: event.target.value, breakMinutes: scheduleIntervalMinutes(event.target.value, item.breakEnd) })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><input aria-label={`Fim do intervalo de ${item.userName}`} type="time" disabled={!working || preserved} value={item.breakEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakEnd: event.target.value, breakMinutes: scheduleIntervalMinutes(item.breakStart, event.target.value) })} className={fieldClass} /></td>
+      <td className="px-2 py-2"><div className="flex items-center gap-1"><input aria-label={`Hora extra de ${item.userName}`} type="time" disabled={!working || preserved} min="00:00" max="12:00" value={scheduleDurationToText(item.extraHours)} onChange={event => updateAutomaticScheduleRow(item.key, { extraHours: scheduleTextToHours(event.target.value) })} className={fieldClass} /><button type="button" disabled={!working || preserved || !(Number(item.extraHours) > 0)} onClick={() => repeatAutomaticScheduleOvertime(item)} title="Repetir a hora extra nos próximos dias de trabalho" className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-2 font-bold text-violet-700 disabled:cursor-not-allowed disabled:opacity-30">Repetir →</button></div></td>
       <td className="px-2 py-2"><strong className="block text-xs text-slate-800">{working ? hours.actualEnd : '—'}</strong><span className="text-[8px] text-slate-400">saída final</span></td>
       <td className="px-3 py-2 text-right"><strong className="block text-sm text-slate-900">{working ? scheduleDurationToText(hours.total) : '—'}</strong>{working && <span className="text-[8px] text-slate-400">base {scheduleDurationToText(hours.regular)} + extra {scheduleDurationToText(hours.extra)}</span>}</td>
     </tr>;
@@ -9410,9 +9467,9 @@ const handleDownload = async (fileUrl, fileName) => {
           <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
               <div><h3 className="flex items-center gap-2 text-sm font-extrabold"><Calendar className="h-5 w-5 text-violet-200" /> Escala em lote</h3><p className="mt-0.5 text-[10px] text-slate-300">Planeje folgas, presencial ou home office diretamente no calendário.</p></div>
-              <button type="button" onClick={() => setShowBulkScheduleModal(false)} className="rounded p-1 hover:bg-slate-800"><X className="h-5 w-5" /></button>
+              <button type="button" disabled={isSavingScheduleProposal} onClick={() => setShowBulkScheduleModal(false)} className="rounded p-1 hover:bg-slate-800"><X className="h-5 w-5" /></button>
             </div>
-            <form onSubmit={event => { if (bulkScheduleMode === 'manual') return saveBulkSchedule(event); event.preventDefault(); generateAutomaticSchedule(); }} className="space-y-4 p-5 sm:p-6">
+            <form onSubmit={event => { if (bulkScheduleMode === 'manual') return saveBulkSchedule(event); event.preventDefault(); generateAutomaticSchedule(); }} className="space-y-4 p-5 sm:p-6"><fieldset disabled={isSavingScheduleProposal} className="contents">
               <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-1.5"><button type="button" onClick={() => setBulkScheduleMode('smart')} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${bulkScheduleMode === 'smart' ? 'bg-white text-cyan-900 shadow-sm' : 'text-slate-500'}`}><Sparkles className="mr-1.5 inline h-4 w-4" />Escala inteligente</button><button type="button" onClick={() => { setBulkScheduleMode('manual'); setAutomaticScheduleProposal([]); }} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${bulkScheduleMode === 'manual' ? 'bg-white text-violet-900 shadow-sm' : 'text-slate-500'}`}><Edit2 className="mr-1.5 inline h-4 w-4" />Marcação simples</button></div>
               {bulkScheduleMode === 'smart' && <>
               <section className="overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-violet-50">
@@ -9455,14 +9512,15 @@ const handleDownload = async (fileUrl, fileName) => {
                 </div>}
               </section>
               {automaticScheduleProposal.length > 0 && <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70">
-                <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Todos os campos operacionais podem ser ajustados antes da publicação.</p></div><button type="button" disabled={automaticScheduleIssues.some(issue => issue.blocking)} onClick={saveAutomaticScheduleProposal} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />Salvar e publicar no calendário</button></div>
+                <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Ajuste os dias livres da prévia. Lançamentos manuais, ausências e dias fixos são preservados.</p></div><button type="button" disabled={isSavingScheduleProposal || automaticScheduleIssues.some(issue => issue.blocking)} onClick={saveAutomaticScheduleProposal} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />{isSavingScheduleProposal ? 'Publicando...' : 'Salvar e publicar no calendário'}</button></div>
+                <ScheduleOptimizationSummary before={automaticScheduleOptimization?.before} analysis={automaticScheduleCoverage} swaps={automaticScheduleOptimization?.swaps || 0} limited={automaticScheduleOptimization?.limited} requirements={automaticScheduleRules.coverageRequirements || []} fixedDays={automaticScheduleProposal.filter(isFixedProposalRow).length} selectedDate={automaticScheduleVisibleDate} departments={departmentsList} onOptimize={reorganizeAutomaticSchedule} disabled={isSavingScheduleProposal || automaticScheduleInput !== automaticScheduleProposalInput} />
                 <div className="flex gap-2 overflow-x-auto border-b border-emerald-100 bg-slate-50 p-3">{automaticScheduleDates.map(date => { const rows = automaticScheduleProposal.filter(item => item.date === date); const working = rows.filter(item => ['Presencial', 'Home Office'].includes(item.status)); const hours = working.reduce((sum, item) => sum + automaticScheduleRowHours(item).total, 0); const holiday = rows.some(item => item.holiday); return <button type="button" key={date} onClick={() => setAutomaticSchedulePreviewDate(date)} className={`min-w-[118px] rounded-xl border px-3 py-2 text-left transition ${automaticScheduleVisibleDate === date ? 'border-cyan-500 bg-cyan-700 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-cyan-200'}`}><span className="block text-[9px] font-black uppercase">{new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}</span><span className={`mt-1 block text-[9px] ${automaticScheduleVisibleDate === date ? 'text-cyan-100' : 'text-slate-500'}`}>{working.length} trabalhando · {scheduleDurationToText(hours)}{holiday ? ' · feriado' : ''}</span></button>; })}</div>
                 {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => setAutomaticSchedulePreviewDate(automaticScheduleDates.includes(issue.date) ? issue.date : automaticScheduleDates.find(date => date >= issue.date) || automaticScheduleDates[0])}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
                 <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[8px] font-black uppercase text-blue-700">Equipe no quadro</span><strong className="mt-1 block text-xl text-blue-950">{automaticScheduleVisibleRows.length}</strong></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[8px] font-black uppercase text-emerald-700">Em trabalho</span><strong className="mt-1 block text-xl text-emerald-950">{automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><span className="text-[8px] font-black uppercase text-amber-700">Folga / feriado</span><strong className="mt-1 block text-xl text-amber-950">{automaticScheduleVisibleRows.length - automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[8px] font-black uppercase text-violet-700">Carga da equipe</span><strong className="mt-1 block text-xl text-violet-950">{scheduleDurationToText(automaticScheduleDayHours)}</strong></div></div>
                 <div className="max-h-[430px] overflow-auto border-y border-emerald-100 bg-white"><table className="w-full min-w-[1320px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-3 py-2.5">Regra aplicada / motivo</th><th className="px-2 py-2.5">Status</th><th className="px-2 py-2.5">Entrada</th><th className="px-2 py-2.5">Saída prevista<br/><span className="font-medium text-slate-400">sem hora extra</span></th><th className="px-2 py-2.5">Início intervalo</th><th className="px-2 py-2.5">Fim intervalo</th><th className="px-2 py-2.5">Hora extra<br/><span className="font-medium text-slate-400">hh:mm</span></th><th className="px-2 py-2.5">Saída final</th><th className="px-3 py-2.5 text-right">Carga do dia</th></tr></thead><tbody>{automaticScheduleVisibleRows.map(renderAutomaticScheduleRow)}</tbody></table></div>
                 <div className="p-3"><h5 className="text-[9px] font-black uppercase tracking-wide text-slate-500">Carga total no período por colaborador</h5><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{automaticScheduleEmployeeTotals.map(item => <div key={item.userId} className={`rounded-xl border bg-white p-3 ${Math.abs(item.balance) < 0.02 ? 'border-emerald-200' : item.balance < 0 ? 'border-rose-200' : 'border-violet-200'}`}><strong className="block truncate text-[10px] text-slate-800">{item.userName}</strong><div className="mt-1 flex items-end justify-between gap-2"><span className="text-sm font-black text-slate-950">{scheduleDurationToText(item.total)}</span><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${Math.abs(item.balance) < 0.02 ? 'bg-emerald-100 text-emerald-800' : item.balance < 0 ? 'bg-rose-100 text-rose-800' : 'bg-violet-100 text-violet-800'}`}>{Math.abs(item.balance) < 0.02 ? 'CARGA OK' : item.balance > 0 ? `EXTRA ${scheduleDurationToText(item.projectedOvertime)}` : `FALTA ${scheduleDurationToText(item.missingHours)}`}</span></div><small className="mt-1 block text-[8px] text-slate-500">Meta {scheduleDurationToText(item.target)} · jornada base {scheduleDurationToText(item.regular)} · complemento sugerido {scheduleDurationToText(item.extra)}</small></div>)}</div></div>
                 {automaticScheduleEmployeeTotals.some(item => item.missingHours > 0.02) && <p className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-semibold text-amber-800">Há colaboradores com carga abaixo da meta. Confira as folgas e jornadas especiais antes de publicar. Com conjuntos de regras, horários reduzidos são preservados e não recebem complemento automático.</p>}
-                {automaticScheduleProposal.some(item => workSchedules.some(existing => String(existing.userId) === String(item.userId) && existing.startDate <= item.date && existing.endDate >= item.date)) && <p className="m-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[10px] font-semibold text-rose-700">Há marcações já lançadas neste período. Para evitar duplicidade, ajuste ou remova as escalas existentes antes de publicar.</p>}
+                {automaticScheduleProposal.some(isProtectedProposalRow) && <p className="m-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-[10px] font-semibold text-cyan-900">Marcações manuais e ausências existentes serão preservadas. Apenas os blocos automáticos liberados dentro do período serão substituídos.</p>}
               </section>}
               </>}
               {bulkScheduleMode === 'manual' && <>
@@ -9490,7 +9548,7 @@ const handleDownload = async (fileUrl, fileName) => {
               </div>
               <label className="block text-[10px] font-bold uppercase text-slate-500">Observação da escala (opcional)<input maxLength="250" value={bulkSchedule.notes} onChange={event => setBulkSchedule(previous => ({ ...previous, notes: event.target.value }))} placeholder="Ex.: Cobertura de feriado" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs text-slate-700" /></label>
               <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setShowBulkScheduleModal(false)} className="px-4 py-2 text-xs font-bold text-slate-500">Cancelar</button>{bulkScheduleMode === 'manual' ? <button type="submit" className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-800">Salvar escala para {bulkSchedule.userIds.length} pessoa(s)</button> : !automaticScheduleProposal.length ? <button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-bold text-white hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro da equipe</button> : null}</div>
-            </form>
+            </fieldset></form>
           </div>
         </div>
       )}

@@ -120,7 +120,7 @@ export default function ScheduleCalendar({
           <div><span className="sc-eyebrow">PLANEJAMENTO DA EQUIPE</span><h2>Calendário de escalas</h2><p>Selecione um dia para consultar e organizar a equipe.</p></div>
         </div>
         <div className="sc-header-actions">
-          {canManage && canWrite && <button type="button" className="sc-primary" onClick={onPlan}><Plus size={16} /> Planejar escala</button>}
+          {canManage && canWrite && <button type="button" className="sc-primary" onClick={() => onPlan('month')}><Plus size={16} /> Gerar escala do mês</button>}
           <button type="button" className="sc-button" aria-expanded={needsOpen} onClick={() => setNeedsOpen(value => !value)}><Users size={16} /> Necessidade</button>
           <button type="button" ref={expandRef} className="sc-button" onClick={() => {
             previousFocus.current = expandRef.current;
@@ -213,7 +213,7 @@ export default function ScheduleCalendar({
           <div className="sc-panel-heading"><div><span className="sc-eyebrow">DIA SELECIONADO</span><h3>{longDate(selectedDate)}</h3></div><button type="button" className="sc-icon-button" onClick={() => setDetailsOpen(false)} aria-label="Fechar detalhes do dia"><X size={18} /></button></div>
           <div className="sc-day-summary">{Object.entries(selectedCounts).map(([tone, count]) => <span className={`sc-count sc-${tone}`} key={tone}>{count} {toneNames[tone]}</span>)}{!activeDay.schedules.length && <span className="sc-muted">Nenhuma escala{hasFilters ? ' neste filtro' : ' planejada'}.</span>}</div>
           {canWrite && <div className="sc-day-actions">
-            {canManage && <button type="button" className="sc-primary" onClick={onPlan}><Plus size={15} /> Planejar este dia</button>}
+            {canManage && <button type="button" className="sc-primary" onClick={() => onPlan('day')}><Plus size={15} /> Planejar este dia</button>}
             <button type="button" className="sc-button" onClick={onAbsence}>Agendar ausência</button>
             {selectedDate === today && <button type="button" className="sc-button" onClick={() => onPresence(selectedDate)}>Atualizar presença</button>}
             {currentUser.isAdmin && <><button type="button" className="sc-button" onClick={() => openEvent(false)}>Criar evento</button><button type="button" className="sc-button" onClick={() => openEvent(true)}>Marcar feriado</button></>}

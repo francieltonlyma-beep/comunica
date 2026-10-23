@@ -35,7 +35,7 @@ test('intervalo possui início e fim próprios e é salvo na escala', () => {
 
 test('cargas e horas extras são exibidas no padrão hh:mm', () => {
   assert.match(app, /const scheduleDurationToText = value =>/);
-  assert.match(app, /type="time" disabled=\{!working\} min="00:00" max="12:00"/);
+  assert.match(app, /type="time" disabled=\{!working \|\| preserved\} min="00:00" max="12:00"/);
   assert.match(app, /Meta \{scheduleDurationToText\(item\.target\)\}/);
 });
 

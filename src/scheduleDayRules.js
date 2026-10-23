@@ -164,7 +164,7 @@ export function scheduleRuleIssues(rows, history = []) {
   const issues = [];
   for (const row of rows) {
     if (row.ruleConflicts?.length) issues.push({ key: row.key, date: row.date, blocking: true, message: `${row.userName}: conflito entre ${row.ruleConflicts.join(' e ')}.` });
-    if (!isWorking(row)) continue;
+    if (row.preservedExisting || !isWorking(row)) continue;
     const total = duration(row.shiftStart, row.shiftEnd);
     const interval = row.breakStart || row.breakEnd ? duration(row.breakStart, row.breakEnd) : 0;
     if (!Number.isFinite(total) || !total || !Number.isFinite(interval) || interval >= total || (Boolean(row.breakStart) !== Boolean(row.breakEnd)) || (row.breakStart && (interval <= 0 || interval > 360 || duration(row.shiftStart, row.breakStart) + interval > total))) issues.push({ key: row.key, date: row.date, blocking: true, message: `${row.userName}: jornada ou intervalo inválido.` });
