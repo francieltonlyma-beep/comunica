@@ -33,7 +33,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -1720,7 +1720,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [activeCompany]);
 
   useEffect(() => {
-    setScheduleCoverageSources({});
     const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
     if (!isFirebaseAvailable || !authReady || !isMatchingSession) {
       setDbLoading(false);
@@ -1741,7 +1740,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         : colRef;
       const affectsCoverage = ['users', 'departments', 'schedules', 'absences'].includes(collectionName);
       return onSnapshot(source, { includeMetadataChanges: affectsCoverage }, (snapshot) => {
-        if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...previous, [collectionName]: snapshot.metadata.fromCache ? 'loading' : 'ready' }));
+        if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, [collectionName]: snapshot.metadata.fromCache ? 'loading' : 'ready' }));
         if (!snapshot.empty) {
           const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
@@ -1793,7 +1792,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           setLocalStorageSafe(localKey, JSON.stringify([]));
         }
       }, () => {
-        if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...previous, [collectionName]: 'error' }));
+        if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, [collectionName]: 'error' }));
         setState([]);
         setLocalStorageSafe(localKey, JSON.stringify([]));
         setDbLoading(false);
@@ -3624,7 +3623,7 @@ const submitPresence = async (e) => {
     const normalized = normalizeCoverageRequirements(requirements);
     const error = validateCoverageRequirements(normalized, departmentsList);
     if (error) { triggerNotification(error, 'error'); return false; }
-    const saved = await saveDoc('settings', 'schedule-rules', { coverageRequirements: normalized, updatedAt: Date.now(), updatedBy: currentUser.name });
+    const saved = await saveDoc('settings', 'schedule-rules', { coverageRequirements: normalized, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
     if (saved) triggerNotification('Necessidade de pessoas salva. A cobertura foi atualizada no calendário.');
     return saved;
   };
@@ -8133,7 +8132,7 @@ const handleDownload = async (fileUrl, fileName) => {
               deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule}
               onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
               coverageRequirements={automaticScheduleRules.coverageRequirements}
-              coverageReady={scheduleCoverageReady && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready')} coverageError={scheduleCoverageError || (Object.values(scheduleCoverageSources).includes('error') ? 'Não foi possível carregar todos os dados da cobertura. Confira sua conexão e atualize a página.' : '')}
+              coverageReady={scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready')} coverageError={scheduleCoverageError || (Object.values(scheduleCoverageSources).includes('error') ? 'Não foi possível carregar todos os dados da cobertura. Confira sua conexão e atualize a página.' : '')}
               canConfigureCoverage={Boolean(canConfigureScheduleRules && (isManager || currentUser.isDeveloper))} onSaveCoverage={saveScheduleCoverageRequirements}
               onPlan={openBulkSchedule} formatDuration={scheduleDurationToText} presence={teamPresenceList}
               modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal}
