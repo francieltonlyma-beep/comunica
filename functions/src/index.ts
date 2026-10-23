@@ -807,6 +807,8 @@ type MessageActivityData = {
   dueDate: string;
   createdBy: string;
   updatedBy: string;
+  commentCount: number;
+  attachmentCount: number;
 };
 
 type ActivityRecurrenceData = {frequency: 'none' | 'daily' | 'weekly' | 'monthly'; interval: number};
@@ -845,7 +847,11 @@ const recurringActivityPayload = (activityValue: unknown, nextDueDate: string, s
   }).filter((item) => item.text).slice(0, 30) : [];
   return {
     ...activity,
-    status: 'pending', dueDate: nextDueDate, checklist,
+    status: 'pending', dueDate: nextDueDate, checklist, comments: [], attachments: [],
+    history: [{
+      id: `history-${now}-recurrence`, type: 'created',
+      text: 'Próxima ocorrência criada automaticamente', actorId: '', actorName: 'Comunica', timestamp: now,
+    }],
     createdAt: now, updatedAt: now, resolvedAt: null, resolvedBy: '',
     recurringSourceId: sourceId, recurringGeneratedAt: now,
   };
@@ -862,6 +868,8 @@ const messageActivityData = (value: unknown): MessageActivityData | null => {
     dueDate: typeof activity.dueDate === 'string' ? activity.dueDate : '',
     createdBy: typeof activity.createdBy === 'string' ? activity.createdBy : '',
     updatedBy: typeof activity.updatedBy === 'string' ? activity.updatedBy : '',
+    commentCount: Array.isArray(activity.comments) ? activity.comments.length : 0,
+    attachmentCount: Array.isArray(activity.attachments) ? activity.attachments.length : 0,
   };
 };
 
@@ -1011,6 +1019,14 @@ export const notifyMessageActivityChange = onDocumentUpdated(
       recipientIds = activity.assigneeIds;
       title = activity.dueDate ? '📅 Prazo da atividade atualizado' : '📅 Prazo removido da atividade';
       body = activity.dueDate ? `${subject} · ${activity.dueDate.split('-').reverse().join('/')}` : subject;
+    } else if (previous && previous.commentCount < activity.commentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = '💬 Novo comentário na atividade';
+      body = subject;
+    } else if (previous && previous.attachmentCount < activity.attachmentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = '📎 Novo anexo na atividade';
+      body = subject;
     } else {
       return;
     }
@@ -1081,6 +1097,12 @@ export const notifyStandaloneActivityChange = onDocumentUpdated(
       recipientIds = activity.assigneeIds;
       title = activity.dueDate ? '📅 Prazo da atividade atualizado' : '📅 Prazo removido da atividade';
       if (activity.dueDate) body = `${body} · ${activity.dueDate.split('-').reverse().join('/')}`;
+    } else if (previous && previous.commentCount < activity.commentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = '💬 Novo comentário na atividade avulsa';
+    } else if (previous && previous.attachmentCount < activity.attachmentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = '📎 Novo anexo na atividade avulsa';
     } else return;
     await sendActivityPush({
       database, appId: event.params.appId, companyId: event.params.companyId,
@@ -1097,6 +1119,18 @@ export const cleanupDeletedDocumentFile = onDocumentDeleted(
     const filePath = storagePathFromFileRecord(event.data?.data()?.file);
     if (!companyId || !filePath.startsWith(`companies/${companyId}/users/`) || !filePath.includes('/documents/')) return;
     await getStorage().bucket().file(filePath).delete({ignoreNotFound: true});
+  },
+);
+
+export const cleanupDeletedActivityFiles = onDocumentDeleted(
+  "artifacts/{appId}/public/data/companies/{companyId}/activities/{activityId}",
+  async (event) => {
+    const companyId = String(event.params.companyId || '');
+    const attachments = event.data?.data()?.attachments;
+    if (!companyId || !Array.isArray(attachments)) return;
+    const paths = [...new Set(attachments.map(storagePathFromFileRecord).filter((filePath) =>
+      filePath.startsWith(`companies/${companyId}/users/`) && filePath.includes('/attachments/')) )];
+    await Promise.all(paths.map((filePath) => getStorage().bucket().file(filePath).delete({ignoreNotFound: true})));
   },
 );
 

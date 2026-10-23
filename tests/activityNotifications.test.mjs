@@ -11,6 +11,8 @@ test('activity changes notify new assignees and relevant status updates', () => 
   assert.match(functionsSource, /Nova atividade atribuída a você/);
   assert.match(functionsSource, /Atividade concluída/);
   assert.match(functionsSource, /Prazo da atividade atualizado/);
+  assert.match(functionsSource, /Novo comentário na atividade/);
+  assert.match(functionsSource, /Novo anexo na atividade/);
 });
 
 test('scheduled deadline scan includes message activities without duplicating delivery', () => {

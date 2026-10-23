@@ -13,7 +13,7 @@ import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule,
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
 import PlatformUpdates from './PlatformUpdates.jsx';
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
-import { activityProductivityMetrics, activityRecurrenceLabel, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
+import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
 import { createPortal } from 'react-dom';
@@ -898,6 +898,10 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     return ['list', 'kanban', 'calendar'].includes(storedView) ? storedView : 'list';
   });
   const [serviceActivityCalendarMonth, setServiceActivityCalendarMonth] = useState(() => currentActivityCalendarMonth());
+  const [selectedServiceActivityKey, setSelectedServiceActivityKey] = useState('');
+  const [activityDetailTab, setActivityDetailTab] = useState('comments');
+  const [activityCommentDraft, setActivityCommentDraft] = useState('');
+  const [activityAttachmentProgress, setActivityAttachmentProgress] = useState(null);
   const [standaloneActivityFormOpen, setStandaloneActivityFormOpen] = useState(false);
   const [standaloneActivityDraft, setStandaloneActivityDraft] = useState({ title: '', description: '', priority: 'normal', dueDate: '', assigneeId: '', recurrence: 'none', templateId: '', checklistText: '' });
   const [activityTemplateDraft, setActivityTemplateDraft] = useState({ name: '', description: '', priority: 'normal', checklistText: '' });
@@ -5284,20 +5288,22 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
     return updateMessageFeatures(message, { activity: normalizeMessageActivity(message.activity) ? null : createMessageActivity(currentUser) }, normalizeMessageActivity(message.activity) ? 'Marcação de atividade removida.' : 'Mensagem marcada como atividade.');
   };
-  const handleUpdateMessageActivity = async (message, changes) => {
+  const handleUpdateMessageActivity = async (message, changes, historyText = '', historyType = 'update') => {
     if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
     const current = normalizeMessageActivity(message.activity) || createMessageActivity(currentUser);
     const nextStatus = changes.status || current.status;
+    const historyEntry = createActivityHistoryEntry(currentUser, historyText || activityUpdateDescription(current, changes, messageContacts), historyType);
     const activity = normalizeMessageActivity({
       ...current,
       ...changes,
+      history: [...current.history, historyEntry].slice(-100),
       updatedAt: Date.now(),
       updatedBy: currentUser.id,
       updatedByName: currentUser.name,
       resolvedAt: nextStatus === 'resolved' ? (current.resolvedAt || Date.now()) : null,
       resolvedBy: nextStatus === 'resolved' ? currentUser.name : '',
     });
-    await updateMessageFeatures(message, { activity });
+    return updateMessageFeatures(message, { activity });
   };
   const handleAddMessageChecklistItem = async message => {
     const text = String(checklistDrafts[message.id] || '').trim();
@@ -5349,12 +5355,19 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       setIsSavingStandaloneActivity(false);
     }
   };
-  const handleUpdateStandaloneActivity = async (record, changes) => {
+  const handleUpdateStandaloneActivity = async (record, changes, historyText = '', historyType = 'update') => {
     if (!canManageActivities) return triggerNotification('Seu perfil não possui permissão para administrar atividades.', 'error');
     const current = normalizeMessageActivity(record) || createMessageActivity(currentUser);
     const nextStatus = changes.status || current.status;
-    return updateDocField('activities', record.id, {
+    const historyEntry = createActivityHistoryEntry(currentUser, historyText || activityUpdateDescription(current, changes, messageContacts), historyType);
+    const normalized = normalizeMessageActivity({
+      ...current,
       ...changes,
+      history: [...current.history, historyEntry].slice(-100),
+    });
+    return updateDocField('activities', record.id, {
+      ...Object.fromEntries(Object.keys(changes).map(key => [key, normalized?.[key] ?? changes[key]])),
+      history: normalized.history,
       updatedAt: Date.now(),
       updatedBy: currentUser.id,
       updatedByName: currentUser.name,
@@ -5362,9 +5375,55 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       resolvedBy: nextStatus === 'resolved' ? currentUser.name : '',
     });
   };
-  const handleUpdateServiceActivity = (row, changes) => row.source === 'standalone'
-    ? handleUpdateStandaloneActivity(row.record, changes)
-    : handleUpdateMessageActivity(row.message, changes);
+  const handleUpdateServiceActivity = (row, changes, historyText = '', historyType = 'update') => row.source === 'standalone'
+    ? handleUpdateStandaloneActivity(row.record, changes, historyText, historyType)
+    : handleUpdateMessageActivity(row.message, changes, historyText, historyType);
+  const handleAddActivityComment = async row => {
+    const text = activityCommentDraft.trim();
+    if (!text) return;
+    const now = Date.now();
+    const comment = { id: `comment-${now}-${Math.random().toString(36).slice(2, 8)}`, text: text.slice(0, 1000), authorId: currentUser.id, authorName: currentUser.name, createdAt: now };
+    if (await handleUpdateServiceActivity(row, { comments: [...row.activity.comments, comment].slice(-100) }, 'Comentário adicionado', 'comment')) {
+      setActivityCommentDraft('');
+    }
+  };
+  const handleActivityAttachmentUpload = async (row, event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (!isSupportedBusinessFile(file)) throw new Error('Este formato de arquivo não é permitido.');
+      if (file.size > DOCUMENT_FILE_MAX_BYTES) throw new Error('O arquivo ultrapassa o limite seguro de 50 MB.');
+      setActivityAttachmentProgress(0);
+      const uploaded = await uploadFileToStorage(file, 'attachments', row.source === 'conversation'
+        ? { messageId: row.id, threadId: row.threadId }
+        : { activityId: row.id }, progress => setActivityAttachmentProgress(progress));
+      const attachment = {
+        id: `activity-file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name.slice(0, 180), type: resolveUploadContentType(file), size: file.size,
+        url: uploaded.url, storagePath: uploaded.storagePath, uploadedAt: Date.now(),
+        uploadedBy: currentUser.id, uploadedByName: currentUser.name,
+      };
+      const saved = await handleUpdateServiceActivity(row, { attachments: [...row.activity.attachments, attachment].slice(-30) }, `Anexo adicionado: ${attachment.name}`, 'attachment');
+      if (!saved) await deleteStoredFile(attachment);
+      else triggerNotification('Anexo adicionado à atividade.');
+    } catch (error) {
+      console.error('Erro ao anexar arquivo à atividade', error);
+      triggerNotification(error?.message || 'Não foi possível anexar o arquivo.', 'error');
+    } finally {
+      setActivityAttachmentProgress(null);
+      input.value = '';
+    }
+  };
+  const handleRemoveActivityAttachment = async (row, attachment) => {
+    const allowed = currentUser.isAdmin || currentUser.isDeveloper || attachment.uploadedBy === currentUser.id;
+    if (!allowed) return triggerNotification('Somente quem enviou o arquivo ou um administrador pode removê-lo.', 'error');
+    const saved = await handleUpdateServiceActivity(row, { attachments: row.activity.attachments.filter(item => item.id !== attachment.id) }, `Anexo removido: ${attachment.name}`, 'attachment');
+    if (saved) {
+      await deleteStoredFile(attachment);
+      triggerNotification('Anexo removido da atividade.');
+    }
+  };
   const handleAddServiceChecklistItem = async row => {
     const text = String(checklistDrafts[row.id] || '').trim();
     if (!text) return;
@@ -6101,6 +6160,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (!a.activity.dueDate && b.activity.dueDate) return 1;
     return b.updatedAt - a.updatedAt;
   });
+  const selectedServiceActivity = serviceActivityRows.find(row => `${row.source}:${row.id}` === selectedServiceActivityKey) || null;
   const filteredServiceActivities = serviceActivityRows.filter(row => {
     const matchesText = normalizedText(`${row.subject} ${row.preview} ${row.authorName} ${row.assignees.map(user => user.name).join(' ')}`).includes(normalizedText(serviceActivitySearch));
     const matchesStatus = serviceActivityStatusFilter === 'all'
@@ -6123,9 +6183,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     localStorage.setItem('comunica_activity_view', view);
   };
   const openServiceActivityFromView = row => {
-    changeServiceActivityView('list');
-    setServiceActivitySearch(row.subject);
-    window.setTimeout(() => document.getElementById(`service-activity-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    setSelectedServiceActivityKey(`${row.source}:${row.id}`);
+    setActivityDetailTab('comments');
+    setActivityCommentDraft('');
   };
   const serviceActivityMetrics = serviceActivityRows.reduce((totals, row) => {
     totals.total += 1;
@@ -7295,7 +7355,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     return <article id={`service-activity-${row.id}`} key={row.id} className={`rounded-[1.5rem] border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${row.status === 'overdue' ? 'border-rose-200' : 'border-slate-200'}`}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${row.source === 'standalone' ? 'border-cyan-100 bg-cyan-50 text-cyan-800' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>{row.source === 'standalone' ? 'Atividade avulsa' : 'Da conversa'}</span>{row.schedule === 'today' && <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-bold text-amber-800">Vence hoje</span>}{row.schedule === 'upcoming' && <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">Prazo {formatDueDate(activity.dueDate)}</span>}<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-bold text-slate-600">Prioridade {MESSAGE_ACTIVITY_PRIORITY_LABELS[activity.priority].toLowerCase()}</span>{activity.recurrence.frequency !== 'none' && <span className="rounded-full border border-fuchsia-100 bg-fuchsia-50 px-2.5 py-1 text-[9px] font-bold text-fuchsia-700">{activityRecurrenceLabel(activity.recurrence)}</span>}{row.checklistTotal > 0 && <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal} itens</span>}</div><h5 className="mt-3 break-words text-sm font-extrabold text-slate-900 [overflow-wrap:anywhere]">{row.subject}</h5><p className="mt-1 line-clamp-2 break-words text-[11px] leading-5 text-slate-500 [overflow-wrap:anywhere]">{row.preview}</p><span className="mt-2 block text-[9px] font-semibold text-slate-400">{row.source === 'standalone' ? `Criada diretamente por ${activity.createdByName || row.authorName}` : `Mensagem de ${row.authorName} · atividade criada por ${activity.createdByName || 'participante'}`}</span></div>
-                        {row.source === 'conversation' && <button type="button" onClick={() => openActivityConversation(row.message)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir conversa</button>}
+                        <div className="flex shrink-0 flex-wrap gap-1.5"><button type="button" onClick={() => openServiceActivityFromView(row)} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-violet-800"><ListChecks className="h-3.5 w-3.5" /> Detalhes</button>{row.source === 'conversation' && <button type="button" onClick={() => openActivityConversation(row.message)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir conversa</button>}</div>
                       </div>
 
                       <div className="mt-4"><div className="mb-1.5 flex items-center justify-between text-[9px] font-bold text-slate-500"><span>Progresso</span><span>{row.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${row.status === 'resolved' ? 'bg-emerald-500' : row.status === 'overdue' ? 'bg-rose-500' : 'bg-violet-600'}`} style={{ width: `${row.progress}%` }} /></div></div>
@@ -7343,6 +7403,13 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               })()}
             </div>
           )}
+
+          {selectedServiceActivity && (() => {
+            const row = selectedServiceActivity;
+            const activity = row.activity;
+            const assigneeCandidates = row.source === 'standalone' ? employeesList : employeesList.filter(user => row.participantIds.includes(user.id));
+            return <div className="fixed inset-0 z-[10025] flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && activityAttachmentProgress === null && setSelectedServiceActivityKey('')}><section className="flex max-h-[96dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[1.75rem]" role="dialog" aria-modal="true" aria-labelledby="activity-detail-title"><header className="flex items-start justify-between gap-4 bg-gradient-to-r from-slate-950 via-violet-950 to-indigo-900 px-5 py-5 text-white sm:px-7"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-bold">{row.source === 'standalone' ? 'Atividade avulsa' : 'Atividade da conversa'}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span></div><h3 id="activity-detail-title" className="mt-2 break-words text-xl font-black">{row.subject}</h3><p className="mt-1 max-w-3xl text-xs leading-5 text-violet-100/75">{row.preview}</p></div><button type="button" disabled={activityAttachmentProgress !== null} onClick={() => setSelectedServiceActivityKey('')} className="rounded-xl p-2 text-violet-100 hover:bg-white/10 disabled:opacity-50" aria-label="Fechar detalhes da atividade"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6"><div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,.95fr)]"><div className="space-y-4"><section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2"><label className="text-[9px] font-black uppercase text-slate-400">Situação<select disabled={!canManageActivities} value={activity.status} onChange={event => handleUpdateServiceActivity(row, {status:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60"><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="resolved">Resolvida</option></select></label><label className="text-[9px] font-black uppercase text-slate-400">Prioridade<select disabled={!canManageActivities} value={activity.priority} onChange={event => handleUpdateServiceActivity(row, {priority:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60">{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-[9px] font-black uppercase text-slate-400">Prazo<input disabled={!canManageActivities} type="date" value={activity.dueDate} onChange={event => handleUpdateServiceActivity(row, {dueDate:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60" /></label><label className="text-[9px] font-black uppercase text-slate-400">Responsável<select disabled={!canManageActivities} value={activity.assigneeIds[0] || ''} onChange={event => handleUpdateServiceActivity(row, {assigneeIds:event.target.value ? [event.target.value] : []})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60"><option value="">Sem responsável</option>{assigneeCandidates.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label></div><div className="mt-4"><div className="mb-1.5 flex items-center justify-between text-[9px] font-bold text-slate-500"><span>Progresso geral</span><span>{row.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${row.status === 'resolved' ? 'bg-emerald-500' : row.status === 'overdue' ? 'bg-rose-500' : 'bg-violet-600'}`} style={{width:`${row.progress}%`}} /></div></div>{row.source === 'conversation' && <button type="button" onClick={() => { setSelectedServiceActivityKey(''); openActivityConversation(row.message); }} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2.5 text-[10px] font-bold text-white"><MessageSquare className="h-4 w-4" /> Abrir mensagem original</button>}</section><section className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-wide text-violet-600">Execução</span><h4 className="mt-0.5 text-sm font-extrabold text-slate-900">Checklist</h4></div><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal}</span></div>{activity.checklist.length > 0 ? <div className="mt-3 space-y-2">{activity.checklist.map(item => <label key={item.id} className={`flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-xs text-slate-700 ${item.completed ? 'line-through opacity-60' : ''}`}><input disabled={!canManageActivities} type="checkbox" checked={item.completed} onChange={() => handleToggleServiceChecklistItem(row,item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div> : <p className="mt-3 rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-400">Nenhum item adicionado.</p>}{canManageActivities && <div className="mt-3 flex gap-2"><input value={checklistDrafts[row.id] || ''} onChange={event => setChecklistDrafts(previous => ({...previous,[row.id]:event.target.value}))} onKeyDown={event => {if(event.key === 'Enter'){event.preventDefault();handleAddServiceChecklistItem(row);}}} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-xs outline-none focus:border-violet-300" /><button type="button" onClick={() => handleAddServiceChecklistItem(row)} className="rounded-xl bg-violet-700 px-4 py-2.5 text-[10px] font-bold text-white">Adicionar</button></div>}</section></div><section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><nav className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 p-1.5" aria-label="Conteúdo da atividade">{[{id:'comments',label:`Comentários (${activity.comments.length})`,icon:MessageSquare},{id:'attachments',label:`Anexos (${activity.attachments.length})`,icon:Paperclip},{id:'history',label:`Histórico (${activity.history.length})`,icon:Clock}].map(item => {const Icon=item.icon;return <button key={item.id} type="button" onClick={() => setActivityDetailTab(item.id)} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-[9px] font-bold ${activityDetailTab === item.id ? 'bg-white text-violet-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}><Icon className="h-3.5 w-3.5" />{item.label}</button>;})}</nav><div className="min-h-80 p-4 sm:p-5">{activityDetailTab === 'comments' && <div><div className="max-h-[42vh] space-y-3 overflow-y-auto pr-1">{activity.comments.map(comment => <article key={comment.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-3"><strong className="text-[10px] text-slate-800">{comment.authorName}</strong><span className="text-[8px] text-slate-400">{new Date(comment.createdAt).toLocaleString('pt-BR')}</span></div><p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">{comment.text}</p></article>)}{activity.comments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center"><MessageSquare className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-xs text-slate-400">Nenhum comentário ainda.</p></div>}</div>{canManageActivities && <div className="mt-4 border-t border-slate-100 pt-4"><textarea rows="3" maxLength="1000" value={activityCommentDraft} onChange={event => setActivityCommentDraft(event.target.value)} placeholder="Escreva uma atualização, orientação ou observação..." className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-xs leading-5 outline-none focus:border-violet-300" /><div className="mt-2 flex items-center justify-between"><span className="text-[8px] text-slate-400">{activityCommentDraft.length}/1000</span><button type="button" disabled={!activityCommentDraft.trim()} onClick={() => handleAddActivityComment(row)} className="inline-flex items-center gap-1.5 rounded-xl bg-violet-700 px-4 py-2.5 text-[10px] font-bold text-white disabled:opacity-50"><Send className="h-3.5 w-3.5" /> Comentar</button></div></div>}</div>}{activityDetailTab === 'attachments' && <div><div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Arquivos da atividade</h4><p className="mt-1 text-[9px] text-slate-500">PDF, imagens, planilhas, textos, áudio ou vídeo de até 50 MB.</p></div>{canManageActivities && <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-violet-700 px-3 py-2.5 text-[10px] font-bold text-white ${activityAttachmentProgress !== null ? 'pointer-events-none opacity-60' : ''}`}><Upload className="h-3.5 w-3.5" /> Anexar<input type="file" accept={DOCUMENT_FILE_ACCEPT} onChange={event => handleActivityAttachmentUpload(row,event)} className="hidden" /></label>}</div>{activityAttachmentProgress !== null && <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 p-3"><div className="flex justify-between text-[9px] font-bold text-violet-800"><span>Enviando arquivo...</span><span>{activityAttachmentProgress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-violet-600 transition-all" style={{width:`${activityAttachmentProgress}%`}} /></div></div>}<div className="mt-4 space-y-2">{activity.attachments.map(file => {const canRemove=currentUser.isAdmin||currentUser.isDeveloper||file.uploadedBy===currentUser.id;return <article key={file.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-700"><File className="h-4 w-4" /></span><div className="min-w-0 flex-1"><strong className="block truncate text-[10px] text-slate-800">{file.name}</strong><span className="mt-0.5 block text-[8px] text-slate-400">{file.uploadedByName} · {file.size >= 1048576 ? `${(file.size/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(file.size/1024))} KB`}</span></div><button type="button" onClick={() => handleDownload(file,file.name)} className="rounded-lg p-2 text-blue-700 hover:bg-blue-50" aria-label={`Abrir ${file.name}`}><Download className="h-4 w-4" /></button>{canRemove && canManageActivities && <button type="button" onClick={() => handleRemoveActivityAttachment(row,file)} className="rounded-lg p-2 text-rose-600 hover:bg-rose-50" aria-label={`Remover ${file.name}`}><Trash2 className="h-4 w-4" /></button>}</article>;})}{activity.attachments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center"><Paperclip className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-xs text-slate-400">Nenhum arquivo anexado.</p></div>}</div></div>}{activityDetailTab === 'history' && <div className="space-y-3">{[...activity.history].reverse().map(entry => <article key={entry.id} className="relative border-l-2 border-violet-200 pl-4"><span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-violet-600" /><strong className="block text-[10px] text-slate-800">{entry.text}</strong><span className="mt-1 block text-[8px] text-slate-400">{entry.actorName} · {new Date(entry.timestamp).toLocaleString('pt-BR')}</span></article>)}{activity.history.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center"><Clock className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-xs leading-5 text-slate-400">Esta atividade é anterior ao histórico detalhado. As próximas alterações serão registradas aqui.</p></div>}</div>}</div></section></div></div></section></div>;
+          })()}
 
           {serviceSettingsOpen && (currentUser?.isAdmin || currentUser?.isDeveloper) && (
             <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && !isSavingServiceSettings && setServiceSettingsOpen(false)}>
