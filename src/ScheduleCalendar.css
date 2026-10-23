@@ -173,3 +173,68 @@ html.comunica-dark .sc-filter-note { background: #19343d; color: #a1d8dc; }
   .sc-filter-note { padding: 9px 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .sc-day { transition: none; } .sc-spin { animation: none; } }
+
+/* Necessidade e cobertura permanecem dentro da área do calendário. */
+.sc-need-editor { padding: 20px 24px; border-bottom: 1px solid var(--sc-line); background: var(--sc-soft); }
+.sc-need-heading { display: flex; justify-content: space-between; align-items: start; gap: 15px; margin-bottom: 14px; }
+.sc-need-heading h3 { font-size: 16px; font-weight: 800; margin: 0 0 5px; }
+.sc-need-heading p { font-size: 11px; color: var(--sc-muted); margin: 0; }
+.sc-need-heading > button { flex-shrink: 0; }
+.sc-need-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; max-height: 320px; overflow: auto; }
+.sc-need-rule { display: flex; justify-content: space-between; align-items: start; gap: 10px; padding: 12px; border: 1px solid var(--sc-line); border-radius: 10px; background: var(--sc-bg); }
+.sc-need-rule strong { font-size: 12px; }
+.sc-need-rule p { font-size: 12px; margin: 4px 0; }
+.sc-need-rule small { font-size: 10px; color: var(--sc-muted); }
+.sc-need-rule-actions { display: flex; gap: 5px; }
+.sc-need-form { border: 1px solid var(--sc-line); border-radius: 12px; padding: 16px; margin-top: 14px; background: var(--sc-bg); }
+.sc-need-form h4 { font-size: 13px; font-weight: 800; margin: 0 0 12px; }
+.sc-need-fields { display: grid; grid-template-columns: 2fr 1fr 1fr 1.3fr; gap: 12px; }
+.sc-need-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 700; color: var(--sc-muted); min-width: 0; }
+.sc-need-fields input, .sc-need-fields select { width: 100%; min-width: 0; min-height: 38px; border: 1px solid var(--sc-line); border-radius: 8px; padding: 8px; color: var(--sc-text); background: var(--sc-bg); }
+.sc-need-form fieldset { border: 0; padding: 0; margin: 14px 0; }
+.sc-need-form legend { color: var(--sc-muted); font-size: 11px; font-weight: 700; margin-bottom: 7px; }
+.sc-need-weekdays { display: flex; flex-wrap: wrap; gap: 6px; }
+.sc-need-weekdays label { display: flex; align-items: center; gap: 5px; border: 1px solid var(--sc-line); padding: 7px 9px; border-radius: 7px; font-size: 11px; cursor: pointer; }
+.sc-need-weekdays input, .sc-need-remote input { accent-color: #216a78; }
+.sc-need-remote { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.sc-need-form-actions { display: flex; justify-content: end; gap: 8px; margin-top: 16px; }
+.sc-coverage-overview { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 24px; border-top: 1px solid var(--sc-line); background: var(--sc-soft); color: var(--sc-muted); font-size: 10px; }
+.sc-coverage-badge { display: block; align-self: stretch; padding: 4px 6px; border-radius: 5px; font-size: 10px; font-weight: 800; line-height: 1.3; }
+.sc-coverage-compact { display: none; }
+.sc-coverage-sufficient { --coverage-bg: #e5f5ed; --coverage-text: #1d704e; }
+.sc-coverage-shortage { --coverage-bg: #fff0ee; --coverage-text: #ad3427; }
+.sc-coverage-unknown { --coverage-bg: #fff5dd; --coverage-text: #885b14; }
+.sc-coverage-badge { background: var(--coverage-bg); color: var(--coverage-text); }
+.sc-coverage-details { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; }
+.sc-coverage-card { border: 1px solid var(--sc-line); border-left: 3px solid var(--coverage-text); border-radius: 10px; padding: 12px; background: var(--sc-bg); }
+.sc-coverage-title { display: flex; align-items: center; gap: 7px; color: var(--coverage-text); font-size: 12px; }
+.sc-coverage-card > p { font-size: 10px; color: var(--sc-muted); margin: 8px 0; }
+.sc-coverage-segments { display: flex; flex-direction: column; gap: 0; }
+.sc-coverage-segments > div { display: grid; grid-template-columns: 1.2fr .5fr 1fr; align-items: center; gap: 8px; font-size: 10px; padding: 8px 0; border-top: 1px solid var(--sc-line); }
+.sc-sufficient-text { color: #18744d; }
+.sc-shortage-text { color: #b43a2d; }
+.sc-coverage-warning { color: #93651b !important; font-size: 11px; }
+.sc-day-tabs { flex-wrap: wrap; }
+.sc-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+html.comunica-dark .sc-coverage-sufficient { --coverage-bg: #173a2f; --coverage-text: #9adbb8; }
+html.comunica-dark .sc-coverage-shortage { --coverage-bg: #482928; --coverage-text: #ffc0b5; }
+html.comunica-dark .sc-coverage-unknown { --coverage-bg: #473a22; --coverage-text: #f2cd86; }
+html.comunica-dark .sc-sufficient-text { color: #9adbb8; }
+html.comunica-dark .sc-shortage-text { color: #ffc0b5; }
+html.comunica-dark .sc-coverage-warning { color: #f2cd86 !important; }
+@media (max-width: 640px) {
+  .sc-need-editor { padding: 16px 14px; }
+  .sc-need-heading { flex-wrap: wrap; }
+  .sc-need-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sc-need-fields > label:first-child { grid-column: 1 / -1; }
+  .sc-need-form { padding: 12px; }
+  .sc-need-weekdays { gap: 4px; }
+  .sc-need-weekdays label { padding: 7px 6px; }
+  .sc-header-actions { justify-content: flex-start; }
+  .sc-header-actions > .sc-primary { flex-basis: 100%; }
+  .sc-coverage-overview { padding: 10px 14px; gap: 8px; }
+  .sc-month-view .sc-coverage-wide { display: none; }
+  .sc-month-view .sc-coverage-compact { display: inline; }
+  .sc-month-view .sc-coverage-badge { align-self: center; padding: 3px 5px; }
+  .sc-month-view .sc-day { min-height: 125px; }
+}

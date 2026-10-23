@@ -10,6 +10,7 @@ import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion
 import FeatureTutorial from './FeatureTutorial';
 import ScheduleRuleEditor from './ScheduleRuleEditor';
 import ScheduleCalendar from './ScheduleCalendar.jsx';
+import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
 import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
 import PlatformUpdates from './PlatformUpdates.jsx';
@@ -103,6 +104,7 @@ const sanitizeAutomaticScheduleRules = (value = {}) => ({
   ...DEFAULT_AUTOMATIC_SCHEDULE_RULES,
   ...value,
   ruleGroups: normalizeRuleGroups(value.ruleGroups),
+  coverageRequirements: normalizeCoverageRequirements(value.coverageRequirements),
   name: String(value.name || DEFAULT_AUTOMATIC_SCHEDULE_RULES.name).slice(0, 80),
   workDaysPerWeek: Math.max(1, Math.min(7, Number(value.workDaysPerWeek) || 5)),
   hoursPerWeek: Math.max(1, Math.min(84, Number(value.hoursPerWeek) || 40)),
@@ -981,6 +983,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     repeatCount: 1, repeatInterval: 'semanal'
   });
   const [bulkScheduleMode, setBulkScheduleMode] = useState('smart');
+  const [scheduleCoverageSources, setScheduleCoverageSources] = useState({});
+  const [scheduleCoverageReady, setScheduleCoverageReady] = useState(false);
+  const [scheduleCoverageError, setScheduleCoverageError] = useState('');
   const [automaticScheduleRules, setAutomaticScheduleRules] = useState(() => sanitizeAutomaticScheduleRules({}));
   const [automaticScheduleWeeklyHoursText, setAutomaticScheduleWeeklyHoursText] = useState('40:00');
   const [automaticScheduleRuleTab, setAutomaticScheduleRuleTab] = useState('rules');
@@ -1715,6 +1720,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [activeCompany]);
 
   useEffect(() => {
+    setScheduleCoverageSources({});
     const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
     if (!isFirebaseAvailable || !authReady || !isMatchingSession) {
       setDbLoading(false);
@@ -1733,7 +1739,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       const source = collectionName === 'messages' && dbUser.uid !== 'platform-support-francielton'
         ? query(colRef, or(where('participants', 'array-contains', dbUser.uid), where('senderId', '==', dbUser.uid), where('receiverId', '==', dbUser.uid)))
         : colRef;
-      return onSnapshot(source, (snapshot) => {
+      const affectsCoverage = ['users', 'departments', 'schedules', 'absences'].includes(collectionName);
+      return onSnapshot(source, { includeMetadataChanges: affectsCoverage }, (snapshot) => {
+        if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...previous, [collectionName]: snapshot.metadata.fromCache ? 'loading' : 'ready' }));
         if (!snapshot.empty) {
           const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
@@ -1785,6 +1793,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           setLocalStorageSafe(localKey, JSON.stringify([]));
         }
       }, () => {
+        if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...previous, [collectionName]: 'error' }));
         setState([]);
         setLocalStorageSafe(localKey, JSON.stringify([]));
         setDbLoading(false);
@@ -1882,13 +1891,17 @@ setDbLoading(false);
   useEffect(() => {
     setAutomaticScheduleRules(sanitizeAutomaticScheduleRules({}));
     setAutomaticScheduleWeeklyHoursText('40:00');
-    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id) return;
+    setScheduleCoverageReady(false);
+    setScheduleCoverageError('');
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id) { setScheduleCoverageError('Conecte-se à empresa para consultar e configurar a cobertura.'); return; }
     return onSnapshot(doc(getTenantCollection('settings'), 'schedule-rules'), snapshot => {
       const rules = sanitizeAutomaticScheduleRules(snapshot.exists() ? snapshot.data() : {});
       setAutomaticScheduleRules(rules);
+      setScheduleCoverageReady(true);
+      setScheduleCoverageError('');
       const minutes = Math.round(rules.hoursPerWeek * 60);
       setAutomaticScheduleWeeklyHoursText(`${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`);
-    }, error => console.error('Falha ao carregar regras da escala', error));
+    }, error => { console.error('Falha ao carregar regras da escala', error); setScheduleCoverageReady(false); setScheduleCoverageError('Não foi possível carregar as necessidades da empresa. Atualize a página para tentar novamente.'); });
   }, [dbUser, activeCompany?.id]);
 
   useEffect(() => {
@@ -3603,6 +3616,17 @@ const submitPresence = async (e) => {
     setAutomaticScheduleRules(normalized);
     setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(normalized.hoursPerWeek));
     triggerNotification('Regras da escala salvas para os próximos planejamentos.');
+  };
+
+  const saveScheduleCoverageRequirements = async requirements => {
+    const authorized = currentUser?.isAdmin || currentUser?.isDeveloper || (isManager && effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false && effectiveAccessProfile.canManageScheduleRules !== false);
+    if (!authorized || !scheduleCoverageReady) { triggerNotification('Seu perfil não pode configurar a necessidade de pessoas ou os dados ainda não foram carregados.', 'error'); return false; }
+    const normalized = normalizeCoverageRequirements(requirements);
+    const error = validateCoverageRequirements(normalized, departmentsList);
+    if (error) { triggerNotification(error, 'error'); return false; }
+    const saved = await saveDoc('settings', 'schedule-rules', { coverageRequirements: normalized, updatedAt: Date.now(), updatedBy: currentUser.name });
+    if (saved) triggerNotification('Necessidade de pessoas salva. A cobertura foi atualizada no calendário.');
+    return saved;
   };
 
   const generateAutomaticSchedule = () => {
@@ -8108,6 +8132,9 @@ const handleDownload = async (fileUrl, fileName) => {
               canWrite={Boolean(currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))}
               deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule}
               onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
+              coverageRequirements={automaticScheduleRules.coverageRequirements}
+              coverageReady={scheduleCoverageReady && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready')} coverageError={scheduleCoverageError || (Object.values(scheduleCoverageSources).includes('error') ? 'Não foi possível carregar todos os dados da cobertura. Confira sua conexão e atualize a página.' : '')}
+              canConfigureCoverage={Boolean(canConfigureScheduleRules && (isManager || currentUser.isDeveloper))} onSaveCoverage={saveScheduleCoverageRequirements}
               onPlan={openBulkSchedule} formatDuration={scheduleDurationToText} presence={teamPresenceList}
               modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal}
               onAbsence={() => {

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { calendarRecordsForDay, scheduleCalendarDates, scheduleTone, shiftCalendarPeriod } from './scheduleCalendarModel.js';
+import { coverageForDay } from './scheduleCoverage.js';
+import { CoverageRequirementEditor, DayCoverage } from './ScheduleCoveragePanel.jsx';
 import './ScheduleCalendar.css';
 
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -13,6 +15,7 @@ export default function ScheduleCalendar({
   today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
   currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onDeleteAbsence, onDeleteEvent,
   onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
+  coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
   const [anchor, setAnchor] = useState(selectedDate || today);
   const [view, setView] = useState('month');
@@ -26,6 +29,8 @@ export default function ScheduleCalendar({
   const [showEvents, setShowEvents] = useState(false);
   const [showAbsences, setShowAbsences] = useState(true);
   const [dayTab, setDayTab] = useState('schedules');
+  const [showCoverage, setShowCoverage] = useState(true);
+  const [needsOpen, setNeedsOpen] = useState(false);
   const shellRef = useRef(null);
   const expandRef = useRef(null);
   const previousFocus = useRef(null);
@@ -67,7 +72,8 @@ export default function ScheduleCalendar({
   const data = { schedules, absences, events, employees, getDepartments };
   const filters = { department, employee, status, search };
   const dates = scheduleCalendarDates(anchor, view);
-  const days = dates.map(date => calendarRecordsForDay(date, data, filters));
+  const days = dates.map(date => ({ ...calendarRecordsForDay(date, data, filters), coverage: coverageForDay(date, coverageRequirements, data, department) }));
+  const activeCoverage = coverageForDay(selectedDate, coverageRequirements, data, department);
   const activeDay = calendarRecordsForDay(selectedDate, data, filters);
   const month = anchor.slice(0, 7);
   const eligibleEmployees = employees.filter(user => department === 'all' || getDepartments(user).includes(department))
@@ -110,6 +116,7 @@ export default function ScheduleCalendar({
         </div>
         <div className="sc-header-actions">
           {canManage && canWrite && <button type="button" className="sc-primary" onClick={onPlan}><Plus size={16} /> Planejar escala</button>}
+          <button type="button" className="sc-button" aria-expanded={needsOpen} onClick={() => setNeedsOpen(value => !value)}><Users size={16} /> Necessidade</button>
           <button type="button" ref={expandRef} className="sc-button" onClick={() => {
             previousFocus.current = expandRef.current;
             setFullscreen(value => !value);
@@ -118,6 +125,8 @@ export default function ScheduleCalendar({
           </button>
         </div>
       </header>
+
+      {needsOpen && <CoverageRequirementEditor requirements={coverageRequirements} departments={departments} canConfigure={canConfigureCoverage && canWrite} onSave={onSaveCoverage} defaultDepartment={department} ready={coverageReady} error={coverageError} />}
 
       <div className="sc-toolbar">
         <div className="sc-period">
@@ -149,11 +158,16 @@ export default function ScheduleCalendar({
 
       <div className="sc-layer-bar">
         <div className="sc-legend">{Object.entries(toneNames).slice(0, 4).map(([tone, name]) => <span key={tone}><i className={`sc-dot sc-${tone}`} />{name}</span>)}</div>
-        <div className="sc-layers"><span>Exibir também:</span>
+        <div className="sc-layers"><label><input type="checkbox" checked={showCoverage} onChange={event => setShowCoverage(event.target.checked)} />Cobertura</label><span>Exibir também:</span>
           <label><input type="checkbox" checked={showAbsences} onChange={event => setShowAbsences(event.target.checked)} />Ausências</label>
           <label><input type="checkbox" checked={showEvents} onChange={event => setShowEvents(event.target.checked)} />Eventos e feriados</label>
         </div>
       </div>
+      {showCoverage && <div className="sc-coverage-overview">
+        <span className="sc-eyebrow">COBERTURA DA ESCALA PLANEJADA</span>
+        {coverageError ? <span className="sc-coverage-warning" role="alert">{coverageError}</span> : !coverageReady ? <span role="status">Carregando necessidades...</span> : !coverageRequirements.length ? <span>Defina o mínimo de pessoas para destacar os horários com falta de equipe.</span> : <><span className="sc-sufficient-text">● Suficiente</span><span className="sc-shortage-text">● Falta de equipe</span><span className="sc-coverage-warning">● Dados a revisar</span><span>Usa toda a equipe do setor, mesmo com filtros por pessoa.</span></>}
+        {coverageReady && coverageRequirements.length > 0 && <button type="button" className="sc-link" onClick={() => { setDetailsOpen(true); setDayTab('coverage'); }}>Ver cobertura do dia</button>}
+      </div>}
       {hasFilters && <div className="sc-filter-note">Visualização filtrada{department !== 'all' ? ` · ${departments.find(item => item.id === department)?.name || department}` : ''}{employee !== 'all' ? ` · ${employees.find(item => String(item.id) === String(employee))?.name || ''}` : ''}{status !== 'all' ? ` · ${status}` : ''}{search.trim() ? ` · “${search.trim()}”` : ''}<button type="button" onClick={clearFilters}>Limpar</button></div>}
 
       <div className={`sc-workspace ${detailsOpen ? 'sc-with-details' : ''}`}>
@@ -172,6 +186,7 @@ export default function ScheduleCalendar({
                   aria-label={`${longDate(day.date)}: ${day.schedules.length} registros de escala${showAbsences ? `, ${day.absences.length} ausências` : ''}${showEvents ? `, ${day.events.length} eventos` : ''}`}
                   className={`sc-day ${outside ? 'sc-outside' : ''} ${selected ? 'sc-selected' : ''} ${day.date === today ? 'sc-is-today' : ''}`}>
                   <span className="sc-day-top"><span className="sc-day-number">{Number(day.date.slice(-2))}</span>{day.date === today && <span className="sc-today-label">Hoje</span>}</span>
+                  {showCoverage && coverageReady && day.coverage.status !== 'none' && <span className={`sc-coverage-badge sc-coverage-${day.coverage.status}`} title={day.coverage.status === 'shortage' ? `Faltam até ${day.coverage.missingMax} pessoas em uma faixa do dia` : day.coverage.status === 'unknown' ? 'Horários incompletos: revise a cobertura' : 'Mínimo atendido em todas as faixas configuradas'}><span className="sc-coverage-wide">{day.coverage.status === 'shortage' ? `Faltam até ${day.coverage.missingMax}` : day.coverage.status === 'unknown' ? 'Revisar horários' : 'Suficiente'}</span><span className="sc-coverage-compact">{day.coverage.status === 'shortage' ? `−${day.coverage.missingMax}` : day.coverage.status === 'unknown' ? '?' : '✓'}</span></span>}
                   <span className="sc-day-groups">{groups.map(([tone, count]) => <span key={tone} className={`sc-count sc-${tone}`} title={`${count} · ${toneNames[tone]}`}><i />{count}<span>{toneNames[tone]}</span></span>)}</span>
                   <span className="sc-mobile-markers">{showAbsences && day.absences.length > 0 && <span className="sc-count sc-absence"><Clock size={9} />{day.absences.length}</span>}{showEvents && day.events.length > 0 && <span className="sc-count sc-event"><CalendarCheck size={9} />{day.events.length}</span>}</span>
                   <span className="sc-day-entries">
@@ -199,10 +214,11 @@ export default function ScheduleCalendar({
             {currentUser.isAdmin && <><button type="button" className="sc-button" onClick={() => onEvent(false)}>Criar evento</button><button type="button" className="sc-button" onClick={() => onEvent(true)}>Marcar feriado</button></>}
           </div>}
           <div className="sc-day-tabs">
-            {[['schedules', 'Escala', activeDay.schedules.length], ['absences', 'Ausências', activeDay.absences.length], ['events', 'Eventos', activeDay.events.length]].map(([key, label, count]) =>
+            {[['schedules', 'Escala', activeDay.schedules.length], ['coverage', 'Cobertura', activeCoverage.rules.length], ['absences', 'Ausências', activeDay.absences.length], ['events', 'Eventos', activeDay.events.length]].map(([key, label, count]) =>
               <button type="button" key={key} aria-pressed={dayTab === key} onClick={() => showDayCategory(key)}>{label}<span>{count}</span></button>)}
           </div>
           <div className="sc-records">
+            {dayTab === 'coverage' && <DayCoverage coverage={activeCoverage} departments={departments} ready={coverageReady} error={coverageError} />}
             {dayTab === 'schedules' && (activeDay.schedules.length ? activeDay.schedules.map(item => <article key={item.id} className={`sc-record sc-${scheduleTone(item.status)}`}>
               <div className="sc-record-title"><strong>{item.userName}</strong>{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
               <span className="sc-record-status">{item.status}</span>
