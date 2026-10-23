@@ -3045,8 +3045,7 @@ const getStatusEmTempoReal = (colaborador) => {
 
     const primaryDeptId = getUserDepts(currentUser)[0] || 'rh';
     const currentDeptName = departmentsList.find(d => d.id === primaryDeptId)?.name || 'Geral';
-    const isHolidayEvent = newEvent.type === 'Feriado';
-    const annId = isHolidayEvent ? '' : `ann-${Date.now()}`;
+    const annId = `ann-${Date.now()}`;
     const created = {
       id: annId,
       title: newAnn.title,
@@ -3905,8 +3904,9 @@ const submitPresence = async (e) => {
     }
     if (!newEvent.title || !newEvent.description) return;
 
+    const isHolidayEvent = newEvent.type === 'Feriado';
     const evId = `ev-${Date.now()}`;
-    const annId = `ann-${Date.now()}`;
+    const annId = isHolidayEvent ? '' : `ann-${Date.now()}`;
     const created = {
       id: evId,
       ...(annId ? { announcementId: annId } : {}),

@@ -100,6 +100,11 @@ export default function ScheduleCalendar({
     onSelectDate(next);
   };
   const clearFilters = () => { setDepartment('all'); setEmployee('all'); setStatus('all'); setSearch(''); };
+  const openEvent = holiday => {
+    setShowEvents(true);
+    setDayTab('events');
+    onEvent(holiday);
+  };
   const showDayCategory = category => {
     setDayTab(category);
     if (category === 'events') setShowEvents(true);
@@ -211,7 +216,7 @@ export default function ScheduleCalendar({
             {canManage && <button type="button" className="sc-primary" onClick={onPlan}><Plus size={15} /> Planejar este dia</button>}
             <button type="button" className="sc-button" onClick={onAbsence}>Agendar ausência</button>
             {selectedDate === today && <button type="button" className="sc-button" onClick={() => onPresence(selectedDate)}>Atualizar presença</button>}
-            {currentUser.isAdmin && <><button type="button" className="sc-button" onClick={() => onEvent(false)}>Criar evento</button><button type="button" className="sc-button" onClick={() => onEvent(true)}>Marcar feriado</button></>}
+            {currentUser.isAdmin && <><button type="button" className="sc-button" onClick={() => openEvent(false)}>Criar evento</button><button type="button" className="sc-button" onClick={() => openEvent(true)}>Marcar feriado</button></>}
           </div>}
           <div className="sc-day-tabs">
             {[['schedules', 'Escala', activeDay.schedules.length], ['coverage', 'Cobertura', activeCoverage.rules.length], ['absences', 'Ausências', activeDay.absences.length], ['events', 'Eventos', activeDay.events.length]].map(([key, label, count]) =>
