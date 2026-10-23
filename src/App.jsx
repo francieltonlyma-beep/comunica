@@ -6115,14 +6115,14 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     if (row.reopened) totals.reopened += 1;
     return totals;
   }, { total: 0, onTime: 0, late: 0, overdue: 0, extended: 0, reopened: 0 });
-  const availableActivityTemplates = activityTemplates.map(normalizeActivityTemplate).filter(template => template.id && template.name);
-  const conversationActivityRows = normMessages.map(message => {
+  const availableActivityTemplates = activityTemplates.filter(Boolean).map(normalizeActivityTemplate).filter(template => template?.id && template?.name);
+  const conversationActivityRows = normMessages.filter(Boolean).map(message => {
     const activity = normalizeMessageActivity(message.activity);
     if (!activity || !message.threadId) return null;
     const metadata = getThreadMetadata(message.threadId);
     const status = isMessageActivityOverdue(activity, todayStr) ? 'overdue' : activity.status;
     const schedule = messageActivitySchedule(activity, todayStr);
-    const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user.id === userId)).filter(Boolean);
+    const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user?.id === userId)).filter(Boolean);
     const checklistCompleted = activity.checklist.filter(item => item.completed).length;
     return {
       id: message.id,
@@ -6143,12 +6143,12 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       updatedAt: activity.updatedAt || activity.createdAt || getMessageTimestamp(message),
     };
   }).filter(Boolean);
-  const standaloneActivityRows = standaloneActivities.map(record => {
+  const standaloneActivityRows = standaloneActivities.filter(Boolean).map(record => {
     const activity = normalizeMessageActivity(record);
     if (!activity) return null;
     const status = isMessageActivityOverdue(activity, todayStr) ? 'overdue' : activity.status;
     const schedule = messageActivitySchedule(activity, todayStr);
-    const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user.id === userId)).filter(Boolean);
+    const assignees = activity.assigneeIds.map(userId => messageContacts.find(user => user?.id === userId)).filter(Boolean);
     return {
       id: record.id,
       threadId: '',
@@ -6158,7 +6158,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       subject: String(record.title || 'Atividade avulsa'),
       preview: String(record.description || 'Criada diretamente na Central de Serviços').trim(),
       authorName: activity.createdBy === currentUser.id ? 'Você' : (activity.createdByName || 'Participante'),
-      participantIds: employeesList.map(user => user.id),
+      participantIds: employeesList.filter(Boolean).map(user => user.id),
       activity,
       status,
       schedule,

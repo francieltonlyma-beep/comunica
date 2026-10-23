@@ -62,3 +62,11 @@ test('service center launches the versioned guided tour on first access', () => 
     assert.match(app, new RegExp(`data-tour=["']${target}["']`));
   }
 });
+
+
+test('service activities ignore empty legacy records', () => {
+  assert.match(app, /normMessages\.filter\(Boolean\)\.map\(message =>/);
+  assert.match(app, /standaloneActivities\.filter\(Boolean\)\.map\(record =>/);
+  assert.match(app, /employeesList\.filter\(Boolean\)\.map\(user => user\.id\)/);
+  assert.match(app, /messageContacts\.find\(user => user\?\.id === userId\)/);
+});
