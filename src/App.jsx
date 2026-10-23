@@ -1095,6 +1095,23 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     }, 900);
     return () => window.clearTimeout(timer);
   }, [activeCompany?.id, activeTutorial, currentUser?.id, dbLoading, forcePinChange]);
+  const servicesTourReleaseKey = currentUser?.id && activeCompany?.id
+    ? `comunica_services_tour_20261023_v1_${activeCompany.id}_${currentUser.id}`
+    : '';
+
+  useEffect(() => {
+    if (dbLoading || forcePinChange || activeTab !== 'services' || activeTutorial || !servicesTourReleaseKey) return undefined;
+    if (localStorage.getItem(servicesTourReleaseKey)) return undefined;
+    const timer = window.setTimeout(() => {
+      setServiceWorkspace('requests');
+      setServiceActivityView('list');
+      setServiceActivityStatusFilter('active');
+      setServiceActivityPeriodFilter('all');
+      setActiveTutorial(current => current || 'services');
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, activeTutorial, dbLoading, forcePinChange, servicesTourReleaseKey]);
+
   const [authReady, setAuthReady] = useState(!isFirebaseAvailable);
   const [authScope, setAuthScope] = useState({ companyId: '', isDeveloper: false });
   const [pushToken, setPushToken] = useState('');
@@ -7306,7 +7323,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               </>}
 
               {serviceWorkspace === 'activities' && <>
-                <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                <section data-tour="activity-metrics" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                   {[
                     { id: 'all', label: 'Total', value: serviceActivityMetrics.total, color: 'text-slate-900' },
                     { id: 'active', label: 'Pendentes', value: serviceActivityMetrics.active, color: 'text-violet-700' },
@@ -7337,7 +7354,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
                 {activityTemplatesOpen && <section className="rounded-[1.5rem] border border-fuchsia-100 bg-fuchsia-50/50 p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-fuchsia-700">Biblioteca compartilhada</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Modelos de checklist</h4><p className="mt-1 text-xs text-slate-500">Aplique rotinas prontas em atividades de conversa ou avulsas.</p></div><button type="button" onClick={() => setActivityTemplatesOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white"><X className="h-4 w-4" /></button></div>{canManageActivityTemplates && <form onSubmit={handleCreateActivityTemplate} className="mt-4 grid gap-3 rounded-2xl border border-fuchsia-100 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4"><input required maxLength="80" value={activityTemplateDraft.name} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, name: event.target.value }))} placeholder="Nome do modelo" className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /><input maxLength="240" value={activityTemplateDraft.description} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, description: event.target.value }))} placeholder="Descrição opcional" className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /><select value={activityTemplateDraft.priority} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, priority: event.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id, label]) => <option key={id} value={id}>Prioridade {label.toLowerCase()}</option>)}</select><button type="submit" className="rounded-xl bg-fuchsia-700 px-4 py-2.5 text-xs font-bold text-white">Salvar modelo</button><textarea required rows="3" value={activityTemplateDraft.checklistText} onChange={event => setActivityTemplateDraft(previous => ({ ...previous, checklistText: event.target.value }))} placeholder={'Um item por linha\nEx.: Conferir dados\nAnexar comprovante'} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs leading-5 sm:col-span-2 lg:col-span-4" /></form>}<div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{availableActivityTemplates.map(template => <article key={template.id} className="rounded-2xl border border-fuchsia-100 bg-white p-3"><div className="flex items-start justify-between gap-2"><div><strong className="text-xs text-slate-900">{template.name}</strong><p className="mt-1 text-[10px] text-slate-500">{template.description || `${template.checklist.length} itens · prioridade ${MESSAGE_ACTIVITY_PRIORITY_LABELS[template.priority].toLowerCase()}`}</p></div>{canManageActivityTemplates && <button type="button" onClick={() => removeDoc('activityTemplates', template.id)} className="rounded-lg p-1.5 text-rose-500 hover:bg-rose-50" aria-label={`Excluir modelo ${template.name}`}><Trash2 className="h-3.5 w-3.5" /></button>}</div><div className="mt-2 space-y-1">{template.checklist.slice(0, 4).map(item => <div key={item.id} className="flex items-center gap-1.5 text-[9px] text-slate-500"><Check className="h-3 w-3 text-fuchsia-500" />{item.text}</div>)}{template.checklist.length > 4 && <span className="text-[9px] font-bold text-fuchsia-700">+ {template.checklist.length - 4} itens</span>}</div></article>)}{availableActivityTemplates.length === 0 && <div className="rounded-2xl border border-dashed border-fuchsia-200 bg-white p-6 text-center text-xs text-slate-500 md:col-span-2 xl:col-span-3">Nenhum modelo criado ainda.</div>}</div></section>}
 
-                {canViewActivityInsights && <section className="rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-indigo-950 to-violet-900 p-4 text-white shadow-sm sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-indigo-200">Indicadores das atividades visíveis</span><h4 className="mt-1 text-base font-extrabold">Produtividade e cumprimento</h4></div><span className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-bold">{serviceActivityProductivity.total} atividades analisadas</span></div><div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">{[{label:'Concluídas 30d',value:serviceActivityProductivity.resolvedLast30Days},{label:'Conclusão geral',value:`${serviceActivityProductivity.completionRate}%`},{label:'No prazo',value:`${serviceActivityProductivity.onTimeRate}%`},{label:'Tempo médio',value:serviceActivityProductivity.averageCompletionHours ? `${serviceActivityProductivity.averageCompletionHours}h` : '—'},{label:'Recorrentes',value:serviceActivityProductivity.recurring}].map(metric => <div key={metric.label} className="rounded-xl bg-white/10 p-3"><span className="text-[8px] font-bold uppercase text-indigo-200">{metric.label}</span><strong className="mt-1 block text-xl">{metric.value}</strong></div>)}</div>{serviceActivityLeaderboard.length > 0 && <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-3"><span className="w-full text-[9px] font-bold uppercase text-indigo-200">Mais conclusões</span>{serviceActivityLeaderboard.map((person, index) => <span key={person.id} className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-semibold">{index + 1}. {person.name} · {person.completed}</span>)}</div>}</section>}
+                {canViewActivityInsights && <section data-tour="activity-insights" className="rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-indigo-950 to-violet-900 p-4 text-white shadow-sm sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-indigo-200">Indicadores das atividades visíveis</span><h4 className="mt-1 text-base font-extrabold">Produtividade e cumprimento</h4></div><span className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-bold">{serviceActivityProductivity.total} atividades analisadas</span></div><div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">{[{label:'Concluídas 30d',value:serviceActivityProductivity.resolvedLast30Days},{label:'Conclusão geral',value:`${serviceActivityProductivity.completionRate}%`},{label:'No prazo',value:`${serviceActivityProductivity.onTimeRate}%`},{label:'Tempo médio',value:serviceActivityProductivity.averageCompletionHours ? `${serviceActivityProductivity.averageCompletionHours}h` : '—'},{label:'Recorrentes',value:serviceActivityProductivity.recurring}].map(metric => <div key={metric.label} className="rounded-xl bg-white/10 p-3"><span className="text-[8px] font-bold uppercase text-indigo-200">{metric.label}</span><strong className="mt-1 block text-xl">{metric.value}</strong></div>)}</div>{serviceActivityLeaderboard.length > 0 && <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-3"><span className="w-full text-[9px] font-bold uppercase text-indigo-200">Mais conclusões</span>{serviceActivityLeaderboard.map((person, index) => <span key={person.id} className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-semibold">{index + 1}. {person.name} · {person.completed}</span>)}</div>}</section>}
 
                 <section data-tour="activity-routine" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {[
@@ -7348,7 +7365,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   ].map(period => <button key={period.id} type="button" aria-pressed={serviceActivityPeriodFilter === period.id} onClick={() => { setServiceActivityPeriodFilter(previous => previous === period.id ? 'all' : period.id); setServiceActivityStatusFilter('active'); }} className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${period.tone} ${serviceActivityPeriodFilter === period.id ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span><strong className="block text-xs">{period.label}</strong><span className="mt-0.5 block text-[9px] opacity-70">{period.detail}</span></span><strong className="text-xl font-black">{period.value}</strong></button>)}
                 </section>
 
-                {serviceActivityView === 'list' && <section className="grid gap-4 xl:grid-cols-2">
+                {serviceActivityView === 'list' && <section data-tour="activity-list" className="grid gap-4 xl:grid-cols-2">
                   {filteredServiceActivities.map(row => {
                     const activity = row.activity;
                     const assigneeCandidates = row.source === 'standalone' ? employeesList : employeesList.filter(user => row.participantIds.includes(user.id));
@@ -7379,7 +7396,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   {filteredServiceActivities.length === 0 && <div className="xl:col-span-2 rounded-[1.5rem] border border-dashed border-slate-300 bg-white p-10 text-center"><ListChecks className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma atividade encontrada</h5><p className="mt-1 text-xs leading-5 text-slate-500">Crie uma atividade avulsa aqui ou marque uma mensagem da Caixa de Entrada como atividade.</p></div>}
                 </section>}
 
-                {serviceActivityView === 'kanban' && <section className="overflow-x-auto pb-2" aria-label="Quadro Kanban de atividades">
+                {serviceActivityView === 'kanban' && <section data-tour="activity-kanban" className="overflow-x-auto pb-2" aria-label="Quadro Kanban de atividades">
                   <div className="grid min-w-[1040px] grid-cols-4 gap-3">
                     {ACTIVITY_KANBAN_COLUMNS.map(column => {
                       const rows = serviceActivityKanban[column.id] || [];
@@ -7389,7 +7406,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   </div>
                 </section>}
 
-                {serviceActivityView === 'calendar' && <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm" aria-label="Calendário de atividades">
+                {serviceActivityView === 'calendar' && <section data-tour="activity-calendar" className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm" aria-label="Calendário de atividades">
                   <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4"><div><span className="text-[9px] font-black uppercase tracking-wide text-violet-600">Prazos das atividades</span><h5 className="mt-0.5 text-base font-extrabold capitalize text-slate-900">{serviceActivityCalendarLabel}</h5></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setServiceActivityCalendarMonth(shiftActivityCalendarMonth(serviceActivityCalendarMonth, -1))} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Mês anterior"><ChevronLeft className="h-4 w-4" /></button><button type="button" onClick={() => setServiceActivityCalendarMonth(currentActivityCalendarMonth())} className="rounded-lg border border-slate-200 px-3 py-2 text-[9px] font-bold text-slate-700 hover:bg-slate-50">Hoje</button><button type="button" onClick={() => setServiceActivityCalendarMonth(shiftActivityCalendarMonth(serviceActivityCalendarMonth, 1))} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Próximo mês"><ChevronRight className="h-4 w-4" /></button></div></header><div className="overflow-x-auto"><div className="min-w-[760px]"><div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">{['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(day => <span key={day} className="px-2 py-2 text-center text-[9px] font-black uppercase text-slate-400">{day}</span>)}</div><div className="grid grid-cols-7">{serviceActivityCalendarCells.map((cell, index) => cell ? <div key={cell.date} className={`min-h-32 border-b border-r border-slate-100 p-2 ${cell.date === todayStr ? 'bg-violet-50/70' : 'bg-white'}`}><div className="flex items-center justify-between"><span className={`grid h-6 w-6 place-items-center rounded-full text-[10px] font-black ${cell.date === todayStr ? 'bg-violet-700 text-white' : 'text-slate-600'}`}>{cell.day}</span>{cell.activities.length > 0 && <span className="text-[8px] font-bold text-slate-400">{cell.activities.length}</span>}</div><div className="mt-2 space-y-1">{cell.activities.slice(0, 3).map(row => <button key={row.id} type="button" onClick={() => openServiceActivityFromView(row)} className={`block w-full truncate rounded-md border px-2 py-1.5 text-left text-[8px] font-bold ${row.status === 'overdue' ? 'border-rose-200 bg-rose-50 text-rose-800' : row.status === 'resolved' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : row.activity.priority === 'urgent' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-violet-100 bg-violet-50 text-violet-800'}`} title={row.subject}>{row.subject}</button>)}{cell.activities.length > 3 && <span className="block w-full text-center text-[8px] font-bold text-violet-700">+ {cell.activities.length - 3} atividade(s)</span>}</div></div> : <div key={`empty-${index}`} className="min-h-32 border-b border-r border-slate-100 bg-slate-50/50" />)}</div></div></div>{filteredServiceActivities.some(row => !row.activity.dueDate) && <footer className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-[9px] text-slate-500"><strong className="text-slate-700">{filteredServiceActivities.filter(row => !row.activity.dueDate).length} atividade(s) sem prazo</strong> não aparecem no calendário. Use o filtro “Sem prazo” para revisá-las.</footer>}
                 </section>}
               </>}
@@ -10963,6 +10980,8 @@ const handleDownload = async (fileUrl, fileName) => {
         availableTabs={visibleNavigationSections.flatMap(section => section.items.map(item => item.id)).concat('dashboard')}
         onNavigate={step => {
           if (step.tab) setActiveTab(step.tab);
+          if (step.workspace) setServiceWorkspace(step.workspace);
+          if (step.activityView) changeServiceActivityView(step.activityView);
           setMobileMenuOpen(step.target === '[data-tour="platform-menu"]' && window.innerWidth < 640);
           setShowMessagesModal(step.open === 'inbox');
           const opensControlCenter = step.open === 'permissions' || step.open === 'audit';
@@ -10970,7 +10989,15 @@ const handleDownload = async (fileUrl, fileName) => {
           if (step.open === 'permissions') setControlCenterTab('permissions');
           if (step.open === 'audit') setControlCenterTab('audit');
         }}
-        onClose={() => { setActiveTutorial(null); setMobileMenuOpen(false); setShowMessagesModal(false); setShowControlCenter(false); }}
+        onClose={() => {
+          if (activeTutorial === 'services' && servicesTourReleaseKey) {
+            try { localStorage.setItem(servicesTourReleaseKey, new Date().toISOString()); } catch { /* dispositivo sem armazenamento local */ }
+          }
+          setActiveTutorial(null);
+          setMobileMenuOpen(false);
+          setShowMessagesModal(false);
+          setShowControlCenter(false);
+        }}
       />
 
       {/* RODAPÉ DO SISTEMA */}

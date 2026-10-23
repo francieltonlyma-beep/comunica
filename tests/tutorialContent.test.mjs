@@ -28,3 +28,14 @@ test('career tutorial explains candidate files, human review and retention', () 
   ['pdf', 'word', 'humana', '90 dias', 'prorrogar'].forEach(term => assert.match(text, new RegExp(term)));
 });
 
+
+test('service tour presents the complete new service and activity workspace', () => {
+  const serviceTour = PLATFORM_TUTORIALS.services;
+  const text = JSON.stringify(serviceTour).toLowerCase();
+  for (const term of ['solicitações', 'atividades sincronizadas', 'modelos', 'lista', 'kanban', 'calendário', 'recorrência', 'checklist', 'conversa original']) {
+    assert.match(text, new RegExp(term));
+  }
+  assert.ok(serviceTour.steps.some(step => step.workspace === 'requests'));
+  assert.ok(serviceTour.steps.some(step => step.workspace === 'activities'));
+  for (const view of ['list', 'kanban', 'calendar']) assert.ok(serviceTour.steps.some(step => step.activityView === view));
+});

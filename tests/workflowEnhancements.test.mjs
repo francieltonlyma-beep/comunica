@@ -51,3 +51,14 @@ test('service flow separates configured SLA from assignee promise and progress',
   assert.match(app, /Responsável padrão definido pelo administrador/);
   assert.match(app, /Buscar por nome, cargo ou setor/);
 });
+
+test('service center launches the versioned guided tour on first access', () => {
+  assert.match(app, /comunica_services_tour_20261023_v1_/);
+  assert.match(app, /activeTab !== 'services'/);
+  assert.match(app, /setActiveTutorial\(current => current \|\| 'services'\)/);
+  assert.match(app, /if \(step\.workspace\) setServiceWorkspace\(step\.workspace\)/);
+  assert.match(app, /if \(step\.activityView\) changeServiceActivityView\(step\.activityView\)/);
+  for (const target of ['activity-metrics', 'activity-list', 'activity-kanban', 'activity-calendar', 'activity-insights']) {
+    assert.match(app, new RegExp(`data-tour=["']${target}["']`));
+  }
+});
