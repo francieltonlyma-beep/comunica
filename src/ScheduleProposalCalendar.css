@@ -1,0 +1,71 @@
+.spc{background:#fff;padding:18px;border-bottom:1px solid #d9e8eb;color:#193740;min-width:0}
+.spc-toolbar{display:flex;justify-content:space-between;gap:16px;align-items:center}
+.spc-eyebrow{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#0e7490}
+.spc-toolbar h4{font-size:15px;font-weight:800;margin:4px 0}
+.spc-toolbar p,.spc-note{font-size:11px;color:#61757c;line-height:1.6}
+.spc-filter{display:grid;gap:5px;font-size:10px;font-weight:700;min-width:210px}
+.spc-filter select{border:1px solid #cbdde2;border-radius:10px;background:white;padding:10px;font-size:12px;max-width:100%}
+.spc-navigation{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 12px;flex-wrap:wrap}
+.spc-month{display:flex;align-items:center;gap:12px}
+.spc-month strong{font-size:14px;text-transform:capitalize;min-width:145px;text-align:center}
+.spc-month button{border:1px solid #d9e5e9;border-radius:8px;padding:7px}
+.spc button:disabled{opacity:.45;cursor:default}
+.spc button:focus-visible,.spc select:focus-visible{outline:3px solid #0e7490;outline-offset:2px}
+.spc-find-gap{font-size:11px;font-weight:700;background:#fff7e6;border:1px solid #f2d69c;border-radius:8px;padding:9px;color:#92550b}
+.spc-legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:10px;color:#61757c;margin-bottom:14px}
+.spc-legend span{display:flex;gap:5px;align-items:center}
+.spc-legend i,.spc-coverage-dot{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.spc-dot-gap{background:#c08413}
+.spc-dot-unknown{background:#8260a3}
+.spc-dot-work{background:#15806b}
+.spc-dot-off{background:#b87c11}
+.spc-dot-absence{background:#8260a3}
+.spc-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.spc-weekday{text-align:center;font-size:10px;font-weight:800;padding:5px;color:#61757c}
+.spc-day,.spc-empty{min-height:116px;border:1px solid #dce7ea;border-radius:10px;padding:9px;min-width:0}
+.spc-day{text-align:left;background:#fbfdfd;display:flex;flex-direction:column;gap:5px;position:relative;transition:background .15s}
+.spc-day:hover{background:#edf7f9}
+.spc-empty{color:#b9c4c8;background:#f7f9fa;border-color:transparent;font-size:12px}
+.spc-day-head{display:flex;justify-content:space-between;gap:2px;align-items:center}
+.spc-day-head>strong{font-size:14px}
+.spc-fixed{display:flex;align-items:center;gap:2px;font-size:9px;color:#697d85}
+.spc-counts{display:flex;flex-wrap:wrap;gap:3px 7px;font-size:12px;font-weight:800}
+.spc-counts small{font-size:9px;font-weight:600}
+.spc-work{color:#167561}
+.spc-off{color:#92600c}
+.spc-absence{color:#78518d}
+.spc-person-status{font-size:11px;font-weight:700;overflow-wrap:anywhere}
+.spc-coverage{font-size:9px;display:flex;gap:4px;align-items:center;margin-top:auto;line-height:1.35}
+.spc-covered .spc-coverage{color:#237565}
+.spc-covered .spc-coverage-dot{background:#237565}
+.spc-gap{border-color:#eccb8f;background:#fffbf3}
+.spc-gap .spc-coverage{color:#92550b}
+.spc-gap .spc-coverage-dot{background:#c08413}
+.spc-unknown .spc-coverage{color:#78518d}
+.spc-unknown .spc-coverage-dot{background:#8260a3}
+.spc-blocking{color:#b4233c;font-size:10px;font-weight:800}
+.spc-holiday{font-size:9px;color:#6b5680}
+.spc-selected{border-color:#0e7490;box-shadow:inset 0 0 0 1px #0e7490;background:#eaf6f9}
+.spc-note{margin:10px 0}
+.spc-selection{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#eff6f8;padding:12px;border-radius:10px;font-size:11px}
+.spc-selection strong{text-transform:capitalize}
+.spc-selection span{color:#526b75}
+@media(max-width:640px){.spc{padding:12px}
+.spc-toolbar{align-items:stretch;flex-direction:column;gap:10px}
+.spc-filter{min-width:0}
+.spc-grid{gap:3px}
+.spc-day,.spc-empty{padding:5px 3px;min-height:94px;border-radius:7px}
+.spc-counts{gap:3px;flex-direction:column;font-size:11px}
+.spc-counts small{font-size:8px}
+.spc-day-head>strong{font-size:12px}
+.spc-fixed span{display:none}
+.spc-coverage>span:last-child{display:none}
+.spc-coverage-dot{width:6px;height:6px}
+.spc-person-status{font-size:8px;line-height:1.3}
+.spc-blocking small{display:none}
+.spc-holiday{font-size:8px}
+.spc-navigation{margin-top:14px;gap:8px}
+.spc-selection{display:grid}
+.spc-legend{font-size:9px;gap:7px 10px}
+}
+
