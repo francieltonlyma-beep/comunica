@@ -14,7 +14,9 @@ import ScheduleOptimizationSummary from './ScheduleOptimizationSummary.jsx';
 import ScheduleProposalCalendar from './ScheduleProposalCalendar.jsx';
 import ScheduleDayEditor from './ScheduleDayEditor.jsx';
 import PublishedScheduleEditor from './PublishedScheduleEditor.jsx';
+import PublishedScheduleSwap from './PublishedScheduleSwap.jsx';
 import { canEditPublishedSchedule, planPublishedDayEdit } from './publishedScheduleEdit.js';
+import { planPublishedScheduleSwap } from './publishedScheduleSwap.js';
 import { balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
@@ -1001,6 +1003,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [automaticScheduleOptimization, setAutomaticScheduleOptimization] = useState(null);
   const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
   const [publishedScheduleEdit, setPublishedScheduleEdit] = useState(null);
+  const [publishedScheduleSwap, setPublishedScheduleSwap] = useState(null);
   const [isSavingPublishedSchedule, setIsSavingPublishedSchedule] = useState(false);
   const [automaticScheduleEditorFocus, setAutomaticScheduleEditorFocus] = useState(null);
   const automaticScheduleInput = JSON.stringify({ company: activeCompany?.id, history: workSchedules, absences, employees: employeesList.map(user => ({ id: user.id, name: user.name, departments: getUserDepts(user) })), rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
@@ -3915,6 +3918,29 @@ const submitPresence = async (e) => {
     setWorkSchedules(previous => [...schedules, ...previous.filter(schedule => !ids.has(schedule.id))]);
     setShowBulkScheduleModal(false);
     triggerNotification(`Escala atualizada para ${schedules.length} colaborador(es).`);
+  };
+
+  const openPublishedScheduleSwap = (source, date) => {
+    if ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) return triggerNotification('Seu perfil não pode trocar escalas.', 'error');
+    if (!canEditPublishedSchedule(source) || !schedulePlanningDataReady()) return triggerNotification('Aguarde os dados da empresa. A troca usa apenas escalas publicadas.', 'error');
+    setPublishedScheduleSwap({ source, date, companyId: activeCompany.id, history: workSchedules, absences, rules: automaticScheduleRules });
+  };
+  const savePublishedScheduleSwap = async ({ target, targetDate, reason }) => {
+    if (isSavingPublishedSchedule || !publishedScheduleSwap) return false;
+    if ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) { triggerNotification('Seu perfil não pode trocar escalas.', 'error'); return false; }
+    const swap = publishedScheduleSwap;
+    if (!schedulePlanningDataReady() || swap.companyId !== activeCompany?.id) { triggerNotification('Aguarde os dados da empresa correta antes de salvar.', 'error'); return false; }
+    if (scheduleSignature(workSchedules) !== scheduleSignature(swap.history) || JSON.stringify(absences) !== JSON.stringify(swap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(swap.rules)) { triggerNotification('Os dados mudaram. Feche e abra novamente esta troca para revisar a versão atual.', 'error'); return false; }
+    let plan;
+    try { plan = planPublishedScheduleSwap(swap.source, swap.date, target, targetDate, { history: workSchedules, absences, rules: automaticScheduleRules, publicationId: globalThis.crypto.randomUUID(), now: Date.now(), actor: { id: currentUser.id || dbUser.uid, name: currentUser.name }, reason }); }
+    catch (error) { triggerNotification(error.message, 'error'); return false; }
+    setIsSavingPublishedSchedule(true);
+    try {
+      if (!await saveRelatedRecords(plan.records, 'Não foi possível salvar a troca. Nenhum dia foi alterado; sua revisão foi preservada.', { companyId: swap.companyId, history: swap.history, replaced: plan.replaced })) return false;
+      setPublishedScheduleSwap(null);
+      triggerNotification('Troca salva nos dois dias. O restante das escalas foi preservado.');
+      return true;
+    } finally { setIsSavingPublishedSchedule(false); }
   };
 
   const openPublishedScheduleEdit = (source, date) => {
@@ -8220,12 +8246,13 @@ const handleDownload = async (fileUrl, fileName) => {
               currentUser={currentUser} canManage={Boolean(isManager || currentUser.isAdmin)}
               canWrite={Boolean(currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))}
               deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule} onEditSchedule={openPublishedScheduleEdit}
+              onSwapSchedule={openPublishedScheduleSwap}
               onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
               coverageRequirements={automaticScheduleRules.coverageRequirements}
               coverageReady={scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready')} coverageError={scheduleCoverageError || (Object.values(scheduleCoverageSources).includes('error') ? 'Não foi possível carregar todos os dados da cobertura. Confira sua conexão e atualize a página.' : '')}
               canConfigureCoverage={Boolean(canConfigureScheduleRules && (isManager || currentUser.isDeveloper))} onSaveCoverage={saveScheduleCoverageRequirements}
               onPlan={openBulkSchedule} formatDuration={scheduleDurationToText} presence={teamPresenceList}
-              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal || Boolean(publishedScheduleEdit)}
+              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal || Boolean(publishedScheduleEdit) || Boolean(publishedScheduleSwap)}
               onAbsence={() => {
                 setNewAbsence(previous => ({ ...previous, targetUserId: currentUser.id, startDate: selectedCalendarDay, endDate: selectedCalendarDay }));
                 setShowAbsenceModal(true);
@@ -9496,6 +9523,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {publishedScheduleEdit && publishedScheduleEdit.companyId === activeCompany?.id && <PublishedScheduleEditor key={`${publishedScheduleEdit.source.id}|${publishedScheduleEdit.date}`} edit={publishedScheduleEdit} context={{ history: publishedScheduleEdit.history, absences: publishedScheduleEdit.absences, rules: publishedScheduleEdit.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleEdit.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleEdit.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleEdit.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleEdit} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleEdit(null); }} />}
+      {publishedScheduleSwap && publishedScheduleSwap.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwap.source.id}|${publishedScheduleSwap.date}`} swap={publishedScheduleSwap} context={{ history: publishedScheduleSwap.history, absences: publishedScheduleSwap.absences, rules: publishedScheduleSwap.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} employees={employeesList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwap.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwap.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleSwap} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleSwap(null); }} />}
       {showBulkScheduleModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl">

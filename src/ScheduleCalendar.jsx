@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Pencil, CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { ArrowLeftRight, Pencil, CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { calendarRecordsForDay, scheduleCalendarDates, scheduleTone, shiftCalendarPeriod } from './scheduleCalendarModel.js';
 import { coverageForDay } from './scheduleCoverage.js';
 import { CoverageRequirementEditor, DayCoverage } from './ScheduleCoveragePanel.jsx';
@@ -15,7 +15,7 @@ const toneNames = { work: 'Presencial', remote: 'Home office', off: 'Folga', vac
 
 export default function ScheduleCalendar({
   companyName, today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
-  currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onDeleteAbsence, onDeleteEvent,
+  currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onSwapSchedule, onDeleteAbsence, onDeleteEvent,
   onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
   coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
@@ -234,7 +234,7 @@ export default function ScheduleCalendar({
           <div className="sc-records">
             {dayTab === 'coverage' && <DayCoverage coverage={activeCoverage} departments={departments} ready={coverageReady} error={coverageError} />}
             {dayTab === 'schedules' && (activeDay.schedules.length ? activeDay.schedules.map(item => <article key={item.id} className={`sc-record sc-${scheduleTone(item.status)}`}>
-              <div className="sc-record-title"><strong>{item.userName}</strong>{canManage && canWrite && onEditSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onEditSchedule(item, selectedDate)} aria-label={`Editar escala de ${item.userName} neste dia`} title="Alterar somente este dia"><Pencil size={15}/></button>}{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
+              <div className="sc-record-title"><strong>{item.userName}</strong>{canManage && canWrite && onSwapSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onSwapSchedule(item, selectedDate)} aria-label={`Trocar escala de ${item.userName} com outro colaborador`} title="Trocar folga ou turno com outro colaborador"><ArrowLeftRight size={15}/></button>}{canManage && canWrite && onEditSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onEditSchedule(item, selectedDate)} aria-label={`Editar escala de ${item.userName} neste dia`} title="Alterar somente este dia"><Pencil size={15}/></button>}{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
               <span className="sc-record-status">{item.status}</span>
               <p>{item.shiftStart && item.shiftEnd ? `${item.shiftStart} – ${item.shiftEnd}` : item.shift || 'Integral'}{Number(item.plannedHours) > 0 ? ` · ${formatDuration(item.plannedHours)}h` : ''}</p>
               {Number(item.extraHours) > 0 && <p>Extra: {formatDuration(item.extraHours)}h</p>}
