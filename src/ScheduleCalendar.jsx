@@ -6,6 +6,7 @@ import { coverageForDay } from './scheduleCoverage.js';
 import { CoverageRequirementEditor, DayCoverage } from './ScheduleCoveragePanel.jsx';
 import { canEditPublishedSchedule } from './publishedScheduleEdit.js';
 import ScheduleTeamMonth from './ScheduleTeamMonth.jsx';
+import ScheduleSwapRequestsPanel from './ScheduleSwapRequestsPanel.jsx';
 import './ScheduleCalendar.css';
 
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -15,7 +16,7 @@ const toneNames = { work: 'Presencial', remote: 'Home office', off: 'Folga', vac
 
 export default function ScheduleCalendar({
   companyName, today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
-  currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onSwapSchedule, onDeleteAbsence, onDeleteEvent,
+  currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onSwapSchedule, onRequestSwap, swapRequests = [], swapRequestBusy = false, onSwapRequestAction, onReviewSwapRequest, onDeleteAbsence, onDeleteEvent,
   onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
   coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
@@ -34,6 +35,7 @@ export default function ScheduleCalendar({
   const [dayTab, setDayTab] = useState('schedules');
   const [showCoverage, setShowCoverage] = useState(true);
   const [needsOpen, setNeedsOpen] = useState(false);
+  const [swapRequestsOpen, setSwapRequestsOpen] = useState(false);
   const shellRef = useRef(null);
   const expandRef = useRef(null);
   const previousFocus = useRef(null);
@@ -83,6 +85,7 @@ export default function ScheduleCalendar({
     .slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const statuses = [...new Set(['Presencial', 'Home Office', 'Folga', 'Férias', ...schedules.map(item => item.status).filter(Boolean)])];
   const hasFilters = department !== 'all' || employee !== 'all' || status !== 'all' || search.trim();
+  const pendingSwapRequests = swapRequests.filter(item => ['pending_peer', 'pending_manager'].includes(item.status)).length;
   const title = view !== 'week'
     ? new Date(`${anchor}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
     : `${shortDate(dates[0])} – ${shortDate(dates[6])} · ${anchor.slice(0, 4)}`;
@@ -126,6 +129,7 @@ export default function ScheduleCalendar({
         </div>
         <div className="sc-header-actions">
           {canManage && canWrite && <button type="button" className="sc-primary" onClick={() => onPlan('month')}><Plus size={16} /> Gerar escala do mês</button>}
+          <button type="button" className="sc-button" aria-expanded={swapRequestsOpen} onClick={() => setSwapRequestsOpen(value => !value)}><ArrowLeftRight size={16}/> Trocas{pendingSwapRequests > 0 ? ` (${pendingSwapRequests})` : ''}</button>
           <button type="button" className="sc-button" aria-expanded={needsOpen} onClick={() => setNeedsOpen(value => !value)}><Users size={16} /> Necessidade</button>
           <button type="button" ref={expandRef} className="sc-button" onClick={() => {
             previousFocus.current = expandRef.current;
@@ -137,6 +141,7 @@ export default function ScheduleCalendar({
       </header>
 
       {needsOpen && <CoverageRequirementEditor requirements={coverageRequirements} departments={departments} canConfigure={canConfigureCoverage && canWrite} onSave={onSaveCoverage} defaultDepartment={department} ready={coverageReady} error={coverageError} />}
+      {swapRequestsOpen && <ScheduleSwapRequestsPanel requests={swapRequests} currentUser={currentUser} canManage={canManage} busy={swapRequestBusy} onClose={() => setSwapRequestsOpen(false)} onAction={onSwapRequestAction} onReview={onReviewSwapRequest}/>}
 
       <div className="sc-toolbar">
         <div className="sc-period">
@@ -234,7 +239,7 @@ export default function ScheduleCalendar({
           <div className="sc-records">
             {dayTab === 'coverage' && <DayCoverage coverage={activeCoverage} departments={departments} ready={coverageReady} error={coverageError} />}
             {dayTab === 'schedules' && (activeDay.schedules.length ? activeDay.schedules.map(item => <article key={item.id} className={`sc-record sc-${scheduleTone(item.status)}`}>
-              <div className="sc-record-title"><strong>{item.userName}</strong>{canManage && canWrite && onSwapSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onSwapSchedule(item, selectedDate)} aria-label={`Trocar escala de ${item.userName} com outro colaborador`} title="Trocar folga ou turno com outro colaborador"><ArrowLeftRight size={15}/></button>}{canManage && canWrite && onEditSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onEditSchedule(item, selectedDate)} aria-label={`Editar escala de ${item.userName} neste dia`} title="Alterar somente este dia"><Pencil size={15}/></button>}{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
+              <div className="sc-record-title"><strong>{item.userName}</strong>{!canManage && onRequestSwap && String(item.userId) === String(currentUser.id) && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" onClick={() => onRequestSwap(item, selectedDate)} aria-label="Solicitar troca deste dia" title="Solicitar troca deste dia"><ArrowLeftRight size={15}/></button>}{canManage && canWrite && onSwapSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onSwapSchedule(item, selectedDate)} aria-label={`Trocar escala de ${item.userName} com outro colaborador`} title="Trocar folga ou turno com outro colaborador"><ArrowLeftRight size={15}/></button>}{canManage && canWrite && onEditSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onEditSchedule(item, selectedDate)} aria-label={`Editar escala de ${item.userName} neste dia`} title="Alterar somente este dia"><Pencil size={15}/></button>}{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
               <span className="sc-record-status">{item.status}</span>
               <p>{item.shiftStart && item.shiftEnd ? `${item.shiftStart} – ${item.shiftEnd}` : item.shift || 'Integral'}{Number(item.plannedHours) > 0 ? ` · ${formatDuration(item.plannedHours)}h` : ''}</p>
               {Number(item.extraHours) > 0 && <p>Extra: {formatDuration(item.extraHours)}h</p>}

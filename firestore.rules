@@ -164,6 +164,8 @@ service cloud.firestore {
       allow write: if false;
       match /{kind}/{id} {
         allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'schedules', 'settings', 'vacancies', 'activities', 'activityTemplates'] && access(company);
+        allow read: if kind == 'scheduleSwapRequests' && access(company) && ((scheduleManager(app, company) && canManageCalendar(app, company))
+          || resource.data.get('requesterId', '') == request.auth.uid || resource.data.get('targetUserId', '') == request.auth.uid);
         allow read: if kind == 'documents' && documentAudience(app, company, resource.data);
         allow read: if kind == 'applications' && (support() || careerManager(app, company));
         allow write: if kind in ['departments', 'roles', 'settings', 'events', 'presence'] && manages(app, company);
@@ -176,6 +178,34 @@ service cloud.firestore {
         allow create, update: if kind == 'settings' && id == 'schedule-rules'
           && scheduleManager(app, company) && canManageScheduleRules(app, company);
         allow create, update, delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company);
+        allow create: if kind == 'scheduleSwapRequests' && member(company)
+          && request.resource.data.keys().hasOnly(['requesterId', 'requesterName', 'sourceScheduleId', 'sourceDate', 'targetUserId', 'targetName', 'targetScheduleId', 'targetDate', 'reason', 'status', 'scheduleSignature', 'createdAt', 'updatedAt'])
+          && request.resource.data.get('requesterId', '') == request.auth.uid
+          && request.resource.data.get('targetUserId', '') != request.auth.uid
+          && request.resource.data.get('status', '') == 'pending_peer'
+          && request.resource.data.get('createdAt', 0) is int && request.resource.data.get('updatedAt', 0) == request.resource.data.get('createdAt', 0)
+          && request.resource.data.get('reason', '') is string && request.resource.data.get('reason', '').size() <= 240
+          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/schedules/$(request.resource.data.get('sourceScheduleId', ''))).data.get('userId', '') == request.auth.uid
+          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/schedules/$(request.resource.data.get('targetScheduleId', ''))).data.get('userId', '') == request.resource.data.get('targetUserId', '')
+          && request.resource.data.get('sourceDate', '') >= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/schedules/$(request.resource.data.get('sourceScheduleId', ''))).data.get('startDate', '')
+          && request.resource.data.get('sourceDate', '') <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/schedules/$(request.resource.data.get('sourceScheduleId', ''))).data.get('endDate', '')
+          && request.resource.data.get('targetDate', '') >= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/schedules/$(request.resource.data.get('targetScheduleId', ''))).data.get('startDate', '')
+          && request.resource.data.get('targetDate', '') <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/schedules/$(request.resource.data.get('targetScheduleId', ''))).data.get('endDate', '');
+        allow update: if kind == 'scheduleSwapRequests' && access(company) && (
+          (resource.data.get('status', '') == 'pending_peer' && resource.data.get('targetUserId', '') == request.auth.uid
+            && request.resource.data.get('status', '') in ['pending_manager', 'rejected']
+            && request.resource.data.get('peerRespondedById', '') == request.auth.uid && request.resource.data.get('updatedAt', 0) is int
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'peerRespondedAt', 'peerRespondedById', 'peerRespondedByName', 'decisionNote']))
+          || (resource.data.get('status', '') in ['pending_peer', 'pending_manager'] && resource.data.get('requesterId', '') == request.auth.uid
+            && request.resource.data.get('status', '') == 'cancelled'
+            && request.resource.data.get('cancelledById', '') == request.auth.uid && request.resource.data.get('updatedAt', 0) is int
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'cancelledAt', 'cancelledById']))
+          || (resource.data.get('status', '') == 'pending_manager' && scheduleManager(app, company) && canManageCalendar(app, company)
+            && request.resource.data.get('status', '') in ['approved', 'rejected']
+            && request.resource.data.get('reviewedById', '') == request.auth.uid && request.resource.data.get('updatedAt', 0) is int
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'reviewedAt', 'reviewedById', 'reviewedByName', 'decisionNote']))
+        );
+        allow delete: if kind == 'scheduleSwapRequests' && false;
         allow create, update, delete: if kind == 'activities' && canManageActivities(app, company);
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));

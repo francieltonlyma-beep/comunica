@@ -35,8 +35,16 @@ test('intervalo possui início e fim próprios e é salvo na escala', () => {
 
 test('cargas e horas extras são exibidas no padrão hh:mm', () => {
   assert.match(app, /const scheduleDurationToText = value =>/);
-  assert.match(app, /type="time" disabled=\{!working \|\| preserved\} min="00:00" max="12:00"/);
+  assert.match(app, /type="time" disabled=\{!working \|\| preserved\} min="00:00" max=\{scheduleDurationToText\(item\.maxExtraHoursPerDay \?\? automaticScheduleRules\.maxExtraHoursPerDay\)\}/);
   assert.match(app, /Meta \{scheduleDurationToText\(item\.target\)\}/);
+});
+
+test('limites operacionais são configuráveis, versionados e vinculados à escala publicada', () => {
+  for (const term of ['minRestHours', 'maxDailyHours', 'maxWeeklyHours', 'maxExtraHoursPerDay', 'limitSeverity', 'Salvar nova versão', 'Ver histórico de versões']) assert.match(app, new RegExp(term));
+  assert.match(app, /rulesVersion: Number\(item\.rulesVersion \|\| automaticScheduleRules\.version \|\| 1\)/);
+  assert.match(app, /profileName: item\.profileName \|\| item\.groupName/);
+  assert.match(editor, /Perfil de jornada deste conjunto/);
+  assert.match(editor, /Herdar padrão/);
 });
 
 test('novo planejamento reaproveita o último padrão individual sem copiar horas extras', () => {

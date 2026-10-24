@@ -17,6 +17,7 @@ import PublishedScheduleEditor from './PublishedScheduleEditor.jsx';
 import PublishedScheduleSwap from './PublishedScheduleSwap.jsx';
 import { canEditPublishedSchedule, planPublishedDayEdit } from './publishedScheduleEdit.js';
 import { planPublishedScheduleSwap } from './publishedScheduleSwap.js';
+import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch } from './scheduleSwapRequests.js';
 import { balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
@@ -92,6 +93,13 @@ const DEFAULT_AUTOMATIC_SCHEDULE_RULES = {
   workDaysPerWeek: 5,
   hoursPerWeek: 40,
   restEveryDays: 7,
+  minRestHours: 11,
+  maxDailyHours: 12,
+  maxWeeklyHours: 44,
+  maxExtraHoursPerDay: 2,
+  limitSeverity: 'blocking',
+  version: 1,
+  versionHistory: [],
   shiftStart: '08:00',
   shiftEnd: '21:00',
   breakStart: '12:00',
@@ -117,6 +125,13 @@ const sanitizeAutomaticScheduleRules = (value = {}) => ({
   workDaysPerWeek: Math.max(1, Math.min(7, Number(value.workDaysPerWeek) || 5)),
   hoursPerWeek: Math.max(1, Math.min(84, Number(value.hoursPerWeek) || 40)),
   restEveryDays: Math.max(2, Math.min(14, Number(value.restEveryDays) || 7)),
+  minRestHours: Math.max(0, Math.min(24, Number.isFinite(Number(value.minRestHours)) ? Number(value.minRestHours) : 11)),
+  maxDailyHours: Math.max(1, Math.min(24, Number(value.maxDailyHours) || 12)),
+  maxWeeklyHours: Math.max(1, Math.min(84, Number(value.maxWeeklyHours) || 44)),
+  maxExtraHoursPerDay: Math.max(0, Math.min(12, Number.isFinite(Number(value.maxExtraHoursPerDay)) ? Number(value.maxExtraHoursPerDay) : 2)),
+  limitSeverity: value.limitSeverity === 'warning' ? 'warning' : 'blocking',
+  version: Math.max(1, Number(value.version) || 1),
+  versionHistory: Array.isArray(value.versionHistory) ? value.versionHistory.slice(-12).map(item => ({ version: Math.max(1, Number(item.version) || 1), savedAt: Number(item.savedAt) || 0, savedBy: String(item.savedBy || '').slice(0, 120), summary: String(item.summary || '').slice(0, 240) })) : [],
   shiftStart: /^\d{2}:\d{2}$/.test(String(value.shiftStart || '')) ? value.shiftStart : '08:00',
   shiftEnd: /^\d{2}:\d{2}$/.test(String(value.shiftEnd || '')) ? value.shiftEnd : '21:00',
   breakStart: /^\d{2}:\d{2}$/.test(String(value.breakStart || '')) ? value.breakStart : '12:00',
@@ -737,6 +752,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [calendarEvents, setCalendarEvents] = useState(() => getLocalStorageItem('comunica_calendar_events', INITIAL_CALENDAR_EVENTS));
   const [absences, setAbsences] = useState(() => getLocalStorageItem('comunica_absences', INITIAL_ABSENCES));
   const [workSchedules, setWorkSchedules] = useState(() => getLocalStorageItem('comunica_work_schedules', []));
+  const [scheduleSwapRequests, setScheduleSwapRequests] = useState(() => getLocalStorageItem('comunica_schedule_swap_requests', []));
   const [deletingScheduleId, setDeletingScheduleId] = useState('');
   const [documentsList, setDocumentsList] = useState(() => getLocalStorageItem('comunica_documents', []));
   const [pollsList, setPollsList] = useState(() => getLocalStorageItem('comunica_polls', []));
@@ -1004,7 +1020,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
   const [publishedScheduleEdit, setPublishedScheduleEdit] = useState(null);
   const [publishedScheduleSwap, setPublishedScheduleSwap] = useState(null);
+  const [publishedScheduleSwapRequest, setPublishedScheduleSwapRequest] = useState(null);
   const [isSavingPublishedSchedule, setIsSavingPublishedSchedule] = useState(false);
+  const [isSavingScheduleSwapRequest, setIsSavingScheduleSwapRequest] = useState(false);
   const [automaticScheduleEditorFocus, setAutomaticScheduleEditorFocus] = useState(null);
   const automaticScheduleInput = JSON.stringify({ company: activeCompany?.id, history: workSchedules, absences, employees: employeesList.map(user => ({ id: user.id, name: user.name, departments: getUserDepts(user) })), rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
   const [automaticSchedulePreviewDate, setAutomaticSchedulePreviewDate] = useState('');
@@ -1749,8 +1767,11 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         return () => {};
       }
       const colRef = getCollectionPath(collectionName);
+      const canSeeAllSwapRequests = currentUser?.isAdmin || currentUser?.isDeveloper || /(coordenador|encarregado|supervis|diretor|gestor|gestao|rh)/i.test(currentUser?.role || '');
       const source = collectionName === 'messages' && dbUser.uid !== 'platform-support-francielton'
         ? query(colRef, or(where('participants', 'array-contains', dbUser.uid), where('senderId', '==', dbUser.uid), where('receiverId', '==', dbUser.uid)))
+        : collectionName === 'scheduleSwapRequests' && !canSeeAllSwapRequests
+          ? query(colRef, or(where('requesterId', '==', dbUser.uid), where('targetUserId', '==', dbUser.uid)))
         : colRef;
       const affectsCoverage = ['users', 'departments', 'schedules', 'absences'].includes(collectionName);
       return onSnapshot(source, { includeMetadataChanges: affectsCoverage }, (snapshot) => {
@@ -1828,6 +1849,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     const unsubEvents = setupSync('events', INITIAL_CALENDAR_EVENTS, setCalendarEvents, 'comunica_calendar_events');
     const unsubAbsences = setupSync('absences', INITIAL_ABSENCES, setAbsences, 'comunica_absences');
     const unsubSchedules = setupSync('schedules', [], setWorkSchedules, 'comunica_work_schedules');
+    const unsubScheduleSwapRequests = setupSync('scheduleSwapRequests', [], setScheduleSwapRequests, 'comunica_schedule_swap_requests');
     const unsubPresence = setupSync('presence', INITIAL_PRESENCE, setPresenceList, 'comunica_presence');
     const unsubDocuments = () => {};
     const unsubPolls = setupSync('polls', [], setPollsList, 'comunica_polls');
@@ -1847,6 +1869,7 @@ setDbLoading(false);
       unsubEvents();
       unsubAbsences();
       unsubSchedules();
+      unsubScheduleSwapRequests();
       unsubPresence();
       unsubDocuments();
       unsubPolls();
@@ -1856,6 +1879,7 @@ setDbLoading(false);
       unsubEvents();
       unsubAbsences();
       unsubSchedules();
+      unsubScheduleSwapRequests();
       unsubPresence();
       unsubDocuments();
       unsubPolls();
@@ -3598,7 +3622,7 @@ const submitPresence = async (e) => {
   const updateAutomaticScheduleRow = (key, changes) => {
     setAutomaticScheduleProposal(previous => previous.map(row => row.key === key && !isProtectedProposalRow(row) ? { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true, locked: true } : row));
   };
-  const changeAutomaticScheduleStatus = (item, status) => { const becomesWorking = ['Presencial', 'Home Office'].includes(status); const start = item.shiftStart || automaticScheduleRules.shiftStart; const breakStart = item.breakStart || automaticScheduleRules.breakStart; const breakEnd = item.breakEnd || automaticScheduleRules.breakEnd; const interval = scheduleIntervalMinutes(breakStart, breakEnd); const baseMinutes = scheduleTimeToMinutes(start) + Math.round((scheduleTextToHours(automaticScheduleWeeklyHoursText) / Number(automaticScheduleRules.workDaysPerWeek)) * 60) + interval; updateAutomaticScheduleRow(item.key, { status, shiftStart: becomesWorking ? start : '', shiftEnd: becomesWorking ? (item.shiftEnd || scheduleMinutesToTime(baseMinutes)) : '', breakStart: becomesWorking ? breakStart : '', breakEnd: becomesWorking ? breakEnd : '', breakMinutes: becomesWorking ? interval : 0, extraHours: becomesWorking ? Number(item.extraHours || 0) : 0 }); };
+  const changeAutomaticScheduleStatus = (item, status) => { const becomesWorking = ['Presencial', 'Home Office'].includes(status); const start = item.shiftStart || automaticScheduleRules.shiftStart; const breakStart = item.breakStart || automaticScheduleRules.breakStart; const breakEnd = item.breakEnd || automaticScheduleRules.breakEnd; const interval = scheduleIntervalMinutes(breakStart, breakEnd); const dailyTarget = Number(item.weekHoursTarget || scheduleTextToHours(automaticScheduleWeeklyHoursText)) / Number(item.workDaysPerWeek || automaticScheduleRules.workDaysPerWeek); const baseMinutes = scheduleTimeToMinutes(start) + Math.round(dailyTarget * 60) + interval; updateAutomaticScheduleRow(item.key, { status, shiftStart: becomesWorking ? start : '', shiftEnd: becomesWorking ? (item.shiftEnd || scheduleMinutesToTime(baseMinutes)) : '', breakStart: becomesWorking ? breakStart : '', breakEnd: becomesWorking ? breakEnd : '', breakMinutes: becomesWorking ? interval : 0, extraHours: becomesWorking ? Number(item.extraHours || 0) : 0 }); };
   const repeatAutomaticScheduleOvertime = source => {
     const extraHours = Math.max(0, Number(source.extraHours) || 0);
     setAutomaticScheduleProposal(previous => previous.map(row => (
@@ -3627,6 +3651,7 @@ const submitPresence = async (e) => {
     if (normalized.workDaysPerWeek >= normalized.restEveryDays) {
       return triggerNotification('As regras são incompatíveis: o descanso deve ocorrer depois dos dias previstos de trabalho.', 'error');
     }
+    if (normalized.hoursPerWeek > normalized.maxWeeklyHours) return triggerNotification('A carga semanal não pode superar o limite semanal configurado.', 'error');
     const operationMinutes = scheduleIntervalMinutes(normalized.shiftStart, normalized.shiftEnd);
     if (!normalized.shiftStart || !normalized.shiftEnd || operationMinutes <= intervalMinutes || !scheduleTimeWithinShift(normalized.breakStart, normalized.shiftStart, normalized.shiftEnd) || !scheduleTimeWithinShift(normalized.breakEnd, normalized.shiftStart, normalized.shiftEnd)) {
       return triggerNotification('A saída padrão deve ser posterior à entrada e comportar o intervalo informado.', 'error');
@@ -3634,17 +3659,23 @@ const submitPresence = async (e) => {
     if (normalized.allowedWeekdays.length < normalized.workDaysPerWeek) {
       return triggerNotification('Libere dias da semana suficientes para a quantidade de dias trabalhados.', 'error');
     }
+    const regularDailyHours = (operationMinutes - intervalMinutes) / 60;
+    if (regularDailyHours > normalized.maxDailyHours) return triggerNotification('A jornada padrão supera o limite diário configurado.', 'error');
+    const nextVersion = Number(automaticScheduleRules.version || 1) + 1;
+    const savedAt = Date.now();
+    const persisted = { ...normalized, version: nextVersion, versionHistory: [...(normalized.versionHistory || []), { version: nextVersion, savedAt, savedBy: currentUser.name, summary: `${normalized.workDaysPerWeek} dias · ${scheduleDurationToText(normalized.hoursPerWeek)}h semanais · descanso mínimo ${normalized.minRestHours}h` }].slice(-12) };
     setIsSavingScheduleRules(true);
     const saved = await saveDoc('settings', 'schedule-rules', {
-      ...normalized,
-      updatedAt: Date.now(),
+      ...persisted,
+      updatedAt: savedAt,
       updatedBy: currentUser.name,
     });
     setIsSavingScheduleRules(false);
     if (!saved) return;
-    setAutomaticScheduleRules(normalized);
-    setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(normalized.hoursPerWeek));
-    triggerNotification('Regras da escala salvas para os próximos planejamentos.');
+    setAutomaticScheduleRules(persisted);
+    setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(persisted.hoursPerWeek));
+    setAutomaticScheduleProposal([]);
+    triggerNotification(`Versão ${nextVersion} das regras salva para os próximos planejamentos.`);
   };
 
   const saveScheduleCoverageRequirements = async requirements => {
@@ -3653,8 +3684,10 @@ const submitPresence = async (e) => {
     const normalized = normalizeCoverageRequirements(requirements);
     const error = validateCoverageRequirements(normalized, departmentsList);
     if (error) { triggerNotification(error, 'error'); return false; }
-    const saved = await saveDoc('settings', 'schedule-rules', { coverageRequirements: normalized, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
-    if (saved) triggerNotification('Necessidade de pessoas salva. A cobertura foi atualizada no calendário.');
+    const version = Number(automaticScheduleRules.version || 1) + 1, savedAt = Date.now();
+    const versionHistory = [...(automaticScheduleRules.versionHistory || []), { version, savedAt, savedBy: currentUser.name, summary: `${normalized.length} faixa(s) de cobertura configurada(s)` }].slice(-12);
+    const saved = await saveDoc('settings', 'schedule-rules', { coverageRequirements: normalized, version, versionHistory, updatedAt: serverTimestamp(), updatedBy: currentUser.name });
+    if (saved) { setAutomaticScheduleRules(previous => ({ ...previous, coverageRequirements: normalized, version, versionHistory })); setAutomaticScheduleProposal([]); triggerNotification(`Necessidade de pessoas salva na versão ${version}. A cobertura foi atualizada.`); }
     return saved;
   };
 
@@ -3671,7 +3704,7 @@ const submitPresence = async (e) => {
         const target = Number(rows[0].weekHoursTarget) || 0;
         let remaining = Math.max(0, target - rows.reduce((sum, row) => sum + automaticScheduleRowHours(row).total, 0));
         rows.filter(row => ['Presencial', 'Home Office'].includes(row.status) && !isFixedProposalRow(row)).reverse().forEach(row => {
-          const assigned = Math.min(Math.max(0, 4 - Number(row.extraHours || 0)), remaining);
+          const assigned = Math.min(Math.max(0, Number(row.maxExtraHoursPerDay ?? automaticScheduleRules.maxExtraHoursPerDay) - Number(row.extraHours || 0)), remaining);
           if (assigned > 0) { row.extraHours = Number((Number(row.extraHours || 0) + assigned).toFixed(2)); row.autoExtra = true; remaining -= assigned; }
         });
         rows.forEach(row => { row.unallocatedHours = Number(Math.max(0, remaining).toFixed(2)); });
@@ -3782,6 +3815,9 @@ const submitPresence = async (e) => {
             sourceScheduleId: latestWorkSchedule?.id || '',
             holiday, holidayDaysInWeek: holidayDays.length,
             weekKey, weekHoursTarget: Number(targetWeekHours.toFixed(2)), plannedWorkDays,
+            minRestHours: automaticScheduleRules.minRestHours, maxDailyHours: automaticScheduleRules.maxDailyHours, maxWeeklyHours: automaticScheduleRules.maxWeeklyHours,
+            maxExtraHoursPerDay: automaticScheduleRules.maxExtraHoursPerDay, limitSeverity: automaticScheduleRules.limitSeverity,
+            rulesVersion: automaticScheduleRules.version, rulesName: automaticScheduleRules.name, profileName: 'Padrão da empresa',
           });
         });
         if (automaticScheduleRules.calculateExtraAutomatically) {
@@ -3789,7 +3825,7 @@ const submitPresence = async (e) => {
           let remainingExtra = Math.max(0, targetWeekHours - baseHours);
           weekRows.filter(row => ['Presencial', 'Home Office'].includes(row.status)).reverse().forEach(row => {
             if (remainingExtra <= 0) return;
-            const assigned = Math.min(4, remainingExtra);
+            const assigned = Math.min(Number(automaticScheduleRules.maxExtraHoursPerDay) || 0, remainingExtra);
             row.extraHours = Number(assigned.toFixed(2));
             row.autoExtra = assigned > 0;
             remainingExtra -= assigned;
@@ -3831,13 +3867,17 @@ const submitPresence = async (e) => {
       const hours = automaticScheduleRowHours(item);
       const previous = segments[segments.length - 1];
       const nextDate = previous ? civilDateShift(previous.endDate, { days: 1 }) : '';
-      if (previous && previous.locked === Boolean(item.locked || item.manuallyAdjusted) && previous.manuallyAdjusted === Boolean(item.manuallyAdjusted) && previous.ruleApplied === Boolean(item.ruleApplied) && previous.ruleReason === (item.ruleReason || '') && previous.ruleGroupId === (item.groupId || '') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
+      if (previous && previous.locked === Boolean(item.locked || item.manuallyAdjusted) && previous.manuallyAdjusted === Boolean(item.manuallyAdjusted) && previous.ruleApplied === Boolean(item.ruleApplied) && previous.ruleReason === (item.ruleReason || '') && previous.ruleGroupId === (item.groupId || '') && previous.rulesVersion === Number(item.rulesVersion || automaticScheduleRules.version || 1) && previous.profileName === (item.profileName || item.groupName || 'Padrão da empresa') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
         previous.endDate = item.date;
       } else {
         segments.push({
           id: `schedule-${item.userId}-${item.date}-${item.date}`,
           userId: item.userId, userName: item.userName, dept: item.dept,
           ruleReason: item.ruleReason || '', ruleGroupId: item.groupId || '', ruleGroupName: item.groupName || '',
+          rulesVersion: Number(item.rulesVersion || automaticScheduleRules.version || 1), rulesName: item.rulesName || automaticScheduleRules.name, profileName: item.profileName || item.groupName || 'Padrão da empresa',
+          restEveryDays: Number(item.restEveryDays || automaticScheduleRules.restEveryDays), workDaysPerWeek: Number(item.workDaysPerWeek || automaticScheduleRules.workDaysPerWeek),
+          minRestHours: Number(item.minRestHours ?? automaticScheduleRules.minRestHours), maxDailyHours: Number(item.maxDailyHours || automaticScheduleRules.maxDailyHours),
+          maxWeeklyHours: Number(item.maxWeeklyHours || automaticScheduleRules.maxWeeklyHours), maxExtraHoursPerDay: Number(item.maxExtraHoursPerDay ?? automaticScheduleRules.maxExtraHoursPerDay), limitSeverity: item.limitSeverity || automaticScheduleRules.limitSeverity,
           ruleApplied: Boolean(item.ruleApplied), manuallyAdjusted: Boolean(item.manuallyAdjusted), locked: Boolean(item.locked || item.manuallyAdjusted),
           startDate: item.date, endDate: item.date, status: item.status,
           shift: ['Presencial', 'Home Office'].includes(item.status) ? `${item.shiftStart}–${hours.actualEnd}` : item.status,
@@ -3925,6 +3965,87 @@ const submitPresence = async (e) => {
     if (!canEditPublishedSchedule(source) || !schedulePlanningDataReady()) return triggerNotification('Aguarde os dados da empresa. A troca usa apenas escalas publicadas.', 'error');
     setPublishedScheduleSwap({ source, date, companyId: activeCompany.id, history: workSchedules, absences, rules: automaticScheduleRules });
   };
+  const openPublishedScheduleSwapRequest = (source, date) => {
+    if (String(source?.userId) !== String(currentUser?.id) || !canEditPublishedSchedule(source)) return triggerNotification('Você só pode solicitar a troca de um dia da sua própria escala.', 'error');
+    if (!schedulePlanningDataReady()) return triggerNotification('Aguarde o carregamento completo do calendário.', 'error');
+    setPublishedScheduleSwapRequest({ source, date, companyId: activeCompany.id, history: workSchedules, absences, rules: automaticScheduleRules });
+  };
+  const submitPublishedScheduleSwapRequest = async ({ target, targetDate, reason }) => {
+    if (isSavingScheduleSwapRequest || !publishedScheduleSwapRequest || !isFirebaseAvailable || !dbUser) return false;
+    const request = publishedScheduleSwapRequest;
+    if (request.companyId !== activeCompany?.id || String(request.source.userId) !== String(currentUser?.id) || scheduleSignature(workSchedules) !== scheduleSignature(request.history)) { triggerNotification('A escala mudou. Feche e abra novamente para solicitar a troca.', 'error'); return false; }
+    let data;
+    try { data = buildScheduleSwapRequest({ id: `swap-${globalThis.crypto.randomUUID()}`, source: request.source, sourceDate: request.date, target, targetDate, requester: currentUser, reason, history: workSchedules, absences, rules: automaticScheduleRules, existing: scheduleSwapRequests, now: Date.now() }); }
+    catch (error) { triggerNotification(error.message, 'error'); return false; }
+    setIsSavingScheduleSwapRequest(true);
+    try {
+      const { id, ...payload } = data;
+      await setDoc(doc(getTenantCollection('scheduleSwapRequests'), id), payload);
+      await recordAuditEvent({ action: 'schedule.swap_requested', collectionName: 'scheduleSwapRequests', documentId: id, fields: Object.keys(payload) });
+      setPublishedScheduleSwapRequest(null);
+      triggerNotification(`Solicitação enviada para ${target.userName}.`);
+      return true;
+    } catch (error) {
+      console.error('Falha ao solicitar troca de escala', error);
+      triggerNotification('Não foi possível enviar a solicitação. Nada foi alterado.', 'error');
+      return false;
+    } finally { setIsSavingScheduleSwapRequest(false); }
+  };
+  const updateScheduleSwapRequest = async (request, action) => {
+    if (isSavingScheduleSwapRequest || !request?.id || !isFirebaseAvailable || !dbUser) return false;
+    const managerAction = action === 'reject-manager';
+    if (managerAction && ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && effectiveAccessProfile.canManageCalendar === false))) return triggerNotification('Seu perfil não pode decidir solicitações de troca.', 'error');
+    let patch;
+    try { patch = swapRequestPatch(request, action, currentUser, Date.now()); }
+    catch (error) { triggerNotification(error.message, 'error'); return false; }
+    setIsSavingScheduleSwapRequest(true);
+    try {
+      await updateDoc(doc(getTenantCollection('scheduleSwapRequests'), request.id), patch);
+      await recordAuditEvent({ action: `schedule.swap_${patch.status}`, collectionName: 'scheduleSwapRequests', documentId: request.id, fields: Object.keys(patch) });
+      triggerNotification(patch.status === 'pending_manager' ? 'Troca aceita e enviada ao gestor.' : patch.status === 'cancelled' ? 'Solicitação cancelada.' : 'Solicitação recusada.');
+      return true;
+    } catch (error) {
+      console.error('Falha ao atualizar solicitação de troca', error);
+      triggerNotification('Não foi possível atualizar a solicitação.', 'error');
+      return false;
+    } finally { setIsSavingScheduleSwapRequest(false); }
+  };
+  const reviewScheduleSwapRequest = request => {
+    if (!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) return triggerNotification('Apenas gestores podem aprovar trocas.', 'error');
+    const resolved = resolveScheduleSwapRequest(request, workSchedules);
+    if (!resolved.valid) return triggerNotification(resolved.message, 'error');
+    setPublishedScheduleSwap({ source: resolved.source, date: request.sourceDate, targetUserId: request.targetUserId, targetDate: request.targetDate, reason: request.reason, requestId: request.id, requestUpdatedAt: request.updatedAt, companyId: activeCompany.id, history: workSchedules, absences, rules: automaticScheduleRules });
+  };
+  const saveApprovedScheduleSwap = async (plan, swap) => {
+    const finishActivity = typeof beginCloudActivity === 'function' ? (beginCloudActivity('Aprovando troca de escala...'), endCloudActivity) : () => {};
+    try {
+      if (!isFirebaseAvailable || !dbUser || plan.records.length > 450 || plan.records.some(record => record.collection !== 'schedules')) throw new Error('Aprovação inválida.');
+      const schedulesCollection = getTenantCollection('schedules');
+      const requestsCollection = getTenantCollection('scheduleSwapRequests');
+      const fresh = await getDocsFromServer(schedulesCollection);
+      const currentSchedules = fresh.docs.map(item => ({ id: item.id, ...item.data() }));
+      if (scheduleSignature(currentSchedules) !== scheduleSignature(swap.history)) throw Object.assign(new Error('Escalas alteradas durante a revisão'), { code: 'planning-stale' });
+      const approvedAt = Date.now();
+      await runTransaction(db, async transaction => {
+        const requestRef = doc(requestsCollection, swap.requestId);
+        const [requestSnapshot, ...checks] = await Promise.all([transaction.get(requestRef), ...plan.replaced.map(item => transaction.get(doc(schedulesCollection, item.id)))]);
+        if (!requestSnapshot.exists() || requestSnapshot.data().status !== 'pending_manager' || Number(requestSnapshot.data().updatedAt) !== Number(swap.requestUpdatedAt)) throw Object.assign(new Error('Solicitação alterada durante a revisão'), { code: 'planning-stale' });
+        if (checks.some((snapshot, index) => !snapshot.exists() || scheduleSignature([{ id: snapshot.id, ...snapshot.data() }]) !== scheduleSignature([plan.replaced[index]]))) throw Object.assign(new Error('Uma escala foi alterada durante a aprovação'), { code: 'planning-stale' });
+        for (const record of plan.records) {
+          const reference = doc(schedulesCollection, record.id);
+          if (record.operation === 'delete') transaction.delete(reference);
+          else transaction.set(reference, record.data);
+        }
+        transaction.update(requestRef, { status: 'approved', reviewedAt: approvedAt, reviewedById: String(currentUser.id || dbUser.uid), reviewedByName: currentUser.name || 'Gestor', updatedAt: approvedAt });
+      });
+      await Promise.all([...plan.records.map(record => recordAuditEvent({ action: record.operation === 'delete' ? 'record.deleted' : record.operation === 'update' ? 'record.updated' : 'record.created', collectionName: 'schedules', documentId: record.id, fields: Object.keys(record.data || {}) })), recordAuditEvent({ action: 'schedule.swap_approved', collectionName: 'scheduleSwapRequests', documentId: swap.requestId, fields: ['status', 'reviewedAt', 'reviewedById', 'reviewedByName'] })]);
+      return true;
+    } catch (error) {
+      console.error('Falha ao aprovar troca de escala', error);
+      triggerNotification(error?.code === 'planning-stale' ? 'A solicitação ou a escala mudou em outra sessão. Nada foi alterado.' : 'Não foi possível aprovar a troca. Nenhum dia foi alterado.', 'error');
+      return false;
+    } finally { finishActivity(); }
+  };
   const savePublishedScheduleSwap = async ({ target, targetDate, reason }) => {
     if (isSavingPublishedSchedule || !publishedScheduleSwap) return false;
     if ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) { triggerNotification('Seu perfil não pode trocar escalas.', 'error'); return false; }
@@ -3936,9 +4057,12 @@ const submitPresence = async (e) => {
     catch (error) { triggerNotification(error.message, 'error'); return false; }
     setIsSavingPublishedSchedule(true);
     try {
-      if (!await saveRelatedRecords(plan.records, 'Não foi possível salvar a troca. Nenhum dia foi alterado; sua revisão foi preservada.', { companyId: swap.companyId, history: swap.history, replaced: plan.replaced })) return false;
+      const saved = swap.requestId
+        ? await saveApprovedScheduleSwap(plan, swap)
+        : await saveRelatedRecords(plan.records, 'Não foi possível salvar a troca. Nenhum dia foi alterado; sua revisão foi preservada.', { companyId: swap.companyId, history: swap.history, replaced: plan.replaced });
+      if (!saved) return false;
       setPublishedScheduleSwap(null);
-      triggerNotification('Troca salva nos dois dias. O restante das escalas foi preservado.');
+      triggerNotification(swap.requestId ? 'Solicitação aprovada e troca aplicada nos dois dias.' : 'Troca salva nos dois dias. O restante das escalas foi preservado.');
       return true;
     } finally { setIsSavingPublishedSchedule(false); }
   };
@@ -4843,7 +4967,7 @@ try {
       <td className="px-2 py-2"><input aria-label={`Saída base de ${item.userName}`} type="time" disabled={!working || preserved} value={item.shiftEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { shiftEnd: event.target.value })} className={fieldClass} /></td>
       <td className="px-2 py-2"><input aria-label={`Início do intervalo de ${item.userName}`} type="time" disabled={!working || preserved} value={item.breakStart || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakStart: event.target.value, breakMinutes: scheduleIntervalMinutes(event.target.value, item.breakEnd) })} className={fieldClass} /></td>
       <td className="px-2 py-2"><input aria-label={`Fim do intervalo de ${item.userName}`} type="time" disabled={!working || preserved} value={item.breakEnd || ''} onChange={event => updateAutomaticScheduleRow(item.key, { breakEnd: event.target.value, breakMinutes: scheduleIntervalMinutes(item.breakStart, event.target.value) })} className={fieldClass} /></td>
-      <td className="px-2 py-2"><div className="flex items-center gap-1"><input aria-label={`Hora extra de ${item.userName}`} type="time" disabled={!working || preserved} min="00:00" max="12:00" value={scheduleDurationToText(item.extraHours)} onChange={event => updateAutomaticScheduleRow(item.key, { extraHours: scheduleTextToHours(event.target.value) })} className={fieldClass} /><button type="button" disabled={!working || preserved || !(Number(item.extraHours) > 0)} onClick={() => repeatAutomaticScheduleOvertime(item)} title="Repetir a hora extra nos próximos dias de trabalho" className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-2 font-bold text-violet-700 disabled:cursor-not-allowed disabled:opacity-30">Repetir →</button></div></td>
+      <td className="px-2 py-2"><div className="flex items-center gap-1"><input aria-label={`Hora extra de ${item.userName}`} type="time" disabled={!working || preserved} min="00:00" max={scheduleDurationToText(item.maxExtraHoursPerDay ?? automaticScheduleRules.maxExtraHoursPerDay)} value={scheduleDurationToText(item.extraHours)} onChange={event => updateAutomaticScheduleRow(item.key, { extraHours: scheduleTextToHours(event.target.value) })} className={fieldClass} /><button type="button" disabled={!working || preserved || !(Number(item.extraHours) > 0)} onClick={() => repeatAutomaticScheduleOvertime(item)} title="Repetir a hora extra nos próximos dias de trabalho" className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-2 font-bold text-violet-700 disabled:cursor-not-allowed disabled:opacity-30">Repetir →</button></div></td>
       <td className="px-2 py-2"><strong className="block text-xs text-slate-800">{working ? hours.actualEnd : '—'}</strong><span className="text-[8px] text-slate-400">saída final</span></td>
       <td className="px-3 py-2 text-right"><strong className="block text-sm text-slate-900">{working ? scheduleDurationToText(hours.total) : '—'}</strong>{working && <span className="text-[8px] text-slate-400">base {scheduleDurationToText(hours.regular)} + extra {scheduleDurationToText(hours.extra)}</span>}</td>
     </tr>;
@@ -6142,7 +6266,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     }
     triggerNotification('Permissões atualizadas e registradas na auditoria.');
   };
-  const auditCollectionLabels = { users: 'Colaboradores', announcements: 'Avisos', posts: 'Publicações', documents: 'Documentos', polls: 'Enquetes', events: 'Calendário', absences: 'Ausências', presence: 'Presença', schedules: 'Escalas', vacancies: 'Vagas', applications: 'Candidaturas', messages: 'Conversas', settings: 'Configurações', roles: 'Cargos', departments: 'Setores', productivity: 'Produtividade' };
+  const auditCollectionLabels = { users: 'Colaboradores', announcements: 'Avisos', posts: 'Publicações', documents: 'Documentos', polls: 'Enquetes', events: 'Calendário', absences: 'Ausências', presence: 'Presença', schedules: 'Escalas', scheduleSwapRequests: 'Solicitações de troca', vacancies: 'Vagas', applications: 'Candidaturas', messages: 'Conversas', settings: 'Configurações', roles: 'Cargos', departments: 'Setores', productivity: 'Produtividade' };
   const auditActionLabels = {
     'record.created': 'criou um registro',
     'record.saved': 'salvou informações',
@@ -6150,6 +6274,11 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     'record.deleted': 'excluiu um registro',
     'conversation.created': 'abriu uma conversa',
     'security.pin_changed': 'alterou o próprio PIN',
+    'schedule.swap_requested': 'solicitou uma troca de escala',
+    'schedule.swap_pending_manager': 'aceitou uma troca de escala',
+    'schedule.swap_approved': 'aprovou uma troca de escala',
+    'schedule.swap_rejected': 'recusou uma troca de escala',
+    'schedule.swap_cancelled': 'cancelou uma troca de escala',
   };
   const auditFieldLabels = {
     name: 'nome', role: 'cargo', depts: 'setores', dept: 'setor', managerId: 'gestor responsável', description: 'descrição', title: 'título', content: 'conteúdo', status: 'situação', dueDate: 'prazo', participants: 'participantes', ticketNumber: 'número do ticket', permissions: 'permissões', readBy: 'confirmações de leitura', likedBy: 'curtidas', savedBy: 'mensagens salvas', highlightedBy: 'destaques', activity: 'atividade e checklist', likes: 'total de curtidas', date: 'data', startDate: 'data inicial', endDate: 'data final', schedule: 'escala', roleId: 'cargo vinculado', roleName: 'nome do cargo', category: 'categoria', folder: 'pasta', requiredRead: 'leitura obrigatória', reviewDate: 'próxima revisão', accessMode: 'público autorizado', allowedUserIds: 'colaboradores autorizados', questions: 'perguntas', options: 'opções', password: 'senha', pin: 'PIN', pushTokens: 'dispositivos de notificação', serviceCategory: 'categoria do serviço', servicePriority: 'prioridade da solicitação', serviceStatus: 'etapa do atendimento', serviceDecision: 'decisão de aprovação', serviceDecisionBy: 'responsável pela decisão', serviceAssigneeId: 'responsável atribuído', serviceAssigneeName: 'nome do responsável', serviceStartedAt: 'início do atendimento', serviceWaitingSince: 'aguardando solicitante desde', servicePromisedDate: 'previsão informada', serviceProgress: 'andamento', serviceProgressNote: 'atualização do atendimento',
@@ -8247,12 +8376,13 @@ const handleDownload = async (fileUrl, fileName) => {
               canWrite={Boolean(currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))}
               deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule} onEditSchedule={openPublishedScheduleEdit}
               onSwapSchedule={openPublishedScheduleSwap}
+              onRequestSwap={openPublishedScheduleSwapRequest} swapRequests={scheduleSwapRequests} swapRequestBusy={isSavingScheduleSwapRequest || isSavingPublishedSchedule} onSwapRequestAction={updateScheduleSwapRequest} onReviewSwapRequest={reviewScheduleSwapRequest}
               onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
               coverageRequirements={automaticScheduleRules.coverageRequirements}
               coverageReady={scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready')} coverageError={scheduleCoverageError || (Object.values(scheduleCoverageSources).includes('error') ? 'Não foi possível carregar todos os dados da cobertura. Confira sua conexão e atualize a página.' : '')}
               canConfigureCoverage={Boolean(canConfigureScheduleRules && (isManager || currentUser.isDeveloper))} onSaveCoverage={saveScheduleCoverageRequirements}
               onPlan={openBulkSchedule} formatDuration={scheduleDurationToText} presence={teamPresenceList}
-              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal || Boolean(publishedScheduleEdit) || Boolean(publishedScheduleSwap)}
+              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal || Boolean(publishedScheduleEdit) || Boolean(publishedScheduleSwap) || Boolean(publishedScheduleSwapRequest)}
               onAbsence={() => {
                 setNewAbsence(previous => ({ ...previous, targetUserId: currentUser.id, startDate: selectedCalendarDay, endDate: selectedCalendarDay }));
                 setShowAbsenceModal(true);
@@ -9523,7 +9653,8 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {publishedScheduleEdit && publishedScheduleEdit.companyId === activeCompany?.id && <PublishedScheduleEditor key={`${publishedScheduleEdit.source.id}|${publishedScheduleEdit.date}`} edit={publishedScheduleEdit} context={{ history: publishedScheduleEdit.history, absences: publishedScheduleEdit.absences, rules: publishedScheduleEdit.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleEdit.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleEdit.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleEdit.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleEdit} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleEdit(null); }} />}
-      {publishedScheduleSwap && publishedScheduleSwap.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwap.source.id}|${publishedScheduleSwap.date}`} swap={publishedScheduleSwap} context={{ history: publishedScheduleSwap.history, absences: publishedScheduleSwap.absences, rules: publishedScheduleSwap.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} employees={employeesList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwap.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwap.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleSwap} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleSwap(null); }} />}
+      {publishedScheduleSwap && publishedScheduleSwap.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwap.source.id}|${publishedScheduleSwap.date}`} mode={publishedScheduleSwap.requestId ? 'approval' : 'apply'} swap={publishedScheduleSwap} context={{ history: publishedScheduleSwap.history, absences: publishedScheduleSwap.absences, rules: publishedScheduleSwap.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} employees={employeesList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwap.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwap.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleSwap} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleSwap(null); }} />}
+      {publishedScheduleSwapRequest && publishedScheduleSwapRequest.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwapRequest.source.id}|${publishedScheduleSwapRequest.date}|request`} mode="request" swap={publishedScheduleSwapRequest} context={{ history: publishedScheduleSwapRequest.history, absences: publishedScheduleSwapRequest.absences, rules: publishedScheduleSwapRequest.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} employees={employeesList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwapRequest.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwapRequest.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwapRequest.rules)} disabled={isSavingScheduleSwapRequest} onSave={submitPublishedScheduleSwapRequest} onClose={() => { if (!isSavingScheduleSwapRequest) setPublishedScheduleSwapRequest(null); }} />}
       {showBulkScheduleModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -9552,13 +9683,21 @@ const handleDownload = async (fileUrl, fileName) => {
                     <label className="text-[9px] font-bold uppercase text-slate-600">Início do intervalo<input type="time" value={automaticScheduleRules.breakStart} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, breakStart: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
                     <label className="text-[9px] font-bold uppercase text-slate-600">Fim do intervalo<input type="time" value={automaticScheduleRules.breakEnd} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, breakEnd: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label>
                   </div>
+                  <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Descanso entre jornadas (h)<input type="number" min="0" max="24" step="0.5" value={automaticScheduleRules.minRestHours} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, minRestHours: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs"/></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Máximo diário (h)<input type="number" min="1" max="24" step="0.5" value={automaticScheduleRules.maxDailyHours} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, maxDailyHours: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs"/></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Máximo semanal (h)<input type="number" min="1" max="84" step="0.5" value={automaticScheduleRules.maxWeeklyHours} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, maxWeeklyHours: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs"/></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Máximo extra por dia (h)<input type="number" min="0" max="12" step="0.5" value={automaticScheduleRules.maxExtraHoursPerDay} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, maxExtraHoursPerDay: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs"/></label>
+                    <label className="text-[9px] font-bold uppercase text-slate-600">Quando exceder<select value={automaticScheduleRules.limitSeverity} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, limitSeverity: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs"><option value="blocking">Bloquear publicação</option><option value="warning">Exibir aviso</option></select></label>
+                    <p className="text-[9px] leading-4 text-amber-900 sm:col-span-2 lg:col-span-5">Parâmetros operacionais configuráveis. Confira a política da empresa e a orientação profissional aplicável antes de usá-los como bloqueios.</p>
+                  </div>
                   <div className="rounded-xl border border-slate-200 bg-white/80 p-3"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Dias em que a operação pode escalar pessoas</strong><p className="text-[9px] leading-4 text-slate-500">As folgas serão distribuídas entre os dias liberados, em rodízio por colaborador.</p></div><span className="text-[9px] font-bold text-slate-500">{automaticScheduleRules.allowedWeekdays.length} dia(s) liberado(s)</span></div><div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">{SCHEDULE_WEEKDAYS.map(day => { const active = automaticScheduleRules.allowedWeekdays.includes(day.value); return <button type="button" key={day.value} onClick={() => setAutomaticScheduleRules(previous => ({ ...previous, allowedWeekdays: active ? previous.allowedWeekdays.filter(value => value !== day.value) : [...previous.allowedWeekdays, day.value].sort() }))} className={`rounded-lg border px-2 py-2 text-[10px] font-black ${active ? 'border-cyan-300 bg-cyan-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>{day.label}</button>; })}</div></div>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.holidaysCountAsRest ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.holidaysCountAsRest} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, holidaysCountAsRest: event.target.checked }))} className="mt-0.5 accent-amber-700" /><span><strong className="block text-[10px] text-slate-800">Feriado conta como descanso</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Quando ativo, um feriado reduz a necessidade de outra folga naquela semana.</small></span></label>
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.reuseLastSchedule ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.reuseLastSchedule} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, reuseLastSchedule: event.target.checked }))} className="mt-0.5 accent-emerald-700" /><span><strong className="block text-[10px] text-slate-800">Reutilizar o último padrão individual</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Mantém entrada, saída e intervalo usados anteriormente por cada colaborador. Horas extras não são copiadas.</small></span></label>
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.calculateExtraAutomatically ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" disabled={Boolean(automaticScheduleRules.ruleGroups?.length)} checked={!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, calculateExtraAutomatically: event.target.checked }))} className="mt-0.5 accent-violet-700" /><span><strong className="block text-[10px] text-slate-800">Calcular complemento automaticamente</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Se a jornada prevista ficar abaixo da carga semanal, o saldo é sugerido como hora extra para revisão.</small></span></label>
                   </div>
-                  <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Regra persistente da empresa</strong><p className="mt-0.5 text-[9px] leading-4 text-slate-500">Ao salvar, estes critérios serão carregados automaticamente no próximo planejamento.</p></div><button type="button" disabled={isSavingScheduleRules} onClick={saveAutomaticScheduleRules} className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingScheduleRules ? <LoaderCircle className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Check className="mr-1.5 inline h-4 w-4" />}{isSavingScheduleRules ? 'Salvando...' : 'Salvar regras'}</button></div>
+                  <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Regra persistente da empresa · versão {automaticScheduleRules.version || 1}</strong><p className="mt-0.5 text-[9px] leading-4 text-slate-500">Ao salvar, uma nova versão será registrada e vinculada às escalas publicadas.</p>{automaticScheduleRules.versionHistory?.length > 0 && <details className="mt-2"><summary className="cursor-pointer text-[9px] font-bold text-cyan-800">Ver histórico de versões</summary><div className="mt-2 space-y-1">{automaticScheduleRules.versionHistory.slice().reverse().map(item => <p key={`${item.version}-${item.savedAt}`} className="text-[9px] text-slate-500">v{item.version} · {new Date(item.savedAt).toLocaleString('pt-BR')} · {item.savedBy || 'Responsável não informado'} · {item.summary}</p>)}</div></details>}</div><button type="button" disabled={isSavingScheduleRules} onClick={saveAutomaticScheduleRules} className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingScheduleRules ? <LoaderCircle className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Check className="mr-1.5 inline h-4 w-4" />}{isSavingScheduleRules ? 'Salvando...' : 'Salvar nova versão'}</button></div>
                 </div> : automaticScheduleRuleTab === 'team' && canConfigureScheduleRules ? <div className="space-y-4 p-4">
                   <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3"><h5 className="text-xs font-bold text-cyan-950">Conjunto de cada colaborador</h5><p className="mt-1 text-[11px] text-cyan-800">Escolha o conjunto que define os dias, folgas e jornadas especiais de cada pessoa.</p><div className="mt-3 grid max-h-64 gap-3 overflow-auto sm:grid-cols-2">{employeesList.map(user => <label key={user.id} className="text-xs font-bold text-slate-700">{user.name}<select className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs" value={(automaticScheduleRules.ruleGroups || []).find(group => group.userIds.includes(String(user.id)))?.id || ''} onChange={event => { const targetGroup = event.target.value; setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups: (previous.ruleGroups || []).map(group => ({ ...group, userIds: group.id === targetGroup ? [...new Set([...group.userIds, String(user.id)])] : group.userIds.filter(id => id !== String(user.id)) })) })); setAutomaticScheduleProposal([]); }}><option value="">Padrão da empresa</option>{(automaticScheduleRules.ruleGroups || []).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>)}</div></div>
                   <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><strong className="text-[11px] text-emerald-950">Ajustes individuais da jornada base</strong><p className="mt-1 text-[9px] leading-4 text-emerald-800">Estes horários ajustam a jornada base da pessoa. Para folgas, revezamentos ou mudanças em qualquer dia, use as regras individuais dentro do conjunto.</p></div>

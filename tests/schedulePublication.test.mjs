@@ -18,6 +18,7 @@ function publicationContext(saved = true) {
   const context = {
     crypto: webcrypto, isSavingScheduleProposal: false, isManager: true, currentUser: { isAdmin: true, name: 'Admin' },
     effectiveAccessProfile: {}, schedulePlanningDataReady: () => true,
+    automaticScheduleRules: { name: 'Regra padrão da empresa', version: 1, restEveryDays: 7, workDaysPerWeek: 5, minRestHours: 11, maxDailyHours: 12, maxWeeklyHours: 44, maxExtraHoursPerDay: 2, limitSeverity: 'blocking' },
     automaticScheduleInput: 'same', automaticScheduleProposalInput: 'same',
     automaticScheduleProposal: prepareScheduleProposal(rows, { history }), workSchedules: history, activeCompany: { id: 'company' },
     isProtectedProposalRow, scheduleRuleIssues, planSchedulePublication,

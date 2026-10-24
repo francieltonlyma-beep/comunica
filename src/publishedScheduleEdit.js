@@ -36,7 +36,9 @@ export function publishedEditIssues(source, draft, date, { history = [], absence
     if (absences.some(item => String(item.userId) === String(source.userId) && active(item, date) && (!item.startTime || !item.endTime || item.startTime === item.endTime))) return ['Esta pessoa tem uma ausência de dia inteiro. Ajuste a ausência no calendário antes de marcar trabalho.'];
   }
   return scheduleRuleIssues([{ ...draft, key: 'published-edit', userId: String(source.userId), userName: source.userName, date,
-    restEveryDays: Number(rules.restEveryDays) || 7 }], history).filter(issue => issue.blocking).map(issue => issue.message);
+    restEveryDays: Number(source.restEveryDays || rules.restEveryDays) || 7, minRestHours: Number(source.minRestHours ?? rules.minRestHours) || 0,
+    maxDailyHours: Number(source.maxDailyHours || rules.maxDailyHours) || 24, maxWeeklyHours: Number(source.maxWeeklyHours || rules.maxWeeklyHours) || 84,
+    maxExtraHoursPerDay: Number(source.maxExtraHoursPerDay ?? rules.maxExtraHoursPerDay ?? 12), limitSeverity: source.limitSeverity || rules.limitSeverity || 'blocking' }], history).filter(issue => issue.blocking).map(issue => issue.message);
 }
 
 export function planPublishedDayEdit(source, draft, date, { publicationId, actor, now, history = [], absences = [], rules = {} }) {

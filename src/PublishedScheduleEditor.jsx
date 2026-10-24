@@ -49,7 +49,7 @@ export default function PublishedScheduleEditor({ edit, context, requirements = 
       <fieldset disabled={disabled || !ready || stale} className="pse-fields"><legend>Horários deste dia</legend>
         <label className="pse-wide">Situação<select value={draft.status} onChange={event => patch({ status: event.target.value })}><option>Presencial</option><option>Home Office</option><option>Folga</option><option>Feriado</option></select></label>
         {[['Entrada','shiftStart'],['Saída base (sem extra)','shiftEnd'],['Início do intervalo','breakStart'],['Fim do intervalo','breakEnd']].map(([label, field]) => <label key={field}>{label}<input type="time" disabled={!working} value={draft[field]} onChange={event => patch({ [field]: event.target.value })}/></label>)}
-        <label>Hora extra (hh:mm)<input type="time" disabled={!working} min="00:00" max="12:00" value={duration(draft.extraHours)} onChange={event => patch({ extraHours: parseHours(event.target.value) })}/></label>
+        <label>Hora extra (hh:mm)<input type="time" disabled={!working} min="00:00" max={duration(edit.source.maxExtraHoursPerDay ?? edit.rules?.maxExtraHoursPerDay ?? 12)} value={duration(draft.extraHours)} onChange={event => patch({ extraHours: parseHours(event.target.value) })}/></label>
         <label className="pse-wide">Motivo do ajuste (opcional)<textarea maxLength={240} rows={2} value={draft.reason} onChange={event => patch({ reason: event.target.value })}/></label>
       </fieldset>
       {!edit.source.baseShiftEnd && Number(edit.source.extraHours) > 0 && <p className="pse-warning">O registro anterior não separa a saída base da hora extra. A saída registrada foi usada como base; confira os horários e a extra antes de salvar.</p>}

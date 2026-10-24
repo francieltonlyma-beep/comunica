@@ -162,3 +162,30 @@ test('jornada especial anterior não vira o novo padrão nos dias comuns', () =>
   assert.equal(work.shiftEnd, '18:00');
   assert.equal(work.extraHours, 0);
 });
+
+test('conjunto pode ter perfil próprio de jornada e limites com versão rastreável', () => {
+  const profiledGroup = { ...group([]), name: 'Operação 44h', policy: { workDaysPerWeek: 6, hoursPerWeek: 44, restEveryDays: 7, shiftStart: '07:00', shiftEnd: '16:00', breakStart: '11:00', breakEnd: '12:00', minRestHours: 11, maxDailyHours: 10, maxWeeklyHours: 44, maxExtraHoursPerDay: 2, limitSeverity: 'blocking' } };
+  const profiled = buildRuleSchedule({ dates: dates('2026-10-26', 7), users: [{ id: '1', name: 'Ana' }], rules: { ...rules([]), version: 4, name: 'Política da fábrica', ruleGroups: [profiledGroup] }, holidays: [] });
+  assert.equal(profiled.filter(isWorking => ['Presencial', 'Home Office'].includes(isWorking.status)).length, 6);
+  const work = profiled.find(row => row.status === 'Presencial');
+  assert.equal(work.shiftStart, '07:00'); assert.equal(work.shiftEnd, '16:00'); assert.equal(work.weekHoursTarget, 44);
+  assert.equal(work.profileName, 'Operação 44h'); assert.equal(work.rulesVersion, 4); assert.equal(work.maxExtraHoursPerDay, 2);
+});
+
+test('limites diários, semanais e de hora extra podem bloquear ou apenas avisar', () => {
+  const week = generate([]).map(row => ({ ...row, maxDailyHours: 7, maxWeeklyHours: 35, maxExtraHoursPerDay: 1, limitSeverity: 'blocking' }));
+  const firstWork = week.find(row => row.status === 'Presencial'); firstWork.extraHours = 2;
+  const blocking = scheduleRuleIssues(week);
+  assert.ok(blocking.some(issue => issue.blocking && /limite diário/.test(issue.message)));
+  assert.ok(blocking.some(issue => issue.blocking && /hora extra/.test(issue.message)));
+  assert.ok(blocking.some(issue => issue.blocking && /limite de 35/.test(issue.message)));
+  const warnings = scheduleRuleIssues(week.map(row => ({ ...row, limitSeverity: 'warning' })));
+  assert.ok(warnings.some(issue => !issue.blocking && /limite diário/.test(issue.message)));
+});
+
+test('descanso mínimo entre jornadas considera o histórico anterior e o dia seguinte', () => {
+  const rows = generate([], { dates: ['2026-10-27'] }).map(row => ({ ...row, shiftStart: '06:00', shiftEnd: '14:00', minRestHours: 11, limitSeverity: 'blocking' }));
+  const history = [{ userId: '1', startDate: '2026-10-26', endDate: '2026-10-26', status: 'Presencial', shiftStart: '14:00', shiftEnd: '23:00' }];
+  assert.ok(scheduleRuleIssues(rows, history).some(issue => issue.blocking && /descanso de 7,00h/.test(issue.message)));
+  assert.ok(validateRuleGroups([{ ...group([]), policy: { workDaysPerWeek: 6, restEveryDays: 6 } }]).some(issue => /descanso/.test(issue)));
+});
