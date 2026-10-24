@@ -746,15 +746,19 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
   const participants = Array.isArray(content.participants)
     ? content.participants.filter((id): id is string => typeof id === "string")
     : [];
+  const mutedBy = Array.isArray(content.mutedBy)
+    ? content.mutedBy.filter((id): id is string => typeof id === "string")
+    : [];
   const senderId = typeof content.senderId === "string" ? content.senderId : "";
   const actorId = typeof content.actorId === 'string' ? content.actorId : senderId;
   if (participants.length === 0) return;
+  const notifiedParticipants = participants.filter((id) => !mutedBy.includes(id));
 
   const usersPath = `artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/users`;
   const usersSnapshot = await getFirestore().collection(usersPath).get();
   const tokenOwners = new Map<string, string[]>();
   usersSnapshot.docs
-    .filter((user) => participants.includes(user.id) && user.id !== actorId)
+    .filter((user) => notifiedParticipants.includes(user.id) && user.id !== actorId)
     .forEach((user) => {
       const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
       savedTokens.forEach((token: unknown) => {
@@ -763,11 +767,11 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
       });
     });
   const tokens = [...tokenOwners.keys()];
-  tokens.push(...await getSupportNotificationTokens(getFirestore(), event.params.appId, participants, actorId));
+  tokens.push(...await getSupportNotificationTokens(getFirestore(), event.params.appId, notifiedParticipants, actorId));
   const uniqueTokens = [...new Set(tokens)];
   if (uniqueTokens.length === 0) {
     console.info("Message push skipped: recipients have no registered devices", {
-      messageId: event.id ?? "", companyId: event.params.companyId, recipientCount: participants.filter((id) => id !== actorId).length,
+      messageId: event.id ?? "", companyId: event.params.companyId, recipientCount: notifiedParticipants.filter((id) => id !== actorId).length,
     });
     return;
   }
@@ -1031,6 +1035,8 @@ export const notifyMessageActivityChange = onDocumentUpdated(
       return;
     }
 
+    const mutedBy = Array.isArray(after.mutedBy) ? after.mutedBy.filter((id): id is string => typeof id === 'string') : [];
+    recipientIds = recipientIds.filter((id) => !mutedBy.includes(id));
     await sendActivityPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId, messageId,
@@ -1207,6 +1213,10 @@ export const notifyConversationDeadlines = onSchedule({
       const participants = Array.isArray(content.participants)
         ? [...new Set(content.participants.filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id)))]
         : [];
+      const mutedBy = Array.isArray(content.mutedBy)
+        ? content.mutedBy.filter((id): id is string => typeof id === 'string')
+        : [];
+      const notifiedParticipants = participants.filter((id) => !mutedBy.includes(id));
       if (!/^[a-zA-Z0-9_-]+$/.test(threadId) || !stage || participants.length === 0 || content.completedAt) return;
       const key = `${appId}/${companyId}/${threadId}`;
       const timestamp = Number(content.timestamp || 0);
@@ -1215,7 +1225,7 @@ export const notifyConversationDeadlines = onSchedule({
         conversations.set(key, {
           appId, companyId, threadId, dueDate, stage,
           subject: String(content.subject || 'Conversa sem assunto').slice(0, 140),
-          participants,
+          participants: notifiedParticipants,
           ticketNumber: Number(content.ticketNumber || 0),
           timestamp,
         });
@@ -1230,7 +1240,9 @@ export const notifyConversationDeadlines = onSchedule({
       const dueDate = activity?.dueDate || '';
       const stage = dateStages.get(dueDate);
       if (!activity || activity.status === 'resolved' || !stage || !/^[a-zA-Z0-9_-]+$/.test(threadId)) return;
-      const recipientIds = activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean);
+      const mutedBy = Array.isArray(content.mutedBy) ? content.mutedBy.filter((id): id is string => typeof id === 'string') : [];
+      const recipientIds = (activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean))
+        .filter((id) => !mutedBy.includes(id));
       if (recipientIds.length === 0) return;
       activities.set(`${appId}/${companyId}/${messageDocument.id}`, {
         appId, companyId, threadId, messageId: messageDocument.id, dueDate, stage, recipientIds,

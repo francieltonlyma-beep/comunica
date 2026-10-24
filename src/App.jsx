@@ -35,7 +35,7 @@ import {
   Trash2, MapPin, FileText, ImageIcon, LogOut, Lock, KeyRound,
   PhoneCall, User, Activity, TrendingUp, TrendingDown, MessageSquare,
   Paperclip, File, Download, UserPlus, Upload, Database, LoaderCircle, Check, CheckCheck, Moon, Sun, Settings2,
-  Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp
+  Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp, Pin, VolumeX, Archive
 } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
@@ -877,6 +877,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [messageOrganization, setMessageOrganization] = useState('person');
   const [inboxSearch, setInboxSearch] = useState('');
   const [inboxStatusFilter, setInboxStatusFilter] = useState('all');
+  const [inboxSort, setInboxSort] = useState('smart');
   const [showArchivedThreads, setShowArchivedThreads] = useState(false);
   const [msgRecipientIds, setMsgRecipientIds] = useState([]);
   const [conversationDraftThreadId, setConversationDraftThreadId] = useState('');
@@ -5090,6 +5091,12 @@ try {
       getMessageTimestamp(message) > getMessageTimestamp(latest) ? message : latest, messages[0]);
     return (latestMessage.archivedBy || []).includes(currentUser.id);
   };
+  const hasThreadPreference = (threadId, field) => {
+    if (!currentUser || !threadId) return false;
+    return getThreadMetadata(threadId).messages.some(message => (message[field] || []).includes(currentUser.id));
+  };
+  const isThreadPinned = (threadId) => hasThreadPreference(threadId, 'pinnedBy');
+  const isThreadMuted = (threadId) => hasThreadPreference(threadId, 'mutedBy');
 
   const companyServiceCatalog = mergeServiceCatalogSettings(serviceCatalogSettings);
   const activeServiceCatalog = companyServiceCatalog.filter(category => category.active);
@@ -5433,6 +5440,8 @@ try {
     let dueDateHistory = [];
     let completedAt = null;
     let completedBy = null;
+    let pinnedBy = [];
+    let mutedBy = [];
 
     if (isComposingMsg) {
       if (!msgRecipientIds.length || !msgSubject.trim()) return;
@@ -5448,6 +5457,8 @@ try {
         dueDateHistory = activeMsgs[0].dueDateHistory || [];
         completedAt = activeMsgs[0].completedAt || null;
         completedBy = activeMsgs[0].completedBy || null;
+        pinnedBy = getThreadMetadata(activeThreadId).pinnedBy || [];
+        mutedBy = getThreadMetadata(activeThreadId).mutedBy || [];
       }
     }
 
@@ -5475,6 +5486,8 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       dueDateHistory,
       completedAt,
       completedBy,
+      pinnedBy,
+      mutedBy,
       ticketNumber: isComposingMsg ? null : Number(getThreadMetadata(activeThreadId).ticketNumber || 0) || null,
       replyTo: replyingToMessage ? messageReplySnapshot(replyingToMessage) : null,
       mentions: findMentionedParticipantIds(msgText, participants.map(id => messageContacts.find(user => user.id === id)).filter(Boolean)),
@@ -5787,7 +5800,9 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       serviceProgressNote: metadata.serviceProgressNote || '',
       serviceProgressUpdatedAt: metadata.serviceProgressUpdatedAt || null,
       serviceProgressUpdatedBy: metadata.serviceProgressUpdatedBy || '',
-    archivedBy: metadata.archivedBy || []
+    archivedBy: metadata.archivedBy || [],
+    pinnedBy: metadata.pinnedBy || [],
+    mutedBy: metadata.mutedBy || []
   });
 
   const saveThreadMetadata = async (threadId, changes, systemText, { archiveForUserId = '', unarchiveForEveryone = false } = {}) => {
@@ -6046,6 +6061,20 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       console.error('Erro ao restaurar conversa', error);
       triggerNotification('Não foi possível restaurar a conversa.', 'error');
     }
+  };
+
+  const handleThreadPreference = async (threadId, field, enabled) => {
+    if (!currentUser || !['pinnedBy', 'mutedBy'].includes(field)) return;
+    const messagesInThread = normMessages.filter(message => message.threadId === threadId);
+    const nextValue = message => enabled
+      ? [...new Set([...(message[field] || []), currentUser.id])]
+      : (message[field] || []).filter(userId => userId !== currentUser.id);
+    if (!await saveRelatedRecords(messagesInThread.map(message => ({
+      collection: 'messages', id: message.id, operation: 'update', data: { [field]: nextValue(message) },
+    })), `Não foi possível ${enabled ? 'ativar' : 'remover'} esta preferência.`)) return;
+    triggerNotification(field === 'pinnedBy'
+      ? (enabled ? 'Conversa fixada no topo.' : 'Conversa desafixada.')
+      : (enabled ? 'Conversa silenciada. Ela continuará recebendo mensagens sem emitir alertas.' : 'Notificações da conversa reativadas.'));
   };
 
   const handleAddParticipant = async (e) => {
@@ -7147,14 +7176,17 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         });
                         return Object.values(grouped)
                           .filter(thread => !isThreadArchived(thread.threadId))
-                          .sort((a, b) => Math.max(...b.messages.map(getMessageTimestamp)) - Math.max(...a.messages.map(getMessageTimestamp)))
+                          .sort((a, b) => {
+                            const pinOrder = Number(isThreadPinned(b.threadId)) - Number(isThreadPinned(a.threadId));
+                            return pinOrder || Math.max(...b.messages.map(getMessageTimestamp)) - Math.max(...a.messages.map(getMessageTimestamp));
+                          })
                           .map(thread => {
                             const latest = thread.messages.reduce((last, message) => getMessageTimestamp(message) > getMessageTimestamp(last) ? message : last, thread.messages[0]);
                             const selected = thread.threadId === activeThreadId;
                             return <button key={thread.threadId} type="button" onClick={() => openThread(thread.threadId)} className={`mb-1.5 w-full rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-200 bg-white shadow-sm' : 'border-transparent hover:border-slate-200 hover:bg-white'}`}>
                               <div className="flex min-w-0 items-start gap-2.5">
                                 <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-black ${selected ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-600'}`}><MessageSquare className="h-4 w-4" /></span>
-                                <span className="min-w-0 flex-1"><strong className="block break-words text-xs leading-4 text-slate-900">{thread.subject || 'Conversa'}</strong><span className="mt-1 block truncate text-[10px] text-slate-500">{latest.senderId === currentUser.id ? 'Você' : latest.senderName}: {latest.content || 'Arquivo anexo'}</span></span>
+                                <span className="min-w-0 flex-1"><span className="flex items-start gap-1"><strong className="block break-words text-xs leading-4 text-slate-900">{thread.subject || 'Conversa'}</strong>{isThreadPinned(thread.threadId) && <Pin className="h-3 w-3 shrink-0 fill-blue-600 text-blue-600" />}{isThreadMuted(thread.threadId) && <VolumeX className="h-3 w-3 shrink-0 text-slate-400" />}</span><span className="mt-1 block truncate text-[10px] text-slate-500">{latest.senderId === currentUser.id ? 'Você' : latest.senderName}: {latest.content || 'Arquivo anexo'}</span></span>
                                 {thread.unread > 0 && <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-blue-600 px-1 text-[9px] font-black text-white">{thread.unread}</span>}
                               </div>
                             </button>;
@@ -7178,6 +7210,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                       <div className="flex shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1"><button type="button" onClick={() => setMessageFocusFilter('all')} className={`rounded-lg px-2 py-1.5 text-[9px] font-bold ${messageFocusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button><button type="button" onClick={() => setMessageFocusFilter('saved')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'saved' ? 'bg-blue-700 text-white' : 'text-slate-500'}`} title="Mensagens salvas"><Bookmark className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setMessageFocusFilter('activities')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'activities' ? 'bg-violet-700 text-white' : 'text-slate-500'}`} title="Atividades da conversa"><ListChecks className="h-3.5 w-3.5" /></button></div>
                       <button type="button" aria-expanded={threadHeaderExpanded} onClick={() => { setThreadHeaderExpanded(value => !value); if (threadHeaderExpanded) setShowAddParticipant(false); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-extrabold text-blue-800 hover:border-blue-200 hover:bg-blue-100" title={threadHeaderExpanded ? 'Recolher informações da conversa' : 'Exibir informações da conversa'}>{threadHeaderExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}<span className="hidden sm:inline">{threadHeaderExpanded ? 'Recolher' : 'Detalhes'}</span></button>
                       {threadHeaderExpanded && <div className="ml-12 flex w-full flex-wrap items-center justify-end gap-2 sm:ml-0 sm:w-auto sm:shrink-0">
+                      <button type="button" aria-pressed={isThreadPinned(activeThreadId)} onClick={() => handleThreadPreference(activeThreadId, 'pinnedBy', !isThreadPinned(activeThreadId))} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${isThreadPinned(activeThreadId) ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`} title={isThreadPinned(activeThreadId) ? 'Desafixar conversa' : 'Fixar conversa'}><Pin className="h-3.5 w-3.5" />{isThreadPinned(activeThreadId) ? 'Fixada' : 'Fixar'}</button>
+                      <button type="button" aria-pressed={isThreadMuted(activeThreadId)} onClick={() => handleThreadPreference(activeThreadId, 'mutedBy', !isThreadMuted(activeThreadId))} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${isThreadMuted(activeThreadId) ? 'border-slate-300 bg-slate-100 text-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900'}`} title={isThreadMuted(activeThreadId) ? 'Reativar notificações' : 'Silenciar notificações'}><VolumeX className="h-3.5 w-3.5" />{isThreadMuted(activeThreadId) ? 'Silenciada' : 'Silenciar'}</button>
                       {isThreadArchived(activeThreadId) ? (
                         <button type="button" onClick={() => handleRestoreThread(activeThreadId)} className="bg-white border border-emerald-200 text-emerald-700 hover:text-emerald-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Restaurar conversa">
                           Restaurar
@@ -7413,9 +7447,17 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                       }
                     });
 
-                    const threadList = Object.values(groupedThreads).sort((a, b) => {
-                      const lastA = a.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, a.messages[0]);
-                      const lastB = b.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, b.messages[0]);
+                    const threadList = Object.values(groupedThreads).map(thread => {
+                      const latest = thread.messages.reduce((max, message) => getMessageTimestamp(message) > getMessageTimestamp(max) ? message : max, thread.messages[0]);
+                      const metadata = getThreadMetadata(thread.id);
+                      const deadline = getThreadDeadlineStatus(thread.id);
+                      const mine = metadata.serviceAssigneeId === currentUser.id || thread.messages.some(message => {
+                        const activity = normalizeMessageActivity(message.activity);
+                        return activity && activity.status !== 'resolved' && activity.assigneeIds.includes(currentUser.id);
+                      });
+                      return { ...thread, latest, metadata, deadline, mine, pinned: isThreadPinned(thread.id), muted: isThreadMuted(thread.id) };
+                    }).sort((a, b) => {
+                      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
                       if (messageOrganization === 'sector') {
                         const otherA = messageContacts.find(user => user.id === a.participants.find(id => id !== currentUser.id));
                         const otherB = messageContacts.find(user => user.id === b.participants.find(id => id !== currentUser.id));
@@ -7424,18 +7466,31 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         const sectorOrder = sectorA.localeCompare(sectorB, 'pt-BR');
                         if (sectorOrder !== 0) return sectorOrder;
                       }
-                      return getMessageTimestamp(lastB) - getMessageTimestamp(lastA);
+                      if (inboxSort === 'deadline') {
+                        if (a.metadata.dueDate && b.metadata.dueDate) return a.metadata.dueDate.localeCompare(b.metadata.dueDate);
+                        if (a.metadata.dueDate !== b.metadata.dueDate) return a.metadata.dueDate ? -1 : 1;
+                      }
+                      if (inboxSort === 'priority') {
+                        const rank = { urgent: 3, important: 2, normal: 1 };
+                        const priorityOrder = (rank[b.metadata.servicePriority] || 0) - (rank[a.metadata.servicePriority] || 0);
+                        if (priorityOrder !== 0) return priorityOrder;
+                      }
+                      if (inboxSort === 'smart') {
+                        const overdueOrder = Number(/atras/i.test(b.deadline.label || '')) - Number(/atras/i.test(a.deadline.label || ''));
+                        if (overdueOrder !== 0) return overdueOrder;
+                        if (a.unread !== b.unread) return b.unread - a.unread;
+                      }
+                      return getMessageTimestamp(b.latest) - getMessageTimestamp(a.latest);
                     });
 
                     const visibleThreadList = threadList.filter(thread => {
                       if (showArchivedThreads !== isThreadArchived(thread.id)) return false;
-                      const metadata = getThreadMetadata(thread.id);
-                      const deadline = getThreadDeadlineStatus(thread.id);
                       const matchesStatus = inboxStatusFilter === 'all'
                         || (inboxStatusFilter === 'unread' && thread.unread > 0)
-                        || (inboxStatusFilter === 'open' && !metadata.completedAt)
-                        || (inboxStatusFilter === 'overdue' && !metadata.completedAt && /atras/i.test(deadline.label || ''))
-                        || (inboxStatusFilter === 'completed' && Boolean(metadata.completedAt));
+                        || (inboxStatusFilter === 'mine' && thread.mine)
+                        || (inboxStatusFilter === 'open' && !thread.metadata.completedAt)
+                        || (inboxStatusFilter === 'overdue' && !thread.metadata.completedAt && /atras/i.test(thread.deadline.label || ''))
+                        || (inboxStatusFilter === 'completed' && Boolean(thread.metadata.completedAt));
                       if (!matchesStatus) return false;
                       if (!searchText) return true;
                       const names = thread.participants.map(id => messageContacts.find(user => user.id === id)?.name || '').join(' ');
@@ -7444,19 +7499,19 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     });
 
                     const inboxTotals = threadList.reduce((totals, thread) => {
-                      const metadata = getThreadMetadata(thread.id);
-                      const deadline = getThreadDeadlineStatus(thread.id);
                       if (thread.unread > 0) totals.unread += 1;
-                      if (metadata.completedAt) totals.completed += 1;
+                      if (thread.mine) totals.mine += 1;
+                      if (thread.metadata.completedAt) totals.completed += 1;
                       else totals.open += 1;
-                      if (!metadata.completedAt && /atras/i.test(deadline.label || '')) totals.overdue += 1;
+                      if (!thread.metadata.completedAt && /atras/i.test(thread.deadline.label || '')) totals.overdue += 1;
                       return totals;
-                    }, { unread: 0, open: 0, overdue: 0, completed: 0 });
+                    }, { unread: 0, mine: 0, open: 0, overdue: 0, completed: 0 });
 
                     const summaryBar = !showArchivedThreads && (
-                      <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Resumo da caixa de entrada">
+                      <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-5" aria-label="Resumo da caixa de entrada">
                         {[
                           { id: 'unread', label: 'Não lidas', value: inboxTotals.unread, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+                          { id: 'mine', label: 'Minhas demandas', value: inboxTotals.mine, icon: UserCheck, tone: 'text-cyan-700 bg-cyan-50 border-cyan-100' },
                           { id: 'open', label: 'Em andamento', value: inboxTotals.open, icon: MessageSquare, tone: 'text-violet-700 bg-violet-50 border-violet-100' },
                           { id: 'overdue', label: 'Em atraso', value: inboxTotals.overdue, icon: Clock, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
                           { id: 'completed', label: 'Concluídas', value: inboxTotals.completed, icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
@@ -7468,7 +7523,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                       </section>
                     );
 
-                    const searchBar = <div className="mb-2 flex items-center gap-2"><div className="relative min-w-0 flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input type="search" aria-label="Buscar conversas" placeholder="Buscar por assunto, pessoa ou mensagem" value={inboxSearch} onChange={event => setInboxSearch(event.target.value)} className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 shadow-sm" /></div>{inboxStatusFilter !== 'all' && <button type="button" onClick={() => setInboxStatusFilter('all')} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[10px] font-bold text-slate-600 shadow-sm">Limpar filtro</button>}</div>;
+                    const searchBar = <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center"><div className="relative min-w-0 flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input type="search" aria-label="Buscar conversas" placeholder="Buscar por assunto, pessoa ou mensagem" value={inboxSearch} onChange={event => setInboxSearch(event.target.value)} className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 shadow-sm" /></div><select aria-label="Ordenar conversas" value={inboxSort} onChange={event => setInboxSort(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-700 shadow-sm"><option value="smart">Prioridade inteligente</option><option value="recent">Mais recentes</option><option value="deadline">Prazo mais próximo</option><option value="priority">Maior prioridade</option></select>{inboxStatusFilter !== 'all' && <button type="button" onClick={() => setInboxStatusFilter('all')} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[10px] font-bold text-slate-600 shadow-sm">Limpar filtro</button>}</div>;
 
                     if (visibleThreadList.length === 0) {
                       return <>{summaryBar}{searchBar}<div className="text-center py-12 flex flex-col items-center gap-3 text-slate-400">
@@ -7478,7 +7533,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     }
 
                     return <>{summaryBar}{searchBar}<div className="grid w-full grid-cols-1 gap-1.5">{visibleThreadList.map(thread => {
-                      const lastMsg = thread.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, thread.messages[0]);
+                      const lastMsg = thread.latest;
                       const isMine = lastMsg.senderId === currentUser.id;
                       const hasUnread = thread.unread > 0;
 
@@ -7486,26 +7541,21 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         .filter(id => id !== currentUser.id)
                         .map(id => messageContacts.find(u => u.id === id)?.name.split(' ')[0] || 'Desconhecido')
                         .join(', ');
-                      const deadlineStatus = getThreadDeadlineStatus(thread.id);
-                      const threadMetadata = getThreadMetadata(thread.id);
+                      const deadlineStatus = thread.deadline;
+                      const threadMetadata = thread.metadata;
                       return (
-                        <button
+                        <article
                           key={thread.id}
-                          type="button"
-                          onClick={() => openThread(thread.id)}
-                          className={`group flex w-full flex-col gap-2 rounded-2xl border p-3.5 text-left transition hover:border-blue-200 hover:shadow-sm ${hasUnread ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-[0_14px_35px_-28px_rgba(37,99,235,.8)]' : 'bg-white border-slate-200 hover:border-blue-200 shadow-[0_14px_35px_-30px_rgba(15,23,42,.6)]'}`}
+                          className={`group overflow-hidden rounded-2xl border text-left transition hover:border-blue-200 hover:shadow-sm ${hasUnread ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-[0_14px_35px_-28px_rgba(37,99,235,.8)]' : 'bg-white border-slate-200 hover:border-blue-200 shadow-[0_14px_35px_-30px_rgba(15,23,42,.6)]'}`}
                         >
+                          <button type="button" onClick={() => openThread(thread.id)} className="flex w-full flex-col gap-2 p-3.5 text-left">
                           <div className="flex items-start justify-between w-full gap-2">
                             <div className="min-w-0 flex-1">
-                              <strong className={`block break-words text-sm leading-snug transition-colors [overflow-wrap:anywhere] group-hover:text-blue-800 sm:text-sm ${hasUnread ? 'text-blue-950 font-extrabold' : 'text-slate-900 font-bold'}`}>
-                                {thread.subject}
-                              </strong>
+                              <div className="flex items-start gap-1.5"><strong className={`block break-words text-sm leading-snug transition-colors [overflow-wrap:anywhere] group-hover:text-blue-800 sm:text-sm ${hasUnread ? 'text-blue-950 font-extrabold' : 'text-slate-900 font-bold'}`}>{thread.subject}</strong>{thread.pinned && <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-blue-600 text-blue-600" aria-label="Conversa fixada" />}{thread.muted && <VolumeX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-label="Conversa silenciada" />}</div>
                               <span className="mt-1 flex min-w-0 items-start gap-1 text-xs font-medium text-slate-500">
                                 <Users className="h-3 w-3" /> {partsNames || 'Você (Apenas)'}
                               </span>
-                              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${deadlineStatus.className}`}>
-                                {deadlineStatus.label}{threadMetadata.dueDate ? ` · ${formatDueDate(threadMetadata.dueDate)}` : ''}
-                              </span>
+                              <span className="mt-2 flex flex-wrap gap-1.5"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${deadlineStatus.className}`}>{deadlineStatus.label}{threadMetadata.dueDate ? ` · ${formatDueDate(threadMetadata.dueDate)}` : ''}</span>{thread.mine && <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-800">Minha demanda</span>}{threadMetadata.servicePriority && <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${threadMetadata.servicePriority === 'urgent' ? 'bg-rose-100 text-rose-800' : threadMetadata.servicePriority === 'important' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>{threadMetadata.servicePriorityLabel || 'Normal'}</span>}</span>
                             </div>
                             <div className="flex flex-col items-end gap-1.5 shrink-0">
                               <span className={`text-xs font-medium ${hasUnread ? 'text-blue-700' : 'text-slate-500'}`}>
@@ -7520,7 +7570,13 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                               {isMine ? 'Você: ' : (lastMsg.senderName.split(' ')[0] + ': ')}{lastMsg.content || 'Arquivo anexo'}
                             </p>
                           </div>
-                        </button>
+                          </button>
+                          <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 px-3 py-2">
+                            <button type="button" aria-pressed={thread.pinned} onClick={() => handleThreadPreference(thread.id, 'pinnedBy', !thread.pinned)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${thread.pinned ? 'bg-blue-100 text-blue-800' : 'text-slate-500 hover:bg-slate-100'}`}><Pin className="h-3.5 w-3.5" />{thread.pinned ? 'Desafixar' : 'Fixar'}</button>
+                            <button type="button" aria-pressed={thread.muted} onClick={() => handleThreadPreference(thread.id, 'mutedBy', !thread.muted)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${thread.muted ? 'bg-slate-200 text-slate-800' : 'text-slate-500 hover:bg-slate-100'}`}><VolumeX className="h-3.5 w-3.5" />{thread.muted ? 'Reativar alertas' : 'Silenciar'}</button>
+                            <button type="button" onClick={() => showArchivedThreads ? handleRestoreThread(thread.id) : handleArchiveThread(thread.id)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><Archive className="h-3.5 w-3.5" />{showArchivedThreads ? 'Restaurar' : 'Arquivar'}</button>
+                          </div>
+                        </article>
                       )
                     })}</div></>;
                   })()}

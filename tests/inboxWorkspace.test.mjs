@@ -24,3 +24,13 @@ test('layout adapta lista e leitura sem perder o contexto da conversa', () => {
   assert.match(app, /Voltar às conversas/);
   assert.match(app, /h-\[calc\(100dvh-7rem\)\]/);
 });
+
+test('triagem permite fixar, silenciar, arquivar e localizar demandas próprias', () => {
+  for (const field of ['pinnedBy', 'mutedBy']) assert.match(app, new RegExp(field));
+  assert.match(app, /Minhas demandas/);
+  assert.match(app, /Prioridade inteligente/);
+  assert.match(app, /Prazo mais próximo/);
+  assert.match(app, /handleArchiveThread\(thread\.id\)/);
+  assert.match(app, /Conversa fixada no topo/);
+  assert.match(app, /Conversa silenciada/);
+});

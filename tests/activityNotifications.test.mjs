@@ -41,3 +41,8 @@ test('activity notifications open the exact source message', () => {
   assert.match(workerSource, /messageId/);
   assert.match(appSource, /setActivityMessageTargetId\(messageId \|\| ''\)/);
 });
+
+test('silenced conversations do not emit message or activity alerts for that user', () => {
+  assert.match(functionsSource, /const notifiedParticipants = participants\.filter\(\(id\) => !mutedBy\.includes\(id\)\)/);
+  assert.match(functionsSource, /recipientIds = recipientIds\.filter\(\(id\) => !mutedBy\.includes\(id\)\)/);
+});
