@@ -8213,7 +8213,7 @@ const handleDownload = async (fileUrl, fileName) => {
           {/* TAB: SCALE & CALENDAR */}
           {activeTab === 'scale' && (
             <ScheduleCalendar
-              key={activeCompany?.id || 'local'}
+              key={activeCompany?.id || 'local'} companyName={activeCompany?.name || 'Comunica'}
               today={todayStr} selectedDate={selectedCalendarDay} onSelectDate={setSelectedCalendarDay}
               schedules={workSchedules} absences={absences} events={calendarEvents}
               employees={employeesList} departments={departmentsList} getDepartments={getUserDepts}

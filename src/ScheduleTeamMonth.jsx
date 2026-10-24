@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Printer } from 'lucide-react';
+import { openSchedulePrintView } from './schedulePrint.js';
 import { teamDaySummary, teamMonthRows } from './scheduleTeamMonth.js';
 import './ScheduleTeamMonth.css';
 
@@ -6,11 +8,24 @@ const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const dateLabel = date => new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
 const coverageLabels = { sufficient: 'Suficiente', shortage: 'Falta de equipe', unknown: 'Revisar horários', none: 'Sem necessidade cadastrada' };
 
-export default function ScheduleTeamMonth({ days, employees, departments, filters, getDepartments, today, selectedDate, selectedPerson, onSelectCell, onSelectCoverage, showAbsences, showEvents, showCoverage, coverageReady, coverageError }) {
+export default function ScheduleTeamMonth({ companyName, days, employees, departments, filters, getDepartments, today, selectedDate, selectedPerson, onSelectCell, onSelectCoverage, showAbsences, showEvents, showCoverage, coverageReady, coverageError }) {
   const [showHours, setShowHours] = useState(false);
+  const [printError, setPrintError] = useState('');
   const rows = teamMonthRows(days, employees, { filters, getDepartments, showAbsences });
+  const printMonth = () => {
+    setPrintError('');
+    const labels = [];
+    if (filters.department !== 'all') labels.push(`Setor: ${departments.find(item => item.id === filters.department)?.name || filters.department}`);
+    if (filters.employee !== 'all') labels.push(`Colaborador: ${employees.find(item => String(item.id) === String(filters.employee))?.name || filters.employee}`);
+    if (filters.status !== 'all') labels.push(`Situação: ${filters.status}`);
+    if (filters.search.trim()) labels.push(`Busca: ${filters.search.trim()}`);
+    if (!showAbsences) labels.push('Ausências ocultas');
+    try { openSchedulePrintView({ rows, days, departments, companyName, filterLabels: labels, showHours, showCoverage, showEvents }); }
+    catch (error) { setPrintError(error.message || 'Não foi possível abrir a impressão. Tente novamente.'); }
+  };
   return <section className="stm" aria-label="Escala mensal lado a lado">
-    <div className="stm-toolbar"><div><strong>Equipe lado a lado</strong><span>{rows.length} colaborador(es) · {days.length} dias</span></div><label><input type="checkbox" checked={showHours} onChange={event => setShowHours(event.target.checked)}/>Exibir horários</label></div>
+    <div className="stm-toolbar"><div><strong>Equipe lado a lado</strong><span>{rows.length} colaborador(es) · {days.length} dias</span></div><div className="stm-print-tools"><label><input type="checkbox" checked={showHours} onChange={event => setShowHours(event.target.checked)}/>Exibir horários</label><button type="button" onClick={printMonth} disabled={!rows.length || !coverageReady || Boolean(coverageError)} title="Abrir uma versão de impressão da equipe visível; na janela de impressão, escolha Salvar como PDF"><Printer size={14}/>Imprimir / PDF</button></div></div>
+    {printError && <p className="stm-print-error" role="alert">{printError}</p>}
     <p className="stm-help">Role para os lados para percorrer o mês. Os nomes ficam fixos. Clique em uma célula para consultar ou editar aquele dia.</p>
     <div className={`stm-scroll ${showHours ? 'stm-with-hours' : ''}`} tabIndex={0} aria-label="Quadro mensal da equipe; role para os lados e para baixo">
       <table className="stm-table"><caption>Escala publicada da equipe · {days[0]?.date.slice(0, 7).split('-').reverse().join('/')}</caption>

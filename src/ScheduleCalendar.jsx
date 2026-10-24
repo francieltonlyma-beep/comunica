@@ -14,7 +14,7 @@ const longDate = date => new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR'
 const toneNames = { work: 'Presencial', remote: 'Home office', off: 'Folga', vacation: 'Férias', absence: 'Afastamento' };
 
 export default function ScheduleCalendar({
-  today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
+  companyName, today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
   currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onDeleteAbsence, onDeleteEvent,
   onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
   coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
@@ -183,7 +183,7 @@ export default function ScheduleCalendar({
 
       <div className={`sc-workspace ${detailsOpen ? 'sc-with-details' : ''}`}>
         <div className="sc-grid-area">
-          {view === 'team' ? <ScheduleTeamMonth days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category) => { setDayTab(category); chooseDate(date, person); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
+          {view === 'team' ? <ScheduleTeamMonth companyName={companyName} days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category) => { setDayTab(category); chooseDate(date, person); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
           <div className="sc-grid-scroll" tabIndex={0} aria-label="Grade do calendário; role horizontalmente em telas pequenas">
             <div className={`sc-grid sc-${view}-view`}>
               {weekdays.map(day => <div key={day} className="sc-weekday">{day}</div>)}
