@@ -5,6 +5,7 @@ import { calendarRecordsForDay, scheduleCalendarDates, scheduleTone, shiftCalend
 import { coverageForDay } from './scheduleCoverage.js';
 import { CoverageRequirementEditor, DayCoverage } from './ScheduleCoveragePanel.jsx';
 import { canEditPublishedSchedule } from './publishedScheduleEdit.js';
+import ScheduleTeamMonth from './ScheduleTeamMonth.jsx';
 import './ScheduleCalendar.css';
 
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -22,6 +23,7 @@ export default function ScheduleCalendar({
   const [view, setView] = useState('month');
   const [fullscreen, setFullscreen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailEmployee, setDetailEmployee] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [department, setDepartment] = useState('all');
   const [employee, setEmployee] = useState('all');
@@ -75,13 +77,13 @@ export default function ScheduleCalendar({
   const dates = scheduleCalendarDates(anchor, view);
   const days = dates.map(date => ({ ...calendarRecordsForDay(date, data, filters), coverage: coverageForDay(date, coverageRequirements, data, department) }));
   const activeCoverage = coverageForDay(selectedDate, coverageRequirements, data, department);
-  const activeDay = calendarRecordsForDay(selectedDate, data, filters);
+  const activeDay = calendarRecordsForDay(selectedDate, data, { ...filters, employee: detailEmployee || employee });
   const month = anchor.slice(0, 7);
   const eligibleEmployees = employees.filter(user => department === 'all' || getDepartments(user).includes(department))
     .slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const statuses = [...new Set(['Presencial', 'Home Office', 'Folga', 'Férias', ...schedules.map(item => item.status).filter(Boolean)])];
   const hasFilters = department !== 'all' || employee !== 'all' || status !== 'all' || search.trim();
-  const title = view === 'month'
+  const title = view !== 'week'
     ? new Date(`${anchor}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
     : `${shortDate(dates[0])} – ${shortDate(dates[6])} · ${anchor.slice(0, 4)}`;
   const selectedCounts = activeDay.schedules.reduce((counts, item) => {
@@ -89,7 +91,8 @@ export default function ScheduleCalendar({
     counts[tone] = (counts[tone] || 0) + 1;
     return counts;
   }, {});
-  const chooseDate = date => {
+  const chooseDate = (date, person = '') => {
+    setDetailEmployee(person);
     onSelectDate(date);
     setDetailsOpen(true);
     if (date.slice(0, 7) !== month) setAnchor(date);
@@ -97,10 +100,11 @@ export default function ScheduleCalendar({
   };
   const navigate = direction => {
     const next = shiftCalendarPeriod(anchor, direction, view);
+    setDetailEmployee('');
     setAnchor(next);
     onSelectDate(next);
   };
-  const clearFilters = () => { setDepartment('all'); setEmployee('all'); setStatus('all'); setSearch(''); };
+  const clearFilters = () => { setDetailEmployee(''); setDepartment('all'); setEmployee('all'); setStatus('all'); setSearch(''); };
   const openEvent = holiday => {
     setShowEvents(true);
     setDayTab('events');
@@ -136,15 +140,16 @@ export default function ScheduleCalendar({
 
       <div className="sc-toolbar">
         <div className="sc-period">
-          <div className="sc-arrows"><button type="button" onClick={() => navigate(-1)} aria-label={view === 'month' ? 'Mês anterior' : 'Semana anterior'}><ChevronLeft size={19} /></button>
-            <button type="button" onClick={() => navigate(1)} aria-label={view === 'month' ? 'Próximo mês' : 'Próxima semana'}><ChevronRight size={19} /></button></div>
+          <div className="sc-arrows"><button type="button" onClick={() => navigate(-1)} aria-label={view !== 'week' ? 'Mês anterior' : 'Semana anterior'}><ChevronLeft size={19} /></button>
+            <button type="button" onClick={() => navigate(1)} aria-label={view !== 'week' ? 'Próximo mês' : 'Próxima semana'}><ChevronRight size={19} /></button></div>
           <h3 aria-live="polite">{title}</h3>
-          <button type="button" className="sc-button sc-today" onClick={() => { setAnchor(today); onSelectDate(today); }}>Hoje</button>
+          <button type="button" className="sc-button sc-today" onClick={() => { setDetailEmployee(''); setAnchor(today); onSelectDate(today); }}>Hoje</button>
         </div>
         <div className="sc-view-tools">
           <div className="sc-segment" aria-label="Visualização do calendário">
-            <button type="button" aria-pressed={view === 'month'} onClick={() => { setView('month'); setAnchor(selectedDate); }}>Mês</button>
-            <button type="button" aria-pressed={view === 'week'} onClick={() => { setView('week'); setAnchor(selectedDate); }}>Semana</button>
+            <button type="button" aria-pressed={view === 'month'} onClick={() => { setDetailEmployee(''); setView('month'); setAnchor(selectedDate); }}>Mês</button>
+            <button type="button" aria-pressed={view === 'team'} onClick={() => { setDetailEmployee(''); setView('team'); setAnchor(selectedDate); setDetailsOpen(false); }}>Equipe</button>
+            <button type="button" aria-pressed={view === 'week'} onClick={() => { setDetailEmployee(''); setView('week'); setAnchor(selectedDate); }}>Semana</button>
           </div>
           <button type="button" className={`sc-button ${hasFilters ? 'sc-filter-active' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(value => !value)}><SlidersHorizontal size={16} /> Filtros{hasFilters ? ' •' : ''}</button>
           <button type="button" className="sc-button sc-detail-toggle" aria-expanded={detailsOpen} aria-label={detailsOpen ? 'Ocultar detalhes do dia' : 'Mostrar detalhes do dia'} onClick={() => setDetailsOpen(value => !value)}>{detailsOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}</button>
@@ -152,13 +157,13 @@ export default function ScheduleCalendar({
       </div>
 
       {filtersOpen && <div className="sc-filters">
-        <label>Setor<select value={department} onChange={event => { setDepartment(event.target.value); setEmployee('all'); }}>
+        <label>Setor<select value={department} onChange={event => { setDetailEmployee(''); setDepartment(event.target.value); setEmployee('all'); }}>
           <option value="all">Todos os setores</option>{departments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>Colaborador<select value={employee} onChange={event => setEmployee(event.target.value)}>
+        <label>Colaborador<select value={employee} onChange={event => { setDetailEmployee(''); setEmployee(event.target.value); }}>
           <option value="all">Todos os colaboradores</option>{eligibleEmployees.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-        <label>Situação da escala<select value={status} onChange={event => setStatus(event.target.value)}>
+        <label>Situação da escala<select value={status} onChange={event => { setDetailEmployee(''); setStatus(event.target.value); }}>
           <option value="all">Todas as situações</option>{statuses.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Buscar pessoa<div className="sc-search"><Search size={15} /><input value={search} type="search" placeholder="Nome ou cargo" onChange={event => setSearch(event.target.value)} /></div></label>
+        <label>Buscar pessoa<div className="sc-search"><Search size={15} /><input value={search} type="search" placeholder="Nome ou cargo" onChange={event => { setDetailEmployee(''); setSearch(event.target.value); }} /></div></label>
         {hasFilters && <button type="button" className="sc-link" onClick={clearFilters}>Limpar filtros</button>}
       </div>}
 
@@ -178,6 +183,7 @@ export default function ScheduleCalendar({
 
       <div className={`sc-workspace ${detailsOpen ? 'sc-with-details' : ''}`}>
         <div className="sc-grid-area">
+          {view === 'team' ? <ScheduleTeamMonth days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category) => { setDayTab(category); chooseDate(date, person); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
           <div className="sc-grid-scroll" tabIndex={0} aria-label="Grade do calendário; role horizontalmente em telas pequenas">
             <div className={`sc-grid sc-${view}-view`}>
               {weekdays.map(day => <div key={day} className="sc-weekday">{day}</div>)}
@@ -207,11 +213,13 @@ export default function ScheduleCalendar({
               })}
             </div>
           </div>
+          </>}
           <footer className="sc-grid-footer"><span><span className="sc-dot sc-today-dot" /> Hoje</span><span>Clique em um dia para ver os detalhes e planejar.</span></footer>
         </div>
 
         {detailsOpen && <aside className="sc-day-panel" aria-label="Detalhes do dia selecionado">
           <div className="sc-panel-heading"><div><span className="sc-eyebrow">DIA SELECIONADO</span><h3>{longDate(selectedDate)}</h3></div><button type="button" className="sc-icon-button" onClick={() => setDetailsOpen(false)} aria-label="Fechar detalhes do dia"><X size={18} /></button></div>
+          {detailEmployee && <div className="sc-filter-note">Colaborador selecionado<button type="button" onClick={() => setDetailEmployee('')}>Ver toda a equipe neste dia</button></div>}
           <div className="sc-day-summary">{Object.entries(selectedCounts).map(([tone, count]) => <span className={`sc-count sc-${tone}`} key={tone}>{count} {toneNames[tone]}</span>)}{!activeDay.schedules.length && <span className="sc-muted">Nenhuma escala{hasFilters ? ' neste filtro' : ' planejada'}.</span>}</div>
           {canWrite && <div className="sc-day-actions">
             {canManage && <button type="button" className="sc-primary" onClick={() => onPlan('day')}><Plus size={15} /> Planejar este dia</button>}
