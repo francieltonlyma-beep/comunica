@@ -8,7 +8,7 @@ const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const fullDate = date => new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', weekday: 'long' });
 const coverageText = { gap: 'Falta cobertura', unknown: 'Conferir horários', covered: 'Cobertura atendida', none: 'Sem necessidade cadastrada' };
 
-export default function ScheduleProposalCalendar({ rows, analysis, issues = [], selectedDate, onSelectDate, disabled }) {
+export default function ScheduleProposalCalendar({ rows, analysis, issues = [], selectedDate, onSelectDate, onOpenDay, disabled }) {
   const [employee, setEmployee] = useState('all');
   const people = [...new Map(rows.map(row => [String(row.userId), row.userName])).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'));
   const activeEmployee = people.some(([id]) => id === employee) ? employee : 'all';
@@ -38,7 +38,7 @@ export default function ScheduleProposalCalendar({ rows, analysis, issues = [], 
         const day = byDate.get(date);
         if (!day || !date.startsWith(month)) return <div className="spc-empty" key={date} aria-hidden="true"><span>{Number(date.slice(-2))}</span></div>;
         const label = `${fullDate(date)}: ${day.working} em trabalho, ${day.off} de folga, ${day.absent} em ausência ou férias, ${day.fixed} fixos ou preservados. ${coverageText[day.coverage]}.${day.blocking ? ` ${day.blocking} bloqueio(s).` : ''}`;
-        return <button key={date} type="button" disabled={disabled} aria-label={label} aria-pressed={date === selectedDate} className={`spc-day spc-${day.coverage} ${date === selectedDate ? 'spc-selected' : ''}`} onClick={() => onSelectDate(date)}>
+        return <button key={date} type="button" disabled={disabled} aria-label={label} aria-pressed={date === selectedDate} className={`spc-day spc-${day.coverage} ${date === selectedDate ? 'spc-selected' : ''}`} onClick={() => { onSelectDate(date); onOpenDay?.(date); }}>
           <span className="spc-day-head"><strong>{Number(date.slice(-2))}</strong>{day.fixed > 0 && <span className="spc-fixed"><LockKeyhole size={11} /><span>{day.fixed}</span></span>}</span>
           {activeEmployee !== 'all' ? <span className="spc-person-status">{day.rows[0]?.status || 'Sem marcação'}</span> : <span className="spc-counts"><span className="spc-work">{day.working}<small> trabalho</small></span><span className="spc-off">{day.off}<small> folga</small></span>{day.absent > 0 && <span className="spc-absence">{day.absent}<small> ausência</small></span>}</span>}
           {day.holiday && <span className="spc-holiday">Feriado</span>}
