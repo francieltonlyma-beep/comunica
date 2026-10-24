@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
 
 test('caixa de entrada é um módulo próprio da navegação e das permissões', () => {
   assert.match(app, /\{ id: 'inbox', label: 'Caixa de entrada' \}/);
@@ -33,4 +34,17 @@ test('triagem permite fixar, silenciar, arquivar e localizar demandas próprias'
   assert.match(app, /handleArchiveThread\(thread\.id\)/);
   assert.match(app, /Conversa fixada no topo/);
   assert.match(app, /Conversa silenciada/);
+});
+
+test('painel da conversa reúne resumo, arquivos, histórico e gestão em massa', () => {
+  assert.match(app, /const renderThreadInfoPanel = \(\) =>/);
+  assert.match(app, /Detalhes da conversa/);
+  assert.match(app, /Arquivos \(\$\{attachments\.length\}\)/);
+  assert.match(app, /Nenhuma alteração registrada/);
+  assert.match(app, /handleServicePriority/);
+  assert.match(rules, /'servicePriority'/);
+  assert.match(rules, /'servicePriorityLabel'/);
+  assert.match(app, /Selecionar visíveis/);
+  assert.match(app, /handleBulkThreadAction/);
+  assert.match(app, /Marcar como não lida/);
 });
