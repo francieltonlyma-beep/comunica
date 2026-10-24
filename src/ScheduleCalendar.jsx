@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Pencil, CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { calendarRecordsForDay, scheduleCalendarDates, scheduleTone, shiftCalendarPeriod } from './scheduleCalendarModel.js';
 import { coverageForDay } from './scheduleCoverage.js';
 import { CoverageRequirementEditor, DayCoverage } from './ScheduleCoveragePanel.jsx';
+import { canEditPublishedSchedule } from './publishedScheduleEdit.js';
 import './ScheduleCalendar.css';
 
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -13,7 +14,7 @@ const toneNames = { work: 'Presencial', remote: 'Home office', off: 'Folga', vac
 
 export default function ScheduleCalendar({
   today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
-  currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onDeleteAbsence, onDeleteEvent,
+  currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onDeleteAbsence, onDeleteEvent,
   onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
   coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
@@ -225,7 +226,7 @@ export default function ScheduleCalendar({
           <div className="sc-records">
             {dayTab === 'coverage' && <DayCoverage coverage={activeCoverage} departments={departments} ready={coverageReady} error={coverageError} />}
             {dayTab === 'schedules' && (activeDay.schedules.length ? activeDay.schedules.map(item => <article key={item.id} className={`sc-record sc-${scheduleTone(item.status)}`}>
-              <div className="sc-record-title"><strong>{item.userName}</strong>{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
+              <div className="sc-record-title"><strong>{item.userName}</strong>{canManage && canWrite && onEditSchedule && canEditPublishedSchedule(item) && <button type="button" className="sc-icon-button" disabled={Boolean(deletingScheduleId)} onClick={() => onEditSchedule(item, selectedDate)} aria-label={`Editar escala de ${item.userName} neste dia`} title="Alterar somente este dia"><Pencil size={15}/></button>}{canManage && canWrite && <button type="button" disabled={Boolean(deletingScheduleId)} className="sc-icon-button" onClick={() => onDeleteSchedule(item)} aria-label={`Excluir escala de ${item.userName}`} title="Excluir esta escala e todo o período vinculado">{deletingScheduleId === item.id ? <LoaderCircle size={15} className="sc-spin" /> : <Trash2 size={15} />}</button>}</div>
               <span className="sc-record-status">{item.status}</span>
               <p>{item.shiftStart && item.shiftEnd ? `${item.shiftStart} – ${item.shiftEnd}` : item.shift || 'Integral'}{Number(item.plannedHours) > 0 ? ` · ${formatDuration(item.plannedHours)}h` : ''}</p>
               {Number(item.extraHours) > 0 && <p>Extra: {formatDuration(item.extraHours)}h</p>}
@@ -233,6 +234,8 @@ export default function ScheduleCalendar({
               {item.startDate !== item.endDate && <p>Período: {shortDate(item.startDate)} – {shortDate(item.endDate)}</p>}
               {item.ruleReason && <p>{item.ruleGroupName ? `${item.ruleGroupName} · ` : ''}{item.ruleReason}</p>}
               {item.notes && <p>{item.notes}</p>}
+              {item.adjustmentReason && <p>Motivo do ajuste: {item.adjustmentReason}</p>}
+              {item.manuallyAdjusted && item.updatedBy && <p>Alterado por {item.updatedBy}{Number(item.updatedAt) > 0 ? ` · ${new Date(item.updatedAt).toLocaleString('pt-BR')}` : ''}</p>}
             </article>) : <div className="sc-empty"><Users size={27} /><strong>{hasFilters ? 'Nenhum resultado' : 'Dia sem escala planejada'}</strong><p>{hasFilters ? 'Ajuste os filtros para ver outros registros.' : 'Use “Planejar este dia” para organizar a equipe.'}</p></div>)}
             {dayTab === 'absences' && (activeDay.absences.length ? activeDay.absences.map(item => <article className="sc-record sc-absence" key={item.id}>
               <div className="sc-record-title"><strong>{item.userName}</strong>{canWrite && (currentUser.isAdmin || String(item.userId) === String(currentUser.id)) && <button type="button" className="sc-icon-button" onClick={() => onDeleteAbsence(item.id, item.userId)} aria-label={`Remover ausência de ${item.userName}`}><Trash2 size={15} /></button>}</div>

@@ -13,6 +13,8 @@ import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ScheduleOptimizationSummary from './ScheduleOptimizationSummary.jsx';
 import ScheduleProposalCalendar from './ScheduleProposalCalendar.jsx';
 import ScheduleDayEditor from './ScheduleDayEditor.jsx';
+import PublishedScheduleEditor from './PublishedScheduleEditor.jsx';
+import { canEditPublishedSchedule, planPublishedDayEdit } from './publishedScheduleEdit.js';
 import { balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
@@ -998,6 +1000,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [automaticScheduleProposalInput, setAutomaticScheduleProposalInput] = useState('');
   const [automaticScheduleOptimization, setAutomaticScheduleOptimization] = useState(null);
   const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
+  const [publishedScheduleEdit, setPublishedScheduleEdit] = useState(null);
+  const [isSavingPublishedSchedule, setIsSavingPublishedSchedule] = useState(false);
   const [automaticScheduleEditorFocus, setAutomaticScheduleEditorFocus] = useState(null);
   const automaticScheduleInput = JSON.stringify({ company: activeCompany?.id, history: workSchedules, absences, employees: employeesList.map(user => ({ id: user.id, name: user.name, departments: getUserDepts(user) })), rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
   const [automaticSchedulePreviewDate, setAutomaticSchedulePreviewDate] = useState('');
@@ -3911,6 +3915,30 @@ const submitPresence = async (e) => {
     setWorkSchedules(previous => [...schedules, ...previous.filter(schedule => !ids.has(schedule.id))]);
     setShowBulkScheduleModal(false);
     triggerNotification(`Escala atualizada para ${schedules.length} colaborador(es).`);
+  };
+
+  const openPublishedScheduleEdit = (source, date) => {
+    if ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) return triggerNotification('Seu perfil não pode editar escalas.', 'error');
+    if (!canEditPublishedSchedule(source) || !schedulePlanningDataReady()) return triggerNotification('Aguarde os dados da empresa. Ausências e férias são alteradas na aba própria.', 'error');
+    setPublishedScheduleEdit({ source, date, companyId: activeCompany.id, history: workSchedules, absences, rules: automaticScheduleRules });
+  };
+  const savePublishedScheduleEdit = async draft => {
+    if (isSavingPublishedSchedule || !publishedScheduleEdit) return false;
+    if ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) { triggerNotification('Seu perfil não pode editar escalas.', 'error'); return false; }
+    const edit = publishedScheduleEdit;
+    if (!schedulePlanningDataReady() || edit.companyId !== activeCompany?.id) { triggerNotification('Aguarde os dados da empresa correta antes de salvar.', 'error'); return false; }
+    if (scheduleSignature(workSchedules) !== scheduleSignature(edit.history) || JSON.stringify(absences) !== JSON.stringify(edit.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(edit.rules)) { triggerNotification('Os dados mudaram. Feche e abra novamente este ajuste para revisar a versão atual.', 'error'); return false; }
+    let plan;
+    try { plan = planPublishedDayEdit(edit.source, draft, edit.date, { history: workSchedules, absences, rules: automaticScheduleRules, publicationId: globalThis.crypto.randomUUID(), now: Date.now(), actor: { id: currentUser.id || dbUser.uid, name: currentUser.name } }); }
+    catch (error) { triggerNotification(error.message, 'error'); return false; }
+    setIsSavingPublishedSchedule(true);
+    try {
+      if (!await saveRelatedRecords(plan.records, 'Não foi possível salvar o ajuste. Nenhum dia foi alterado; sua edição foi preservada.', { companyId: edit.companyId, history: edit.history, replaced: plan.replaced })) return false;
+      // The tenant listener refreshes the calendar after the confirmed transaction.
+      setPublishedScheduleEdit(null);
+      triggerNotification('Alteração salva apenas neste dia. O restante do período foi preservado.');
+      return true;
+    } finally { setIsSavingPublishedSchedule(false); }
   };
 
   const handleDeleteSchedule = async (schedule) => {
@@ -8191,13 +8219,13 @@ const handleDownload = async (fileUrl, fileName) => {
               employees={employeesList} departments={departmentsList} getDepartments={getUserDepts}
               currentUser={currentUser} canManage={Boolean(isManager || currentUser.isAdmin)}
               canWrite={Boolean(currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))}
-              deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule}
+              deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule} onEditSchedule={openPublishedScheduleEdit}
               onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
               coverageRequirements={automaticScheduleRules.coverageRequirements}
               coverageReady={scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready')} coverageError={scheduleCoverageError || (Object.values(scheduleCoverageSources).includes('error') ? 'Não foi possível carregar todos os dados da cobertura. Confira sua conexão e atualize a página.' : '')}
               canConfigureCoverage={Boolean(canConfigureScheduleRules && (isManager || currentUser.isDeveloper))} onSaveCoverage={saveScheduleCoverageRequirements}
               onPlan={openBulkSchedule} formatDuration={scheduleDurationToText} presence={teamPresenceList}
-              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal}
+              modalOpen={showBulkScheduleModal || showAbsenceModal || showEventModal || showPresenceModal || Boolean(publishedScheduleEdit)}
               onAbsence={() => {
                 setNewAbsence(previous => ({ ...previous, targetUserId: currentUser.id, startDate: selectedCalendarDay, endDate: selectedCalendarDay }));
                 setShowAbsenceModal(true);
@@ -9467,6 +9495,7 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
+      {publishedScheduleEdit && publishedScheduleEdit.companyId === activeCompany?.id && <PublishedScheduleEditor key={`${publishedScheduleEdit.source.id}|${publishedScheduleEdit.date}`} edit={publishedScheduleEdit} context={{ history: publishedScheduleEdit.history, absences: publishedScheduleEdit.absences, rules: publishedScheduleEdit.rules, employees: employeesList, getDepartments: getUserDepts }} requirements={automaticScheduleRules.coverageRequirements || []} departments={departmentsList} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleEdit.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleEdit.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleEdit.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleEdit} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleEdit(null); }} />}
       {showBulkScheduleModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
