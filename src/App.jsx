@@ -28,12 +28,12 @@ import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDes
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
 import { createPortal } from 'react-dom';
-import { 
+import {
   Bell, Users, Megaphone, Layers, Calendar, Clock, Plus, Search, Heart, Smile,
-  Share2, UserCheck, Briefcase, Sparkles, Filter, CheckCircle2, BookOpen, 
-  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Menu, X, Coffee, Building, Send, Edit2, 
+  Share2, UserCheck, Briefcase, Sparkles, Filter, CheckCircle2, BookOpen,
+  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Menu, X, Coffee, Building, Send, Edit2,
   Trash2, MapPin, FileText, ImageIcon, LogOut, Lock, KeyRound,
-  PhoneCall, User, Activity, TrendingUp, TrendingDown, MessageSquare, 
+  PhoneCall, User, Activity, TrendingUp, TrendingDown, MessageSquare,
   Paperclip, File, Download, UserPlus, Upload, Database, LoaderCircle, Check, CheckCheck, Moon, Sun, Settings2,
   Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp
 } from 'lucide-react';
@@ -76,6 +76,7 @@ const isSupportedBusinessFile = file => {
 };
 const ACCESS_MODULES = [
   { id: 'dashboard', label: 'Visão geral' },
+  { id: 'inbox', label: 'Caixa de entrada' },
   { id: 'announcements', label: 'Avisos e políticas' },
   { id: 'sectors', label: 'Canais de setores' },
   { id: 'polls', label: 'Enquetes e clima' },
@@ -422,7 +423,7 @@ const BotaoEmoji = ({ aoSelecionar }) => {
       {aberto && createPortal(
         <div ref={painelRef} data-comunica-emoji-picker="true" className="comunica-emoji-panel fixed z-[10000] shadow-2xl border border-slate-200 bg-white rounded-2xl overflow-hidden" style={{ top: posicao.top, left: posicao.left, width: posicao.width, height: posicao.height }}>
           <div className="h-12 flex items-center justify-between px-4 border-b border-slate-100"><span className="text-sm font-semibold text-slate-800">Emojis</span><button type="button" onClick={() => setAberto(false)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Fechar emojis"><X className="h-4 w-4" /></button></div>
-          <EmojiPicker 
+          <EmojiPicker
             emojiData={emojiDataComunica}
             emojiStyle={EmojiStyle.TWITTER}
             theme="light"
@@ -436,7 +437,7 @@ const BotaoEmoji = ({ aoSelecionar }) => {
               const emoji = obterEmojiSelecionado(emojiObject);
               if (emoji) aoSelecionar(emoji);
               setAberto(false);
-            }} 
+            }}
           />
         </div>,
         document.body
@@ -795,7 +796,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
-  const [mgmtSubTab, setMgmtSubTab] = useState('employees'); 
+  const [mgmtSubTab, setMgmtSubTab] = useState('employees');
   const [dashboardDetail, setDashboardDetail] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [activeCompany, setActiveCompany] = useState(() => {
@@ -810,7 +811,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [developerPin, setDeveloperPin] = useState('');
   const [showCompanyRegistration, setShowCompanyRegistration] = useState(false);
   const [companyForm, setCompanyForm] = useState({ name: '', code: '', adminName: '', adminPin: '' });
-  
+
   // Estados para login e segurança
   const [loginSelectedUserId, setLoginSelectedUserId] = useState('');
   const [loginSearchText, setLoginSearchText] = useState('');
@@ -820,9 +821,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
   const [showChangePinModal, setShowChangePinModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  
+
   const [showPinFieldsInProfile, setShowPinFieldsInProfile] = useState(false);
-  
+
   const [currentPinInput, setCurrentPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
   const [confirmNewPinInput, setConfirmNewPinInput] = useState('');
@@ -833,11 +834,11 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isStandaloneApp, setIsStandaloneApp] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const [browserPushGranted, setBrowserPushGranted] = useState(() => 'Notification' in window && Notification.permission === 'granted');
-  
+
   const [announcementFilter, setAnnouncementFilter] = useState('Todos');
   const [sectorFilter, setSectorFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
@@ -864,7 +865,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [adminConfirmPin, setAdminConfirmPin] = useState('');
   const [pinResetSaving, setPinResetSaving] = useState(false);
   const [showMessagesModal, setShowMessagesModal] = useState(false);
-  
+
   // Novos Estados para o Chat com Suporte a Grupos e Anexos
   const [isComposingMsg, setIsComposingMsg] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState(null);
@@ -945,7 +946,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [serviceDeliveryDraft, setServiceDeliveryDraft] = useState('');
   const [serviceProgressDraft, setServiceProgressDraft] = useState(0);
   const [serviceProgressNoteDraft, setServiceProgressNoteDraft] = useState('');
-  
+
   const [editingUser, setEditingUser] = useState(null);
 
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
@@ -1028,27 +1029,27 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [automaticSchedulePreviewDate, setAutomaticSchedulePreviewDate] = useState('');
   const automaticScheduleDayEditorRef = useRef(null);
   const [newEvent, setNewEvent] = useState({ title: '', date: todayStr, type: 'Confraternização', location: '', description: '' });
-  
+
   // Atualizado com campos separados de contato de emergência
-  const [userForm, setUserForm] = useState({ 
-    name: '', 
-    role: '', 
-    depts: [], 
-    avatar: DEFAULT_AVATAR, 
-    isAdmin: false, 
-    pin: '1234', 
-    emergencyName: '', 
-    emergencyPhone: '', 
+  const [userForm, setUserForm] = useState({
+    name: '',
+    role: '',
+    depts: [],
+    avatar: DEFAULT_AVATAR,
+    isAdmin: false,
+    pin: '1234',
+    emergencyName: '',
+    emergencyPhone: '',
     emergencyRelationship: '',
     prodGroup: '',
     managerId: '',
     birthDate: '',
     hireDate: ''
   });
-  const [myProfileForm, setMyProfileForm] = useState({ 
-    avatar: '', 
-    emergencyName: '', 
-    emergencyPhone: '', 
+  const [myProfileForm, setMyProfileForm] = useState({
+    avatar: '',
+    emergencyName: '',
+    emergencyPhone: '',
     emergencyRelationship: ''
   });
   const [prodFilterStart, setProdFilterStart] = useState(todayStr);
@@ -1067,7 +1068,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [editingSectorId, setEditingSectorId] = useState(null);
   const [editingSectorName, setEditingSectorName] = useState('');
   const [editingSectorColor, setEditingSectorColor] = useState('bg-slate-900 text-white border-slate-800');
-  
+
   const [newRoleValue, setNewRoleValue] = useState('');
   const [newRoleDepts, setNewRoleDepts] = useState([]);
   const [newRoleDescription, setNewRoleDescription] = useState('');
@@ -1272,10 +1273,10 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       if (event.key !== 'Escape') return;
       if (showAddParticipant) return setShowAddParticipant(false);
       if (showMsgSuggestions) return setShowMsgSuggestions(false);
-      if (showMessagesModal) {
+      if (showMessagesModal || activeTab === 'inbox') {
         if (isComposingMsg) return setIsComposingMsg(false);
         if (activeThreadId) return setActiveThreadId(null);
-        return setShowMessagesModal(false);
+        if (showMessagesModal) return setShowMessagesModal(false);
       }
       if (showSummaryModal) return setShowSummaryModal(false);
       if (serviceFormOpen) return setServiceFormOpen(false);
@@ -1302,7 +1303,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingUserRemoval, isRemovingUser, showUserModal, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
+  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, activeTab, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingUserRemoval, isRemovingUser, showUserModal, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
 
   // Refs para controle de Notificações em Segundo Plano
   const sessionStartTime = useRef(Date.now());
@@ -1330,7 +1331,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
       // Solicita permissão do usuário (Obrigatório no Android 13+)
       const permStatus = await LocalNotifications.requestPermissions();
-      
+
       if (permStatus.display === 'granted') {
         await LocalNotifications.schedule({
           notifications: [
@@ -1562,7 +1563,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         setActiveThreadId(threadId);
         setActivityMessageTargetId(messageId || '');
         if (messageId) setMessageFocusFilter('activities');
-        setShowMessagesModal(true);
+        setActiveTab('inbox');
       } catch (error) {
         console.error('Não foi possível abrir a conversa da notificação', error);
       } finally {
@@ -1788,7 +1789,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 if (typeof d.toDate === 'function') return d.toDate().getTime();
                 if (d.seconds) return d.seconds * 1000;
                 if (typeof d === 'number') return d;
-                
+
                 if (typeof d === 'string') {
                   if (d.includes('/')) {
                     const [dataPart, horaPart = '00:00:00'] = d.split(' ');
@@ -1805,7 +1806,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 const num = parseInt(item.id.split('-')[1] || '0', 10);
                 if (!isNaN(num) && num > 1600000000000) return num;
               }
-              
+
               return 0;
             };
 
@@ -2045,17 +2046,17 @@ const getStatusEmTempoReal = (colaborador) => {
   // 3. BUSCA O STATUS DO DIA A DIA (Presencial, Home Office, Folga)
   // É AQUI QUE ESTAVA O ERRO! Precisamos olhar para a lista 'presenceList', e não para o perfil.
   const presencaDiaria = presenceList.find(p => String(p.name).toLowerCase() === String(colaborador.name).toLowerCase());
-  
+
   if (presencaDiaria && presencaDiaria.status) {
     // Se achou na lista diária e não for 'Férias', retorna o status (ex: Home Office)
     if (presencaDiaria.status !== 'Férias') {
-      return presencaDiaria.status; 
+      return presencaDiaria.status;
     }
   }
 
   // 4. SEGURANÇA FINAL
   // Se não tem atestado de férias para hoje, nem status na lista diária, o padrão é Presencial.
-  return 'Presencial'; 
+  return 'Presencial';
 };
   const uploadFileToStorage = async (file, folder, accessMetadata = {}, onProgress, onTask) => {
     beginCloudActivity('Enviando arquivo para a nuvem...');
@@ -2472,7 +2473,7 @@ const getStatusEmTempoReal = (colaborador) => {
       setLoginError('Empresa não encontrada. Confira o código informado.');
       return;
     }
-    
+
     let selectedEmployee = null;
     if (loginSelectedUserId) {
       selectedEmployee = companyUsers.find(u => u.id === loginSelectedUserId);
@@ -2622,7 +2623,7 @@ const getStatusEmTempoReal = (colaborador) => {
     }
 
     const { pin: ignoredPin, ...publicProfile } = currentUser;
-    const updatedUser = { 
+    const updatedUser = {
       ...publicProfile,
       avatar: currentUser.isAdmin ? myProfileForm.avatar : currentUser.avatar,
       emergencyName: myProfileForm.emergencyName,
@@ -2638,13 +2639,13 @@ const getStatusEmTempoReal = (colaborador) => {
 
     setCurrentUser(updatedUser);
     setShowProfileModal(false);
-    
+
     // Resetar campos de senha após salvar
     setCurrentPinInput('');
     setNewPinInput('');
     setConfirmNewPinInput('');
     setShowPinFieldsInProfile(false);
-    
+
     triggerNotification('Seu perfil e dados de acesso foram atualizados!');
   };
 
@@ -2655,8 +2656,8 @@ const getStatusEmTempoReal = (colaborador) => {
 
     const hasLiked = ann.likedBy?.includes(currentUser.id);
     const updatedLikes = hasLiked ? ann.likes - 1 : ann.likes + 1;
-    const updatedLikedBy = hasLiked 
-      ? ann.likedBy.filter(uid => uid !== currentUser.id) 
+    const updatedLikedBy = hasLiked
+      ? ann.likedBy.filter(uid => uid !== currentUser.id)
       : [...(ann.likedBy || []), currentUser.id];
 
     if (isFirebaseAvailable && dbUser) {
@@ -3045,8 +3046,8 @@ const getStatusEmTempoReal = (colaborador) => {
 
     const hasLiked = post.likedBy?.includes(currentUser.id);
     const updatedLikes = hasLiked ? post.likes - 1 : post.likes + 1;
-    const updatedLikedBy = hasLiked 
-      ? post.likedBy.filter(uid => uid !== currentUser.id) 
+    const updatedLikedBy = hasLiked
+      ? post.likedBy.filter(uid => uid !== currentUser.id)
       : [...(post.likedBy || []), currentUser.id];
 
     if (isFirebaseAvailable && dbUser) {
@@ -3119,7 +3120,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     } else {
       setAnnouncements([created, ...announcements]);
     }
-    
+
     setNewAnn({ title: '', content: '', category: 'Aviso Geral', image: '' });
     setShowAnnModal(false);
     triggerNotification('Comunicado oficial publicado na Comunica!');
@@ -3182,11 +3183,11 @@ const handleDeletePost = async (postId) => {
     try {
       // Adicionamos o 'await' e um bloco 'try/catch'
       if (!await removeDoc('posts', postId)) return;
-      
+
       // Só removemos da tela SE o Firebase confirmar a exclusão
       setSectorPosts(prev => prev.filter(p => p.id !== postId));
       triggerNotification('Postagem removida com sucesso!');
-      
+
     } catch (error) {
       console.error("Erro ao deletar no Firebase:", error);
       triggerNotification('Erro ao conectar com o banco. A postagem não foi removida.', 'error');
@@ -3226,7 +3227,7 @@ const submitProductivity = async (e) => {
     if (editingProdId) {
       const existingLog = productivityLogs.find(p => p.id === editingProdId);
       const formattedEditDate = newProdLog.date.split('-').reverse().join('/');
-      
+
       const updatedLog = {
         ...existingLog,
         group: newProdLog.group,
@@ -3244,11 +3245,11 @@ const submitProductivity = async (e) => {
       }
       setProductivityLogs(prev => prev.map(p => p.id === editingProdId ? updatedLog : p));
       triggerNotification('Produção atualizada com sucesso!');
-      
+
     } else {
       const prodId = `prod-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const formattedDate = newProdLog.date.split('-').reverse().join('/');
-      
+
       const created = {
         id: prodId,
         authorId: currentUser.id,
@@ -3287,7 +3288,7 @@ const submitProductivity = async (e) => {
 
 const submitPresence = async (e) => {
   e.preventDefault();
-  
+
   // Envolvemos TUDO no try-catch para capturar qualquer travamento
   try {
     if (!currentUser) return;
@@ -3295,7 +3296,7 @@ const submitPresence = async (e) => {
     // Blindagem de strings: previne o erro "Cannot read properties of undefined (reading 'toLowerCase')"
     const userToSubmit = newPresence?.name || '';
     const targetUser = usersList.find(u => String(u?.name || '').toLowerCase() === String(userToSubmit).toLowerCase());
-    
+
     if (!targetUser) {
       triggerNotification('Usuário não encontrado na lista.', 'error');
       return;
@@ -3307,9 +3308,9 @@ const submitPresence = async (e) => {
       triggerNotification('Você não tem permissão para publicar férias de outra pessoa.', 'error');
       return;
     }
-    
+
     const existing = presenceList.find(p => String(p?.name || '').toLowerCase() === String(userToSubmit).toLowerCase());
-    
+
     let statusFinalDeHoje = newPresence?.status || 'Presencial';
     let isFeriasFuturas = false;
 
@@ -3322,7 +3323,7 @@ const submitPresence = async (e) => {
 
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
-      
+
       // Tratamento seguro de data caso venha com barras ou traços
       let dtInicioFormatada = newPresence.startDate;
       if (dtInicioFormatada.includes('/')) {
@@ -3374,13 +3375,13 @@ const submitPresence = async (e) => {
         createdByName: currentUser.name,
         startDate: newPresence.startDate,
         endDate: newPresence.endDate,
-        startTime: '08:00', 
+        startTime: '08:00',
         endTime: '18:00',
         reason: 'Férias'
       };
 
       const postAbsId = `post-abs-${absId}`;
-      
+
       // Proteção caso a função getUserDepts falhe ou não exista
       let primaryDeptId = 'rh';
       try { primaryDeptId = getUserDepts(targetUser)[0] || 'rh'; } catch(err) {}
@@ -3388,7 +3389,7 @@ const submitPresence = async (e) => {
       // Formata as datas para o post sem quebrar o código
       let fStart = newPresence.startDate;
       if (fStart.includes('-')) { const p = fStart.split('-'); fStart = `${p[2]}/${p[1]}/${p[0]}`; }
-      
+
       let fEnd = newPresence.endDate;
       if (fEnd.includes('-')) { const p = fEnd.split('-'); fEnd = `${p[2]}/${p[1]}/${p[0]}`; }
 
@@ -3495,17 +3496,17 @@ const submitPresence = async (e) => {
 
     const [sYear, sMonth, sDay] = newAbsence.startDate.split('-');
     const formattedStart = `${sDay}/${sMonth}/${sYear}`;
-    
+
     const [eYear, eMonth, eDay] = newAbsence.endDate.split('-');
     const formattedEnd = `${eDay}/${eMonth}/${eYear}`;
 
-    const dateText = newAbsence.startDate === newAbsence.endDate 
+    const dateText = newAbsence.startDate === newAbsence.endDate
       ? `no dia ${formattedStart}`
       : `do dia ${formattedStart} até o dia ${formattedEnd}`;
 
     const postAbsId = `post-abs-${absId}`;
     const primaryDeptId = getUserDepts(absenceTarget)[0] || 'rh';
-    
+
     const autoPost = {
       id: postAbsId,
       dept: primaryDeptId,
@@ -4425,7 +4426,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }
     const targetRole = rolesList[index];
     const oldRoleName = targetRole.name;
-    
+
     if (rolesList.some((r, i) => i !== index && r.name.toLowerCase() === trimmed.toLowerCase())) {
       triggerNotification('Outro cargo com esse mesmo nome já existe.', 'error');
       return;
@@ -4634,7 +4635,7 @@ const handleAICopilot = async (type) => {
 
     try {
       const response = await callGemini(prompt, sysInstruction);
-      
+
       // Limpa possíveis marcações de código (```json) que a IA possa enviar antes de converter
       const cleanedResponse = response.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsedData = JSON.parse(cleanedResponse);
@@ -4647,7 +4648,7 @@ const handleAICopilot = async (type) => {
       } else {
         setNewPost({ ...newPost, title: cleanTitle, content: cleanContent });
       }
-      
+
     } catch (error) {
       console.error("Erro no Copiloto IA:", error);
       setCopilotWarning('❌ Falha ao aprimorar o texto. Tente novamente.');
@@ -4691,11 +4692,11 @@ Não use Markdown, asteriscos, hashtags, tabelas ou códigos. Use título curto,
     const allAnnouncementsStr = announcements
       .filter(isRecentPublication)
       .map(a => `• ${a.title}: ${a.content}`).join('\n') || '• Nenhum comunicado recente.';
-    
+
     const allPostsStr = sectorPosts
       .filter(p => userAllowedDepts.includes(p.dept) && isRecentPublication(p))
       .map(p => `• [Setor: ${p.dept}] ${p.title}: ${p.content}`).join('\n') || '• Nenhuma novidade recente nos setores permitidos.';
-      
+
     const allEventsStr = calendarEvents
       .filter(event => event.date >= todayStr && event.date <= weekEndStr)
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -4715,19 +4716,19 @@ Não use Markdown, asteriscos, hashtags, tabelas ou códigos. Use título curto,
 PERÍODO DO BOLETIM: de ${formatCalendarDate(todayStr)} até ${formatCalendarDate(weekEndStr)}.
 
 Abaixo estão as informações válidas para este período na Comunica:
-    
+
     [COMUNICADOS OFICIAIS DO RH]:
     ${allAnnouncementsStr}
-    
+
     [NOTÍCIAS DOS SETORES]:
     ${allPostsStr}
-    
+
     [EVENTOS NA AGENDA]:
     ${allEventsStr}
-    
+
     [CONTROLE DE ESCALAS E INDISPONIBILIDADES]:
     ${allAbsencesStr}
-    
+
     Gere "BOLETIM SEMANAL COMUNICA • ${formatCalendarDate(todayStr)}" com estes blocos: 📌 Em foco, 🗓️ Próximos dias, 👥 Escala da equipe e 💡 Boas notícias.
     Se uma seção não tiver dados, use uma frase curta e positiva. Mantenha o texto convidativo e fácil de escanear.`;
 
@@ -4779,14 +4780,14 @@ try {
         return date && date >= recentLimit && date <= currentDate;
       })
       .map(a => `- [Aviso recente] Categoria: ${a.category}. Título: ${a.title}. Conteúdo: ${a.content}`).join('\n');
-    
+
     const activeSectorPostsText = sectorPosts
       .filter(post => {
         const date = parseContentDate(post);
         return userAllowedDepts.includes(post.dept) && date && date >= recentLimit && date <= currentDate;
       })
       .map(p => `- [Post recente do setor: ${p.dept.toUpperCase()}] Por ${p.author}. Título: ${p.title}. Conteúdo: ${p.content}`).join('\n');
-      
+
     const currentAbsencesText = absences.filter(ab => {
       const start = ab.startDate || ab.date;
       const end = ab.endDate || ab.date || start;
@@ -4807,22 +4808,22 @@ try {
     const activeStaffText = employeesList.map(u => `- Colaborador: ${u.name} | Setores: ${getUserDepts(u).map(dId => departmentsList.find(d => d.id === dId)?.name || dId).join(', ')} | Cargo: ${u.role} | Tipo de Conta: ${u.isAdmin ? 'Admin' : 'Colaborador'}`).join('\n');
 
     const prompt = `DADOS EM TEMPO REAL DA COMUNICA:
-    
+
     [QUADRO DE COLABORADORES ATIVOS]:
     ${activeStaffText}
-    
+
     [AUSÊNCIAS VIGENTES AGORA]:
     ${currentAbsencesText || '- Nenhuma ausência vigente agora.'}
 
     [FÉRIAS VIGENTES AGORA]:
     ${currentVacationsText}
-    
+
     [EVENTOS DE HOJE E FUTUROS (PRÓXIMOS 90 DIAS)]:
     ${activeEventsText || '- Nenhum evento futuro cadastrado no calendário.'}
-    
+
     [COMUNICADOS OFICIAIS RECENTES (ÚLTIMOS 30 DIAS)]:
     ${activeAnnouncementsText || '- Nenhum comunicado recente.'}
-    
+
     [POSTAGENS RECENTES NOS CANAIS DE SETOR (ÚLTIMOS 30 DIAS)]:
     ${activeSectorPostsText || '- Nenhuma postagem recente no setor do usuário.'}
 
@@ -4913,7 +4914,7 @@ try {
     const matchesSearch = `${poll.formTitle || ''} ${poll.question || ''}`.toLocaleLowerCase('pt-BR').includes(pollSearch.trim().toLocaleLowerCase('pt-BR'));
     return matchesStatus && matchesSearch;
   }).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0) || Number(a.formOrder || 0) - Number(b.formOrder || 0));
-  
+
   const isManager = currentUser && (currentUser.isAdmin || ['coordenador', 'encarregado', 'supervis', 'diretor', 'rh', 'gest'].some(r => currentUser.role.toLowerCase().includes(r)));
   const isProductionSupervisor = Boolean(currentUser?.role && /encarregado.*produ|produ.*encarregado/i.test(currentUser.role));
   const canAccessProductivity = Boolean(currentUser && (currentUser.isAdmin || currentUser.prodGroup || isProductionSupervisor));
@@ -5010,7 +5011,7 @@ try {
     .join('|');
 
   useEffect(() => {
-    if (!showMessagesModal || !activeThreadId || isComposingMsg) return undefined;
+    if ((activeTab !== 'inbox' && !showMessagesModal) || !activeThreadId || isComposingMsg) return undefined;
 
     let secondFrame = 0;
     const firstFrame = window.requestAnimationFrame(() => {
@@ -5029,7 +5030,7 @@ try {
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
-  }, [showMessagesModal, activeThreadId, activeThreadMessageKey, isComposingMsg, messageFocusFilter, activityMessageTargetId]);
+  }, [activeTab, showMessagesModal, activeThreadId, activeThreadMessageKey, isComposingMsg, messageFocusFilter, activityMessageTargetId]);
   const formatMessageDateTime = (message) => {
     const timestamp = getMessageTimestamp(message);
     if (!timestamp) return message.date || '';
@@ -5100,7 +5101,7 @@ try {
 
     const myDepts = getUserDepts(currentUser);
     const allowedIds = new Set();
-    
+
     messageContacts.forEach(u => {
       if (u.id !== currentUser.id && u.isDeveloper) {
         allowedIds.add(u.id);
@@ -5324,7 +5325,7 @@ try {
       setActiveThreadId(threadId);
       setThreadHeaderExpanded(true);
       setShowArchivedThreads(false);
-      setShowMessagesModal(true);
+      setActiveTab('inbox');
       triggerNotification(`Solicitação #${String(message.ticketNumber).padStart(6, '0')} aberta com sucesso.`);
     } catch (error) {
       console.error('Falha ao abrir solicitação de serviço', error);
@@ -5348,7 +5349,7 @@ try {
     setShowMsgSuggestions(false);
     setShowArchivedThreads(false);
     setMobileMenuOpen(false);
-    setShowMessagesModal(true);
+    setActiveTab('inbox');
   };
 
   const handleMessageAttachment = async (e) => {
@@ -5499,7 +5500,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       if (isComposingMsg) newMsg.ticketNumber = new Set(normMessages.map(message => message.threadId)).size + 1;
       setPrivateMessages([newMsg, ...privateMessages]);
     }
-    
+
     setMsgText('');
     setMsgAttachment(null);
     setReplyingToMessage(null);
@@ -5724,9 +5725,9 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setServiceProgressDraft(Number(openedMetadata.serviceProgress || 0));
     setServiceProgressNoteDraft(openedMetadata.serviceProgressNote || '');
     setShowAddParticipant(false);
-    
+
     const unreadInThread = normMessages.filter(m => m.threadId === threadId && !m.readBy.includes(currentUser.id));
-    
+
     if (unreadInThread.length > 0) {
       await saveRelatedRecords(unreadInThread.map(message => ({
         collection: 'messages', id: message.id, operation: 'update',
@@ -5740,7 +5741,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   const openActivityConversation = (message) => {
     setMessageFocusFilter('activities');
     openThread(message.threadId, message.id);
-    setShowMessagesModal(true);
+    setActiveTab('inbox');
   };
 
   const createThreadSystemMessage = (threadId, metadata, content) => ({
@@ -6054,7 +6055,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       triggerNotification('A conversa está concluída. Reabra-a pela avaliação antes de alterar participantes.', 'error');
       return;
     }
-    
+
     const threadMsgs = privateMessages.filter(m => {
         const nm = getNormalizedMessages().find(x => x.id === m.id);
         return nm && nm.threadId === activeThreadId;
@@ -6743,7 +6744,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     setMsgText('');
     setMsgAttachment(null);
     setShowArchivedThreads(false);
-    setShowMessagesModal(true);
+    setActiveTab('inbox');
   };
   const dashboardRoleLabel = currentUser?.isDeveloper
     ? 'Suporte da plataforma'
@@ -6755,10 +6756,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           ? 'Gestão operacional'
           : 'Meu dia no Comunica';
   const dashboardAttentionItems = [
-    unreadMessages.length > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadMessages.length} mensagem(ns) aguardando leitura`, tone: 'blue', icon: MessageSquare, action: () => { setInboxStatusFilter('unread'); setShowMessagesModal(true); } } : null,
+    unreadMessages.length > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadMessages.length} mensagem(ns) aguardando leitura`, tone: 'blue', icon: MessageSquare, action: () => { setInboxStatusFilter('unread'); setActiveTab('inbox'); } } : null,
     pendingDocumentReads > 0 ? { id: 'document-reads', label: 'Leituras obrigatórias', detail: `${pendingDocumentReads} documento(s) aguardando confirmação`, tone: 'amber', icon: FileText, action: () => { setDocumentReadingFilter('Pendentes'); setActiveTab('documents'); } } : null,
     pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: `${pendingPollResponses} votação(ões) disponíveis`, tone: 'cyan', icon: Activity, action: () => { setPollViewFilter('Ativas'); setActiveTab('polls'); } } : null,
-    dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setShowMessagesModal(true) } : null,
+    dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setActiveTab('inbox') } : null,
     serviceMetrics.overdue > 0 ? { id: 'overdue-services', label: 'Serviços em atraso', detail: `${serviceMetrics.overdue} chamado(s) fora do prazo`, tone: 'rose', icon: CheckCircle2, action: () => { setServiceWorkspace('requests'); setServiceStatusFilter('overdue'); setActiveTab('services'); } } : null,
     serviceActivityMetrics.today > 0 ? { id: 'today-activities', label: 'Atividades para hoje', detail: `${serviceActivityMetrics.today} atividade(s) vencem hoje`, tone: 'amber', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('today'); setActiveTab('services'); } } : null,
     serviceActivityMetrics.overdue > 0 ? { id: 'overdue-activities', label: 'Atividades em atraso', detail: `${serviceActivityMetrics.overdue} atividade(s) com prazo ultrapassado`, tone: 'rose', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('overdue'); setActiveTab('services'); } } : null,
@@ -6776,7 +6777,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   const dashboardQuickActions = [
     canOpenModule('services') && activeServiceCatalog.length ? { id: 'new-service', label: 'Abrir solicitação', detail: 'Novo chamado interno', icon: Plus, action: () => openServiceRequestForm(activeServiceCatalog[0].id) } : null,
     canOpenModule('services') && serviceActivityMetrics.active ? { id: 'activities', label: 'Atividades pendentes', detail: `${serviceActivityMetrics.active} atividade(s) pendente(s)`, icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityPeriodFilter('all'); setActiveTab('services'); } } : null,
-    { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setShowMessagesModal(true) },
+    { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setActiveTab('inbox') },
     canOpenModule('documents') ? { id: 'documents', label: 'Documentos', detail: pendingDocumentReads ? `${pendingDocumentReads} leitura(s) pendente(s)` : 'Consultar arquivos', icon: FileText, action: () => setActiveTab('documents') } : null,
     canOpenModule('scale') ? { id: 'calendar', label: 'Calendário', detail: `${dashboardUpcomingEvents.length} evento(s) futuro(s)`, icon: Calendar, action: () => setActiveTab('scale') } : null,
     canOpenModule('careers') ? { id: 'careers', label: 'Recrutamento', detail: `${careerIndicatorApplications.length} candidatura(s) ativas`, icon: Briefcase, action: () => setActiveTab('careers') } : null,
@@ -6892,7 +6893,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           }}
           className="w-full rounded-xl border border-white/15 bg-white/[0.09] px-3 py-3 text-sm font-bold text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-40"
         />
-        
+
         {/* LISTAGEM DE SUGESTÕES DINÂMICAS */}
         {showLoginSuggestions && loginCompanyIdentified && loginSearchText.trim() !== '' && (
           <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
@@ -6988,9 +6989,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       ...(currentUser?.readNotifications || []),
       ...unreadNotifications.map(n => n.id)
     ])];
-    
+
     const updatedUser = { ...currentUser, readNotifications: newReads };
-    
+
     if (isFirebaseAvailable && dbUser) {
        await saveDoc('users', currentUser.id, updatedUser);
     } else {
@@ -6999,11 +7000,543 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     setCurrentUser(updatedUser);
   };
 
+  const inboxSurface = (
+        <div data-tour="inbox-overview" className={activeTab === 'inbox' ? "flex h-[calc(100dvh-7rem)] min-h-[680px] overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm animate-in fade-in duration-300" : "fixed inset-0 z-[999] flex items-center justify-center bg-[#f4f7fb] p-0 animate-fade-in"}>
+          <div className={`flex w-full max-w-none flex-col overflow-hidden bg-white ${activeTab === 'inbox' ? 'h-full border-0 shadow-none' : 'h-dvh border-0 shadow-none rounded-none'}`}>
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-white via-white to-blue-50/70 px-4 py-4 text-slate-900 sm:px-6">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-11 w-11 rounded-2xl bg-blue-700 border border-blue-700 flex items-center justify-center shrink-0 shadow-sm"><MessageSquare className="h-5 w-5 text-white" /></div>
+                <div className="min-w-0">
+                  <h3 className="font-bold tracking-tight text-base sm:text-lg leading-tight">Caixa de entrada</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Acompanhe solicitações, responsáveis e prazos</p>
+                </div>
+              </div>
+              <div data-tour="inbox-actions" className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
+                {!isComposingMsg && !activeThreadId && (
+                  <select aria-label="Organizar conversas" value={messageOrganization} onChange={(e) => setMessageOrganization(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-200">
+                    <option value="person">Organizar por pessoa</option>
+                    <option value="sector">Organizar por setor</option>
+                  </select>
+                )}
+                {!isComposingMsg && !activeThreadId && (
+                  <button type="button" onClick={() => { setShowArchivedThreads(value => !value); setInboxStatusFilter('all'); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-700">
+                    {showArchivedThreads ? 'Caixa de entrada' : 'Arquivadas'}
+                  </button>
+                )}
+                {!isComposingMsg && !activeThreadId && (
+                  <button type="button" onClick={() => { setIsComposingMsg(true); setMsgSearchText(''); setMsgRecipientIds([]); setConversationDraftThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`); setMsgSubject(''); setMsgDueDate(''); setMsgText(''); setMsgAttachment(null); }} className="bg-blue-600 hover:bg-blue-500 text-xs font-semibold px-3 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5">
+                    <Plus className="h-4 w-4" /> Nova conversa
+                  </button>
+                )}
+                {activeTab !== 'inbox' && <button type="button" aria-label="Fechar caixa de entrada" onClick={() => { setShowMessagesModal(false); setIsComposingMsg(false); setActiveThreadId(null); setMsgAttachment(null); }} className="ml-1 rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                  <X className="h-5 w-5" />
+                </button>}
+              </div>
+            </div>
+
+            <div data-tour="inbox-content" className="flex-1 overflow-hidden p-0 bg-[#f4f7fb] flex flex-col">
+              {isComposingMsg ? (
+                <div className="p-4 sm:p-6 overflow-y-auto h-full">
+                  <form onSubmit={handleSendMessage} className="flex flex-col gap-5 bg-white p-5 sm:p-8 rounded-[24px] border border-slate-200/80 shadow-[0_18px_50px_-32px_rgba(15,23,42,.45)] max-w-3xl mx-auto">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <h4 className="font-bold text-lg text-slate-900">Nova conversa</h4>
+                      <button type="button" onClick={() => setIsComposingMsg(false)} className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-2 rounded-lg">Voltar</button>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Assunto (Obrigatório)</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Dúvida sobre fechamento, Solicitação de EPI..."
+                        value={msgSubject}
+                        onChange={(e) => setMsgSubject(e.target.value)}
+                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 font-medium text-slate-800 bg-slate-50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Conclusão prevista</label>
+                      <input
+                        type="date"
+                        value={msgDueDate}
+                        min={todayStr}
+                        onChange={(e) => setMsgDueDate(e.target.value)}
+                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white text-slate-700"
+                      />
+                      <span className="mt-1 block text-[9px] text-slate-400">Opcional. Participantes poderão alterar o prazo; cada mudança ficará registrada na conversa.</span>
+                    </div>
+
+                    <div>
+                      <div className="mb-2 flex items-end justify-between gap-3">
+                        <div>
+                          <label htmlFor="message-recipient-search" className="block text-[10px] font-bold uppercase text-slate-500">Participantes da conversa</label>
+                          <p className="mt-1 text-[10px] text-slate-400">Pesquise e selecione uma ou mais pessoas antes de iniciar.</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">{msgRecipientIds.length} selecionado(s)</span>
+                      </div>
+                      <div className="relative z-20">
+                        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input id="message-recipient-search" type="text" required={msgRecipientIds.length === 0} autoComplete="off" placeholder="Digite o nome, cargo ou setor..." value={msgSearchText} onChange={event => { setMsgSearchText(event.target.value); setShowMsgSuggestions(true); }} onFocus={() => setShowMsgSuggestions(true)} onBlur={() => setTimeout(() => setShowMsgSuggestions(false), 200)} className={`w-full rounded-xl border bg-white py-3 pl-10 pr-10 text-sm font-medium focus:outline-none focus:ring-4 ${msgRecipientIds.length ? 'border-emerald-300 text-slate-800 focus:ring-emerald-50' : 'border-slate-200 text-slate-700 focus:border-blue-300 focus:ring-blue-50'}`} />
+                        {msgSearchText && <button type="button" aria-label="Limpar busca" onMouseDown={event => event.preventDefault()} onClick={() => { setMsgSearchText(''); setShowMsgSuggestions(true); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
+                        {showMsgSuggestions && (
+                          <div className="mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Selecione os participantes</span><span className="text-[10px] font-semibold text-blue-700">{getAllowedMessageRecipients().length} disponíveis</span></div>
+                            <div className="max-h-64 overflow-y-auto p-1.5">
+                              {filterMessageRecipients(msgSearchText).map(user => {
+                                const recipientDepartments = getMessageRecipientDepartments(user);
+                                const selected = msgRecipientIds.includes(user.id);
+                                return <button key={user.id} type="button" onMouseDown={event => { event.preventDefault(); setMsgRecipientIds(previous => selected ? previous.filter(id => id !== user.id) : [...new Set([...previous, user.id])]); setMsgSearchText(''); setShowMsgSuggestions(true); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition-colors focus:outline-none ${selected ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-blue-50 focus:bg-blue-50'}`}><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black ${selected ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'}`}>{String(user.name || '?').trim().charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate font-extrabold leading-tight">{user.name}</span><span className={`mt-1 block truncate text-[10px] ${selected ? 'text-blue-100' : 'text-slate-500'}`}>{[user.role, recipientDepartments.join(', ')].filter(Boolean).join(' · ') || 'Colaborador'}</span></span>{selected && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>;
+                              })}
+                              {filterMessageRecipients(msgSearchText).length === 0 && <div className="p-5 text-center"><Search className="mx-auto h-6 w-6 text-slate-300" /><p className="mt-2 text-xs font-semibold text-slate-600">Nenhum colaborador encontrado</p><p className="mt-1 text-[10px] text-slate-400">Revise o nome, cargo ou setor informado.</p></div>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {msgRecipientIds.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{msgRecipientIds.map(userId => { const selectedUser = getAllowedMessageRecipients().find(user => user.id === userId) || messageContacts.find(user => user.id === userId); if (!selectedUser) return null; return <span key={userId} className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 py-1.5 pl-3 pr-1.5 text-[10px] font-bold text-emerald-900"><span className="truncate">{selectedUser.name}</span><button type="button" onClick={() => setMsgRecipientIds(previous => previous.filter(id => id !== userId))} className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white text-emerald-700 hover:bg-emerald-100" aria-label={`Remover ${selectedUser.name}`}><X className="h-3 w-3" /></button></span>; })}</div>}
+                      {!currentUser.isAdmin && <span className="mt-2 block text-[9px] text-slate-400">Você pode selecionar os gestores do seu setor, o suporte e pessoas com quem já possui contato.</span>}
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mensagem ou Descrição</label>
+                      <textarea
+                        rows="3"
+                        placeholder="Descreva sua dúvida, envie um documento..."
+                        value={msgText}
+                        onChange={(e) => setMsgText(e.target.value)}
+                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      ></textarea>
+                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
+                      <PreviaEmojis texto={msgText} />
+                    </div>
+
+                    <div className="flex items-center gap-3 mt-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors border border-slate-200 w-max">
+                        <Paperclip className="h-4 w-4" />
+                        {isUploadingMessageAttachment ? 'Enviando anexo…' : msgAttachment ? 'Mudar Anexo' : 'Anexar Arquivo ou Foto'}
+                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
+                      </label>
+
+                      {msgAttachment && (
+                        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-800">
+                          <File className="h-3 w-3" /> <span className="truncate max-w-[120px]">{msgAttachment.name}</span>
+                          <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700 ml-1"><X className="h-3.5 w-3.5"/></button>
+                        </div>
+                      )}
+                    </div>
+
+                    <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || !msgRecipientIds.length || (!msgText.trim() && !msgAttachment)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+                      {isSendingMessage && <LoaderCircle className="h-4 w-4 animate-spin" />}{isSendingMessage ? 'Abrindo conversa...' : `Iniciar conversa com ${msgRecipientIds.length || 0} participante(s)`}
+                    </button>
+                  </form>
+                </div>
+              ) : activeThreadId ? (
+                <div className="flex min-h-0 h-full bg-white">
+                  <aside className="hidden w-[320px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 lg:flex">
+                    <div className="border-b border-slate-200 px-4 py-4">
+                      <span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas</span>
+                      <p className="mt-1 text-xs text-slate-500">Alterne sem sair da leitura atual.</p>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
+                      {(() => {
+                        const grouped = {};
+                        normMessages.filter(message => message.participants.includes(currentUser.id)).forEach(message => {
+                          if (!grouped[message.threadId]) grouped[message.threadId] = { ...message, messages: [], unread: 0 };
+                          grouped[message.threadId].messages.push(message);
+                          if (!message.readBy.includes(currentUser.id)) grouped[message.threadId].unread += 1;
+                        });
+                        return Object.values(grouped)
+                          .filter(thread => !isThreadArchived(thread.threadId))
+                          .sort((a, b) => Math.max(...b.messages.map(getMessageTimestamp)) - Math.max(...a.messages.map(getMessageTimestamp)))
+                          .map(thread => {
+                            const latest = thread.messages.reduce((last, message) => getMessageTimestamp(message) > getMessageTimestamp(last) ? message : last, thread.messages[0]);
+                            const selected = thread.threadId === activeThreadId;
+                            return <button key={thread.threadId} type="button" onClick={() => openThread(thread.threadId)} className={`mb-1.5 w-full rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-200 bg-white shadow-sm' : 'border-transparent hover:border-slate-200 hover:bg-white'}`}>
+                              <div className="flex min-w-0 items-start gap-2.5">
+                                <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-black ${selected ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-600'}`}><MessageSquare className="h-4 w-4" /></span>
+                                <span className="min-w-0 flex-1"><strong className="block break-words text-xs leading-4 text-slate-900">{thread.subject || 'Conversa'}</strong><span className="mt-1 block truncate text-[10px] text-slate-500">{latest.senderId === currentUser.id ? 'Você' : latest.senderName}: {latest.content || 'Arquivo anexo'}</span></span>
+                                {thread.unread > 0 && <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-blue-600 px-1 text-[9px] font-black text-white">{thread.unread}</span>}
+                              </div>
+                            </button>;
+                          });
+                      })()}
+                    </div>
+                  </aside>
+                  <div className="flex min-w-0 flex-1 flex-col bg-white">
+                  {/* HEADER DO CHAT ABERTO */}
+                  <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'p-4 sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
+                    <div className="flex flex-wrap items-start gap-2 sm:gap-3">
+                      <button type="button" aria-label="Voltar às conversas" onClick={() => { setActiveThreadId(null); setShowAddParticipant(false); }} className="text-slate-500 hover:text-slate-900 p-2 bg-slate-50 border border-slate-200 rounded-xl transition-all"><ChevronLeft className="h-5 w-5"/></button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversa ativa</span>{!threadHeaderExpanded && (() => { const ticket = conversationAuditRows.find(row => row.id === activeThreadId); return ticket ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-black text-blue-700">#{ticket.ticket}</span> : null; })()}</div>
+                        <h4 className={`break-words font-extrabold leading-snug text-slate-950 [overflow-wrap:anywhere] ${threadHeaderExpanded ? 'mt-0.5 text-base sm:text-lg' : 'mt-0.5 line-clamp-1 text-sm'}`}>{normMessages.find(m => m.threadId === activeThreadId)?.subject || 'Conversa'}</h4>
+                        {threadHeaderExpanded && <span className="mt-1 block break-words text-xs leading-5 text-slate-500 [overflow-wrap:anywhere]">
+                          Participantes: {normMessages.find(m => m.threadId === activeThreadId)?.participants.map(pid => pid === currentUser.id ? 'Você' : messageContacts.find(u => u.id === pid)?.name.split(' ')[0]).join(', ')}
+                        </span>}
+                      </div>
+                      {!getThreadMetadata(activeThreadId).completedAt && <button type="button" onClick={() => { setThreadHeaderExpanded(true); setShowAddParticipant(true); setParticipantSearch(''); setNewParticipantId(''); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" title="Incluir participantes" aria-label="Incluir participantes"><UserPlus className="h-4 w-4" /></button>}
+                      <div className="flex shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1"><button type="button" onClick={() => setMessageFocusFilter('all')} className={`rounded-lg px-2 py-1.5 text-[9px] font-bold ${messageFocusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button><button type="button" onClick={() => setMessageFocusFilter('saved')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'saved' ? 'bg-blue-700 text-white' : 'text-slate-500'}`} title="Mensagens salvas"><Bookmark className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setMessageFocusFilter('activities')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'activities' ? 'bg-violet-700 text-white' : 'text-slate-500'}`} title="Atividades da conversa"><ListChecks className="h-3.5 w-3.5" /></button></div>
+                      <button type="button" aria-expanded={threadHeaderExpanded} onClick={() => { setThreadHeaderExpanded(value => !value); if (threadHeaderExpanded) setShowAddParticipant(false); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-extrabold text-blue-800 hover:border-blue-200 hover:bg-blue-100" title={threadHeaderExpanded ? 'Recolher informações da conversa' : 'Exibir informações da conversa'}>{threadHeaderExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}<span className="hidden sm:inline">{threadHeaderExpanded ? 'Recolher' : 'Detalhes'}</span></button>
+                      {threadHeaderExpanded && <div className="ml-12 flex w-full flex-wrap items-center justify-end gap-2 sm:ml-0 sm:w-auto sm:shrink-0">
+                      {isThreadArchived(activeThreadId) ? (
+                        <button type="button" onClick={() => handleRestoreThread(activeThreadId)} className="bg-white border border-emerald-200 text-emerald-700 hover:text-emerald-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Restaurar conversa">
+                          Restaurar
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => handleArchiveThread(activeThreadId)} className="bg-white border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Arquivar conversa">
+                          Arquivar
+                        </button>
+                      )}
+                      </div>}
+                    </div>
+
+                    {threadHeaderExpanded && (() => {
+                      const ticket = conversationAuditRows.find(row => row.id === activeThreadId);
+                      if (!ticket) return null;
+                      return <section className="grid gap-2 sm:ml-12 sm:grid-cols-3" aria-label="Resumo do ticket">
+                        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-blue-600">Ticket</span><strong className="mt-0.5 block text-sm text-blue-950">#{ticket.ticket}</strong></div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">Responsável pela abertura</span><strong className="mt-0.5 block break-words text-xs text-slate-900 [overflow-wrap:anywhere]">{ticket.openerName}</strong></div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">Movimentações</span><strong className="mt-0.5 block text-xs text-slate-900">{ticket.messages?.length || getThreadMetadata(activeThreadId).messages.length} mensagens · {ticket.extensions} prorrogação(ões)</strong></div>
+                      </section>;
+                    })()}
+
+                    {threadHeaderExpanded && (() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.serviceRequest) return null;
+                      const status = serviceRequestStatus(metadata, todayStr);
+                      const opener = getThreadOpener(activeThreadId);
+                      const canDecide = metadata.serviceRequiresApproval && status === 'approval' && opener?.senderId !== currentUser.id && metadata.participants?.includes(currentUser.id);
+                      const canManage = canManageServiceThread(activeThreadId);
+                      const workflowStatus = metadata.serviceStatus || (metadata.serviceRequiresApproval ? 'approval' : 'open');
+                      return <section className="flex flex-col gap-3 rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 sm:ml-12" aria-label="Informações da solicitação">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><span className="block text-[9px] font-black uppercase tracking-wider text-cyan-700">Central de Serviços · {metadata.serviceCategory || 'Serviço interno'}</span><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${SERVICE_STATUS_CLASSES[status]}`}>{serviceStatusLabel[status]}</span><span className="text-[10px] font-semibold text-slate-600">Prioridade {metadata.servicePriorityLabel || 'Normal'}</span><span className="text-[10px] font-semibold text-slate-600">Responsável: {metadata.serviceAssigneeName || 'não atribuído'}</span>{metadata.serviceDecisionBy && <span className="text-[10px] text-slate-500">Decisão por {metadata.serviceDecisionBy}</span>}</div></div>{canDecide && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => handleServiceDecision(activeThreadId, 'rejected')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50">Não aprovar</button><button type="button" onClick={() => handleServiceDecision(activeThreadId, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700">Aprovar solicitação</button></div>}</div>
+                        {canManage && workflowStatus !== 'approval' && <div className="flex flex-wrap gap-2 border-t border-cyan-100 pt-3">{!['in_progress', 'waiting_requester'].includes(workflowStatus) && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'in_progress')} className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800">Iniciar atendimento</button>}{workflowStatus === 'in_progress' && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'waiting_requester')} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50">Aguardar solicitante</button>}{workflowStatus === 'waiting_requester' && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'in_progress')} className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800">Retomar atendimento</button>}</div>}
+                        <div className="grid gap-2 border-t border-cyan-100 pt-3 sm:grid-cols-3">
+                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">SLA padrão</span><strong className="mt-1 block text-xs text-slate-800">{metadata.serviceSlaDays || 0} dias úteis</strong></div>
+                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">Previsão informada</span><strong className="mt-1 block text-xs text-slate-800">{formatDueDate(metadata.servicePromisedDate)}</strong></div>
+                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">Andamento</span><strong className="mt-1 block text-xs text-slate-800">{Number(metadata.serviceProgress || 0)}%</strong>{metadata.serviceProgressNote && <p className="mt-1 break-words text-[9px] leading-4 text-slate-500">{metadata.serviceProgressNote}</p>}</div>
+                        </div>
+                        {canManage && workflowStatus !== 'approval' && <div className="grid gap-2 rounded-xl border border-cyan-100 bg-white p-3 sm:grid-cols-[160px_120px_1fr_auto] sm:items-end"><label className="text-[8px] font-black uppercase text-slate-500">Data que pretende entregar<input type="date" value={serviceDeliveryDraft} onChange={event => setServiceDeliveryDraft(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-semibold normal-case" /></label><label className="text-[8px] font-black uppercase text-slate-500">Andamento (%)<input type="number" min="0" max="100" step="5" value={serviceProgressDraft} onChange={event => setServiceProgressDraft(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-semibold normal-case" /></label><label className="text-[8px] font-black uppercase text-slate-500">Atualização para o solicitante<input maxLength="500" value={serviceProgressNoteDraft} onChange={event => setServiceProgressNoteDraft(event.target.value)} placeholder="Ex.: documentos em conferência" className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-medium normal-case" /></label><button type="button" onClick={() => handleServiceProgressUpdate(activeThreadId)} className="rounded-lg bg-cyan-700 px-3 py-2.5 text-[10px] font-bold text-white hover:bg-cyan-800">Salvar andamento</button></div>}
+                      </section>;
+                    })()}
+
+                    {threadHeaderExpanded && (() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      const deadlineStatus = getThreadDeadlineStatus(activeThreadId);
+                      const deadlineHistory = metadata.dueDateHistory || [];
+                      return (
+                        <div className="grid gap-2 text-xs sm:ml-12 md:grid-cols-[auto_1fr_auto] md:items-center">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 font-semibold ${deadlineStatus.className}`}>{deadlineStatus.label}</span><span className="break-words font-medium text-slate-500">Conclusão prevista: {formatDueDate(metadata.dueDate)}</span></div>
+                          {!metadata.completedAt && (!metadata.serviceRequest || currentUser?.isAdmin || currentUser?.isDeveloper) && (
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <input
+                                type="date"
+                                aria-label="Alterar prazo de conclusão"
+                                value={pendingThreadDueDate}
+                                onChange={(e) => setPendingThreadDueDate(e.target.value)}
+                                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-400 sm:flex-none"
+                              />
+                              {pendingThreadDueDate !== (metadata.dueDate || '') && <button type="button" onClick={() => handleUpdateThreadDeadline(pendingThreadDueDate)} className="rounded-lg bg-blue-700 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-blue-800">Salvar prazo</button>}
+                            </div>
+                          )}
+                          {!metadata.completedAt && (
+                            <button type="button" onClick={handleCompleteThread} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                              Concluir
+                            </button>
+                          )}
+                          {metadata.completedAt && <span className="break-words text-slate-400">Concluída por {metadata.completedBy || 'participante'} em {new Date(metadata.completedAt).toLocaleDateString('pt-BR')}</span>}
+                          {deadlineHistory.length > 0 && <span className="break-words text-violet-600">{deadlineHistory.length} alteração(ões) de prazo no histórico</span>}
+                        </div>
+                      );
+                    })()}
+
+                    {threadHeaderExpanded && (() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.completedAt) return null;
+                      const opener = getThreadOpener(activeThreadId);
+                      return <div className="sm:ml-12 flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-[11px] leading-5 text-emerald-900"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span className="min-w-0 break-words [overflow-wrap:anywhere]">Conversa concluída{opener ? `. A avaliação fica disponível para ${opener.senderId === currentUser.id ? 'você' : opener.senderName}.` : '.'}</span></div>;
+                    })()}
+
+                    {/* PAINEL DE BUSCA E INCLUSÃO DE PARTICIPANTE */}
+                    {threadHeaderExpanded && showAddParticipant && (
+                      <form onSubmit={handleAddParticipant} className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3 sm:ml-12 animate-in slide-in-from-top-2">
+                        <div className="flex items-start justify-between gap-3"><div><strong className="block text-xs text-slate-900">Incluir participante</strong><span className="mt-0.5 block text-[10px] text-slate-500">Pesquise por nome, cargo ou setor.</span></div><button type="button" onClick={() => setShowAddParticipant(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Fechar busca de participante"><X className="h-4 w-4" /></button></div>
+                        <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input autoFocus value={participantSearch} onChange={event => { setParticipantSearch(event.target.value); setNewParticipantId(''); }} placeholder="Digite o nome, cargo ou setor" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
+                        <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5">
+                          {messageContacts.filter(user => !normMessages.find(message => message.threadId === activeThreadId)?.participants.includes(user.id)).filter(user => normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(normalizedText(participantSearch))).map(user => <button key={user.id} type="button" onClick={() => setNewParticipantId(user.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${newParticipantId === user.id ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-blue-50'}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[11px] font-black ${newParticipantId === user.id ? 'bg-white/15' : 'bg-slate-100'}`}>{String(user.name || '?').charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block break-words text-xs [overflow-wrap:anywhere]">{user.name}</strong><span className={`mt-0.5 block break-words text-[10px] [overflow-wrap:anywhere] ${newParticipantId === user.id ? 'text-blue-100' : 'text-slate-500'}`}>{[user.role, getMessageRecipientDepartments(user).join(', ')].filter(Boolean).join(' · ') || 'Colaborador'}</span></span>{newParticipantId === user.id && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>)}
+                          {messageContacts.filter(user => !normMessages.find(message => message.threadId === activeThreadId)?.participants.includes(user.id)).filter(user => normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(normalizedText(participantSearch))).length === 0 && <div className="p-4 text-center text-xs text-slate-500">Nenhum participante encontrado.</div>}
+                        </div>
+                        <button type="submit" disabled={!newParticipantId} className="mt-3 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">Adicionar participante selecionado</button>
+                      </form>
+                    )}
+                  </div>
+
+                  {/* ÁREA DE MENSAGENS */}
+                  <div ref={messageListRef} className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#edf6ff_0%,#e4eef9_44%,#d8e6f4_100%)] px-3 py-5 sm:px-8 sm:py-7">
+                    <div className="pointer-events-none sticky top-[46%] z-0 flex h-0 w-full -translate-y-1/2 items-center justify-center overflow-visible" aria-hidden="true">
+                      <img src="/assets/comunica-logo-transparent.png" alt="" className="max-h-[42vh] w-[min(62%,620px)] object-contain opacity-[0.105] grayscale-[20%] saturate-125" />
+                    </div>
+                    <div className="relative z-[1] mx-auto flex w-full max-w-4xl flex-col">
+                    {normMessages
+                      .filter(m => m.threadId === activeThreadId)
+                      .filter(m => messageFocusFilter === 'all' || (messageFocusFilter === 'saved' ? (m.savedBy || []).includes(currentUser.id) : Boolean(normalizeMessageActivity(m.activity))))
+                      .sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b))
+                      .map((msg, index, sortedMessages) => {
+                        const isMine = msg.senderId === currentUser.id;
+                        const isSystem = msg.senderId === 'system';
+                        const messageAuthor = isMine ? currentUser : messageContacts.find(user => user.id === msg.senderId);
+                        const messageAvatar = messageAuthor?.avatar || DEFAULT_AVATAR;
+                        const messageReadCount = isMine ? msg.readBy.filter(userId => userId !== currentUser.id).length : 0;
+                        const messageActivity = normalizeMessageActivity(msg.activity);
+                        const mentionedNames = (msg.mentions || []).map(userId => messageContacts.find(user => user.id === userId)?.name).filter(Boolean);
+                        const showDay = index === 0 || formatMessageDay(sortedMessages[index - 1]) !== formatMessageDay(msg);
+                        const dayHeading = showDay && <div className="flex items-center gap-3 my-5" aria-label={`Mensagens de ${formatMessageDay(msg)}`}><span className="h-px bg-slate-200 flex-1" /><span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">{formatMessageDay(msg)}</span><span className="h-px bg-slate-200 flex-1" /></div>;
+
+                        if (isSystem) {
+                          return (
+                            <React.Fragment key={msg.id}>
+                              {dayHeading}
+                              <div className="my-4 px-2 text-center"><span className="inline-block max-w-full break-words rounded-full bg-slate-200/80 px-4 py-2 text-xs leading-5 text-slate-600 [overflow-wrap:anywhere]">{msg.content}</span></div>
+                            </React.Fragment>
+                          );
+                        }
+
+                        return (
+                          <React.Fragment key={msg.id}>
+                            {dayHeading}
+                            <div className={`mb-2 flex w-full items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                              {!isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'participante'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
+                              <article data-message-id={msg.id} className={`group w-fit max-w-[82%] overflow-hidden rounded-[17px] border px-3 py-2.5 shadow-[0_8px_22px_-20px_rgba(15,23,42,.5)] sm:max-w-[min(48%,36rem)] ${(msg.highlightedBy || []).includes(currentUser.id) ? 'ring-2 ring-amber-300' : ''} ${isMine ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md' : 'bg-white border-slate-200 rounded-bl-md'}`}>
+                                {!isMine && <strong className="mb-1 block break-words text-[11px] font-extrabold leading-4 text-slate-900 [overflow-wrap:anywhere]">{msg.senderName}</strong>}
+                                {msg.replyTo && <button type="button" className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left text-[10px] ${isMine ? 'border-cyan-200 bg-white/10 text-blue-50' : 'border-blue-500 bg-slate-50 text-slate-600'}`}><strong className="block">Em resposta a {msg.replyTo.senderName}</strong><span className="mt-0.5 block truncate">{msg.replyTo.content || msg.replyTo.attachmentName || 'Mensagem'}</span></button>}
+                                {msg.content && <p className={`whitespace-pre-wrap break-words text-[13px] leading-[1.35rem] [overflow-wrap:anywhere] ${isMine ? 'text-white' : 'text-slate-800'}`}><TextoComEmojis texto={msg.content} /></p>}
+                                {mentionedNames.length > 0 && <div className={`mt-2 flex flex-wrap items-center gap-1 text-[9px] font-bold ${isMine ? 'text-cyan-100' : 'text-blue-700'}`}><AtSign className="h-3 w-3" />{mentionedNames.map(name => <span key={name} className={`rounded-full px-1.5 py-0.5 ${isMine ? 'bg-white/10' : 'bg-blue-50'}`}>{name}</span>)}</div>}
+                                {msg.attachment && (
+                                  <button type="button" onClick={(e) => { e.preventDefault(); handleDownload(msg.attachment, msg.attachment.name); }} className="flex w-full sm:w-auto max-w-full items-center gap-2 mt-2.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors">
+                                    <File className="h-4 w-4 shrink-0 text-blue-600" /><span className="min-w-0 break-all text-left">{msg.attachment.name}</span><Download className="ml-auto h-4 w-4 shrink-0" />
+                                  </button>
+                                )}
+                                <div className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${isMine ? 'text-blue-100' : 'text-slate-400'}`}>
+                                  <time title={formatMessageDateTime(msg)}>{new Date(getMessageTimestamp(msg)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>
+                                  {isMine && <span title={messageReadCount ? (messageReadCount === 1 ? 'Lida por uma pessoa' : `Lida por ${messageReadCount} pessoas`) : 'Enviada; aguardando leitura'} aria-label={messageReadCount ? (messageReadCount === 1 ? 'Mensagem lida' : `Mensagem lida por ${messageReadCount} pessoas`) : 'Mensagem enviada'} className={`inline-flex items-center ${messageReadCount ? 'text-cyan-200' : 'text-blue-200'}`}>{messageReadCount ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.8} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.8} />}{messageReadCount > 1 && <span className="ml-0.5 font-bold">{messageReadCount}</span>}</span>}
+                                </div>
+                                {messageActivity && <section className={`mt-2 rounded-xl border p-2.5 ${isMine ? 'border-white/20 bg-white/10' : 'border-violet-100 bg-violet-50/80'}`}>
+                                  <div className="flex flex-wrap items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" /><strong className="text-[10px]">Atividade</strong><select aria-label="Prioridade da atividade" value={messageActivity.priority} onChange={event => handleUpdateMessageActivity(msg, { priority: event.target.value })} className="ml-auto rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[8px] font-bold text-slate-700"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div>
+                                  <div className="mt-2 flex flex-wrap gap-1">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value,label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(msg, { status: value })} className={`rounded-md px-2 py-1 text-[8px] font-bold ${messageActivity.status === value ? 'bg-violet-700 text-white' : 'bg-white text-slate-600'}`}>{label}</button>)}</div>
+                                  <div className="mt-2 grid gap-1.5 sm:grid-cols-2"><label className={`text-[8px] font-bold ${isMine ? 'text-blue-100' : 'text-slate-500'}`}>Prazo<input type="date" value={messageActivity.dueDate} onChange={event => handleUpdateMessageActivity(msg, { dueDate: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[8px] text-slate-700" /></label><label className={`text-[8px] font-bold ${isMine ? 'text-blue-100' : 'text-slate-500'}`}>Responsável<select value={messageActivity.assigneeIds[0] || ''} onChange={event => handleUpdateMessageActivity(msg, { assigneeIds: event.target.value ? [event.target.value] : [] })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[8px] text-slate-700"><option value="">Sem responsável</option>{messageContacts.filter(user => (msg.participants || []).includes(user.id)).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label></div>
+                                  {messageActivity.checklist.length > 0 && <div className="mt-2 space-y-1">{messageActivity.checklist.map(item => <label key={item.id} className={`flex items-start gap-1.5 text-[9px] ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(msg, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}
+                                  <div className="mt-2 flex gap-1"><input value={checklistDrafts[msg.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [msg.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(msg); } }} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] text-slate-700" /><button type="button" onClick={() => handleAddMessageChecklistItem(msg)} className="rounded-md bg-slate-900 px-2 py-1 text-[8px] font-bold text-white">Adicionar</button></div>
+                                  <button type="button" onClick={() => { setShowMessagesModal(false); setActiveThreadId(null); setActiveTab('services'); setServiceWorkspace('activities'); }} className={`mt-2 inline-flex items-center gap-1 text-[8px] font-extrabold ${isMine ? 'text-cyan-100' : 'text-violet-700'}`}><ListChecks className="h-3 w-3" /> Sincronizada com a Central de Serviços</button>
+                                </section>}
+                                <div className={`mt-2 flex flex-wrap items-center gap-1 border-t pt-1.5 ${isMine ? 'border-white/15' : 'border-slate-100'}`}><button type="button" onClick={() => { setReplyingToMessage(msg); }} title="Responder" className={`rounded-md p-1.5 ${isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><Reply className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageLike(msg)} title="Curtir" className={`inline-flex items-center gap-1 rounded-md p-1.5 ${(msg.likedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ThumbsUp className="h-3.5 w-3.5" />{(msg.likedBy || []).length > 0 && <span className="text-[8px] font-bold">{msg.likedBy.length}</span>}</button><button type="button" onClick={() => handleToggleSavedMessage(msg)} title="Salvar" className={`rounded-md p-1.5 ${(msg.savedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Bookmark className={`h-3.5 w-3.5 ${(msg.savedBy || []).includes(currentUser.id) ? 'fill-current' : ''}`} /></button><button type="button" onClick={() => handleToggleHighlightedMessage(msg)} title="Grifar" className={`rounded-md p-1.5 ${(msg.highlightedBy || []).includes(currentUser.id) ? 'bg-amber-300 text-amber-950' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Highlighter className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageActivity(msg)} title={messageActivity ? 'Remover atividade' : 'Marcar como atividade'} className={`rounded-md p-1.5 ${messageActivity ? 'bg-violet-600 text-white' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ListChecks className="h-3.5 w-3.5" /></button></div>
+                              </article>
+                              {isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'você'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
+                            </div>
+                          </React.Fragment>
+                      );
+})
+                    }
+                    {(() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.completedAt) return null;
+                      const opener = getThreadOpener(activeThreadId);
+                      const canEvaluate = isThreadOpenedByCurrentUser(activeThreadId);
+                      if (!canEvaluate) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-600 shadow-sm"><strong className="block text-slate-800">Conversa encerrada</strong><span className="mt-1 block">Aguardando a avaliação de {opener?.senderName || 'quem abriu a conversa'}.</span></section>;
+                      if (metadata.resolutionRating) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center text-xs text-emerald-950 shadow-sm"><strong>Avaliação registrada: {metadata.resolutionRating}/5</strong>{metadata.resolutionFeedback && <p className="mt-2 whitespace-pre-wrap text-emerald-900">{metadata.resolutionFeedback}</p>}</section>;
+                      return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm"><p className="font-bold text-slate-900">A demanda foi atendida?</p><p className="mt-1 text-xs leading-5 text-slate-600">Confirme a resolução ou reabra a conversa. Ao reabrir, todos os participantes voltam a ver o chat na Caixa de entrada.</p>{showResolutionEvaluation ? <div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-semibold text-slate-800">Como você avalia a resolução?</p><div className="mt-2 flex flex-wrap gap-1.5">{[1, 2, 3, 4, 5].map(note => <button key={note} type="button" onClick={() => setResolutionRating(note)} className={`h-9 w-9 rounded-lg text-xs font-black ${resolutionRating === note ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{note}</button>)}</div><textarea value={resolutionFeedback} onChange={event => setResolutionFeedback(event.target.value)} rows="3" maxLength={500} className="mt-3 w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-700 outline-none focus:border-emerald-500" placeholder="Comentário opcional sobre a resolução" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={handleEvaluateResolution} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Registrar avaliação</button><button type="button" onClick={() => setShowResolutionEvaluation(false)} className="px-2 text-[11px] font-semibold text-slate-500">Cancelar</button></div></div> : <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setShowResolutionEvaluation(true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Sim, avaliar resolução</button><button type="button" onClick={handleReopenThread} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-700 hover:bg-rose-50">Não, reabrir conversa</button></div>}</section>;
+                    })()}
+                    </div>
+                  </div>
+
+                  {/* BARRA DE ENVIO */}
+                  <div className="shrink-0 bg-white border-t border-slate-200 p-3 sm:px-7 sm:py-4 shadow-[0_-12px_35px_-30px_rgba(15,23,42,.5)]">
+                    {getThreadMetadata(activeThreadId).completedAt ? (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs leading-5 text-slate-600">
+                        <strong className="block text-slate-800">Conversa concluída</strong>
+                        Novas mensagens ficam bloqueadas até que quem abriu a conversa escolha reabri-la na avaliação.
+                      </div>
+                    ) : <>
+                    {msgAttachment && (
+                      <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2 rounded-lg mb-2 text-[10px] font-bold text-slate-700">
+                        <div className="flex items-center gap-1.5 overflow-hidden"><Paperclip className="h-3.5 w-3.5 text-blue-600" /><span className="truncate">{msgAttachment.name}</span></div>
+                        <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700"><X className="h-4 w-4"/></button>
+                      </div>
+                    )}
+                    {replyingToMessage && <div className="mx-auto mb-2 flex w-full max-w-4xl items-center gap-3 rounded-xl border-l-4 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-slate-700"><Reply className="h-4 w-4 shrink-0 text-blue-700" /><span className="min-w-0 flex-1"><strong className="block text-blue-900">Respondendo a {replyingToMessage.senderName}</strong><span className="block truncate text-[10px]">{replyingToMessage.content || replyingToMessage.attachment?.name || 'Mensagem'}</span></span><button type="button" onClick={() => setReplyingToMessage(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Cancelar resposta"><X className="h-4 w-4" /></button></div>}
+                    {(() => {
+                      const mentionMatch = msgText.match(/(?:^|\s)@([^\s@]*)$/u);
+                      if (!mentionMatch) return null;
+                      const query = normalizedText(mentionMatch[1]);
+                      const metadata = getThreadMetadata(activeThreadId);
+                      const suggestions = (metadata.participants || []).map(id => messageContacts.find(user => user.id === id)).filter(user => user && user.id !== currentUser.id && (!query || normalizedText(user.name).includes(query))).slice(0, 6);
+                      if (!suggestions.length) return null;
+                      return <div className="mx-auto mb-2 w-full max-w-4xl rounded-xl border border-blue-100 bg-white p-2 shadow-lg"><span className="px-2 text-[9px] font-black uppercase text-blue-700">Marcar participante</span><div className="mt-1 flex flex-wrap gap-1">{suggestions.map(user => <button key={user.id} type="button" onClick={() => setMsgText(previous => previous.replace(/(?:^|\s)@([^\s@]*)$/u, match => `${match.startsWith(' ') ? ' ' : ''}@${user.name} `))} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-800 hover:bg-blue-100"><AtSign className="h-3 w-3" />{user.name}</button>)}</div></div>;
+                    })()}
+
+                    <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-4xl min-w-0 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 transition-all focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
+                      <label className="p-2.5 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors border border-slate-200">
+                        <Paperclip className="h-5 w-5" />
+                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
+                      </label>
+                      <textarea
+                        rows="3"
+                        placeholder="Escreva sua resposta... Use @ para marcar alguém"
+                        value={msgText}
+                        onChange={(e) => setMsgText(e.target.value)}
+                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
+                        className="min-h-[78px] max-h-40 min-w-0 flex-1 resize-y overflow-y-auto border-0 bg-transparent px-2.5 py-2.5 text-sm leading-6 focus:outline-none focus:ring-0"
+                      ></textarea>
+                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
+                      <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || (!msgText.trim() && !msgAttachment)} className="bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-xl transition-all shadow-sm disabled:opacity-50" aria-label={isSendingMessage ? 'Enviando mensagem' : 'Enviar mensagem'}>
+                        {isSendingMessage ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <Send className="h-4.5 w-4.5" />}
+                      </button>
+                    </form>
+                    <PreviaEmojis texto={msgText} />
+                    </>}
+                  </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3">
+                  {(() => {
+                    const searchText = inboxSearch.trim().toLocaleLowerCase('pt-BR');
+                    const myThreads = normMessages.filter(m => m.participants.includes(currentUser.id));
+                    const groupedThreads = {};
+
+                    myThreads.forEach(msg => {
+                      if (!groupedThreads[msg.threadId]) {
+                        groupedThreads[msg.threadId] = { id: msg.threadId, subject: msg.subject, messages: [], participants: msg.participants, unread: 0 };
+                      }
+                      groupedThreads[msg.threadId].messages.push(msg);
+                      if (!msg.readBy.includes(currentUser.id)) {
+                        groupedThreads[msg.threadId].unread += 1;
+                      }
+                    });
+
+                    const threadList = Object.values(groupedThreads).sort((a, b) => {
+                      const lastA = a.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, a.messages[0]);
+                      const lastB = b.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, b.messages[0]);
+                      if (messageOrganization === 'sector') {
+                        const otherA = messageContacts.find(user => user.id === a.participants.find(id => id !== currentUser.id));
+                        const otherB = messageContacts.find(user => user.id === b.participants.find(id => id !== currentUser.id));
+                        const sectorA = otherA ? getUserDepts(otherA)[0] || '' : '';
+                        const sectorB = otherB ? getUserDepts(otherB)[0] || '' : '';
+                        const sectorOrder = sectorA.localeCompare(sectorB, 'pt-BR');
+                        if (sectorOrder !== 0) return sectorOrder;
+                      }
+                      return getMessageTimestamp(lastB) - getMessageTimestamp(lastA);
+                    });
+
+                    const visibleThreadList = threadList.filter(thread => {
+                      if (showArchivedThreads !== isThreadArchived(thread.id)) return false;
+                      const metadata = getThreadMetadata(thread.id);
+                      const deadline = getThreadDeadlineStatus(thread.id);
+                      const matchesStatus = inboxStatusFilter === 'all'
+                        || (inboxStatusFilter === 'unread' && thread.unread > 0)
+                        || (inboxStatusFilter === 'open' && !metadata.completedAt)
+                        || (inboxStatusFilter === 'overdue' && !metadata.completedAt && /atras/i.test(deadline.label || ''))
+                        || (inboxStatusFilter === 'completed' && Boolean(metadata.completedAt));
+                      if (!matchesStatus) return false;
+                      if (!searchText) return true;
+                      const names = thread.participants.map(id => messageContacts.find(user => user.id === id)?.name || '').join(' ');
+                      const content = thread.messages.map(message => message.content || '').join(' ');
+                      return `${thread.subject || ''} ${names} ${content}`.toLocaleLowerCase('pt-BR').includes(searchText);
+                    });
+
+                    const inboxTotals = threadList.reduce((totals, thread) => {
+                      const metadata = getThreadMetadata(thread.id);
+                      const deadline = getThreadDeadlineStatus(thread.id);
+                      if (thread.unread > 0) totals.unread += 1;
+                      if (metadata.completedAt) totals.completed += 1;
+                      else totals.open += 1;
+                      if (!metadata.completedAt && /atras/i.test(deadline.label || '')) totals.overdue += 1;
+                      return totals;
+                    }, { unread: 0, open: 0, overdue: 0, completed: 0 });
+
+                    const summaryBar = !showArchivedThreads && (
+                      <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4" aria-label="Resumo da caixa de entrada">
+                        {[
+                          { id: 'unread', label: 'Não lidas', value: inboxTotals.unread, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+                          { id: 'open', label: 'Em andamento', value: inboxTotals.open, icon: MessageSquare, tone: 'text-violet-700 bg-violet-50 border-violet-100' },
+                          { id: 'overdue', label: 'Em atraso', value: inboxTotals.overdue, icon: Clock, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
+                          { id: 'completed', label: 'Concluídas', value: inboxTotals.completed, icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+                        ].map(item => {
+                          const MetricIcon = item.icon;
+                          const active = inboxStatusFilter === item.id;
+                          return <button type="button" aria-pressed={active} onClick={() => setInboxStatusFilter(previous => previous === item.id ? 'all' : item.id)} key={item.label} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${item.tone} ${active ? 'ring-2 ring-offset-2 ring-current shadow-md' : ''}`}><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/80 shadow-sm"><MetricIcon className="h-4 w-4" /></span><div><strong className="block text-lg leading-none">{item.value}</strong><span className="text-[10px] font-bold uppercase tracking-wide opacity-80">{item.label}</span></div></button>;
+                        })}
+                      </section>
+                    );
+
+                    const searchBar = <div className="mb-2 flex items-center gap-2"><div className="relative min-w-0 flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input type="search" aria-label="Buscar conversas" placeholder="Buscar por assunto, pessoa ou mensagem" value={inboxSearch} onChange={event => setInboxSearch(event.target.value)} className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 shadow-sm" /></div>{inboxStatusFilter !== 'all' && <button type="button" onClick={() => setInboxStatusFilter('all')} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[10px] font-bold text-slate-600 shadow-sm">Limpar filtro</button>}</div>;
+
+                    if (visibleThreadList.length === 0) {
+                      return <>{summaryBar}{searchBar}<div className="text-center py-12 flex flex-col items-center gap-3 text-slate-400">
+                        <MessageSquare className="h-10 w-10 opacity-20" />
+                        <span className="text-sm">{searchText ? 'Nenhuma conversa corresponde à busca.' : inboxStatusFilter !== 'all' ? 'Nenhuma conversa corresponde ao indicador selecionado.' : showArchivedThreads ? 'Nenhuma conversa arquivada.' : 'Nenhuma conversa encontrada na sua caixa.'}</span>
+                      </div></>;
+                    }
+
+                    return <>{summaryBar}{searchBar}<div className="grid w-full grid-cols-1 gap-1.5">{visibleThreadList.map(thread => {
+                      const lastMsg = thread.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, thread.messages[0]);
+                      const isMine = lastMsg.senderId === currentUser.id;
+                      const hasUnread = thread.unread > 0;
+
+                      const partsNames = thread.participants
+                        .filter(id => id !== currentUser.id)
+                        .map(id => messageContacts.find(u => u.id === id)?.name.split(' ')[0] || 'Desconhecido')
+                        .join(', ');
+                      const deadlineStatus = getThreadDeadlineStatus(thread.id);
+                      const threadMetadata = getThreadMetadata(thread.id);
+                      return (
+                        <button
+                          key={thread.id}
+                          type="button"
+                          onClick={() => openThread(thread.id)}
+                          className={`group flex w-full flex-col gap-2 rounded-2xl border p-3.5 text-left transition hover:border-blue-200 hover:shadow-sm ${hasUnread ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-[0_14px_35px_-28px_rgba(37,99,235,.8)]' : 'bg-white border-slate-200 hover:border-blue-200 shadow-[0_14px_35px_-30px_rgba(15,23,42,.6)]'}`}
+                        >
+                          <div className="flex items-start justify-between w-full gap-2">
+                            <div className="min-w-0 flex-1">
+                              <strong className={`block break-words text-sm leading-snug transition-colors [overflow-wrap:anywhere] group-hover:text-blue-800 sm:text-sm ${hasUnread ? 'text-blue-950 font-extrabold' : 'text-slate-900 font-bold'}`}>
+                                {thread.subject}
+                              </strong>
+                              <span className="mt-1 flex min-w-0 items-start gap-1 text-xs font-medium text-slate-500">
+                                <Users className="h-3 w-3" /> {partsNames || 'Você (Apenas)'}
+                              </span>
+                              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${deadlineStatus.className}`}>
+                                {deadlineStatus.label}{threadMetadata.dueDate ? ` · ${formatDueDate(threadMetadata.dueDate)}` : ''}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <span className={`text-xs font-medium ${hasUnread ? 'text-blue-700' : 'text-slate-500'}`}>
+                                {formatMessageDateTime(lastMsg)}
+                              </span>
+                              {hasUnread && <span className="flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-blue-600 text-[9px] font-black text-white">{thread.unread}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 mt-1 opacity-80">
+                            {lastMsg.attachment && <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />}
+                            <p className={`line-clamp-1 w-full min-w-0 break-words text-xs leading-5 [overflow-wrap:anywhere] ${hasUnread ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
+                              {isMine ? 'Você: ' : (lastMsg.senderName.split(' ')[0] + ': ')}{lastMsg.content || 'Arquivo anexo'}
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    })}</div></>;
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+  );
+
   const navigationSections = [
     {
       label: 'Comunicação',
       items: [
         { id: 'dashboard', label: 'Central de gestão', description: 'Prioridades e indicadores', icon: Layers, activeClass: 'from-slate-950 to-blue-900', accent: 'text-blue-600' },
+        { id: 'inbox', label: 'Caixa de entrada', description: 'Conversas, demandas e prazos', icon: MessageSquare, badge: unreadMessages.length || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
         { id: 'updates', label: 'Novidades do Comunica', description: 'Ferramentas e melhorias', icon: Sparkles, badge: platformUpdates.filter(item => !platformUpdateReadIds.has(item.id)).length || null, activeClass: 'from-cyan-700 to-blue-700', accent: 'text-cyan-700' },
         { id: 'announcements', label: 'Avisos e políticas', description: 'Comunicados oficiais', icon: Megaphone, activeClass: 'from-blue-800 to-cyan-700', accent: 'text-blue-600' },
         { id: 'sectors', label: 'Canais de setores', description: 'Publicações da equipe', icon: Building, activeClass: 'from-cyan-800 to-teal-700', accent: 'text-cyan-700' },
@@ -7039,7 +7572,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   return (
     <div className={`min-h-[100dvh] bg-slate-100 text-slate-800 flex flex-col font-sans relative ${isDarkMode ? 'comunica-dark' : ''}`}>
       <EnvironmentBadge />
-      
+
       <NotificationToast notification={customNotification} />
       <CloudActivityIndicator activity={cloudActivity} />
       <InstallAppDialog open={showInstallHelp} onClose={() => setShowInstallHelp(false)} />
@@ -7098,12 +7631,12 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 <Sparkles className="h-4 w-4" />
                 {platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
               </button>
-              
+
               <div className="relative">
                 <button
-                  onClick={() => setShowMessagesModal(true)}
+                  onClick={() => setActiveTab('inbox')}
                   className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
-                  title="Mensagens Privadas"
+                  title="Abrir Caixa de entrada" aria-label="Abrir Caixa de entrada"
                 >
                   <MessageSquare className="h-4.5 w-4.5" />
                   {unreadMessages.length > 0 && (
@@ -7115,7 +7648,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               </div>
               {/* O container pai DEVE ter "relative" para ancorar o dropdown */}
 <div className="relative">
-  
+
   <button
     onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
     className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
@@ -7132,7 +7665,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
   {showNotificationsDropdown && (
     <div className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-50 mt-2 max-h-[calc(100dvh-5.5rem-env(safe-area-inset-top))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in slide-in-from-top-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-none">
-      
+
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <h4 className="font-extrabold text-sm flex items-center gap-1.5">
           <Bell className="h-4 w-4 text-slate-300"/> Notificações
@@ -7148,15 +7681,15 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           </button>
         </div>
       </div>
-      
+
       <div className="max-h-[calc(100dvh-10rem)] overflow-y-auto overscroll-contain sm:max-h-80">
         {notificationsToShow.length === 0 ? (
           <div className="p-4 text-center text-slate-500 text-xs italic">Nenhuma notificação recente.</div>
-        ) : 
+        ) :
                (
                         notificationsToShow.map(notif => {
                           const isUnread = !(currentUser.readNotifications || []).includes(notif.id);
-                          
+
                           // Busca os dados do autor da publicação para enriquecer a notificação
                           const authorUser = usersList.find(u => u.id === notif.authorId) || usersList.find(u => String(notif.author || '').startsWith(u.name));
                           const authorName = authorUser ? authorUser.name : String(notif.author || 'Equipe responsável').split(' (')[0];
@@ -7174,7 +7707,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                                 <span className={`text-xs font-bold ${isUnread ? 'text-slate-900' : 'text-slate-600'} line-clamp-2 leading-snug`}>{notif.title}</span>
                                 {isUnread && <span className="h-2 w-2 rounded-full bg-blue-600 flex-shrink-0 mt-1 shadow-sm"></span>}
                               </div>
-                              
+
                               <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
                                 <img src={authorUser?.avatar || DEFAULT_AVATAR} className="w-4 h-4 rounded-full object-cover border border-slate-200 flex-shrink-0" alt="" />
                                 <span className="truncate leading-tight">
@@ -7222,7 +7755,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               >
                 <KeyRound className="h-4 w-4" />
               </button>
-              
+
               <button
                 onClick={handleUserLogout}
                 title="Encerrar Sessão"
@@ -7234,7 +7767,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             </div>
           </div>
 
-          <button 
+          <button
             className="sm:hidden p-2 hover:bg-slate-100 rounded-lg ml-auto text-slate-600"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             type="button"
@@ -7249,7 +7782,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
         {/* 2. BARRA LATERAL ESQUERDA (O Menu Correto) */}
         <aside data-tour="platform-menu" className={`${sidebarCollapsed ? 'sm:w-20' : 'sm:w-72'} h-full w-full overflow-y-auto pb-24 transition-all duration-300 sm:sticky sm:top-20 sm:max-h-[calc(100vh-6rem)] ${
-          mobileMenuOpen ? 'fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-slate-100 p-5 pt-[calc(env(safe-area-inset-top)+5rem)] pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))]' : 'hidden sm:block' 
+          mobileMenuOpen ? 'fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-slate-100 p-5 pt-[calc(env(safe-area-inset-top)+5rem)] pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))]' : 'hidden sm:block'
         }`}>
                     {/* Botão fechar no mobile */}
           {mobileMenuOpen && (
@@ -7274,8 +7807,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         </aside>
 
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
-        <main className="flex-1 flex flex-col gap-6 overflow-hidden">          
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-3">
+        <main className="flex-1 flex flex-col gap-6 overflow-hidden">
+          {activeTab === 'inbox' && inboxSurface}
+          <div className={`${activeTab === 'inbox' ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
               <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
@@ -7402,7 +7936,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 <div className="pointer-events-none absolute -bottom-24 left-1/4 h-56 w-56 rounded-full bg-blue-400/15 blur-3xl" />
                 <div className="relative grid gap-6 lg:grid-cols-[1.35fr_1fr] lg:items-end">
                   <div><span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[.16em] text-cyan-100"><Layers className="h-3.5 w-3.5" /> Central de Gestão</span><h2 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Olá, {String(currentUser?.name || 'colaborador').split(' ')[0]}.</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-blue-100/80">{dashboardRoleLabel} · acompanhe o que exige atenção e acesse rapidamente suas principais atividades em {activeCompany?.name || 'sua empresa'}.</p><button type="button" onClick={() => setActiveTutorial('dashboard')} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-[10px] font-bold text-white hover:bg-white/15"><BookOpen className="h-3.5 w-3.5" /> Entenda seu painel</button></div>
-                  <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => document.querySelector('[data-tour=\"dashboard-priorities\"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Alertas</span><strong className="mt-1 block text-2xl font-black">{dashboardAttentionItems.length}</strong></button><button type="button" onClick={() => { setInboxStatusFilter('unread'); setShowMessagesModal(true); }} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Não lidas</span><strong className="mt-1 block text-2xl font-black">{unreadMessages.length}</strong></button><button type="button" onClick={() => setActiveTab('scale')} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Próximos eventos</span><strong className="mt-1 block text-2xl font-black">{dashboardUpcomingEvents.length}</strong></button></div>
+                  <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => document.querySelector('[data-tour=\"dashboard-priorities\"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Alertas</span><strong className="mt-1 block text-2xl font-black">{dashboardAttentionItems.length}</strong></button><button type="button" onClick={() => { setInboxStatusFilter('unread'); setActiveTab('inbox'); }} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Não lidas</span><strong className="mt-1 block text-2xl font-black">{unreadMessages.length}</strong></button><button type="button" onClick={() => setActiveTab('scale')} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Próximos eventos</span><strong className="mt-1 block text-2xl font-black">{dashboardUpcomingEvents.length}</strong></button></div>
                 </div>
               </section>
 
@@ -7415,7 +7949,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 </section>
                 <section data-tour="dashboard-actions" className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><span className="text-[9px] font-black uppercase tracking-[.14em] text-blue-600">Acesso rápido</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">Ferramentas para o seu perfil</h3><div className="mt-4 grid grid-cols-2 gap-2">{dashboardQuickActions.slice(0, 6).map(item => { const ItemIcon = item.icon; return <button key={item.id} type="button" onClick={item.action} className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white text-blue-700 shadow-sm"><ItemIcon className="h-4 w-4" /></span><strong className="mt-2 block text-[10px] text-slate-800">{item.label}</strong><span className="mt-0.5 block text-[9px] leading-4 text-slate-500">{item.detail}</span></button>; })}</div></section>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button type="button" onClick={() => setDashboardDetail('active')} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 text-left hover:border-slate-400 hover:shadow-md transition-all">
                   <div className="p-3 rounded-xl bg-slate-100 text-slate-800 border border-slate-200">
@@ -7497,7 +8031,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
+
                 <div className="lg:col-span-2 flex flex-col gap-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -7520,14 +8054,14 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{item.title}</h4>
                         <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><TextoComEmojis texto={item.content} /></p>
                         {item.notifType === 'poll' && <button type="button" onClick={() => { setPollSearch(item.formTitle || item.question || ''); setPollViewFilter('Todas'); setActiveTab('polls'); }} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-cyan-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-cyan-800"><Activity className="h-4 w-4" /> Participar agora</button>}
-                        
+
                         {item.image && (
                           <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200">
                             <img src={item.image} alt={item.title} loading="lazy" className="block w-full h-auto rounded-xl object-contain" />
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="h-[1px] bg-slate-100 my-1"></div>
 
                       <div className="flex items-center justify-between">
@@ -7567,7 +8101,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
                     {dashboardUpcomingEvents.slice(0, 3).map((ev) => (
                       <div key={ev.id} className="p-3 rounded-xl bg-slate-50 border border-slate-150 flex flex-col gap-1.5 hover:border-slate-300 transition-all relative group">
-                        
+
                         {currentUser.isAdmin && (
                           <button
                             onClick={() => handleDeleteEvent(ev.id)}
@@ -7590,8 +8124,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         </p>
                       </div>
                     ))}
-                    
-                    <button 
+
+                    <button
                       onClick={() => setActiveTab('scale')}
                       className="w-full text-center py-2 text-xs font-bold text-slate-700 hover:text-slate-900 hover:underline"
                       type="button"
@@ -7694,7 +8228,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         <div className="min-w-0"><span className="text-[9px] font-black uppercase text-slate-400">Responsável pelo atendimento</span><strong className="mt-0.5 block truncate text-xs text-slate-800">{request.assigneeName || 'Ainda não atribuído'}</strong></div>
                         {canManage && <select aria-label={`Responsável pelo chamado ${request.ticketNumber}`} value={request.assigneeId} onChange={event => handleServiceAssignment(request.id, event.target.value)} className="max-w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-semibold text-slate-700"><option value="">Sem responsável</option>{participantAssignees.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select>}
                       </div>
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><span className="text-[10px] text-slate-500"><strong className="text-slate-700">{request.category}</strong> · aberto por {request.openerId === currentUser.id ? 'você' : request.openerName}</span><div className="flex flex-wrap gap-2">{canDecide && <><button type="button" onClick={() => handleServiceDecision(request.id, 'rejected')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50">Não aprovar</button><button type="button" onClick={() => handleServiceDecision(request.id, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700">Aprovar</button></>}{canManage && !['approval', 'in_progress', 'waiting_requester'].includes(request.workflowStatus) && <button type="button" onClick={() => handleServiceStage(request.id, 'in_progress')} className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[10px] font-bold text-cyan-800 hover:bg-cyan-50">Iniciar atendimento</button>}{canManage && request.workflowStatus === 'in_progress' && <button type="button" onClick={() => handleServiceStage(request.id, 'waiting_requester')} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50">Aguardar solicitante</button>}{canManage && request.workflowStatus === 'waiting_requester' && <button type="button" onClick={() => handleServiceStage(request.id, 'in_progress')} className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[10px] font-bold text-cyan-800 hover:bg-cyan-50">Retomar</button>}<button type="button" onClick={() => { openThread(request.id); setShowMessagesModal(true); }} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir chamado</button></div></div>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><span className="text-[10px] text-slate-500"><strong className="text-slate-700">{request.category}</strong> · aberto por {request.openerId === currentUser.id ? 'você' : request.openerName}</span><div className="flex flex-wrap gap-2">{canDecide && <><button type="button" onClick={() => handleServiceDecision(request.id, 'rejected')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50">Não aprovar</button><button type="button" onClick={() => handleServiceDecision(request.id, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700">Aprovar</button></>}{canManage && !['approval', 'in_progress', 'waiting_requester'].includes(request.workflowStatus) && <button type="button" onClick={() => handleServiceStage(request.id, 'in_progress')} className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[10px] font-bold text-cyan-800 hover:bg-cyan-50">Iniciar atendimento</button>}{canManage && request.workflowStatus === 'in_progress' && <button type="button" onClick={() => handleServiceStage(request.id, 'waiting_requester')} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50">Aguardar solicitante</button>}{canManage && request.workflowStatus === 'waiting_requester' && <button type="button" onClick={() => handleServiceStage(request.id, 'in_progress')} className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[10px] font-bold text-cyan-800 hover:bg-cyan-50">Retomar</button>}<button type="button" onClick={() => { openThread(request.id); setActiveTab('inbox'); }} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800"><MessageSquare className="h-3.5 w-3.5" /> Abrir chamado</button></div></div>
                     </article>;
                   })}
                   {filteredServiceRequests.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" /><h5 className="mt-3 text-sm font-extrabold text-slate-700">Nenhuma solicitação encontrada</h5><p className="mt-1 text-xs text-slate-500">Abra um novo chamado ou altere os filtros para consultar o histórico.</p></div>}
@@ -7730,7 +8264,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
                 <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                   <div className="flex flex-wrap items-end justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-wide text-blue-700">Rastreabilidade</span><h4 className="mt-1 text-base font-extrabold text-slate-900">Todas as demandas do período</h4></div><select aria-label="Situação das demandas gerenciais" value={serviceManagementStatus} onChange={event => setServiceManagementStatus(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="all">Todas as situações</option><option value="active">Pendentes</option><option value="overdue">Em atraso</option><option value="resolved">Resolvidas</option></select></div>
-                  <div className="mt-4 space-y-2">{serviceManagementVisibleDemands.slice(0, 100).map(demand => <article key={`${demand.kind}:${demand.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="rounded-full bg-slate-900 px-2 py-1 text-[8px] font-black text-white">{demand.kindLabel}</span><span className={`rounded-full px-2 py-1 text-[8px] font-black ${demand.status === 'overdue' ? 'bg-rose-100 text-rose-800' : demand.status === 'resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{demand.statusLabel}</span></div><strong className="mt-2 block truncate text-xs text-slate-900">{demand.subject}</strong><span className="mt-1 block text-[9px] text-slate-500">{demand.assigneeNames.length ? demand.assigneeNames.join(', ') : 'Sem responsável'} · {demand.dueDate ? `prazo ${formatDueDate(demand.dueDate)}` : 'sem prazo'} · movimentada em {formatManagementTimestamp(demand.updatedAt)}</span></div><button type="button" onClick={() => { if (demand.kind === 'request') { openThread(demand.id); setShowMessagesModal(true); } else if (demand.sourceRow) openServiceActivityFromView(demand.sourceRow); }} disabled={demand.kind === 'activity' && !demand.sourceRow} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-700 hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40">Ver detalhes</button></article>)}{serviceManagementVisibleDemands.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-xs text-slate-500">Nenhuma demanda encontrada com estes filtros.</p></div>}</div>
+                  <div className="mt-4 space-y-2">{serviceManagementVisibleDemands.slice(0, 100).map(demand => <article key={`${demand.kind}:${demand.id}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="rounded-full bg-slate-900 px-2 py-1 text-[8px] font-black text-white">{demand.kindLabel}</span><span className={`rounded-full px-2 py-1 text-[8px] font-black ${demand.status === 'overdue' ? 'bg-rose-100 text-rose-800' : demand.status === 'resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{demand.statusLabel}</span></div><strong className="mt-2 block truncate text-xs text-slate-900">{demand.subject}</strong><span className="mt-1 block text-[9px] text-slate-500">{demand.assigneeNames.length ? demand.assigneeNames.join(', ') : 'Sem responsável'} · {demand.dueDate ? `prazo ${formatDueDate(demand.dueDate)}` : 'sem prazo'} · movimentada em {formatManagementTimestamp(demand.updatedAt)}</span></div><button type="button" onClick={() => { if (demand.kind === 'request') { openThread(demand.id); setActiveTab('inbox'); } else if (demand.sourceRow) openServiceActivityFromView(demand.sourceRow); }} disabled={demand.kind === 'activity' && !demand.sourceRow} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-bold text-slate-700 hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40">Ver detalhes</button></article>)}{serviceManagementVisibleDemands.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-xs text-slate-500">Nenhuma demanda encontrada com estes filtros.</p></div>}</div>
                   {serviceManagementVisibleDemands.length > 100 && <p className="mt-3 text-center text-[9px] font-semibold text-slate-400">Exibindo as 100 demandas mais recentes de {serviceManagementVisibleDemands.length}.</p>}
                 </section>
               </div>}
@@ -7948,23 +8482,23 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     const totalProduced = filteredLogs.reduce((acc, log) => acc + log.quantity, 0);
                     const totalDefects = filteredLogs.reduce((acc, log) => acc + (log.defects || 0), 0);
                     const qualityIndex = totalProduced > 0 ? (((totalProduced - totalDefects) / totalProduced) * 100).toFixed(1) : 100;
-                    
+
                     // Cálculo de Tendência (Comparando com período anterior)
                     const startD = new Date(prodFilterStart);
                     const endD = new Date(prodFilterEnd);
                     const diffDays = Math.ceil(Math.abs(endD - startD) / (1000 * 60 * 60 * 24)) + 1;
-                    
+
                     const prevEndD = new Date(startD);
                     prevEndD.setDate(prevEndD.getDate() - 1);
                     const prevStartD = new Date(prevEndD);
                     prevStartD.setDate(prevStartD.getDate() - diffDays + 1);
-                    
+
                     const prevStartStr = prevStartD.toISOString().split('T')[0];
                     const prevEndStr = prevEndD.toISOString().split('T')[0];
-                    
+
                     const prevLogs = productivityLogs.filter(log => log.date >= prevStartStr && log.date <= prevEndStr && (prodFilterGroup === 'Todos' || log.group === prodFilterGroup));
                     const prevTotal = prevLogs.reduce((acc, log) => acc + log.quantity, 0);
-                    
+
                     let trendPct = 0;
                     if (prevTotal > 0) trendPct = (((totalProduced - prevTotal) / prevTotal) * 100).toFixed(1);
                     else if (totalProduced > 0) trendPct = 100;
@@ -7987,7 +8521,7 @@ const handleDownload = async (fileUrl, fileName) => {
   }
 };
                     return (
-                      
+
                       <div className="bg-blue-900 text-white p-3 rounded-xl flex-1 flex flex-col justify-center shadow-inner gap-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold uppercase tracking-wider">Total Produzido:</span>
@@ -8023,7 +8557,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         </span>
                         <span className="text-[10px] text-slate-400 font-semibold">{log.displayDate}</span>
                       </div>
-                      
+
                       <div className="flex items-end gap-2 my-2">
                         <span className="text-3xl font-black text-slate-800 leading-none">{log.quantity}</span>
                         <span className="text-xs font-bold text-slate-500 mb-1">itens</span>
@@ -8050,7 +8584,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs">
                       <span className="text-slate-500">Por: <strong className="text-slate-700">{log.authorName}</strong></span>
                       {canManageAllProductivity && (
@@ -8129,7 +8663,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         {currentUser.isAdmin && (
                           <button type="button" onClick={() => handleDeleteAnnouncement(ann)} title="Remover comunicado" aria-label={`Remover comunicado ${ann.title}`} className="text-rose-500 hover:text-rose-700"><Trash2 className="h-4 w-4"/></button>
                         )}
-                        <button 
+                        <button
                           onClick={() => handleLikeAnnouncement(ann.id)}
                           className={`flex items-center gap-1 text-xs font-semibold ${ann.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'}`}
                           type="button"
@@ -8349,7 +8883,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         {(currentUser.isAdmin || currentUser.id === post.authorId) && (
                           <button onClick={() => handleDeletePost(post.id)} className="text-rose-500 hover:text-rose-700"><Trash2 className="h-4 w-4"/></button>
                         )}
-                        <button 
+                        <button
                           onClick={() => handleLikePost(post.id)}
                           className={`flex items-center gap-1 text-xs font-semibold ${post.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'}`}
                           type="button"
@@ -8403,7 +8937,7 @@ const handleDownload = async (fileUrl, fileName) => {
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
           {activeTab === 'management' && currentUser.isAdmin && (
             <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
-              
+
               <div className="flex border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
                 <button
                   type="button"
@@ -8420,8 +8954,8 @@ const handleDownload = async (fileUrl, fileName) => {
                   type="button"
                   onClick={() => setMgmtSubTab('employees')}
                   className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'employees' 
-                      ? 'border-slate-900 text-slate-900 font-black' 
+                    mgmtSubTab === 'employees'
+                      ? 'border-slate-900 text-slate-900 font-black'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -8431,8 +8965,8 @@ const handleDownload = async (fileUrl, fileName) => {
                   type="button"
                   onClick={() => setMgmtSubTab('roles')}
                   className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'roles' 
-                      ? 'border-slate-900 text-slate-900 font-black' 
+                    mgmtSubTab === 'roles'
+                      ? 'border-slate-900 text-slate-900 font-black'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -8442,8 +8976,8 @@ const handleDownload = async (fileUrl, fileName) => {
                   type="button"
                   onClick={() => setMgmtSubTab('sectors')}
                   className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'sectors' 
-                      ? 'border-slate-900 text-slate-900 font-black' 
+                    mgmtSubTab === 'sectors'
+                      ? 'border-slate-900 text-slate-900 font-black'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -8924,7 +9458,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <p className="whitespace-pre-wrap"><TextoComEmojis texto={msg.text} /></p>
                 </div>
               ))}
-              
+
               {isChatLoading && (
                 <div className="bg-white text-slate-800 self-start rounded-2xl rounded-tl-none p-3 border border-slate-200 flex items-center gap-2">
                   <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
@@ -8967,7 +9501,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
               />
               <BotaoEmoji aoSelecionar={(emoji) => setChatInput(prev => prev + emoji)} />
-              <button 
+              <button
                 type="button"
                 onClick={handleSendChatMessage}
                 className="p-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition-all"
@@ -9110,7 +9644,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     </button>
                   )}
                 </div>
-                
+
                 <div className="w-full">
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-center">FOTO DO DISPOSITIVO (UPLOAD)</label>
                   {currentUser.isAdmin ? (
@@ -9271,20 +9805,20 @@ const handleDownload = async (fileUrl, fileName) => {
             </div>
 
             <div className="bg-slate-50 px-6 py-3 border-t border-slate-150 flex items-center justify-end gap-2">
-              <button 
+              <button
                 type="button"
-                onClick={() => setShowSummaryModal(false)} 
+                onClick={() => setShowSummaryModal(false)}
                 className="px-4 py-2 text-slate-500 text-xs font-bold"
               >
                 Fechar Painel
               </button>
-              
+
               {!isSummaryLoading && (
                 <button
                   type="button"
                   onClick={() => {
                     const text = summaryContent;
-                    
+
                     const fallbackCopy = () => {
                       try {
                         const textArea = document.createElement("textarea");
@@ -9296,7 +9830,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         textArea.select();
                         const successful = document.execCommand('copy');
                         document.body.removeChild(textArea);
-                        
+
                         if (successful) {
                           triggerNotification('Texto copiado com sucesso! Pronto para colar no e-mail corporativo.');
                         } else {
@@ -9402,7 +9936,7 @@ const handleDownload = async (fileUrl, fileName) => {
             </div>
 
             <form onSubmit={submitProductivity} className="p-6 flex flex-col gap-4">
-              
+
               {/* BLOCO 1: GRUPO E DATA LADO A LADO */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -9539,10 +10073,10 @@ const handleDownload = async (fileUrl, fileName) => {
                     onChange={(e) => {
                       const selectedUser = usersList.find(u => u.name === e.target.value);
                       const existingPres = presenceList.find(p => p.name === e.target.value);
-                      const primaryDept = selectedUser && selectedUser.depts && selectedUser.depts.length > 0 
-                        ? selectedUser.depts[0] 
+                      const primaryDept = selectedUser && selectedUser.depts && selectedUser.depts.length > 0
+                        ? selectedUser.depts[0]
                         : (selectedUser?.dept || 'rh');
-                      
+
                       setNewPresence({
                         name: e.target.value,
                         dept: primaryDept,
@@ -10027,8 +10561,8 @@ const handleDownload = async (fileUrl, fileName) => {
                           type="checkbox"
                           checked={(userForm.depts || []).includes(dept.id)}
                           onChange={(e) => {
-                            const newDepts = e.target.checked 
-                              ? [...(userForm.depts || []), dept.id] 
+                            const newDepts = e.target.checked
+                              ? [...(userForm.depts || []), dept.id]
                               : (userForm.depts || []).filter(id => id !== dept.id);
                             setUserForm({ ...userForm, depts: newDepts, role: '' });
                           }}
@@ -10042,7 +10576,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     )}
                   </div>
                 </div>
-                
+
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 font-black text-slate-900">Cargo Principal Atribuído</label>
                   <select
@@ -10068,7 +10602,7 @@ const handleDownload = async (fileUrl, fileName) => {
                       })}
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Vincular a Grupo de Produção (Opcional)</label>
                   <select
@@ -10299,7 +10833,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <option value="Emergência">🚨 Emergência — aviso prioritário</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Anexar Capa (Upload de Arquivo)</label>
                   <label className="border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100">
@@ -10358,7 +10892,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <span className="text-[10px] font-extrabold text-slate-800 flex items-center gap-1">
                     <Sparkles className="h-4 w-4 text-slate-500" /> Copiloto AI de Escrita
                   </span>
-                  
+
                   <div className="flex items-center gap-1.5">
                     <select
                       value={selectedTone}
@@ -10435,8 +10969,8 @@ const handleDownload = async (fileUrl, fileName) => {
                           type="checkbox"
                           checked={(newPost.depts || []).includes(dept.id)}
                           onChange={(e) => {
-                            const newDepts = e.target.checked 
-                              ? [...(newPost.depts || []), dept.id] 
+                            const newDepts = e.target.checked
+                              ? [...(newPost.depts || []), dept.id]
                               : (newPost.depts || []).filter(id => id !== dept.id);
                             setNewPost({ ...newPost, depts: newDepts });
                           }}
@@ -10450,7 +10984,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <span className="text-[9px] text-rose-500 font-bold block mt-1">⚠️ Obrigatório selecionar ao menos um setor.</span>
                   )}
                 </div>
-                
+
                 <div className="sm:col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Etiquetas / Tags (com vírgula)</label>
                   <input
@@ -10522,7 +11056,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <span className="text-[10px] font-extrabold text-slate-800 flex items-center gap-1">
                     <Sparkles className="h-4 w-4 text-slate-500" /> Copiloto AI de Escrita
                   </span>
-                  
+
                   <div className="flex items-center gap-1.5">
                     <select
                       value={selectedTone}
@@ -10561,537 +11095,7 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
-      {/* MODAL: MENSAGENS PRIVADAS */}
-      {showMessagesModal && (
-        <div data-tour="inbox-overview" className="fixed inset-0 bg-[#f4f7fb] flex items-center justify-center p-0 z-[999] animate-fade-in">
-          <div className="bg-white w-full max-w-none shadow-none overflow-hidden flex flex-col h-dvh border-0 rounded-none">
-            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white px-4 sm:px-7 py-4 sm:py-5 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 border-b border-white/10">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-11 w-11 rounded-2xl bg-blue-500/20 border border-blue-300/20 flex items-center justify-center shrink-0 shadow-inner"><MessageSquare className="h-5 w-5 text-blue-100" /></div>
-                <div className="min-w-0">
-                  <h3 className="font-bold tracking-tight text-base sm:text-lg leading-tight">Caixa de entrada</h3>
-                  <p className="text-[11px] text-slate-300 mt-0.5">Acompanhe solicitações, responsáveis e prazos</p>
-                </div>
-              </div>
-              <div data-tour="inbox-actions" className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:w-auto sm:overflow-visible sm:pb-0">
-                {!isComposingMsg && !activeThreadId && (
-                  <select aria-label="Organizar conversas" value={messageOrganization} onChange={(e) => setMessageOrganization(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400">
-                    <option value="person">Organizar por pessoa</option>
-                    <option value="sector">Organizar por setor</option>
-                  </select>
-                )}
-                {!isComposingMsg && !activeThreadId && (
-                  <button type="button" onClick={() => { setShowArchivedThreads(value => !value); setInboxStatusFilter('all'); }} className="border border-slate-600 hover:border-slate-400 text-slate-100 text-xs font-semibold px-3 py-2 rounded-lg transition-all">
-                    {showArchivedThreads ? 'Caixa de entrada' : 'Arquivadas'}
-                  </button>
-                )}
-                {!isComposingMsg && !activeThreadId && (
-                  <button type="button" onClick={() => { setIsComposingMsg(true); setMsgSearchText(''); setMsgRecipientIds([]); setConversationDraftThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`); setMsgSubject(''); setMsgDueDate(''); setMsgText(''); setMsgAttachment(null); }} className="bg-blue-600 hover:bg-blue-500 text-xs font-semibold px-3 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5">
-                    <Plus className="h-4 w-4" /> Nova conversa
-                  </button>
-                )}
-                <button type="button" aria-label="Fechar caixa de entrada" onClick={() => { setShowMessagesModal(false); setIsComposingMsg(false); setActiveThreadId(null); setMsgAttachment(null); }} className="p-2 hover:bg-slate-800 rounded-lg ml-1">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div data-tour="inbox-content" className="flex-1 overflow-hidden p-0 bg-[#f4f7fb] flex flex-col">
-              {isComposingMsg ? (
-                <div className="p-4 sm:p-6 overflow-y-auto h-full">
-                  <form onSubmit={handleSendMessage} className="flex flex-col gap-5 bg-white p-5 sm:p-8 rounded-[24px] border border-slate-200/80 shadow-[0_18px_50px_-32px_rgba(15,23,42,.45)] max-w-3xl mx-auto">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <h4 className="font-bold text-lg text-slate-900">Nova conversa</h4>
-                      <button type="button" onClick={() => setIsComposingMsg(false)} className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-2 rounded-lg">Voltar</button>
-                    </div>
-                    
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Assunto (Obrigatório)</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ex: Dúvida sobre fechamento, Solicitação de EPI..."
-                        value={msgSubject}
-                        onChange={(e) => setMsgSubject(e.target.value)}
-                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 font-medium text-slate-800 bg-slate-50"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Conclusão prevista</label>
-                      <input
-                        type="date"
-                        value={msgDueDate}
-                        min={todayStr}
-                        onChange={(e) => setMsgDueDate(e.target.value)}
-                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white text-slate-700"
-                      />
-                      <span className="mt-1 block text-[9px] text-slate-400">Opcional. Participantes poderão alterar o prazo; cada mudança ficará registrada na conversa.</span>
-                    </div>
-
-                    <div>
-                      <div className="mb-2 flex items-end justify-between gap-3">
-                        <div>
-                          <label htmlFor="message-recipient-search" className="block text-[10px] font-bold uppercase text-slate-500">Participantes da conversa</label>
-                          <p className="mt-1 text-[10px] text-slate-400">Pesquise e selecione uma ou mais pessoas antes de iniciar.</p>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">{msgRecipientIds.length} selecionado(s)</span>
-                      </div>
-                      <div className="relative z-20">
-                        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input id="message-recipient-search" type="text" required={msgRecipientIds.length === 0} autoComplete="off" placeholder="Digite o nome, cargo ou setor..." value={msgSearchText} onChange={event => { setMsgSearchText(event.target.value); setShowMsgSuggestions(true); }} onFocus={() => setShowMsgSuggestions(true)} onBlur={() => setTimeout(() => setShowMsgSuggestions(false), 200)} className={`w-full rounded-xl border bg-white py-3 pl-10 pr-10 text-sm font-medium focus:outline-none focus:ring-4 ${msgRecipientIds.length ? 'border-emerald-300 text-slate-800 focus:ring-emerald-50' : 'border-slate-200 text-slate-700 focus:border-blue-300 focus:ring-blue-50'}`} />
-                        {msgSearchText && <button type="button" aria-label="Limpar busca" onMouseDown={event => event.preventDefault()} onClick={() => { setMsgSearchText(''); setShowMsgSuggestions(true); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
-                        {showMsgSuggestions && (
-                          <div className="mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-                            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-2"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Selecione os participantes</span><span className="text-[10px] font-semibold text-blue-700">{getAllowedMessageRecipients().length} disponíveis</span></div>
-                            <div className="max-h-64 overflow-y-auto p-1.5">
-                              {filterMessageRecipients(msgSearchText).map(user => {
-                                const recipientDepartments = getMessageRecipientDepartments(user);
-                                const selected = msgRecipientIds.includes(user.id);
-                                return <button key={user.id} type="button" onMouseDown={event => { event.preventDefault(); setMsgRecipientIds(previous => selected ? previous.filter(id => id !== user.id) : [...new Set([...previous, user.id])]); setMsgSearchText(''); setShowMsgSuggestions(true); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs transition-colors focus:outline-none ${selected ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-blue-50 focus:bg-blue-50'}`}><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black ${selected ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'}`}>{String(user.name || '?').trim().charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate font-extrabold leading-tight">{user.name}</span><span className={`mt-1 block truncate text-[10px] ${selected ? 'text-blue-100' : 'text-slate-500'}`}>{[user.role, recipientDepartments.join(', ')].filter(Boolean).join(' · ') || 'Colaborador'}</span></span>{selected && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>;
-                              })}
-                              {filterMessageRecipients(msgSearchText).length === 0 && <div className="p-5 text-center"><Search className="mx-auto h-6 w-6 text-slate-300" /><p className="mt-2 text-xs font-semibold text-slate-600">Nenhum colaborador encontrado</p><p className="mt-1 text-[10px] text-slate-400">Revise o nome, cargo ou setor informado.</p></div>}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {msgRecipientIds.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{msgRecipientIds.map(userId => { const selectedUser = getAllowedMessageRecipients().find(user => user.id === userId) || messageContacts.find(user => user.id === userId); if (!selectedUser) return null; return <span key={userId} className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 py-1.5 pl-3 pr-1.5 text-[10px] font-bold text-emerald-900"><span className="truncate">{selectedUser.name}</span><button type="button" onClick={() => setMsgRecipientIds(previous => previous.filter(id => id !== userId))} className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white text-emerald-700 hover:bg-emerald-100" aria-label={`Remover ${selectedUser.name}`}><X className="h-3 w-3" /></button></span>; })}</div>}
-                      {!currentUser.isAdmin && <span className="mt-2 block text-[9px] text-slate-400">Você pode selecionar os gestores do seu setor, o suporte e pessoas com quem já possui contato.</span>}
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mensagem ou Descrição</label>
-                      <textarea
-                        rows="3"
-                        placeholder="Descreva sua dúvida, envie um documento..."
-                        value={msgText}
-                        onChange={(e) => setMsgText(e.target.value)}
-                        className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                      ></textarea>
-                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
-                      <PreviaEmojis texto={msgText} />
-                    </div>
-
-                    <div className="flex items-center gap-3 mt-1">
-                      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors border border-slate-200 w-max">
-                        <Paperclip className="h-4 w-4" /> 
-                        {isUploadingMessageAttachment ? 'Enviando anexo…' : msgAttachment ? 'Mudar Anexo' : 'Anexar Arquivo ou Foto'}
-                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
-                      </label>
-                      
-                      {msgAttachment && (
-                        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-800">
-                          <File className="h-3 w-3" /> <span className="truncate max-w-[120px]">{msgAttachment.name}</span>
-                          <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700 ml-1"><X className="h-3.5 w-3.5"/></button>
-                        </div>
-                      )}
-                    </div>
-
-                    <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || !msgRecipientIds.length || (!msgText.trim() && !msgAttachment)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
-                      {isSendingMessage && <LoaderCircle className="h-4 w-4 animate-spin" />}{isSendingMessage ? 'Abrindo conversa...' : `Iniciar conversa com ${msgRecipientIds.length || 0} participante(s)`}
-                    </button>
-                  </form>
-                </div>
-              ) : activeThreadId ? (
-                <div className="flex min-h-0 h-full bg-white">
-                  <aside className="hidden w-[320px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 lg:flex">
-                    <div className="border-b border-slate-200 px-4 py-4">
-                      <span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas</span>
-                      <p className="mt-1 text-xs text-slate-500">Alterne sem sair da leitura atual.</p>
-                    </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
-                      {(() => {
-                        const grouped = {};
-                        normMessages.filter(message => message.participants.includes(currentUser.id)).forEach(message => {
-                          if (!grouped[message.threadId]) grouped[message.threadId] = { ...message, messages: [], unread: 0 };
-                          grouped[message.threadId].messages.push(message);
-                          if (!message.readBy.includes(currentUser.id)) grouped[message.threadId].unread += 1;
-                        });
-                        return Object.values(grouped)
-                          .filter(thread => !isThreadArchived(thread.threadId))
-                          .sort((a, b) => Math.max(...b.messages.map(getMessageTimestamp)) - Math.max(...a.messages.map(getMessageTimestamp)))
-                          .map(thread => {
-                            const latest = thread.messages.reduce((last, message) => getMessageTimestamp(message) > getMessageTimestamp(last) ? message : last, thread.messages[0]);
-                            const selected = thread.threadId === activeThreadId;
-                            return <button key={thread.threadId} type="button" onClick={() => openThread(thread.threadId)} className={`mb-1.5 w-full rounded-2xl border p-3 text-left transition ${selected ? 'border-blue-200 bg-white shadow-sm' : 'border-transparent hover:border-slate-200 hover:bg-white'}`}>
-                              <div className="flex min-w-0 items-start gap-2.5">
-                                <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-black ${selected ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-600'}`}><MessageSquare className="h-4 w-4" /></span>
-                                <span className="min-w-0 flex-1"><strong className="block break-words text-xs leading-4 text-slate-900">{thread.subject || 'Conversa'}</strong><span className="mt-1 block truncate text-[10px] text-slate-500">{latest.senderId === currentUser.id ? 'Você' : latest.senderName}: {latest.content || 'Arquivo anexo'}</span></span>
-                                {thread.unread > 0 && <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-blue-600 px-1 text-[9px] font-black text-white">{thread.unread}</span>}
-                              </div>
-                            </button>;
-                          });
-                      })()}
-                    </div>
-                  </aside>
-                  <div className="flex min-w-0 flex-1 flex-col bg-white">
-                  {/* HEADER DO CHAT ABERTO */}
-                  <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'p-4 sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
-                    <div className="flex flex-wrap items-start gap-2 sm:gap-3">
-                      <button type="button" aria-label="Voltar às conversas" onClick={() => { setActiveThreadId(null); setShowAddParticipant(false); }} className="text-slate-500 hover:text-slate-900 p-2 bg-slate-50 border border-slate-200 rounded-xl transition-all"><ChevronLeft className="h-5 w-5"/></button>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversa ativa</span>{!threadHeaderExpanded && (() => { const ticket = conversationAuditRows.find(row => row.id === activeThreadId); return ticket ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-black text-blue-700">#{ticket.ticket}</span> : null; })()}</div>
-                        <h4 className={`break-words font-extrabold leading-snug text-slate-950 [overflow-wrap:anywhere] ${threadHeaderExpanded ? 'mt-0.5 text-base sm:text-lg' : 'mt-0.5 line-clamp-1 text-sm'}`}>{normMessages.find(m => m.threadId === activeThreadId)?.subject || 'Conversa'}</h4>
-                        {threadHeaderExpanded && <span className="mt-1 block break-words text-xs leading-5 text-slate-500 [overflow-wrap:anywhere]">
-                          Participantes: {normMessages.find(m => m.threadId === activeThreadId)?.participants.map(pid => pid === currentUser.id ? 'Você' : messageContacts.find(u => u.id === pid)?.name.split(' ')[0]).join(', ')}
-                        </span>}
-                      </div>
-                      {!getThreadMetadata(activeThreadId).completedAt && <button type="button" onClick={() => { setThreadHeaderExpanded(true); setShowAddParticipant(true); setParticipantSearch(''); setNewParticipantId(''); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700" title="Incluir participantes" aria-label="Incluir participantes"><UserPlus className="h-4 w-4" /></button>}
-                      <div className="flex shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1"><button type="button" onClick={() => setMessageFocusFilter('all')} className={`rounded-lg px-2 py-1.5 text-[9px] font-bold ${messageFocusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>Todas</button><button type="button" onClick={() => setMessageFocusFilter('saved')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'saved' ? 'bg-blue-700 text-white' : 'text-slate-500'}`} title="Mensagens salvas"><Bookmark className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setMessageFocusFilter('activities')} className={`rounded-lg p-1.5 ${messageFocusFilter === 'activities' ? 'bg-violet-700 text-white' : 'text-slate-500'}`} title="Atividades da conversa"><ListChecks className="h-3.5 w-3.5" /></button></div>
-                      <button type="button" aria-expanded={threadHeaderExpanded} onClick={() => { setThreadHeaderExpanded(value => !value); if (threadHeaderExpanded) setShowAddParticipant(false); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-extrabold text-blue-800 hover:border-blue-200 hover:bg-blue-100" title={threadHeaderExpanded ? 'Recolher informações da conversa' : 'Exibir informações da conversa'}>{threadHeaderExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}<span className="hidden sm:inline">{threadHeaderExpanded ? 'Recolher' : 'Detalhes'}</span></button>
-                      {threadHeaderExpanded && <div className="ml-12 flex w-full flex-wrap items-center justify-end gap-2 sm:ml-0 sm:w-auto sm:shrink-0">
-                      {isThreadArchived(activeThreadId) ? (
-                        <button type="button" onClick={() => handleRestoreThread(activeThreadId)} className="bg-white border border-emerald-200 text-emerald-700 hover:text-emerald-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Restaurar conversa">
-                          Restaurar
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => handleArchiveThread(activeThreadId)} className="bg-white border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold px-3 py-2 rounded-lg" title="Arquivar conversa">
-                          Arquivar
-                        </button>
-                      )}
-                      </div>}
-                    </div>
-
-                    {threadHeaderExpanded && (() => {
-                      const ticket = conversationAuditRows.find(row => row.id === activeThreadId);
-                      if (!ticket) return null;
-                      return <section className="grid gap-2 sm:ml-12 sm:grid-cols-3" aria-label="Resumo do ticket">
-                        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-blue-600">Ticket</span><strong className="mt-0.5 block text-sm text-blue-950">#{ticket.ticket}</strong></div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">Responsável pela abertura</span><strong className="mt-0.5 block break-words text-xs text-slate-900 [overflow-wrap:anywhere]">{ticket.openerName}</strong></div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><span className="block text-[9px] font-black uppercase tracking-wider text-slate-500">Movimentações</span><strong className="mt-0.5 block text-xs text-slate-900">{ticket.messages?.length || getThreadMetadata(activeThreadId).messages.length} mensagens · {ticket.extensions} prorrogação(ões)</strong></div>
-                      </section>;
-                    })()}
-
-                    {threadHeaderExpanded && (() => {
-                      const metadata = getThreadMetadata(activeThreadId);
-                      if (!metadata.serviceRequest) return null;
-                      const status = serviceRequestStatus(metadata, todayStr);
-                      const opener = getThreadOpener(activeThreadId);
-                      const canDecide = metadata.serviceRequiresApproval && status === 'approval' && opener?.senderId !== currentUser.id && metadata.participants?.includes(currentUser.id);
-                      const canManage = canManageServiceThread(activeThreadId);
-                      const workflowStatus = metadata.serviceStatus || (metadata.serviceRequiresApproval ? 'approval' : 'open');
-                      return <section className="flex flex-col gap-3 rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-3 sm:ml-12" aria-label="Informações da solicitação">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><span className="block text-[9px] font-black uppercase tracking-wider text-cyan-700">Central de Serviços · {metadata.serviceCategory || 'Serviço interno'}</span><div className="mt-1 flex flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${SERVICE_STATUS_CLASSES[status]}`}>{serviceStatusLabel[status]}</span><span className="text-[10px] font-semibold text-slate-600">Prioridade {metadata.servicePriorityLabel || 'Normal'}</span><span className="text-[10px] font-semibold text-slate-600">Responsável: {metadata.serviceAssigneeName || 'não atribuído'}</span>{metadata.serviceDecisionBy && <span className="text-[10px] text-slate-500">Decisão por {metadata.serviceDecisionBy}</span>}</div></div>{canDecide && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => handleServiceDecision(activeThreadId, 'rejected')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-50">Não aprovar</button><button type="button" onClick={() => handleServiceDecision(activeThreadId, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-700">Aprovar solicitação</button></div>}</div>
-                        {canManage && workflowStatus !== 'approval' && <div className="flex flex-wrap gap-2 border-t border-cyan-100 pt-3">{!['in_progress', 'waiting_requester'].includes(workflowStatus) && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'in_progress')} className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800">Iniciar atendimento</button>}{workflowStatus === 'in_progress' && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'waiting_requester')} className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-50">Aguardar solicitante</button>}{workflowStatus === 'waiting_requester' && <button type="button" onClick={() => handleServiceStage(activeThreadId, 'in_progress')} className="rounded-lg bg-cyan-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-cyan-800">Retomar atendimento</button>}</div>}
-                        <div className="grid gap-2 border-t border-cyan-100 pt-3 sm:grid-cols-3">
-                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">SLA padrão</span><strong className="mt-1 block text-xs text-slate-800">{metadata.serviceSlaDays || 0} dias úteis</strong></div>
-                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">Previsão informada</span><strong className="mt-1 block text-xs text-slate-800">{formatDueDate(metadata.servicePromisedDate)}</strong></div>
-                          <div className="rounded-xl bg-white p-3"><span className="text-[8px] font-black uppercase text-slate-400">Andamento</span><strong className="mt-1 block text-xs text-slate-800">{Number(metadata.serviceProgress || 0)}%</strong>{metadata.serviceProgressNote && <p className="mt-1 break-words text-[9px] leading-4 text-slate-500">{metadata.serviceProgressNote}</p>}</div>
-                        </div>
-                        {canManage && workflowStatus !== 'approval' && <div className="grid gap-2 rounded-xl border border-cyan-100 bg-white p-3 sm:grid-cols-[160px_120px_1fr_auto] sm:items-end"><label className="text-[8px] font-black uppercase text-slate-500">Data que pretende entregar<input type="date" value={serviceDeliveryDraft} onChange={event => setServiceDeliveryDraft(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-semibold normal-case" /></label><label className="text-[8px] font-black uppercase text-slate-500">Andamento (%)<input type="number" min="0" max="100" step="5" value={serviceProgressDraft} onChange={event => setServiceProgressDraft(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-semibold normal-case" /></label><label className="text-[8px] font-black uppercase text-slate-500">Atualização para o solicitante<input maxLength="500" value={serviceProgressNoteDraft} onChange={event => setServiceProgressNoteDraft(event.target.value)} placeholder="Ex.: documentos em conferência" className="mt-1.5 w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[10px] font-medium normal-case" /></label><button type="button" onClick={() => handleServiceProgressUpdate(activeThreadId)} className="rounded-lg bg-cyan-700 px-3 py-2.5 text-[10px] font-bold text-white hover:bg-cyan-800">Salvar andamento</button></div>}
-                      </section>;
-                    })()}
-
-                    {threadHeaderExpanded && (() => {
-                      const metadata = getThreadMetadata(activeThreadId);
-                      const deadlineStatus = getThreadDeadlineStatus(activeThreadId);
-                      const deadlineHistory = metadata.dueDateHistory || [];
-                      return (
-                        <div className="grid gap-2 text-xs sm:ml-12 md:grid-cols-[auto_1fr_auto] md:items-center">
-                          <div className="flex min-w-0 flex-wrap items-center gap-2"><span className={`rounded-full border px-2.5 py-1 font-semibold ${deadlineStatus.className}`}>{deadlineStatus.label}</span><span className="break-words font-medium text-slate-500">Conclusão prevista: {formatDueDate(metadata.dueDate)}</span></div>
-                          {!metadata.completedAt && (!metadata.serviceRequest || currentUser?.isAdmin || currentUser?.isDeveloper) && (
-                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                              <input
-                                type="date"
-                                aria-label="Alterar prazo de conclusão"
-                                value={pendingThreadDueDate}
-                                onChange={(e) => setPendingThreadDueDate(e.target.value)}
-                                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-400 sm:flex-none"
-                              />
-                              {pendingThreadDueDate !== (metadata.dueDate || '') && <button type="button" onClick={() => handleUpdateThreadDeadline(pendingThreadDueDate)} className="rounded-lg bg-blue-700 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-blue-800">Salvar prazo</button>}
-                            </div>
-                          )}
-                          {!metadata.completedAt && (
-                            <button type="button" onClick={handleCompleteThread} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
-                              Concluir
-                            </button>
-                          )}
-                          {metadata.completedAt && <span className="break-words text-slate-400">Concluída por {metadata.completedBy || 'participante'} em {new Date(metadata.completedAt).toLocaleDateString('pt-BR')}</span>}
-                          {deadlineHistory.length > 0 && <span className="break-words text-violet-600">{deadlineHistory.length} alteração(ões) de prazo no histórico</span>}
-                        </div>
-                      );
-                    })()}
-
-                    {threadHeaderExpanded && (() => {
-                      const metadata = getThreadMetadata(activeThreadId);
-                      if (!metadata.completedAt) return null;
-                      const opener = getThreadOpener(activeThreadId);
-                      return <div className="sm:ml-12 flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-[11px] leading-5 text-emerald-900"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span className="min-w-0 break-words [overflow-wrap:anywhere]">Conversa concluída{opener ? `. A avaliação fica disponível para ${opener.senderId === currentUser.id ? 'você' : opener.senderName}.` : '.'}</span></div>;
-                    })()}
-
-                    {/* PAINEL DE BUSCA E INCLUSÃO DE PARTICIPANTE */}
-                    {threadHeaderExpanded && showAddParticipant && (
-                      <form onSubmit={handleAddParticipant} className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3 sm:ml-12 animate-in slide-in-from-top-2">
-                        <div className="flex items-start justify-between gap-3"><div><strong className="block text-xs text-slate-900">Incluir participante</strong><span className="mt-0.5 block text-[10px] text-slate-500">Pesquise por nome, cargo ou setor.</span></div><button type="button" onClick={() => setShowAddParticipant(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Fechar busca de participante"><X className="h-4 w-4" /></button></div>
-                        <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input autoFocus value={participantSearch} onChange={event => { setParticipantSearch(event.target.value); setNewParticipantId(''); }} placeholder="Digite o nome, cargo ou setor" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
-                        <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5">
-                          {messageContacts.filter(user => !normMessages.find(message => message.threadId === activeThreadId)?.participants.includes(user.id)).filter(user => normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(normalizedText(participantSearch))).map(user => <button key={user.id} type="button" onClick={() => setNewParticipantId(user.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${newParticipantId === user.id ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-blue-50'}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[11px] font-black ${newParticipantId === user.id ? 'bg-white/15' : 'bg-slate-100'}`}>{String(user.name || '?').charAt(0).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block break-words text-xs [overflow-wrap:anywhere]">{user.name}</strong><span className={`mt-0.5 block break-words text-[10px] [overflow-wrap:anywhere] ${newParticipantId === user.id ? 'text-blue-100' : 'text-slate-500'}`}>{[user.role, getMessageRecipientDepartments(user).join(', ')].filter(Boolean).join(' · ') || 'Colaborador'}</span></span>{newParticipantId === user.id && <CheckCircle2 className="h-4 w-4 shrink-0" />}</button>)}
-                          {messageContacts.filter(user => !normMessages.find(message => message.threadId === activeThreadId)?.participants.includes(user.id)).filter(user => normalizedText(`${user.name || ''} ${user.role || ''} ${getMessageRecipientDepartments(user).join(' ')}`).includes(normalizedText(participantSearch))).length === 0 && <div className="p-4 text-center text-xs text-slate-500">Nenhum participante encontrado.</div>}
-                        </div>
-                        <button type="submit" disabled={!newParticipantId} className="mt-3 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-40">Adicionar participante selecionado</button>
-                      </form>
-                    )}
-                  </div>
-                  
-                  {/* ÁREA DE MENSAGENS */}
-                  <div ref={messageListRef} className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#edf6ff_0%,#e4eef9_44%,#d8e6f4_100%)] px-3 py-5 sm:px-8 sm:py-7">
-                    <div className="pointer-events-none sticky top-[46%] z-0 flex h-0 w-full -translate-y-1/2 items-center justify-center overflow-visible" aria-hidden="true">
-                      <img src="/assets/comunica-logo-transparent.png" alt="" className="max-h-[42vh] w-[min(62%,620px)] object-contain opacity-[0.105] grayscale-[20%] saturate-125" />
-                    </div>
-                    <div className="relative z-[1] mx-auto flex w-full max-w-4xl flex-col">
-                    {normMessages
-                      .filter(m => m.threadId === activeThreadId)
-                      .filter(m => messageFocusFilter === 'all' || (messageFocusFilter === 'saved' ? (m.savedBy || []).includes(currentUser.id) : Boolean(normalizeMessageActivity(m.activity))))
-                      .sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b))
-                      .map((msg, index, sortedMessages) => {
-                        const isMine = msg.senderId === currentUser.id;
-                        const isSystem = msg.senderId === 'system';
-                        const messageAuthor = isMine ? currentUser : messageContacts.find(user => user.id === msg.senderId);
-                        const messageAvatar = messageAuthor?.avatar || DEFAULT_AVATAR;
-                        const messageReadCount = isMine ? msg.readBy.filter(userId => userId !== currentUser.id).length : 0;
-                        const messageActivity = normalizeMessageActivity(msg.activity);
-                        const mentionedNames = (msg.mentions || []).map(userId => messageContacts.find(user => user.id === userId)?.name).filter(Boolean);
-                        const showDay = index === 0 || formatMessageDay(sortedMessages[index - 1]) !== formatMessageDay(msg);
-                        const dayHeading = showDay && <div className="flex items-center gap-3 my-5" aria-label={`Mensagens de ${formatMessageDay(msg)}`}><span className="h-px bg-slate-200 flex-1" /><span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">{formatMessageDay(msg)}</span><span className="h-px bg-slate-200 flex-1" /></div>;
-
-                        if (isSystem) {
-                          return (
-                            <React.Fragment key={msg.id}>
-                              {dayHeading}
-                              <div className="my-4 px-2 text-center"><span className="inline-block max-w-full break-words rounded-full bg-slate-200/80 px-4 py-2 text-xs leading-5 text-slate-600 [overflow-wrap:anywhere]">{msg.content}</span></div>
-                            </React.Fragment>
-                          );
-                        }
-
-                        return (
-                          <React.Fragment key={msg.id}>
-                            {dayHeading}
-                            <div className={`mb-2 flex w-full items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
-                              {!isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'participante'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
-                              <article data-message-id={msg.id} className={`group w-fit max-w-[82%] overflow-hidden rounded-[17px] border px-3 py-2.5 shadow-[0_8px_22px_-20px_rgba(15,23,42,.5)] sm:max-w-[min(48%,36rem)] ${(msg.highlightedBy || []).includes(currentUser.id) ? 'ring-2 ring-amber-300' : ''} ${isMine ? 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md' : 'bg-white border-slate-200 rounded-bl-md'}`}>
-                                {!isMine && <strong className="mb-1 block break-words text-[11px] font-extrabold leading-4 text-slate-900 [overflow-wrap:anywhere]">{msg.senderName}</strong>}
-                                {msg.replyTo && <button type="button" className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left text-[10px] ${isMine ? 'border-cyan-200 bg-white/10 text-blue-50' : 'border-blue-500 bg-slate-50 text-slate-600'}`}><strong className="block">Em resposta a {msg.replyTo.senderName}</strong><span className="mt-0.5 block truncate">{msg.replyTo.content || msg.replyTo.attachmentName || 'Mensagem'}</span></button>}
-                                {msg.content && <p className={`whitespace-pre-wrap break-words text-[13px] leading-[1.35rem] [overflow-wrap:anywhere] ${isMine ? 'text-white' : 'text-slate-800'}`}><TextoComEmojis texto={msg.content} /></p>}
-                                {mentionedNames.length > 0 && <div className={`mt-2 flex flex-wrap items-center gap-1 text-[9px] font-bold ${isMine ? 'text-cyan-100' : 'text-blue-700'}`}><AtSign className="h-3 w-3" />{mentionedNames.map(name => <span key={name} className={`rounded-full px-1.5 py-0.5 ${isMine ? 'bg-white/10' : 'bg-blue-50'}`}>{name}</span>)}</div>}
-                                {msg.attachment && (
-                                  <button type="button" onClick={(e) => { e.preventDefault(); handleDownload(msg.attachment, msg.attachment.name); }} className="flex w-full sm:w-auto max-w-full items-center gap-2 mt-2.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors">
-                                    <File className="h-4 w-4 shrink-0 text-blue-600" /><span className="min-w-0 break-all text-left">{msg.attachment.name}</span><Download className="ml-auto h-4 w-4 shrink-0" />
-                                  </button>
-                                )}
-                                <div className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${isMine ? 'text-blue-100' : 'text-slate-400'}`}>
-                                  <time title={formatMessageDateTime(msg)}>{new Date(getMessageTimestamp(msg)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>
-                                  {isMine && <span title={messageReadCount ? (messageReadCount === 1 ? 'Lida por uma pessoa' : `Lida por ${messageReadCount} pessoas`) : 'Enviada; aguardando leitura'} aria-label={messageReadCount ? (messageReadCount === 1 ? 'Mensagem lida' : `Mensagem lida por ${messageReadCount} pessoas`) : 'Mensagem enviada'} className={`inline-flex items-center ${messageReadCount ? 'text-cyan-200' : 'text-blue-200'}`}>{messageReadCount ? <CheckCheck className="h-3.5 w-3.5" strokeWidth={2.8} /> : <Check className="h-3.5 w-3.5" strokeWidth={2.8} />}{messageReadCount > 1 && <span className="ml-0.5 font-bold">{messageReadCount}</span>}</span>}
-                                </div>
-                                {messageActivity && <section className={`mt-2 rounded-xl border p-2.5 ${isMine ? 'border-white/20 bg-white/10' : 'border-violet-100 bg-violet-50/80'}`}>
-                                  <div className="flex flex-wrap items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" /><strong className="text-[10px]">Atividade</strong><select aria-label="Prioridade da atividade" value={messageActivity.priority} onChange={event => handleUpdateMessageActivity(msg, { priority: event.target.value })} className="ml-auto rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[8px] font-bold text-slate-700"><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></div>
-                                  <div className="mt-2 flex flex-wrap gap-1">{[['pending','Pendente'],['in_progress','Em andamento'],['resolved','Resolvida']].map(([value,label]) => <button key={value} type="button" onClick={() => handleUpdateMessageActivity(msg, { status: value })} className={`rounded-md px-2 py-1 text-[8px] font-bold ${messageActivity.status === value ? 'bg-violet-700 text-white' : 'bg-white text-slate-600'}`}>{label}</button>)}</div>
-                                  <div className="mt-2 grid gap-1.5 sm:grid-cols-2"><label className={`text-[8px] font-bold ${isMine ? 'text-blue-100' : 'text-slate-500'}`}>Prazo<input type="date" value={messageActivity.dueDate} onChange={event => handleUpdateMessageActivity(msg, { dueDate: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[8px] text-slate-700" /></label><label className={`text-[8px] font-bold ${isMine ? 'text-blue-100' : 'text-slate-500'}`}>Responsável<select value={messageActivity.assigneeIds[0] || ''} onChange={event => handleUpdateMessageActivity(msg, { assigneeIds: event.target.value ? [event.target.value] : [] })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[8px] text-slate-700"><option value="">Sem responsável</option>{messageContacts.filter(user => (msg.participants || []).includes(user.id)).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label></div>
-                                  {messageActivity.checklist.length > 0 && <div className="mt-2 space-y-1">{messageActivity.checklist.map(item => <label key={item.id} className={`flex items-start gap-1.5 text-[9px] ${item.completed ? 'line-through opacity-60' : ''}`}><input type="checkbox" checked={item.completed} onChange={() => handleToggleMessageChecklistItem(msg, item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div>}
-                                  <div className="mt-2 flex gap-1"><input value={checklistDrafts[msg.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [msg.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(msg); } }} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] text-slate-700" /><button type="button" onClick={() => handleAddMessageChecklistItem(msg)} className="rounded-md bg-slate-900 px-2 py-1 text-[8px] font-bold text-white">Adicionar</button></div>
-                                  <button type="button" onClick={() => { setShowMessagesModal(false); setActiveThreadId(null); setActiveTab('services'); setServiceWorkspace('activities'); }} className={`mt-2 inline-flex items-center gap-1 text-[8px] font-extrabold ${isMine ? 'text-cyan-100' : 'text-violet-700'}`}><ListChecks className="h-3 w-3" /> Sincronizada com a Central de Serviços</button>
-                                </section>}
-                                <div className={`mt-2 flex flex-wrap items-center gap-1 border-t pt-1.5 ${isMine ? 'border-white/15' : 'border-slate-100'}`}><button type="button" onClick={() => { setReplyingToMessage(msg); }} title="Responder" className={`rounded-md p-1.5 ${isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><Reply className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageLike(msg)} title="Curtir" className={`inline-flex items-center gap-1 rounded-md p-1.5 ${(msg.likedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ThumbsUp className="h-3.5 w-3.5" />{(msg.likedBy || []).length > 0 && <span className="text-[8px] font-bold">{msg.likedBy.length}</span>}</button><button type="button" onClick={() => handleToggleSavedMessage(msg)} title="Salvar" className={`rounded-md p-1.5 ${(msg.savedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/15 text-cyan-100' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Bookmark className={`h-3.5 w-3.5 ${(msg.savedBy || []).includes(currentUser.id) ? 'fill-current' : ''}`} /></button><button type="button" onClick={() => handleToggleHighlightedMessage(msg)} title="Grifar" className={`rounded-md p-1.5 ${(msg.highlightedBy || []).includes(currentUser.id) ? 'bg-amber-300 text-amber-950' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><Highlighter className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageActivity(msg)} title={messageActivity ? 'Remover atividade' : 'Marcar como atividade'} className={`rounded-md p-1.5 ${messageActivity ? 'bg-violet-600 text-white' : (isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')}`}><ListChecks className="h-3.5 w-3.5" /></button></div>
-                              </article>
-                              {isMine && <img src={messageAvatar} alt={`Foto de ${msg.senderName || 'você'}`} className="h-8 w-8 shrink-0 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" />}
-                            </div>
-                          </React.Fragment>
-                      ); 
-})
-                    }
-                    {(() => {
-                      const metadata = getThreadMetadata(activeThreadId);
-                      if (!metadata.completedAt) return null;
-                      const opener = getThreadOpener(activeThreadId);
-                      const canEvaluate = isThreadOpenedByCurrentUser(activeThreadId);
-                      if (!canEvaluate) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-600 shadow-sm"><strong className="block text-slate-800">Conversa encerrada</strong><span className="mt-1 block">Aguardando a avaliação de {opener?.senderName || 'quem abriu a conversa'}.</span></section>;
-                      if (metadata.resolutionRating) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center text-xs text-emerald-950 shadow-sm"><strong>Avaliação registrada: {metadata.resolutionRating}/5</strong>{metadata.resolutionFeedback && <p className="mt-2 whitespace-pre-wrap text-emerald-900">{metadata.resolutionFeedback}</p>}</section>;
-                      return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm"><p className="font-bold text-slate-900">A demanda foi atendida?</p><p className="mt-1 text-xs leading-5 text-slate-600">Confirme a resolução ou reabra a conversa. Ao reabrir, todos os participantes voltam a ver o chat na Caixa de entrada.</p>{showResolutionEvaluation ? <div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-semibold text-slate-800">Como você avalia a resolução?</p><div className="mt-2 flex flex-wrap gap-1.5">{[1, 2, 3, 4, 5].map(note => <button key={note} type="button" onClick={() => setResolutionRating(note)} className={`h-9 w-9 rounded-lg text-xs font-black ${resolutionRating === note ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{note}</button>)}</div><textarea value={resolutionFeedback} onChange={event => setResolutionFeedback(event.target.value)} rows="3" maxLength={500} className="mt-3 w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-700 outline-none focus:border-emerald-500" placeholder="Comentário opcional sobre a resolução" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={handleEvaluateResolution} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Registrar avaliação</button><button type="button" onClick={() => setShowResolutionEvaluation(false)} className="px-2 text-[11px] font-semibold text-slate-500">Cancelar</button></div></div> : <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setShowResolutionEvaluation(true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Sim, avaliar resolução</button><button type="button" onClick={handleReopenThread} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-700 hover:bg-rose-50">Não, reabrir conversa</button></div>}</section>;
-                    })()}
-                    </div>
-                  </div>
-                  
-                  {/* BARRA DE ENVIO */}
-                  <div className="shrink-0 bg-white border-t border-slate-200 p-3 sm:px-7 sm:py-4 shadow-[0_-12px_35px_-30px_rgba(15,23,42,.5)]">
-                    {getThreadMetadata(activeThreadId).completedAt ? (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs leading-5 text-slate-600">
-                        <strong className="block text-slate-800">Conversa concluída</strong>
-                        Novas mensagens ficam bloqueadas até que quem abriu a conversa escolha reabri-la na avaliação.
-                      </div>
-                    ) : <>
-                    {msgAttachment && (
-                      <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2 rounded-lg mb-2 text-[10px] font-bold text-slate-700">
-                        <div className="flex items-center gap-1.5 overflow-hidden"><Paperclip className="h-3.5 w-3.5 text-blue-600" /><span className="truncate">{msgAttachment.name}</span></div>
-                        <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700"><X className="h-4 w-4"/></button>
-                      </div>
-                    )}
-                    {replyingToMessage && <div className="mx-auto mb-2 flex w-full max-w-4xl items-center gap-3 rounded-xl border-l-4 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-slate-700"><Reply className="h-4 w-4 shrink-0 text-blue-700" /><span className="min-w-0 flex-1"><strong className="block text-blue-900">Respondendo a {replyingToMessage.senderName}</strong><span className="block truncate text-[10px]">{replyingToMessage.content || replyingToMessage.attachment?.name || 'Mensagem'}</span></span><button type="button" onClick={() => setReplyingToMessage(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Cancelar resposta"><X className="h-4 w-4" /></button></div>}
-                    {(() => {
-                      const mentionMatch = msgText.match(/(?:^|\s)@([^\s@]*)$/u);
-                      if (!mentionMatch) return null;
-                      const query = normalizedText(mentionMatch[1]);
-                      const metadata = getThreadMetadata(activeThreadId);
-                      const suggestions = (metadata.participants || []).map(id => messageContacts.find(user => user.id === id)).filter(user => user && user.id !== currentUser.id && (!query || normalizedText(user.name).includes(query))).slice(0, 6);
-                      if (!suggestions.length) return null;
-                      return <div className="mx-auto mb-2 w-full max-w-4xl rounded-xl border border-blue-100 bg-white p-2 shadow-lg"><span className="px-2 text-[9px] font-black uppercase text-blue-700">Marcar participante</span><div className="mt-1 flex flex-wrap gap-1">{suggestions.map(user => <button key={user.id} type="button" onClick={() => setMsgText(previous => previous.replace(/(?:^|\s)@([^\s@]*)$/u, match => `${match.startsWith(' ') ? ' ' : ''}@${user.name} `))} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-800 hover:bg-blue-100"><AtSign className="h-3 w-3" />{user.name}</button>)}</div></div>;
-                    })()}
-                    
-                    <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-4xl min-w-0 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 transition-all focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
-                      <label className="p-2.5 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors border border-slate-200">
-                        <Paperclip className="h-5 w-5" />
-                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
-                      </label>
-                      <textarea
-                        rows="3"
-                        placeholder="Escreva sua resposta... Use @ para marcar alguém"
-                        value={msgText}
-                        onChange={(e) => setMsgText(e.target.value)}
-                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
-                        className="min-h-[78px] max-h-40 min-w-0 flex-1 resize-y overflow-y-auto border-0 bg-transparent px-2.5 py-2.5 text-sm leading-6 focus:outline-none focus:ring-0"
-                      ></textarea>
-                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
-                      <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || (!msgText.trim() && !msgAttachment)} className="bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-xl transition-all shadow-sm disabled:opacity-50" aria-label={isSendingMessage ? 'Enviando mensagem' : 'Enviar mensagem'}>
-                        {isSendingMessage ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <Send className="h-4.5 w-4.5" />}
-                      </button>
-                    </form>
-                    <PreviaEmojis texto={msgText} />
-                    </>}
-                  </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3">
-                  {(() => {
-                    const searchText = inboxSearch.trim().toLocaleLowerCase('pt-BR');
-                    const myThreads = normMessages.filter(m => m.participants.includes(currentUser.id));
-                    const groupedThreads = {};
-                    
-                    myThreads.forEach(msg => {
-                      if (!groupedThreads[msg.threadId]) {
-                        groupedThreads[msg.threadId] = { id: msg.threadId, subject: msg.subject, messages: [], participants: msg.participants, unread: 0 };
-                      }
-                      groupedThreads[msg.threadId].messages.push(msg);
-                      if (!msg.readBy.includes(currentUser.id)) {
-                        groupedThreads[msg.threadId].unread += 1;
-                      }
-                    });
-                    
-                    const threadList = Object.values(groupedThreads).sort((a, b) => {
-                      const lastA = a.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, a.messages[0]);
-                      const lastB = b.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, b.messages[0]);
-                      if (messageOrganization === 'sector') {
-                        const otherA = messageContacts.find(user => user.id === a.participants.find(id => id !== currentUser.id));
-                        const otherB = messageContacts.find(user => user.id === b.participants.find(id => id !== currentUser.id));
-                        const sectorA = otherA ? getUserDepts(otherA)[0] || '' : '';
-                        const sectorB = otherB ? getUserDepts(otherB)[0] || '' : '';
-                        const sectorOrder = sectorA.localeCompare(sectorB, 'pt-BR');
-                        if (sectorOrder !== 0) return sectorOrder;
-                      }
-                      return getMessageTimestamp(lastB) - getMessageTimestamp(lastA);
-                    });
-
-                    const visibleThreadList = threadList.filter(thread => {
-                      if (showArchivedThreads !== isThreadArchived(thread.id)) return false;
-                      const metadata = getThreadMetadata(thread.id);
-                      const deadline = getThreadDeadlineStatus(thread.id);
-                      const matchesStatus = inboxStatusFilter === 'all'
-                        || (inboxStatusFilter === 'unread' && thread.unread > 0)
-                        || (inboxStatusFilter === 'open' && !metadata.completedAt)
-                        || (inboxStatusFilter === 'overdue' && !metadata.completedAt && /atras/i.test(deadline.label || ''))
-                        || (inboxStatusFilter === 'completed' && Boolean(metadata.completedAt));
-                      if (!matchesStatus) return false;
-                      if (!searchText) return true;
-                      const names = thread.participants.map(id => messageContacts.find(user => user.id === id)?.name || '').join(' ');
-                      const content = thread.messages.map(message => message.content || '').join(' ');
-                      return `${thread.subject || ''} ${names} ${content}`.toLocaleLowerCase('pt-BR').includes(searchText);
-                    });
-
-                    const inboxTotals = threadList.reduce((totals, thread) => {
-                      const metadata = getThreadMetadata(thread.id);
-                      const deadline = getThreadDeadlineStatus(thread.id);
-                      if (thread.unread > 0) totals.unread += 1;
-                      if (metadata.completedAt) totals.completed += 1;
-                      else totals.open += 1;
-                      if (!metadata.completedAt && /atras/i.test(deadline.label || '')) totals.overdue += 1;
-                      return totals;
-                    }, { unread: 0, open: 0, overdue: 0, completed: 0 });
-
-                    const summaryBar = !showArchivedThreads && (
-                      <section className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4" aria-label="Resumo da caixa de entrada">
-                        {[
-                          { id: 'unread', label: 'Não lidas', value: inboxTotals.unread, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
-                          { id: 'open', label: 'Em andamento', value: inboxTotals.open, icon: MessageSquare, tone: 'text-violet-700 bg-violet-50 border-violet-100' },
-                          { id: 'overdue', label: 'Em atraso', value: inboxTotals.overdue, icon: Clock, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
-                          { id: 'completed', label: 'Concluídas', value: inboxTotals.completed, icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
-                        ].map(item => {
-                          const MetricIcon = item.icon;
-                          const active = inboxStatusFilter === item.id;
-                          return <button type="button" aria-pressed={active} onClick={() => setInboxStatusFilter(previous => previous === item.id ? 'all' : item.id)} key={item.label} className={`rounded-2xl border px-3.5 py-3 flex items-center gap-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${item.tone} ${active ? 'ring-2 ring-offset-2 ring-current shadow-md' : ''}`}><span className="h-9 w-9 rounded-xl bg-white/80 flex items-center justify-center shadow-sm"><MetricIcon className="h-4 w-4" /></span><div><strong className="block text-lg leading-none">{item.value}</strong><span className="text-[10px] font-bold uppercase tracking-wide opacity-80">{item.label}</span></div></button>;
-                        })}
-                      </section>
-                    );
-
-                    const searchBar = <div className="mb-3 flex items-center gap-2"><div className="relative min-w-0 flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input type="search" aria-label="Buscar conversas" placeholder="Buscar por assunto, pessoa ou mensagem" value={inboxSearch} onChange={event => setInboxSearch(event.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-3.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 shadow-sm" /></div>{inboxStatusFilter !== 'all' && <button type="button" onClick={() => setInboxStatusFilter('all')} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[10px] font-bold text-slate-600 shadow-sm">Limpar filtro</button>}</div>;
-
-                    if (visibleThreadList.length === 0) {
-                      return <>{summaryBar}{searchBar}<div className="text-center py-12 flex flex-col items-center gap-3 text-slate-400">
-                        <MessageSquare className="h-10 w-10 opacity-20" />
-                        <span className="text-sm">{searchText ? 'Nenhuma conversa corresponde à busca.' : inboxStatusFilter !== 'all' ? 'Nenhuma conversa corresponde ao indicador selecionado.' : showArchivedThreads ? 'Nenhuma conversa arquivada.' : 'Nenhuma conversa encontrada na sua caixa.'}</span>
-                      </div></>;
-                    }
-
-                    return <>{summaryBar}{searchBar}<div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-3">{visibleThreadList.map(thread => {
-                      const lastMsg = thread.messages.reduce((max, m) => getMessageTimestamp(m) > getMessageTimestamp(max) ? m : max, thread.messages[0]);
-                      const isMine = lastMsg.senderId === currentUser.id;
-                      const hasUnread = thread.unread > 0;
-                      
-                      const partsNames = thread.participants
-                        .filter(id => id !== currentUser.id)
-                        .map(id => messageContacts.find(u => u.id === id)?.name.split(' ')[0] || 'Desconhecido')
-                        .join(', ');
-                      const deadlineStatus = getThreadDeadlineStatus(thread.id);
-                      const threadMetadata = getThreadMetadata(thread.id);
-                      return (
-                        <button 
-                          key={thread.id}
-                          type="button"
-                          onClick={() => openThread(thread.id)}
-                          className={`group p-4 sm:p-5 rounded-[22px] border flex flex-col gap-3 transition-all w-full text-left hover:-translate-y-0.5 hover:shadow-lg ${hasUnread ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-[0_14px_35px_-28px_rgba(37,99,235,.8)]' : 'bg-white border-slate-200 hover:border-blue-200 shadow-[0_14px_35px_-30px_rgba(15,23,42,.6)]'}`}
-                        >
-                          <div className="flex items-start justify-between w-full gap-2">
-                            <div className="min-w-0 flex-1">
-                              <strong className={`block break-words text-sm leading-snug transition-colors [overflow-wrap:anywhere] group-hover:text-blue-800 sm:text-base ${hasUnread ? 'text-blue-950 font-extrabold' : 'text-slate-900 font-bold'}`}>
-                                {thread.subject}
-                              </strong>
-                              <span className="mt-1 flex min-w-0 items-start gap-1 text-xs font-medium text-slate-500">
-                                <Users className="h-3 w-3" /> {partsNames || 'Você (Apenas)'}
-                              </span>
-                              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${deadlineStatus.className}`}>
-                                {deadlineStatus.label}{threadMetadata.dueDate ? ` · ${formatDueDate(threadMetadata.dueDate)}` : ''}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end gap-1.5 shrink-0">
-                              <span className={`text-xs font-medium ${hasUnread ? 'text-blue-700' : 'text-slate-500'}`}>
-                                {formatMessageDateTime(lastMsg)}
-                              </span>
-                              {hasUnread && <span className="flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-blue-600 text-[9px] font-black text-white">{thread.unread}</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 mt-1 opacity-80">
-                            {lastMsg.attachment && <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />}
-                            <p className={`w-full min-w-0 break-words text-sm leading-5 [overflow-wrap:anywhere] ${hasUnread ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
-                              {isMine ? 'Você: ' : (lastMsg.senderName.split(' ')[0] + ': ')}{lastMsg.content || 'Arquivo anexo'}
-                            </p>
-                          </div>
-                        </button>
-                      )
-                    })}</div></>;
-                  })()}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {showMessagesModal && activeTab !== 'inbox' && inboxSurface}
 
       {showCompanyRegistration && currentUser.isDeveloper && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4">
@@ -11118,7 +11122,8 @@ const handleDownload = async (fileUrl, fileName) => {
           if (step.workspace) setServiceWorkspace(step.workspace);
           if (step.activityView) changeServiceActivityView(step.activityView);
           setMobileMenuOpen(step.target === '[data-tour="platform-menu"]' && window.innerWidth < 640);
-          setShowMessagesModal(step.open === 'inbox');
+          if (step.open === 'inbox') setActiveTab('inbox');
+          setShowMessagesModal(false);
           const opensControlCenter = step.open === 'permissions' || step.open === 'audit';
           setShowControlCenter(opensControlCenter);
           if (step.open === 'permissions') setControlCenterTab('permissions');
