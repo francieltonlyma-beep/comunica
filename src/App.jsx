@@ -7082,7 +7082,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     const opener = getThreadOpener(activeThreadId);
     const assignees = participants.filter(user => user.id !== opener?.senderId);
     const canManage = canManageServiceThread(activeThreadId);
-    return <div className="flex h-full flex-col bg-white">
+    return <div className="flex h-full flex-col bg-gradient-to-b from-slate-50 via-slate-50 to-blue-50/70">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4"><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Informações</span><h4 className="mt-1 text-sm font-extrabold text-slate-950">Detalhes da conversa</h4></div><button type="button" onClick={() => setShowThreadInfoPanel(false)} aria-label="Fechar informações" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button></div>
       <div className="grid grid-cols-3 gap-1 border-b border-slate-200 bg-slate-50 p-2">{[['summary', 'Resumo'], ['files', `Arquivos (${attachments.length})`], ['history', 'Histórico']].map(([id, label]) => <button key={id} type="button" onClick={() => setThreadInfoTab(id)} className={`rounded-lg px-2 py-2 text-[10px] font-bold ${threadInfoTab === id ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{label}</button>)}</div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -7230,7 +7230,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   </form>
                 </div>
               ) : activeThreadId ? (
-                <div className="relative flex min-h-0 h-full bg-white">
+                <div className="relative flex min-h-0 h-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-100/60">
                   <aside className="hidden w-[320px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/90 lg:flex">
                     <div className="border-b border-slate-200 px-4 py-4">
                       <span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas</span>
@@ -7264,7 +7264,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                       })()}
                     </div>
                   </aside>
-                  <div className="flex min-w-0 flex-1 flex-col bg-white">
+                  <div className="flex min-w-0 flex-1 flex-col bg-white/65 backdrop-blur-sm">
                   {/* HEADER DO CHAT ABERTO */}
                   <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'p-4 sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
                     <div className="flex flex-wrap items-start gap-2 sm:gap-3">
@@ -7500,7 +7500,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     </>}
                   </div>
                   </div>
-                  {showThreadInfoPanel && <><button type="button" aria-label="Fechar painel de informações" onClick={() => setShowThreadInfoPanel(false)} className="absolute inset-0 z-20 bg-slate-950/20 backdrop-blur-[1px]" /><aside className="absolute inset-y-0 right-0 z-30 w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[390px]">{renderThreadInfoPanel()}</aside></>}
+                  {showThreadInfoPanel && <><button type="button" aria-label="Fechar painel de informações" onClick={() => setShowThreadInfoPanel(false)} className="absolute inset-0 z-20 bg-slate-950/20 backdrop-blur-[1px]" /><aside className="absolute inset-y-0 right-0 z-30 w-full border-l border-blue-100 bg-slate-50 shadow-2xl sm:w-[390px]">{renderThreadInfoPanel()}</aside></>}
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3">
