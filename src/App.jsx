@@ -36,7 +36,7 @@ import {
   Trash2, MapPin, FileText, ImageIcon, LogOut, Lock, KeyRound,
   PhoneCall, User, Activity, TrendingUp, TrendingDown, MessageSquare,
   Paperclip, File, Download, UserPlus, Upload, Database, LoaderCircle, Check, CheckCheck, Moon, Sun, Settings2,
-  Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp, Pin, VolumeX, Archive
+  Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp, Pin, VolumeX, Archive, FlaskConical, ExternalLink, Eye
 } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
@@ -704,6 +704,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [supportLoadError, setSupportLoadError] = useState(false);
   const [supportTicketSearch, setSupportTicketSearch] = useState('');
   const [supportTicketFilter, setSupportTicketFilter] = useState('all');
+  const [supportWorkspace, setSupportWorkspace] = useState('operation');
   const [supportCompanySearch, setSupportCompanySearch] = useState('');
   const [supportCompanyHealth, setSupportCompanyHealth] = useState({ generatedAt: 0, companies: [] });
   const [supportHealthLoading, setSupportHealthLoading] = useState(false);
@@ -828,6 +829,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [pendingUserRemoval, setPendingUserRemoval] = useState(null);
   const [isRemovingUser, setIsRemovingUser] = useState(false);
+  const [pendingContentDeletion, setPendingContentDeletion] = useState(null);
+  const [isDeletingContent, setIsDeletingContent] = useState(false);
   const userSaveInFlight = useRef(false);
   const [pinResetTarget, setPinResetTarget] = useState(null);
   const [adminNewPin, setAdminNewPin] = useState('');
@@ -1261,6 +1264,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       if (showPresenceModal) return setShowPresenceModal(false);
       if (showAbsenceModal) return setShowAbsenceModal(false);
       if (showEventModal) return setShowEventModal(false);
+      if (pendingContentDeletion && !isDeletingContent) return setPendingContentDeletion(null);
       if (pendingUserRemoval && !isRemovingUser) return setPendingUserRemoval(null);
       if (showUserModal) return setShowUserModal(false);
       if (showAnnModal) return setShowAnnModal(false);
@@ -1277,7 +1281,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, activeTab, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingUserRemoval, isRemovingUser, showUserModal, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
+  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, activeTab, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingContentDeletion, isDeletingContent, pendingUserRemoval, isRemovingUser, showUserModal, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
 
   // Refs para controle de Notificações em Segundo Plano
   const sessionStartTime = useRef(Date.now());
@@ -2765,8 +2769,13 @@ const getStatusEmTempoReal = (colaborador) => {
     }
   };
 
-  const handleDeleteDocument = async (documentId) => {
+  const handleDeleteDocument = async (documentId, confirmed = false) => {
     const documentItem = documentsList.find(item => item.id === documentId);
+    if (!documentItem) return;
+    if (!confirmed) {
+      setPendingContentDeletion({type: 'document', id: documentId, title: documentItem.title || 'Documento sem título', heading: 'Excluir política ou documento?', detail: 'O arquivo, seu histórico de leitura e sua publicação serão removidos. Esta ação não pode ser desfeita por esta tela.'});
+      return;
+    }
     if (isFirebaseAvailable && dbUser) { if (!await removeDoc('documents', documentId)) return; }
     setDocumentsList(previous => previous.filter(item => item.id !== documentId));
     const fileRemoved = await deleteStoredFile(documentItem?.file);
@@ -3165,12 +3174,17 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setShowPostModal(false);
     triggerNotification(createdPosts.length > 1 ? 'Posts publicados em múltiplos setores!' : 'Post setorial publicado com sucesso!');
   };
-const handleDeletePost = async (postId) => {
+const handleDeletePost = async (postId, confirmed = false) => {
   const postObj = sectorPosts.find(p => p.id === postId);
   if (!postObj) return;
 
   if (postObj.authorId !== currentUser.id && !currentUser.isAdmin) {
     triggerNotification('Você só possui permissão para deletar suas próprias postagens.', 'error');
+    return;
+  }
+
+  if (!confirmed) {
+    setPendingContentDeletion({type: 'post', id: postId, title: postObj.title || 'Publicação sem título', heading: 'Excluir publicação do canal?', detail: 'A postagem deixará de aparecer para todos os integrantes do setor. Esta ação não pode ser desfeita por esta tela.'});
     return;
   }
 
@@ -4174,9 +4188,14 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     triggerNotification(isHolidayEvent ? 'Feriado marcado no calendário e disponível para a escala inteligente.' : 'Novo evento oficial agendado e publicado no Feed!');
   };
 
-  const handleDeleteEvent = async (evId) => {
+  const handleDeleteEvent = async (evId, confirmed = false) => {
     if (!currentUser || !currentUser.isAdmin) {
       triggerNotification('Apenas administradores podem remover eventos oficiais do RH.', 'error');
+      return;
+    }
+    const eventItem = calendarEvents.find(event => event.id === evId);
+    if (!confirmed) {
+      setPendingContentDeletion({type: 'event', id: evId, title: eventItem?.title || 'Evento do calendário', heading: 'Excluir evento do calendário?', detail: 'O evento e o comunicado vinculado à timeline serão removidos juntos. Esta ação não pode ser desfeita por esta tela.'});
       return;
     }
 
@@ -4213,20 +4232,42 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }
   };
 
-  const handleDeleteAnnouncement = async (announcement) => {
+  const handleDeleteAnnouncement = async (announcement, confirmed = false) => {
     if (!currentUser?.isAdmin) {
       triggerNotification('Apenas administradores podem remover comunicados.', 'error');
+      return;
+    }
+    if (!confirmed) {
+      setPendingContentDeletion({type: 'announcement', id: announcement.id, title: announcement.title || 'Publicação sem título', heading: 'Excluir publicação de avisos e políticas?', detail: 'A publicação deixará de aparecer para os colaboradores. Se estiver vinculada ao calendário, o evento também será removido.'});
       return;
     }
     const linkedEvent = calendarEvents.find(event =>
       linkedEventAnnouncementIds(event, [announcement]).includes(announcement.id)
     );
     if (linkedEvent) {
-      await handleDeleteEvent(linkedEvent.id);
+      await handleDeleteEvent(linkedEvent.id, true);
       return;
     }
     if (await removeDoc('announcements', announcement.id)) {
       triggerNotification('Comunicado removido.');
+    }
+  };
+
+  const confirmContentDeletion = async () => {
+    if (!pendingContentDeletion || isDeletingContent) return;
+    const target = pendingContentDeletion;
+    setIsDeletingContent(true);
+    try {
+      if (target.type === 'document') await handleDeleteDocument(target.id, true);
+      if (target.type === 'post') await handleDeletePost(target.id, true);
+      if (target.type === 'event') await handleDeleteEvent(target.id, true);
+      if (target.type === 'announcement') {
+        const announcement = announcements.find(item => item.id === target.id);
+        if (announcement) await handleDeleteAnnouncement(announcement, true);
+      }
+      setPendingContentDeletion(null);
+    } finally {
+      setIsDeletingContent(false);
     }
   };
 
@@ -8023,6 +8064,12 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 </div>
               </section>
 
+              <nav aria-label="Áreas da Central de Suporte" className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:w-fit">
+                <button type="button" onClick={() => setSupportWorkspace('operation')} className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${supportWorkspace === 'operation' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}><MessageSquare className="h-4 w-4" /> Operação</button>
+                <button type="button" onClick={() => setSupportWorkspace('laboratory')} className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${supportWorkspace === 'laboratory' ? 'bg-gradient-to-r from-violet-700 to-blue-700 text-white shadow-sm' : 'text-slate-500 hover:bg-violet-50 hover:text-violet-800'}`}><FlaskConical className="h-4 w-4" /> Laboratório</button>
+              </nav>
+
+              {supportWorkspace === 'operation' ? <>
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                 {[
                   { label: 'Empresas atendidas', value: supportMetrics.companies, detail: 'ambientes cadastrados', icon: Building, tone: 'text-blue-700 bg-blue-50' },
@@ -8088,6 +8135,21 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   <div className="flex flex-col rounded-2xl border border-emerald-100 bg-emerald-50 p-5"><div className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-700 text-white"><Upload className="h-5 w-5" /></div><h4 className="mt-4 text-sm font-black text-slate-900">Restaurar backup</h4><p className="mt-1 flex-1 text-xs leading-5 text-slate-600">Importa um arquivo JSON para a empresa selecionada. Confirme a empresa acima antes de continuar.</p><label className={`mt-4 block rounded-xl px-4 py-2.5 text-center text-xs font-bold text-white ${activeCompany?.id ? 'cursor-pointer bg-emerald-700 hover:bg-emerald-800' : 'cursor-not-allowed bg-slate-400 opacity-50'}`}><span>Selecionar arquivo JSON</span><input disabled={!activeCompany?.id} type="file" accept=".json" onChange={handleImportData} className="hidden" /></label></div>
                 </div>
               </section>
+              </> : (
+                <div className="space-y-5">
+                  <section className="relative overflow-hidden rounded-[1.75rem] border border-violet-200 bg-gradient-to-br from-violet-950 via-blue-950 to-cyan-900 p-6 text-white shadow-xl sm:p-8">
+                    <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-fuchsia-300/15 blur-3xl" />
+                    <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><span className="inline-flex items-center gap-2 rounded-full border border-violet-200/20 bg-white/10 px-3 py-1 text-[9px] font-black uppercase tracking-[.16em] text-violet-100"><FlaskConical className="h-3.5 w-3.5" /> Ambiente privado de homologação</span><h3 className="mt-4 text-2xl font-black sm:text-3xl">Laboratório do Comunica</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/75">Visualize protótipos, valide decisões e escolha quando uma solução estará pronta para um piloto. Nenhuma empresa visualiza estes projetos antes da liberação.</p></div><span className="w-fit rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-xs font-bold text-cyan-100">1 protótipo em validação</span></div>
+                  </section>
+
+                  <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 p-5"><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-700">Projetos e ensaios</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Protótipos disponíveis</h3><p className="mt-1 text-xs text-slate-500">Abra a experiência em uma página privada para testar no celular ou computador.</p></div>
+                    <div className="p-4 sm:p-5"><article className="grid overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-cyan-50 lg:grid-cols-[1fr_300px]"><div className="p-5 sm:p-6"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-black text-violet-800">EM VALIDAÇÃO</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[9px] font-bold text-slate-600">Comunica Integra</span></div><div className="mt-4 flex items-start gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-blue-700 text-white"><MapPin className="h-5 w-5" /></span><div><h4 className="text-lg font-black text-slate-900">Controle de Frotas</h4><p className="mt-1 text-xs leading-5 text-slate-600">Retirada e devolução por QR Code, foto do hodômetro, checklist, GPS, ocorrências e painel do gestor.</p></div></div><div className="mt-5 flex flex-wrap gap-2"><a href="https://comunica-integra-frotas.savoryanole130.chatgpt.site" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-blue-800"><Eye className="h-4 w-4" /> Abrir protótipo</a><a href="https://comunica-integra-frotas.savoryanole130.chatgpt.site" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-xs font-bold text-blue-800 hover:bg-blue-50"><ExternalLink className="h-4 w-4" /> Abrir em nova tela</a></div></div><div className="border-t border-blue-100 bg-slate-950 p-5 text-white lg:border-l lg:border-t-0"><span className="text-[9px] font-black uppercase tracking-[.15em] text-cyan-200">Etapa atual</span><strong className="mt-2 block text-base">Validação do conceito</strong><p className="mt-2 text-[10px] leading-5 text-slate-300">O próximo avanço será transformar as decisões aprovadas em telas funcionais dentro do Comunica Integra.</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/5 rounded-full bg-gradient-to-r from-violet-400 to-cyan-300" /></div><span className="mt-2 block text-[9px] text-slate-400">2 de 5 etapas</span></div></article></div>
+                  </section>
+
+                  <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm"><span className="text-[9px] font-black uppercase tracking-[.16em] text-blue-700">Fluxo de liberação</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Do ensaio à empresa</h3><div className="mt-5 grid gap-3 md:grid-cols-5">{[['1','Rascunho','Ideia e escopo'],['2','Prévia privada','Teste visual'],['3','Validação','Decisões aprovadas'],['4','Empresa piloto','Uso controlado'],['5','Liberação geral','Disponível aos clientes']].map(([number, title, detail], index) => <div key={number} className={`rounded-2xl border p-3 ${index < 2 ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-slate-50'}`}><span className={`grid h-7 w-7 place-items-center rounded-lg text-[10px] font-black ${index < 2 ? 'bg-violet-700 text-white' : 'bg-white text-slate-500'}`}>{number}</span><strong className="mt-3 block text-xs text-slate-900">{title}</strong><span className="mt-1 block text-[9px] text-slate-500">{detail}</span></div>)}</div></section>
+                </div>
+              )}
             </div>
           )}
 
@@ -10661,6 +10723,15 @@ const handleDownload = async (fileUrl, fileName) => {
             </label>
             <button disabled={pinResetSaving} className="mt-3 w-full rounded-lg bg-slate-900 p-3 text-white disabled:opacity-50">{pinResetSaving ? 'Salvando…' : 'Confirmar novo PIN'}</button>
           </form>
+        </div>
+      )}
+      {pendingContentDeletion && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/70 p-4" onMouseDown={event => { if (event.target === event.currentTarget && !isDeletingContent) setPendingContentDeletion(null); }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="delete-content-title" aria-describedby="delete-content-description" className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-rose-50 text-rose-600"><Trash2 className="h-5 w-5" /></span><div><span className="text-[9px] font-black uppercase tracking-[.15em] text-rose-600">Confirme antes de continuar</span><h2 id="delete-content-title" className="mt-1 text-lg font-extrabold text-slate-900">{pendingContentDeletion.heading}</h2></div></div><button type="button" disabled={isDeletingContent} onClick={() => setPendingContentDeletion(null)} aria-label="Cancelar exclusão" className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-50"><X className="h-5 w-5" /></button></div>
+            <div className="mt-5 rounded-2xl border border-rose-100 bg-rose-50/60 p-4"><strong className="block break-words text-sm text-slate-900">{pendingContentDeletion.title}</strong><p id="delete-content-description" className="mt-2 text-xs leading-5 text-slate-600">{pendingContentDeletion.detail}</p></div>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" disabled={isDeletingContent} onClick={() => setPendingContentDeletion(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Manter publicação</button><button type="button" disabled={isDeletingContent} onClick={confirmContentDeletion} className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60">{isDeletingContent ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}{isDeletingContent ? 'Excluindo…' : 'Sim, excluir'}</button></div>
+          </div>
         </div>
       )}
       {pendingUserRemoval && (
