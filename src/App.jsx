@@ -27,6 +27,7 @@ import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCat
 import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
+import LoginShowcase from './LoginShowcase.jsx';
 import { createPortal } from 'react-dom';
 import {
   Bell, Users, Megaphone, Layers, Calendar, Clock, Plus, Search, Heart, Smile,
@@ -707,6 +708,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [supportCompanyHealth, setSupportCompanyHealth] = useState({ generatedAt: 0, companies: [] });
   const [supportHealthLoading, setSupportHealthLoading] = useState(false);
   const [supportHealthError, setSupportHealthError] = useState('');
+  const [salesLeads, setSalesLeads] = useState([]);
+  const [salesLeadError, setSalesLeadError] = useState(false);
   const [rolesList, setRolesList] = useState(() => getLocalStorageItem('comunica_roles', INITIAL_ROLES));
   const [announcements, setAnnouncements] = useState(() => getLocalStorageItem('comunica_announcements', INITIAL_ANNOUNCEMENTS));
   const [sectorPosts, setSectorPosts] = useState(() => getLocalStorageItem('comunica_sector_posts', INITIAL_SECTOR_POSTS));
@@ -875,6 +878,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     if (activityCompany && activityId) return {companyId: activityCompany, activityId};
     return companyId && threadId ? {companyId, threadId, messageId} : null;
   });
+  const [pendingSalesLeadId, setPendingSalesLeadId] = useState(() => new URLSearchParams(window.location.search).get('supportLead') || '');
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [newParticipantId, setNewParticipantId] = useState('');
   const [participantSearch, setParticipantSearch] = useState('');
@@ -1431,6 +1435,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             const type = notification?.data?.type;
             if (type === 'announcement') setActiveTab('announcements');
             if (type === 'sector_post') setActiveTab('sectors');
+            if (type === 'sales_lead') setPendingSalesLeadId(notification?.data?.leadId || '');
             if (['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'].includes(type)) {
               setPendingMessageNavigation({
                 companyId: notification?.data?.companyId,
@@ -1466,7 +1471,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             const eventId = payload.data?.eventId || payload.messageId;
             if (shouldDisplayPush(eventId)) {
               triggerNotification(payload.notification?.title || 'Você recebeu uma nova notificação.', "success");
-              if (['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'].includes(payload.data?.type) && 'Notification' in window && Notification.permission === 'granted') {
+              if (['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(payload.data?.type) && 'Notification' in window && Notification.permission === 'granted') {
                 const desktopNotification = new Notification(payload.notification?.title || 'Atualização no Comunica', {
                   body: payload.notification?.body || 'Uma atividade exige sua atenção.',
                   icon: '/pwa/icon-192.png',
@@ -1474,7 +1479,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 });
                 desktopNotification.onclick = () => {
                   window.focus();
-                  setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId, activityId: payload.data?.threadId ? '' : payload.data?.messageId});
+                  if (payload.data?.type === 'sales_lead') setPendingSalesLeadId(payload.data?.leadId || '');
+                  else setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId, activityId: payload.data?.threadId ? '' : payload.data?.messageId});
                   desktopNotification.close();
                 };
               }
@@ -1502,10 +1508,20 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       if (event.data?.type === 'comunica-open-activity') {
         setPendingMessageNavigation({companyId: event.data.companyId, activityId: event.data.activityId});
       }
+      if (event.data?.type === 'comunica-open-sales-lead') setPendingSalesLeadId(event.data.leadId || '');
     };
     navigator.serviceWorker.addEventListener('message', onWorkerMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onWorkerMessage);
   }, []);
+
+  useEffect(() => {
+    if (!pendingSalesLeadId || !dbUser || !currentUser?.isDeveloper) return;
+    setActiveTab('support');
+    setPendingSalesLeadId('');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('supportLead');
+    window.history.replaceState(window.history.state, '', url);
+  }, [pendingSalesLeadId, dbUser, currentUser?.isDeveloper]);
 
   useEffect(() => {
     if (!pendingMessageNavigation || !dbUser || !currentUser) return;
@@ -1711,6 +1727,15 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     }));
     return () => stops.forEach(stop => stop());
   }, [dbUser, currentUser?.isDeveloper, companies]);
+
+  useEffect(() => {
+    setSalesLeads([]);
+    setSalesLeadError(false);
+    if (!isFirebaseAvailable || !dbUser || !currentUser?.isDeveloper) return undefined;
+    return onSnapshot(collection(db, '_platformSalesLeads'), snapshot => {
+      setSalesLeads(snapshot.docs.map(item => ({id: item.id, ...item.data()})).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)));
+    }, () => setSalesLeadError(true));
+  }, [dbUser, currentUser?.isDeveloper]);
 
   useEffect(() => {
     if (currentUser) localStorage.setItem('comunica_current_user', JSON.stringify(currentUser));
@@ -6748,6 +6773,17 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   const supportTickets = buildSupportTickets(companies, supportRequests, currentUser?.id, todayStr);
   const visibleSupportTickets = filterSupportTickets(supportTickets, supportTicketSearch, supportTicketFilter);
   const supportMetrics = supportDashboardMetrics(companies, supportTickets);
+  const newSalesLeads = salesLeads.filter(lead => (lead.status || 'new') === 'new').length;
+  const salesLeadStatus = {
+    new: {label: 'Novo', className: 'border-blue-200 bg-blue-50 text-blue-800'},
+    contacted: {label: 'Contato realizado', className: 'border-amber-200 bg-amber-50 text-amber-800'},
+    converted: {label: 'Convertido', className: 'border-emerald-200 bg-emerald-50 text-emerald-800'},
+    discarded: {label: 'Arquivado', className: 'border-slate-200 bg-slate-100 text-slate-600'},
+  };
+  const salesContactLinks = lead => {
+    const phone = String(lead.phone || '').replace(/\D/g, '');
+    return {whatsapp: `https://wa.me/${phone.length <= 11 ? `55${phone}` : phone}`, email: `mailto:${encodeURIComponent(lead.email || '')}?subject=${encodeURIComponent(`Comunica — contato com ${lead.companyName || 'sua empresa'}`)}`};
+  };
   const visibleSupportCompanies = companies
     .filter(company => normalizedText(`${company.name || ''} ${company.code || ''}`).includes(normalizedText(supportCompanySearch)))
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
@@ -6848,6 +6884,21 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       : Number(b.candidateUpdatedAt || b.createdAt || 0) - Number(a.candidateUpdatedAt || a.createdAt || 0));
   const careerComparisonApplications = careerApplications.filter(application => careerComparisonIds.includes(application.id)).slice(0, 3);
   const careerAnalysisApplication = careerApplications.find(application => application.id === careerAnalysisSelectedId) || null;
+  const handleSalesContact = async lead => {
+    if (!functionsClient) throw new Error('Serviço de contato indisponível.');
+    await httpsCallable(functionsClient, 'submitPlatformSalesContact')(lead);
+  };
+
+  const updateSalesLeadStatus = async (leadId, status) => {
+    if (!dbUser || !currentUser?.isDeveloper || !['new', 'contacted', 'converted', 'discarded'].includes(status)) return;
+    try {
+      await updateDoc(doc(db, '_platformSalesLeads', leadId), {status, contactedAt: Date.now(), contactedBy: currentUser.name || 'Suporte do Comunica'});
+      triggerNotification(status === 'contacted' ? 'Contato marcado como realizado.' : status === 'converted' ? 'Empresa marcada como convertida.' : status === 'discarded' ? 'Contato arquivado.' : 'Contato reaberto.');
+    } catch (error) {
+      console.error('Não foi possível atualizar o contato comercial.', error);
+      triggerNotification('Não foi possível atualizar este contato.', 'error');
+    }
+  };
 
   if (firebaseEnvironmentError) {
     return <div className="grid min-h-screen place-items-center bg-slate-950 p-6 text-white"><EnvironmentBadge /><div className="max-w-md rounded-3xl border border-rose-300/30 bg-white/10 p-7 text-center shadow-2xl"><Lock className="mx-auto h-8 w-8 text-rose-300" /><h1 className="mt-4 text-lg font-black">Configuração de ambiente bloqueada</h1><p className="mt-2 text-sm leading-6 text-slate-300">{firebaseEnvironmentError}</p></div></div>;
@@ -6869,14 +6920,15 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   if (!currentUser) {
     const loginCompanyIdentified = isLoginCompanyIdentified(activeCompany, companyCode);
     return (
-      <div className="relative isolate min-h-screen overflow-hidden bg-[#071a36] font-sans text-slate-800">
+      <div className="relative isolate min-h-screen overflow-x-hidden bg-[#071a36] font-sans text-slate-800">
         <EnvironmentBadge />
         <div className="login-aurora pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_12%,rgba(32,173,211,0.35),transparent_30%),radial-gradient(circle_at_85%_78%,rgba(49,151,126,0.28),transparent_32%)]" />
         <div className="login-orbit login-orbit-one pointer-events-none absolute -left-24 top-1/4 h-80 w-80 rounded-full border border-white/10" />
         <div className="login-orbit login-orbit-two pointer-events-none absolute -right-20 bottom-[-4rem] h-96 w-96 rounded-full border-[28px] border-white/5" />
         <NotificationToast notification={customNotification} />
 
-        <main className="relative mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-4 py-7 sm:px-8 lg:grid-cols-[1.12fr_0.88fr] lg:gap-16 lg:px-10">
+        <main id="main-content" tabIndex="-1" className="relative mx-auto w-full max-w-7xl px-4 sm:px-8 lg:px-10">
+          <div className="grid min-h-screen items-center gap-8 py-7 lg:grid-cols-[1.12fr_0.88fr] lg:gap-16">
           <section className="mx-auto w-full max-w-2xl text-center text-white lg:mx-0 lg:text-left">
             <div className="mx-auto flex w-max items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-100 backdrop-blur lg:mx-0"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,1)]" /> Plataforma corporativa segura</div>
             <div className="mt-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
@@ -7018,6 +7070,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   <InstallAppDialog open={showInstallHelp} onClose={() => setShowInstallHelp(false)} />
 
           </section>
+          </div>
+          <LoginShowcase onSubmit={handleSalesContact} />
         </main>
       </div>
     );
@@ -7969,14 +8023,21 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 </div>
               </section>
 
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                 {[
                   { label: 'Empresas atendidas', value: supportMetrics.companies, detail: 'ambientes cadastrados', icon: Building, tone: 'text-blue-700 bg-blue-50' },
                   { label: 'Chamados abertos', value: supportMetrics.open, detail: 'aguardando resolução', icon: MessageSquare, tone: 'text-cyan-700 bg-cyan-50' },
                   { label: 'Não lidos', value: supportMetrics.unread, detail: 'pedem sua atenção', icon: Bell, tone: 'text-violet-700 bg-violet-50' },
                   { label: 'Prazo vencido', value: supportMetrics.overdue, detail: 'precisam de prioridade', icon: Clock, tone: 'text-rose-700 bg-rose-50' },
+                  { label: 'Contatos comerciais', value: newSalesLeads, detail: 'novas empresas', icon: PhoneCall, tone: 'text-emerald-700 bg-emerald-50' },
                 ].map(metric => { const MetricIcon = metric.icon; return <article key={metric.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className={`grid h-10 w-10 place-items-center rounded-xl ${metric.tone}`}><MetricIcon className="h-4.5 w-4.5" /></div><span className="mt-3 block text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className="mt-1 block text-2xl font-black text-slate-900">{metric.value}</strong><span className="text-[9px] text-slate-500">{metric.detail}</span></article>; })}
               </div>
+
+              <section className="overflow-hidden rounded-[1.5rem] border border-emerald-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-2 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50 p-5 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Fale conosco</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Contatos comerciais</h3><p className="mt-1 text-xs text-slate-500">Empresas que solicitaram uma apresentação na tela de acesso.</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[9px] font-bold text-emerald-800 shadow-sm">{newSalesLeads} novo(s) · {salesLeads.length} total</span></div>
+                {salesLeadError && <p role="alert" className="m-5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">Não foi possível carregar os contatos comerciais.</p>}
+                <div className="grid gap-3 p-4 lg:grid-cols-2">{salesLeads.slice(0, 30).map(lead => { const status = salesLeadStatus[lead.status] || salesLeadStatus.new; const links = salesContactLinks(lead); return <article key={lead.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><h4 className="truncate text-sm font-extrabold text-slate-900">{lead.companyName}</h4><p className="mt-1 text-[10px] text-slate-500">CNPJ {String(lead.cnpj || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')} · {lead.contactName || 'Contato não informado'}</p></div><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${status.className}`}>{status.label}</span></div>{lead.interest && <p className="mt-3 text-[10px] font-bold text-blue-800">Interesse: {lead.interest}</p>}{lead.message && <p className="mt-2 rounded-xl bg-white p-3 text-[10px] leading-5 text-slate-600">{lead.message}</p>}<div className="mt-3 flex flex-wrap gap-2"><a href={links.whatsapp} target="_blank" rel="noopener noreferrer" onClick={() => updateSalesLeadStatus(lead.id, 'contacted')} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-[9px] font-extrabold text-white hover:bg-emerald-700"><PhoneCall className="h-3.5 w-3.5" /> WhatsApp</a><a href={links.email} onClick={() => updateSalesLeadStatus(lead.id, 'contacted')} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-[9px] font-extrabold text-white hover:bg-blue-800"><Send className="h-3.5 w-3.5" /> E-mail</a><select aria-label={`Situação do contato de ${lead.companyName}`} value={lead.status || 'new'} onChange={event => updateSalesLeadStatus(lead.id, event.target.value)} className="ml-auto rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[9px] font-bold text-slate-700"><option value="new">Novo</option><option value="contacted">Contato realizado</option><option value="converted">Convertido</option><option value="discarded">Arquivado</option></select></div><p className="mt-3 border-t border-slate-200 pt-2 text-[9px] text-slate-400">{lead.phone} · {lead.email} · recebido em {formatSupportActivity(lead.createdAt)}</p></article>; })}{!salesLeadError && salesLeads.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-8 text-center"><PhoneCall className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-xs text-slate-500">Os contatos enviados pela tela de acesso aparecerão aqui.</p></div>}</div>
+              </section>
 
               <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-slate-100 bg-gradient-to-r from-white via-blue-50/40 to-cyan-50/50 p-5 sm:flex-row sm:items-end sm:justify-between">

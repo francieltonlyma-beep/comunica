@@ -27,6 +27,7 @@ import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getC
 import {randomUUID} from 'node:crypto';
 import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivateReports, updatePrivateReport, deletePrivateReport, deleteConfirmedTestReport} from './whistleblowing';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
+import {submitSalesLead} from './salesLeads';
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
@@ -136,6 +137,25 @@ export const platformCompanyHealth = onCall({invoker: 'public', maxInstances: 1}
     request.auth as {uid: string; token: Record<string, unknown>} | undefined,
     request.data?.forceRefresh === true,
   ));
+
+export const submitPlatformSalesContact = onCall({invoker: 'public', maxInstances: 2}, async request => {
+  const database = getFirestore();
+  const result = await submitSalesLead(database, request.data || {}, String(request.rawRequest.ip || ''));
+  if (result.leadId) {
+    try {
+      const tokens = await getSupportNotificationTokens(database, 'comunica-salvador', [SUPPORT_UID], 'public-sales-contact');
+      if (tokens.length) await getMessaging().sendEachForMulticast({
+        tokens,
+        notification: {title: 'Novo contato comercial', body: `${String(request.data?.companyName || 'Uma empresa').slice(0, 80)} quer conhecer o Comunica.`},
+        data: {type: 'sales_lead', leadId: result.leadId},
+        android: {priority: 'high'},
+      });
+    } catch (error) {
+      console.error('Contato comercial salvo, mas a notificação ao suporte falhou.', error);
+    }
+  }
+  return result;
+});
 
 export const createConversation = onCall({invoker: 'public', maxInstances: 10}, async request => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente para abrir uma conversa.');

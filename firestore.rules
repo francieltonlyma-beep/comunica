@@ -41,6 +41,14 @@ service cloud.firestore {
     // Casos e limites de envio são acessíveis somente pelo Admin SDK no servidor.
     match /_privateWhistleblowing/{document=**} { allow read, write: if false; }
     match /_privateWhistleblowingRateLimits/{document=**} { allow read, write: if false; }
+    match /_platformSalesRateLimits/{document=**} { allow read, write: if false; }
+    match /_platformSalesLeads/{leadId} {
+      allow read: if support();
+      allow create, delete: if false;
+      allow update: if support()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'contactedAt', 'contactedBy'])
+        && request.resource.data.get('status', '') in ['new', 'contacted', 'converted', 'discarded'];
+    }
     function manages(app, company) { return admin(app, company) || support(); }
     function canEdit(app, company) {
       return manages(app, company) || (member(company)

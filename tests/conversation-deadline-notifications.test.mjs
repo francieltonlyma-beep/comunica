@@ -22,7 +22,7 @@ test('cada conversa e prazo possui comprovante contra notificações repetidas',
 });
 
 test('alertas abrem diretamente a conversa no navegador e no aplicativo', () => {
-  assert.match(workerSource, /\['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'\]/);
+  assert.match(workerSource, /\['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'\]/);
   assert.match(appSource, /\['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'\]/);
-  assert.match(appSource, /\['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'\]/);
+  assert.match(appSource, /\['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'\]/);
 });
