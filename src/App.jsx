@@ -7100,7 +7100,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   };
 
   const inboxSurface = (
-        <div data-tour="inbox-overview" className={activeTab === 'inbox' ? "flex h-[calc(100dvh-7rem)] min-h-[680px] overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm animate-in fade-in duration-300" : "fixed inset-0 z-[999] flex items-center justify-center bg-[#f4f7fb] p-0 animate-fade-in"}>
+        <div data-tour="inbox-overview" className={activeTab === 'inbox' ? "flex h-[calc(100dvh-7rem)] min-h-[680px] overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm animate-in fade-in duration-300" : "fixed inset-0 z-[999] flex items-center justify-center bg-slate-100 p-0 animate-fade-in"}>
           <div className={`flex w-full max-w-none flex-col overflow-hidden bg-white ${activeTab === 'inbox' ? 'h-full border-0 shadow-none' : 'h-dvh border-0 shadow-none rounded-none'}`}>
             <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-white via-white to-blue-50/70 px-4 py-4 text-slate-900 sm:px-6">
               <div className="flex items-center gap-3 min-w-0">
@@ -7133,7 +7133,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               </div>
             </div>
 
-            <div data-tour="inbox-content" className="flex-1 overflow-hidden p-0 bg-[#f4f7fb] flex flex-col">
+            <div data-tour="inbox-content" className="flex-1 overflow-hidden p-0 bg-slate-100 flex flex-col">
               {isComposingMsg ? (
                 <div className="p-4 sm:p-6 overflow-y-auto h-full">
                   <form onSubmit={handleSendMessage} className="flex flex-col gap-5 bg-white p-5 sm:p-8 rounded-[24px] border border-slate-200/80 shadow-[0_18px_50px_-32px_rgba(15,23,42,.45)] max-w-3xl mx-auto">
