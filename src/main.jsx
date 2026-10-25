@@ -1,6 +1,14 @@
+/* eslint-disable react-refresh/only-export-components */
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import { AppErrorBoundary, AppLoadingScreen, RuntimeNotices } from './AppRuntime.jsx'
+
+try {
+  document.documentElement.classList.toggle('comunica-dark', localStorage.getItem('comunica_theme') === 'dark')
+} catch {
+  // O aplicativo continua com o tema claro quando o armazenamento estiver indisponível.
+}
 
 const DEPLOY_RECOVERY_KEY = 'comunica_deploy_recovery'
 
@@ -17,6 +25,10 @@ const Root = lazy(() => window.location.pathname.startsWith('/privacidade') ? im
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <Suspense fallback={<div className="min-h-screen bg-slate-100 p-8 text-center text-sm text-slate-600">Carregando...</div>}><Root /></Suspense>
+    <AppErrorBoundary>
+      <a className="skip-link" href="#main-content">Ir para o conteúdo principal</a>
+      <RuntimeNotices />
+      <Suspense fallback={<AppLoadingScreen />}><Root /></Suspense>
+    </AppErrorBoundary>
   </StrictMode>,
 )

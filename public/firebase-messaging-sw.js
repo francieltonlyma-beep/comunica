@@ -1,7 +1,7 @@
 importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js');
 
-const COMUNICA_CACHE = 'comunica-shell-v2';
+const COMUNICA_CACHE = 'comunica-shell-v3';
 const COMUNICA_SHELL = ['/', '/manifest.json', '/pwa/icon-192.png', '/pwa/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -14,10 +14,20 @@ self.addEventListener('activate', (event) => {
     .then(() => self.clients.claim()));
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Sempre consulta a rede para detectar uma nova publicação.
+  if (url.pathname === '/version.json') {
+    event.respondWith(fetch(event.request, {cache: 'no-store'}));
+    return;
+  }
 
   if (event.request.mode === 'navigate') {
     event.respondWith(fetch(event.request)

@@ -64,7 +64,7 @@ export default function PublicWhistleblowing() {
     catch { /* O protocolo e a chave continuam visíveis para cópia manual. */ }
   };
 
-  return <main className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#ffe4e6_0%,_#f8fafc_48%,_#e0f2fe_100%)] px-4 py-8 text-slate-900 sm:px-6 sm:py-12">
+  return <main id="main-content" tabIndex="-1" className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#ffe4e6_0%,_#f8fafc_48%,_#e0f2fe_100%)] px-4 py-8 text-slate-900 sm:px-6 sm:py-12">
     <div className="mx-auto max-w-3xl">
       <header className="mb-6 flex items-center gap-3"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-rose-700 to-red-900 text-white shadow-lg"><ShieldCheck className="h-6 w-6" /></div><div><p className="text-[10px] font-black uppercase tracking-[.18em] text-rose-800">Comunica · Canal protegido</p><h1 className="text-lg font-black">Central de Denúncias</h1></div></header>
       <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/90 shadow-2xl shadow-slate-900/10 backdrop-blur-xl">

@@ -186,3 +186,103 @@ html.comunica-dark [class~="to-cyan-50/80"] {
 html.comunica-dark [class~="bg-white"][class~="text-white"],
 html.comunica-dark [class~="bg-white/90"][class~="text-white"],
 html.comunica-dark [class~="bg-slate-50"][class~="text-white"] { color: #e2e8f0 !important; }
+
+/* Acabamento global: navegação por teclado, carregamento e conectividade. */
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: -5rem;
+  z-index: 11000;
+  border-radius: .75rem;
+  background: #0f172a;
+  color: #fff;
+  padding: .75rem 1rem;
+  font-size: .8rem;
+  font-weight: 800;
+  box-shadow: 0 12px 35px #02061755;
+}
+.skip-link:focus { top: max(1rem, env(safe-area-inset-top)); }
+:where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 3px solid #22d3ee;
+  outline-offset: 2px;
+}
+.runtime-notices { position: fixed; inset: 0 0 auto; z-index: 10080; pointer-events: none; }
+.runtime-notice { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: max(.65rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) .65rem max(1rem, env(safe-area-inset-left)); color: #fff; font-size: .72rem; line-height: 1.4; box-shadow: 0 8px 28px #02061733; pointer-events: auto; }
+.runtime-notice span { max-width: 54rem; }
+.runtime-notice strong { font-weight: 900; }
+.runtime-offline { background: #8a4c08; }
+.runtime-update { background: linear-gradient(90deg, #172554, #155e75); }
+.runtime-update button { flex: none; min-height: 2.25rem; border-radius: .65rem; background: #fff; color: #172554; padding: .45rem .85rem; font-weight: 900; }
+.runtime-loading, .runtime-fallback { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: 1rem; padding: 2rem; background: radial-gradient(circle at 50% 35%, #dbeafe, #f1f5f9 48%, #e2e8f0); color: #0f172a; text-align: center; }
+.runtime-loading img, .runtime-fallback img { width: 4.5rem; height: 4.5rem; border-radius: 1.4rem; box-shadow: 0 18px 45px #1e3a8a25; }
+.runtime-loading div { display: grid; gap: .2rem; }
+.runtime-loading strong { font-size: 1.1rem; font-weight: 900; }
+.runtime-loading span, .runtime-fallback p { color: #64748b; font-size: .8rem; }
+.runtime-loading i { width: 11rem; height: .25rem; overflow: hidden; border-radius: 999px; background: #cbd5e1; }
+.runtime-loading i::after { content: ''; display: block; width: 45%; height: 100%; border-radius: inherit; background: #2563eb; animation: runtime-progress 1.2s ease-in-out infinite alternate; }
+.runtime-fallback h1 { margin: 0; font-size: 1.25rem; font-weight: 900; }
+.runtime-fallback p { max-width: 26rem; margin: 0; line-height: 1.6; }
+.runtime-fallback button { border-radius: .8rem; background: #0f172a; color: #fff; padding: .8rem 1rem; font-size: .8rem; font-weight: 800; }
+@keyframes runtime-progress { from { transform: translateX(-20%); } to { transform: translateX(145%); } }
+
+/* Cobertura de cores secundárias no tema escuro. */
+html.comunica-dark .bg-indigo-50,
+html.comunica-dark .bg-indigo-100 { background-color: #292449 !important; }
+html.comunica-dark .bg-orange-50,
+html.comunica-dark .bg-orange-100 { background-color: #3b2918 !important; }
+html.comunica-dark .bg-red-50,
+html.comunica-dark .bg-red-100 { background-color: #402027 !important; }
+html.comunica-dark .text-indigo-950,
+html.comunica-dark .text-indigo-900,
+html.comunica-dark .text-indigo-800,
+html.comunica-dark .text-indigo-700,
+html.comunica-dark .text-indigo-600 { color: #c7d2fe !important; }
+html.comunica-dark .text-orange-800,
+html.comunica-dark .text-orange-600 { color: #fdba74 !important; }
+html.comunica-dark .text-red-800 { color: #fca5a5 !important; }
+html.comunica-dark .border-indigo-100,
+html.comunica-dark .border-indigo-200,
+html.comunica-dark .border-orange-100,
+html.comunica-dark .border-red-200 { border-color: #46556c !important; }
+html.comunica-dark .comunica-emoji-panel .epr-main { --epr-bg-color: #111c2e; --epr-search-input-bg-color: #152238; --epr-text-color: #e2e8f0; }
+html.comunica-dark .runtime-loading,
+html.comunica-dark .runtime-fallback { background: radial-gradient(circle at 50% 35%, #172554, #0b1220 52%); color: #f8fafc; }
+html.comunica-dark .runtime-loading span,
+html.comunica-dark .runtime-fallback p { color: #aebbd0; }
+
+/* Componentes do calendário que usam CSS próprio também acompanham o tema. */
+html.comunica-dark .pse-modal,
+html.comunica-dark .sde-card,
+html.comunica-dark .spc,
+html.comunica-dark .ssr-card { background: #111c2e; color: #e2e8f0; }
+html.comunica-dark .sde,
+html.comunica-dark .spc-selection,
+html.comunica-dark .ssr > header { background: #152238; color: #e2e8f0; }
+html.comunica-dark .sde-views,
+html.comunica-dark .sde input,
+html.comunica-dark .sde select,
+html.comunica-dark .spc-filter select,
+html.comunica-dark .pse-fields input,
+html.comunica-dark .pse-fields select,
+html.comunica-dark .pse-fields textarea { background: #111c2e; color: #e2e8f0; border-color: #34465f; }
+html.comunica-dark .spc-day,
+html.comunica-dark .spc-empty { background: #152238; color: #bdc9d8; border-color: #2b3b52; }
+html.comunica-dark .spc-selected { background: #19343d; border-color: #22d3ee; }
+html.comunica-dark .pse-totals,
+html.comunica-dark .pse-swap-source,
+html.comunica-dark .pse-swap-preview,
+html.comunica-dark .sde-totals { background: #152238; }
+
+@media (max-width: 640px) {
+  html { scroll-padding-top: calc(env(safe-area-inset-top) + 4.75rem); }
+  body { overscroll-behavior-y: contain; }
+  button, a, summary { touch-action: manipulation; }
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px !important; }
+  [role="dialog"] { max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem); overscroll-behavior: contain; }
+  .runtime-notice { align-items: flex-start; justify-content: space-between; }
+  .runtime-notice span { padding-top: .2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

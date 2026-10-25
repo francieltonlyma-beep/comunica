@@ -8,6 +8,7 @@ let cachedHealth: {expiresAt: number; data: PlatformCompanyHealthResponse} | nul
 
 type SupportIdentity = {uid: string; token: Record<string, unknown>} | undefined;
 type ChecklistItem = {id: string; complete: boolean};
+type HealthAlert = {id: string; label: string; count: number; severity: 'info' | 'warning' | 'critical'};
 
 export type PlatformCompanyHealth = {
   companyId: string;
@@ -22,12 +23,17 @@ export type PlatformCompanyHealth = {
   active30Days: number;
   neverAccessed: number;
   notificationUsers: number;
+  inactive30Days: number;
+  incompleteProfiles: number;
+  missingNotificationUsers: number;
+  attentionCount: number;
   lastAccessAt: number;
   departments: number;
   roles: number;
   documents: number;
   announcements: number;
   checklist: ChecklistItem[];
+  alerts: HealthAlert[];
 };
 
 export type PlatformCompanyHealthResponse = {
@@ -92,6 +98,16 @@ export async function getPlatformCompanyHealth(
     const lastAccessValues = employees.map(item => timestampValue(item.lastLoginAt)).filter(Boolean);
     const active30Days = lastAccessValues.filter(value => value >= now - 30 * 24 * 60 * 60 * 1000).length;
     const notificationUsers = employees.filter(item => Array.isArray(item.pushTokens) && item.pushTokens.length > 0).length;
+    const incompleteProfiles = employees.filter(item => !String(item.role || '').trim() || !(
+      (Array.isArray(item.depts) && item.depts.length > 0) || String(item.dept || '').trim()
+    )).length;
+    const inactive30Days = Math.max(0, employees.length - active30Days);
+    const missingNotificationUsers = Math.max(0, employees.length - notificationUsers);
+    const alerts: HealthAlert[] = [
+      {id: 'profiles', label: 'cadastros incompletos', count: incompleteProfiles, severity: 'critical'},
+      {id: 'inactive', label: 'sem acesso nos últimos 30 dias', count: inactive30Days, severity: 'warning'},
+      {id: 'push', label: 'sem dispositivo de notificação', count: missingNotificationUsers, severity: 'info'},
+    ].filter(item => item.count > 0) as HealthAlert[];
     const checklist: ChecklistItem[] = [
       {id: 'team', complete: employees.length > 0},
       {id: 'departments', complete: departments > 0},
@@ -121,12 +137,17 @@ export async function getPlatformCompanyHealth(
       active30Days,
       neverAccessed: employees.length - lastAccessValues.length,
       notificationUsers,
+      inactive30Days,
+      incompleteProfiles,
+      missingNotificationUsers,
+      attentionCount: alerts.reduce((total, item) => total + item.count, 0),
       lastAccessAt: lastAccessValues.length ? Math.max(...lastAccessValues) : 0,
       departments,
       roles,
       documents,
       announcements,
       checklist,
+      alerts,
     });
   }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { isCompanyEmployee } from './teamMembership';
 import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
@@ -7,22 +7,22 @@ import { eventAnnouncementTitle, eventAnnouncementContent, linkedEventAnnounceme
 import { PLATFORM_SUPPORT, withPlatformSupport } from './platformSupportContact';
 import { DEFAULT_DOCUMENT_FOLDER, normalizeDocumentFolder, documentFileType, documentFolders, documentReviewStatus, filterDocuments, canAccessDocument } from './documentOrganization';
 import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion, normalizePollQuestions, pollTimelineItems } from './pollInsights';
-import FeatureTutorial from './FeatureTutorial';
-import ScheduleRuleEditor from './ScheduleRuleEditor';
-import ScheduleCalendar from './ScheduleCalendar.jsx';
-import ScheduleOptimizationSummary from './ScheduleOptimizationSummary.jsx';
-import ScheduleProposalCalendar from './ScheduleProposalCalendar.jsx';
-import ScheduleDayEditor from './ScheduleDayEditor.jsx';
-import PublishedScheduleEditor from './PublishedScheduleEditor.jsx';
-import PublishedScheduleSwap from './PublishedScheduleSwap.jsx';
+const FeatureTutorial = lazy(() => import('./FeatureTutorial.jsx'));
+const ScheduleRuleEditor = lazy(() => import('./ScheduleRuleEditor.jsx'));
+const ScheduleCalendar = lazy(() => import('./ScheduleCalendar.jsx'));
+const ScheduleOptimizationSummary = lazy(() => import('./ScheduleOptimizationSummary.jsx'));
+const ScheduleProposalCalendar = lazy(() => import('./ScheduleProposalCalendar.jsx'));
+const ScheduleDayEditor = lazy(() => import('./ScheduleDayEditor.jsx'));
+const PublishedScheduleEditor = lazy(() => import('./PublishedScheduleEditor.jsx'));
+const PublishedScheduleSwap = lazy(() => import('./PublishedScheduleSwap.jsx'));
 import { canEditPublishedSchedule, planPublishedDayEdit } from './publishedScheduleEdit.js';
 import { planPublishedScheduleSwap } from './publishedScheduleSwap.js';
 import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch } from './scheduleSwapRequests.js';
 import { balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
-import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
-import PlatformUpdates from './PlatformUpdates.jsx';
+const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
+const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
@@ -46,8 +46,7 @@ import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDo
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import EmojiPicker, { Emoji, EmojiStyle, emojiByUnified } from 'emoji-picker-react';
-import emojiDataPt from 'emoji-picker-react/dist/data/emojis-pt.json';
+const LazyEmojiPicker = lazy(() => import('./LazyEmojiPicker.jsx'));
 let notificationDispatcher = null;
 const DEFAULT_AVATAR = '/assets/comunica-avatar-neutral.png';
 const DEPLOY_ENV = import.meta.env.VITE_DEPLOY_ENV || 'production';
@@ -259,18 +258,10 @@ const InstallAppDialog = ({ open, onClose }) => {
     </div>
   );
 };
-const emojiDataComunica = {
-  ...emojiDataPt,
-  categories: {
-    ...emojiDataPt.categories,
-    flags: { ...emojiDataPt.categories.flags, name: 'bandeiras' },
-  },
-};
 const emojiSegmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter('pt-BR', { granularity: 'grapheme' })
   : null;
 const isEmojiGrapheme = (value) => /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(value);
-const emojiUnified = (value) => [...value].map(char => char.codePointAt(0).toString(16)).join('-');
 const CAREER_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const careerDateMs = value => Number(value) || Number(value?.seconds || 0) * 1000 || value?.toMillis?.() || 0;
 const applicationRetentionMs = application => careerDateMs(application.retentionUntil) || (careerDateMs(application.createdAt) || Date.now()) + CAREER_RETENTION_MS;
@@ -326,24 +317,8 @@ const normalizeVacancyQuiz = questions => {
 };
 
 const TextoComEmojis = ({ texto }) => {
-  if (typeof texto !== 'string' || !emojiSegmenter) return texto;
-  const pieces = [];
-  let plainText = '';
-  for (const { segment } of emojiSegmenter.segment(texto)) {
-    const unified = emojiUnified(segment);
-    const normalized = emojiByUnified(unified) ? unified : unified.replace(/-fe0f/g, '');
-    if (!isEmojiGrapheme(segment) || !emojiByUnified(normalized)) {
-      plainText += segment;
-      continue;
-    }
-    if (plainText) {
-      pieces.push(plainText);
-      plainText = '';
-    }
-    pieces.push(<span key={pieces.length} className="inline-flex align-[-0.2em] mx-px" title={segment}><Emoji unified={normalized} emojiStyle={EmojiStyle.TWITTER} size={19} /></span>);
-  }
-  if (plainText) pieces.push(plainText);
-  return pieces;
+  if (typeof texto !== 'string') return texto;
+  return <span className="whitespace-pre-wrap">{texto}</span>;
 };
 
 const PreviaEmojis = ({ texto }) => {
@@ -423,22 +398,13 @@ const BotaoEmoji = ({ aoSelecionar }) => {
       {aberto && createPortal(
         <div ref={painelRef} data-comunica-emoji-picker="true" className="comunica-emoji-panel fixed z-[10000] shadow-2xl border border-slate-200 bg-white rounded-2xl overflow-hidden" style={{ top: posicao.top, left: posicao.left, width: posicao.width, height: posicao.height }}>
           <div className="h-12 flex items-center justify-between px-4 border-b border-slate-100"><span className="text-sm font-semibold text-slate-800">Emojis</span><button type="button" onClick={() => setAberto(false)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Fechar emojis"><X className="h-4 w-4" /></button></div>
-          <EmojiPicker
-            emojiData={emojiDataComunica}
-            emojiStyle={EmojiStyle.TWITTER}
-            theme="light"
-            width="100%"
-            height={posicao.height - 48}
-            lazyLoadEmojis
-            searchPlaceholder="Pesquisar emoji"
-            searchClearButtonLabel="Limpar pesquisa"
-            previewConfig={{ showPreview: false }}
-            onEmojiClick={(emojiObject) => {
+          <Suspense fallback={<div className="grid h-full place-items-center text-xs font-semibold text-slate-500" role="status">Carregando emojis…</div>}>
+            <LazyEmojiPicker height={posicao.height - 48} onSelect={(emojiObject) => {
               const emoji = obterEmojiSelecionado(emojiObject);
               if (emoji) aoSelecionar(emoji);
               setAberto(false);
-            }}
-          />
+            }} />
+          </Suspense>
         </div>,
         document.body
       )}
@@ -6790,6 +6756,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   const supportHealthAverage = supportCompanyHealth.companies?.length
     ? Math.round(supportCompanyHealth.companies.reduce((sum, company) => sum + Number(company.score || 0), 0) / supportCompanyHealth.companies.length)
     : 0;
+  const supportOperationalAttention = (supportCompanyHealth.companies || []).reduce((sum, company) => sum + Number(company.attentionCount || 0), 0);
   const supportHealthChecklistLabels = {
     team: 'Equipe cadastrada', departments: 'Setores definidos', roles: 'Cargos configurados', firstAccess: 'Primeiro acesso realizado',
     permissions: 'Permissões revisadas', communication: 'Primeiro comunicado', documents: 'Documentos publicados', notifications: 'Notificações ativadas',
@@ -7902,6 +7869,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           <button
             className="sm:hidden p-2 hover:bg-slate-100 rounded-lg ml-auto text-slate-600"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? 'Fechar menu principal' : 'Abrir menu principal'}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="comunica-main-menu"
             type="button"
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -7913,7 +7883,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:flex-row">
 
         {/* 2. BARRA LATERAL ESQUERDA (O Menu Correto) */}
-        <aside data-tour="platform-menu" className={`${sidebarCollapsed ? 'sm:w-20' : 'sm:w-72'} h-full w-full overflow-y-auto pb-24 transition-all duration-300 sm:sticky sm:top-20 sm:max-h-[calc(100vh-6rem)] ${
+        <aside id="comunica-main-menu" data-tour="platform-menu" className={`${sidebarCollapsed ? 'sm:w-20' : 'sm:w-72'} h-full w-full overflow-y-auto pb-24 transition-all duration-300 sm:sticky sm:top-20 sm:max-h-[calc(100vh-6rem)] ${
           mobileMenuOpen ? 'fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-slate-100 p-5 pt-[calc(env(safe-area-inset-top)+5rem)] pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))]' : 'hidden sm:block'
         }`}>
                     {/* Botão fechar no mobile */}
@@ -7939,7 +7909,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         </aside>
 
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
-        <main className="flex-1 flex flex-col gap-6 overflow-hidden">
+        <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden outline-none">
           {activeTab === 'inbox' && inboxSurface}
           <div className={`${activeTab === 'inbox' ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
@@ -8011,12 +7981,12 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-slate-100 bg-gradient-to-r from-white via-blue-50/40 to-cyan-50/50 p-5 sm:flex-row sm:items-end sm:justify-between">
                   <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Implantação e adoção</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Saúde das empresas</h3><p className="mt-1 text-xs leading-5 text-slate-500">Saúde combina preparo do ambiente, uso nos últimos 30 dias e alcance das notificações.</p></div>
-                  <div className="flex flex-wrap items-center gap-2"><span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold text-slate-600">Média de saúde <strong className="ml-1 text-slate-900">{supportHealthAverage}%</strong></span><button type="button" disabled={supportHealthLoading} onClick={() => loadSupportCompanyHealth(true)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-[10px] font-extrabold text-white hover:bg-slate-800 disabled:opacity-50">{supportHealthLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />} Atualizar indicadores</button></div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold text-slate-600">Média de saúde <strong className="ml-1 text-slate-900">{supportHealthAverage}%</strong></span><span className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-800">Pontos de atenção <strong className="ml-1">{supportOperationalAttention}</strong></span><button type="button" disabled={supportHealthLoading} onClick={() => loadSupportCompanyHealth(true)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-[10px] font-extrabold text-white hover:bg-slate-800 disabled:opacity-50">{supportHealthLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />} Atualizar indicadores</button></div>
                 </div>
                 {supportHealthError && <p role="alert" className="m-5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">{supportHealthError}</p>}
                 {!supportHealthError && supportHealthLoading && !supportCompanyHealth.companies.length && <div className="flex items-center justify-center gap-2 p-10 text-xs font-semibold text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin text-blue-600" /> Preparando o resumo das empresas...</div>}
                 <div className="grid gap-4 p-5 lg:grid-cols-2">
-                  {visibleSupportHealth.map(company => { const tone = supportHealthTone[company.level] || supportHealthTone.progressing; const companyRecord = companies.find(item => item.id === company.companyId) || { id: company.companyId, name: company.name, code: company.code }; return <article key={company.companyId} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Código {company.code || 'não informado'}</span><h4 className="mt-1 truncate text-sm font-extrabold text-slate-900">{company.name}</h4></div><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${tone.className}`}>{tone.label}</span></div><div className="mt-4 flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${company.score}%` }} /></div><strong className="text-sm text-slate-900">{company.score}%</strong></div><div className="mt-2 flex flex-wrap gap-2 text-[9px] font-semibold text-slate-600"><span className="rounded-full bg-white px-2.5 py-1">Implantação {company.implementationScore}%</span><span className="rounded-full bg-white px-2.5 py-1">Adoção {company.adoptionRate}%</span><span className="rounded-full bg-white px-2.5 py-1">Notificações {company.notificationRate}%</span></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Equipe</span><strong className="mt-1 block text-xs text-slate-800">{company.employees}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Ativos 30d</span><strong className="mt-1 block text-xs text-slate-800">{company.active30Days}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Sem acesso</span><strong className="mt-1 block text-xs text-slate-800">{company.neverAccessed}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Com alertas</span><strong className="mt-1 block text-xs text-slate-800">{company.notificationUsers}</strong></div></div><div className="mt-4 grid gap-1.5 sm:grid-cols-2">{(company.checklist || []).map(item => <div key={item.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-[9px] font-semibold ${item.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-white text-slate-500'}`}>{item.complete ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <Clock className="h-3.5 w-3.5 shrink-0" />}<span>{supportHealthChecklistLabels[item.id] || item.id}</span></div>)}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><span className="text-[9px] text-slate-500">Último acesso: <strong className="text-slate-700">{company.lastAccessAt ? formatSupportActivity(company.lastAccessAt) : 'ainda não realizado'}</strong></span><button type="button" onClick={() => { setActiveCompany(companyRecord); setActiveTab('dashboard'); triggerNotification(`Ambiente de ${company.name} selecionado.`); }} className="rounded-lg bg-blue-700 px-3 py-2 text-[9px] font-extrabold text-white hover:bg-blue-800">Abrir ambiente</button></div></article>; })}
+                  {visibleSupportHealth.map(company => { const tone = supportHealthTone[company.level] || supportHealthTone.progressing; const companyRecord = companies.find(item => item.id === company.companyId) || { id: company.companyId, name: company.name, code: company.code }; return <article key={company.companyId} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Código {company.code || 'não informado'}</span><h4 className="mt-1 truncate text-sm font-extrabold text-slate-900">{company.name}</h4></div><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${tone.className}`}>{tone.label}</span></div><div className="mt-4 flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${company.score}%` }} /></div><strong className="text-sm text-slate-900">{company.score}%</strong></div><div className="mt-2 flex flex-wrap gap-2 text-[9px] font-semibold text-slate-600"><span className="rounded-full bg-white px-2.5 py-1">Implantação {company.implementationScore}%</span><span className="rounded-full bg-white px-2.5 py-1">Adoção {company.adoptionRate}%</span><span className="rounded-full bg-white px-2.5 py-1">Notificações {company.notificationRate}%</span></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Equipe</span><strong className="mt-1 block text-xs text-slate-800">{company.employees}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Ativos 30d</span><strong className="mt-1 block text-xs text-slate-800">{company.active30Days}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Sem acesso</span><strong className="mt-1 block text-xs text-slate-800">{company.neverAccessed}</strong></div><div className="rounded-xl bg-white p-2.5"><span className="block text-[8px] font-black uppercase text-slate-400">Com alertas</span><strong className="mt-1 block text-xs text-slate-800">{company.notificationUsers}</strong></div></div>{(company.alerts || []).length > 0 ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3"><div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-wide text-amber-800"><Activity className="h-3.5 w-3.5" /> Diagnóstico operacional</div><div className="mt-2 flex flex-wrap gap-1.5">{company.alerts.map(alert => <span key={alert.id} className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${alert.severity === 'critical' ? 'border-rose-200 bg-rose-50 text-rose-800' : alert.severity === 'warning' ? 'border-amber-200 bg-white text-amber-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>{alert.count} {alert.label}</span>)}</div></div> : <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[9px] font-bold text-emerald-800">Nenhuma pendência operacional identificada.</div>}<div className="mt-4 grid gap-1.5 sm:grid-cols-2">{(company.checklist || []).map(item => <div key={item.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-[9px] font-semibold ${item.complete ? 'bg-emerald-50 text-emerald-800' : 'bg-white text-slate-500'}`}>{item.complete ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <Clock className="h-3.5 w-3.5 shrink-0" />}<span>{supportHealthChecklistLabels[item.id] || item.id}</span></div>)}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><span className="text-[9px] text-slate-500">Último acesso: <strong className="text-slate-700">{company.lastAccessAt ? formatSupportActivity(company.lastAccessAt) : 'ainda não realizado'}</strong></span><button type="button" onClick={() => { setActiveCompany(companyRecord); setActiveTab('dashboard'); triggerNotification(`Ambiente de ${company.name} selecionado.`); }} className="rounded-lg bg-blue-700 px-3 py-2 text-[9px] font-extrabold text-white hover:bg-blue-800">Abrir ambiente</button></div></article>; })}
                   {!supportHealthLoading && !supportHealthError && visibleSupportHealth.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">Nenhuma empresa corresponde à busca ou os indicadores ainda não foram carregados.</div>}
                 </div>
                 {supportCompanyHealth.generatedAt > 0 && <p className="border-t border-slate-100 px-5 py-3 text-[9px] text-slate-400">Resumo atualizado em {formatSupportActivity(supportCompanyHealth.generatedAt)}. Os dados são armazenados em cache por cinco minutos para reduzir leituras e custos.</p>}
@@ -11244,7 +11214,7 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
-      <FeatureTutorial
+      {activeTutorial && <FeatureTutorial
         tutorialId={activeTutorial}
         userId={currentUser?.id}
         canManage={Boolean(currentUser?.isAdmin || currentUser?.isDeveloper)}
@@ -11270,7 +11240,7 @@ const handleDownload = async (fileUrl, fileName) => {
           setShowMessagesModal(false);
           setShowControlCenter(false);
         }}
-      />
+      />}
 
       {/* RODAPÉ DO SISTEMA */}
       <footer className="bg-slate-900 text-slate-400 py-6 border-t border-slate-850 text-xs text-center mt-auto">
