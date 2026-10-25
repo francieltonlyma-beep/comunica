@@ -6920,7 +6920,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   if (!currentUser) {
     const loginCompanyIdentified = isLoginCompanyIdentified(activeCompany, companyCode);
     return (
-      <div className="relative isolate min-h-screen overflow-x-hidden bg-[#071a36] font-sans text-slate-800">
+      <div className="login-page relative isolate min-h-screen overflow-x-clip bg-[#071a36] font-sans text-slate-800">
         <EnvironmentBadge />
         <div className="login-aurora pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_12%,rgba(32,173,211,0.35),transparent_30%),radial-gradient(circle_at_85%_78%,rgba(49,151,126,0.28),transparent_32%)]" />
         <div className="login-orbit login-orbit-one pointer-events-none absolute -left-24 top-1/4 h-80 w-80 rounded-full border border-white/10" />

@@ -8,6 +8,7 @@ const functionsSource = fs.readFileSync(new URL('../functions/src/index.ts', imp
 const leadSource = fs.readFileSync(new URL('../functions/src/salesLeads.ts', import.meta.url), 'utf8');
 const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
 const serviceWorker = fs.readFileSync(new URL('../public/firebase-messaging-sw.js', import.meta.url), 'utf8');
+const styles = fs.readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
 test('login presents the platform solutions and a complete business contact form', () => {
   for (const solution of ['Comunicação interna', 'Demandas e serviços', 'Escalas e calendário', 'Documentos corporativos', 'Pessoas e clima', 'Gestão e indicadores', 'Banco de talentos', 'Canal de denúncias']) {
@@ -15,6 +16,9 @@ test('login presents the platform solutions and a complete business contact form
   }
   for (const field of ['companyName', 'cnpj', 'phone', 'email']) assert.match(showcase, new RegExp(field));
   assert.match(app, /<LoginShowcase onSubmit=\{handleSalesContact\}/);
+  assert.doesNotMatch(showcase, /Elton/);
+  assert.match(app, /login-page[^\"]*overflow-x-clip/);
+  assert.match(styles, /\.login-page \{[^}]*touch-action: pan-y/);
 });
 
 test('public contact submission is validated, rate limited and stored only by the server', () => {

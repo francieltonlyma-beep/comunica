@@ -276,6 +276,13 @@ html.comunica-dark .sde-totals { background: #152238; }
 @media (max-width: 640px) {
   html { scroll-padding-top: calc(env(safe-area-inset-top) + 4.75rem); }
   body { overscroll-behavior-y: contain; }
+  .login-page { min-height: 100dvh; touch-action: pan-y; overscroll-behavior-y: auto; }
+  .login-page .login-aurora,
+  .login-page .login-logo-float,
+  .login-page .login-orbit { animation: none; }
+  .login-page .login-orbit { display: none; }
+  .login-page .backdrop-blur,
+  .login-page .backdrop-blur-2xl { -webkit-backdrop-filter: none; backdrop-filter: none; }
   button, a, summary { touch-action: manipulation; }
   input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px !important; }
   [role="dialog"] { max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1rem); overscroll-behavior: contain; }
