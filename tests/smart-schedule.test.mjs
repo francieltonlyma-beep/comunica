@@ -19,6 +19,13 @@ test('filtros da escala funcionam em todos os tamanhos de tela', () => {
   assert.match(app, /sm:grid-cols-2 lg:grid-cols-4/);
 });
 
+test('dias e colaboradores preservam contraste ao selecionar e passar o mouse', () => {
+  assert.match(editor, /aria-pressed=\{Boolean\(rule\.weekdays\?\.includes\(value\)\)\}/);
+  assert.match(editor, /className=\{choiceButton\(rule\.weekdays\?\.includes\(value\)\)\}/);
+  assert.match(editor, /hover:border-slate-300 hover:bg-slate-100/);
+  assert.doesNotMatch(editor, /hover:border-slate-200 hover:bg-white/);
+});
+
 test('configuração das regras inteligentes possui permissão própria', () => {
   assert.match(app, /canManageScheduleRules: true/);
   assert.match(app, /Configurar regras da escala inteligente/);
