@@ -50,7 +50,7 @@ test('limites operacionais são configuráveis, versionados e vinculados à esca
   for (const term of ['minRestHours', 'maxDailyHours', 'maxWeeklyHours', 'maxExtraHoursPerDay', 'limitSeverity', 'Salvar nova versão', 'Ver histórico de versões']) assert.match(app, new RegExp(term));
   assert.match(app, /rulesVersion: Number\(item\.rulesVersion \|\| automaticScheduleRules\.version \|\| 1\)/);
   assert.match(app, /profileName: item\.profileName \|\| item\.groupName/);
-  assert.match(editor, /Perfil de jornada deste conjunto/);
+  assert.match(editor, /Avançado: limites e horários próprios da turma/);
   assert.match(editor, /Herdar padrão/);
 });
 
@@ -64,7 +64,7 @@ test('novo planejamento reaproveita o último padrão individual sem copiar hora
 test('operação possui entrada, saída e dias da semana configuráveis', () => {
   assert.match(app, /shiftEnd: '21:00'/);
   assert.match(app, /allowedWeekdays: \[0, 1, 2, 3, 4, 5, 6\]/);
-  assert.match(app, /Dias em que a operação pode escalar pessoas/);
+  assert.match(app, /Dias padrão para turmas sem dias próprios/);
   assert.match(app, /Saída padrão/);
 });
 
