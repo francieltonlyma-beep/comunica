@@ -5,7 +5,8 @@ import { normalizeCoverageRequirements, validateCoverageRequirements } from './s
 const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const emptyRule = department => ({ id: '', department: department === 'all' ? '' : department, start: '08:00', end: '12:00', minimum: 1, weekdays: [1, 2, 3, 4, 5], includeRemote: false });
 
-export function CoverageRequirementEditor({ requirements, departments, canConfigure, onSave, defaultDepartment, ready, error }) {
+export function CoverageRequirementEditor({ requirements, departments, canConfigure, onSave, defaultDepartment, ready, error, embedded = false }) {
+  const Form = embedded ? 'div' : 'form';
   const [draft, setDraft] = useState(() => emptyRule(defaultDepartment));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,7 +37,7 @@ export function CoverageRequirementEditor({ requirements, departments, canConfig
       <div><strong>{departments.find(item => item.id === rule.department)?.name || 'Setor não disponível'}</strong><p>{rule.start} – {rule.end} · mínimo {rule.minimum} pessoa(s)</p><small>{rule.weekdays.map(day => dayNames[day]).join(' · ')}{rule.includeRemote ? ' · inclui home office' : ' · presencial'}</small></div>
       {canConfigure && ready && <div className="sc-need-rule-actions"><button type="button" className="sc-icon-button" disabled={saving} aria-label={`Editar necessidade ${rule.start} de ${departments.find(item => item.id === rule.department)?.name || rule.department}`} onClick={() => { setDraft({ ...rule, weekdays: [...rule.weekdays] }); setEditing(true); setMessage(''); }}><Pencil size={14} /></button><button type="button" className="sc-icon-button" disabled={saving} aria-label={`Remover necessidade ${rule.start} de ${departments.find(item => item.id === rule.department)?.name || rule.department}`} onClick={async () => { if (await persist(requirements.filter(item => item.id !== rule.id))) { if (draft.id === rule.id) setEditing(false); } }}><Trash2 size={14} /></button></div>}
     </article>)}</div>
-    {canConfigure && ready && editing && <form onSubmit={submit} className="sc-need-form">
+    {canConfigure && ready && editing && <Form onSubmit={embedded ? undefined : submit} className="sc-need-form">
       <h4>{draft.id ? 'Editar faixa' : 'Nova faixa de necessidade'}</h4>
       <div className="sc-need-fields">
         <label>Setor<select required disabled={saving} value={draft.department} onChange={event => patch({ department: event.target.value })}><option value="">Selecione o setor</option>{departments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -46,8 +47,8 @@ export function CoverageRequirementEditor({ requirements, departments, canConfig
       </div>
       <fieldset disabled={saving}><legend>Repetir nos dias</legend><div className="sc-need-weekdays">{dayNames.map((name, day) => <label key={name}><input type="checkbox" checked={draft.weekdays.includes(day)} onChange={event => patch({ weekdays: event.target.checked ? [...draft.weekdays, day].sort() : draft.weekdays.filter(value => value !== day) })} />{name}</label>)}</div></fieldset>
       <label className="sc-need-remote"><input type="checkbox" disabled={saving} checked={draft.includeRemote} onChange={event => patch({ includeRemote: event.target.checked })} />Contar home office na cobertura desta faixa</label>
-      <div className="sc-need-form-actions"><button type="button" disabled={saving} className="sc-button" onClick={() => { setEditing(false); setMessage(''); }}>Cancelar</button><button className="sc-primary" disabled={saving} type="submit">{saving ? <LoaderCircle size={15} className="sc-spin" /> : null}{saving ? 'Salvando...' : 'Salvar necessidade'}</button></div>
-    </form>}
+      <div className="sc-need-form-actions"><button type="button" disabled={saving} className="sc-button" onClick={() => { setEditing(false); setMessage(''); }}>Cancelar</button><button className="sc-primary" disabled={saving} type={embedded ? 'button' : 'submit'} onClick={embedded ? submit : undefined}>{saving ? <LoaderCircle size={15} className="sc-spin" /> : null}{saving ? 'Salvando...' : 'Salvar necessidade'}</button></div>
+    </Form>}
     {message && <p className="sc-coverage-warning" role="alert">{message}</p>}
     {!canConfigure && <p className="sc-muted">A configuração segue a permissão “Configurar regras da escala inteligente”.</p>}
   </section>;

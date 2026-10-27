@@ -21,6 +21,8 @@ export const newDayRule = () => ({ id: `day-${globalThis.crypto.randomUUID()}`, 
 export const normalizeRuleGroups = groups => Array.isArray(groups) ? groups.map(group => ({
   id: String(group.id || ''), name: String(group.name || 'Conjunto de regras').slice(0, 80),
   userIds: [...new Set((group.userIds || []).map(String))],
+  shiftId: String(group.shiftId || ''),
+  weekdays: Array.isArray(group.weekdays) ? [...new Set(group.weekdays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6))] : null,
   policy: normalizeGroupPolicy(group.policy),
   dayRules: Array.isArray(group.dayRules) ? group.dayRules.map(rule => ({ ...rule, userIds: (rule.userIds || []).map(String), enabled: rule.enabled !== false })) : [],
 })) : [];
@@ -32,6 +34,7 @@ export function validateRuleGroups(groups) {
   for (const group of groups) {
     if (!group.id || groupIds.has(group.id)) errors.push('Cada conjunto precisa ter uma identificação única.');
     groupIds.add(group.id);
+    if (Array.isArray(group.weekdays) && !group.weekdays.length) errors.push(`${group.name}: selecione ao menos um dia disponível para a turma.`);
     for (const userId of group.userIds) {
       if (owners.has(userId)) errors.push(`Um colaborador está em dois conjuntos: ${owners.get(userId)} e ${group.name}.`);
       owners.set(userId, group.name);
@@ -119,7 +122,9 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
   const proposals = [];
   for (const [userIndex, user] of users.entries()) {
     const group = groups.find(item => item.userIds.includes(String(user.id)));
-    const groupPolicy = Object.fromEntries(Object.entries(group?.policy || {}).filter(([, value]) => value !== '' && value != null));
+    const shift = (rules.shifts || []).find(item => item.id === group?.shiftId);
+    const shiftPolicy = shift ? Object.fromEntries(['shiftStart', 'shiftEnd', 'breakStart', 'breakEnd'].map(key => [key, shift[key] || ''])) : {};
+    const groupPolicy = { ...shiftPolicy, ...Object.fromEntries(Object.entries(group?.policy || {}).filter(([, value]) => value !== '' && value != null)) };
     const policy = { workDaysPerWeek: rules.workDaysPerWeek, hoursPerWeek: rules.hoursPerWeek, restEveryDays: rules.restEveryDays,
       shiftStart: rules.shiftStart, shiftEnd: rules.shiftEnd, breakStart: rules.breakStart, breakEnd: rules.breakEnd,
       minRestHours: rules.minRestHours, maxDailyHours: rules.maxDailyHours, maxWeeklyHours: rules.maxWeeklyHours,
@@ -128,13 +133,13 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
     const restEvery = Number(policy.restEveryDays);
     const override = rules.employeeOverrides?.[user.id] || {};
     const previous = rules.reuseLastSchedule ? history.filter(row => String(row.userId) === String(user.id) && isWorking(row) && !row.ruleApplied && !row.manuallyAdjusted && row.startDate < dates[0] && row.shiftStart && (row.baseShiftEnd || row.shiftEnd)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0] : null;
-    const base = { status: 'Presencial', shiftStart: override.shiftStart || groupPolicy.shiftStart || previous?.shiftStart || policy.shiftStart, shiftEnd: override.shiftEnd || groupPolicy.shiftEnd || previous?.baseShiftEnd || previous?.shiftEnd || policy.shiftEnd, breakStart: groupPolicy.breakStart || previous?.breakStart || policy.breakStart, breakEnd: groupPolicy.breakEnd || previous?.breakEnd || policy.breakEnd };
+    const base = { status: 'Presencial', shiftStart: override.shiftStart || groupPolicy.shiftStart || previous?.shiftStart || policy.shiftStart, shiftEnd: override.shiftEnd || groupPolicy.shiftEnd || previous?.baseShiftEnd || previous?.shiftEnd || policy.shiftEnd, breakStart: groupPolicy.breakStart ?? previous?.breakStart ?? policy.breakStart, breakEnd: groupPolicy.breakEnd ?? previous?.breakEnd ?? policy.breakEnd };
     const weeks = [...new Set(dates.map(monday))];
     for (const weekKey of weeks) {
       const weekDates = Array.from({ length: 7 }, (_, i) => shiftDate(weekKey, i));
       const rows = weekDates.map(date => {
         const holiday = holidaySet.has(date);
-        const allowed = rules.allowedWeekdays.includes(weekday(date));
+        const allowed = (group?.weekdays || rules.allowedWeekdays).includes(weekday(date));
         const shiftEnd = weekday(date) === 6 && override.saturdayEnd ? override.saturdayEnd : base.shiftEnd;
         const intervalFits = base.breakStart && base.breakEnd && duration(base.shiftStart, base.breakStart) + duration(base.breakStart, base.breakEnd) <= duration(base.shiftStart, shiftEnd);
         const defaultRow = { ...base, shiftEnd, breakStart: intervalFits ? base.breakStart : '', breakEnd: intervalFits ? base.breakEnd : '', breakMinutes: intervalFits ? duration(base.breakStart, base.breakEnd) : 0, status: allowed ? 'Presencial' : 'Folga' };

@@ -1,5 +1,12 @@
 const ids = values => [...new Set((values || []).filter(Boolean).map(String))];
 
+export function scopedScheduleSource(collection, scope, { query, where }) {
+  if (scope.allDepartments) return collection;
+  // An empty scope must never fall back to reading the whole company.
+  if (!scope.departmentIds.length) throw new Error('Nenhum setor vinculado ao seu perfil.');
+  return query(collection, where('dept', 'in', scope.departmentIds.slice(0, 30)));
+}
+
 export function scheduleScopeForUser(currentUser, employees, departments, getDepartments) {
   const allDepartments = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper);
   const departmentIds = allDepartments ? ids(departments.map(item => item.id)) : ids(getDepartments(currentUser));

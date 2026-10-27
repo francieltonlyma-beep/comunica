@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from '../src/scheduleScope.js';
+import { scopedScheduleSource, scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from '../src/scheduleScope.js';
 
 const departments = [{ id: 'sales' }, { id: 'plant' }, { id: 'finance' }];
 const employees = [
@@ -11,6 +11,14 @@ const employees = [
   { id: 'seller', depts: ['sales'] },
 ];
 const getDepartments = user => user?.depts || [];
+
+test('publicação e trocas consultam no servidor somente os setores permitidos', () => {
+  const scope = scheduleScopeForUser(employees[0], employees, departments, getDepartments);
+  const api = { query: (...args) => args, where: (...args) => args };
+  assert.deepEqual(scopedScheduleSource('schedules', scope, api), ['schedules', ['dept', 'in', ['plant']]]);
+  assert.equal(scopedScheduleSource('schedules', { allDepartments: true }, api), 'schedules');
+  assert.throws(() => scopedScheduleSource('schedules', { allDepartments: false, departmentIds: [] }, api));
+});
 
 test('gestor comum vê somente setores e colaboradores vinculados a ele', () => {
   const scope = scheduleScopeForUser(employees[0], employees, departments, getDepartments);

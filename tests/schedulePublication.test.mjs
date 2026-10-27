@@ -57,6 +57,19 @@ test('falha de publicação preserva prévia e lançamentos existentes', async (
   assert.equal(state.modal.length, 0);
 });
 
+test('publicação bloqueia falta de cobertura e horários sem confirmação', async () => {
+  for (const analysis of [{ missingMinutes: 120, unknown: 0 }, { missingMinutes: 0, unknown: 1 }]) {
+    const state = publicationContext();
+    state.context.automaticScheduleRules.coverageRequirements = [{ id: 'need' }];
+    state.context.scheduleScopedCoverageRequirements = [{ id: 'need' }];
+    state.context.schedulePlanningContext = () => ({});
+    state.context.analyzeProposalCoverage = () => ({ ...analysis, days: [] });
+    await extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context)();
+    assert.equal(state.writes.length, 0);
+    assert.match(state.notifications[0], /falta de pessoas ou horários incompletos/);
+  }
+});
+
 test('simulação desatualizada ou perfil de consulta não escreve', async () => {
   for (const readonly of [false, true]) {
     const state = publicationContext();
@@ -73,6 +86,7 @@ function transactionContext({ changedBefore = false, changedDuring = false, fail
   const snapshot = item => ({ id: item.id, exists: () => true, data: () => ({ ...item }) });
   const context = {
     isFirebaseAvailable: true, dbUser: { uid: 'admin' }, activeCompany: { id: 'company' }, db: {},
+    scopedScheduleSource: collection => collection, scheduleScope: { allDepartments: true }, query() {}, where() {},
     getTenantCollection: () => 'schedules', doc: (collection, id) => collection + '/' + id, scheduleSignature,
     getDocsFromServer: async () => ({ docs: (changedBefore ? [{ ...source[0], locked: true }] : source).map(snapshot) }),
     runTransaction: async (db, callback) => {

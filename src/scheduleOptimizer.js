@@ -19,7 +19,7 @@ export function scheduleSignature(rows) {
 export function prepareScheduleProposal(rows, { history = [], absences = [], rules = {}, draftPins = [] } = {}) {
   const pins = new Map(draftPins.filter(row => row.locked || row.manuallyAdjusted).map(row => [keyOf(row), row]));
   return rows.map(source => {
-    const row = { ...source, userId: String(source.userId), restEveryDays: Number(rules.restEveryDays) || source.restEveryDays || 7, workDaysPerWeek: Number(rules.workDaysPerWeek) || source.workDaysPerWeek || 5 };
+    const row = { ...source, userId: String(source.userId), restEveryDays: Number(source.restEveryDays) || Number(rules.restEveryDays) || 7, workDaysPerWeek: Number(source.workDaysPerWeek) || Number(rules.workDaysPerWeek) || 5 };
     const saved = history.filter(item => String(item.userId) === row.userId && inRange(item, row.date) && !isReplaceableSchedule(item));
     if (saved.length) {
       const item = saved.find(item => !isWorking(item)) || saved[0];
@@ -109,6 +109,64 @@ export function analyzeProposalCoverage(rows, requirements, { history = [], abse
     }
   }
   return { days, requiredMinutes, missingMinutes, gaps, unknown, coveredPercent: requiredMinutes ? Math.round(1000 * (1 - missingMinutes / requiredMinutes)) / 10 : null };
+}
+
+// Start with the available capacity and place rest days where they cost the least
+// coverage. Only interchangeable daytime shifts participate; fixed rules survive.
+export function buildCoverageFirstProposal(input, requirements, context = {}, { maxEvaluations = 2400 } = {}) {
+  if (!requirements.length) return optimizeScheduleCoverage(input, requirements, context);
+  const original = input.map(row => ({ ...row }));
+  const rows = input.map(row => ({ ...row }));
+  const before = analyzeProposalCoverage(original, requirements, context);
+  const groups = new Map();
+  rows.forEach((row, index) => {
+    const key = `${row.userId}|${row.weekKey}`;
+    groups.set(key, [...(groups.get(key) || []), index]);
+  });
+  const flexible = row => !isFixedProposalRow(row) && !row.holiday && row.allowed !== false && ['Presencial', 'Home Office', 'Folga'].includes(row.status);
+  const payload = row => Object.fromEntries(operational.map(field => [field, row[field] ?? '']));
+  const rest = row => ({ ...row, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, shift: 'Folga', coverageAdjusted: true, ruleReason: 'Folga definida pela necessidade de cobertura' });
+  let evaluations = 0;
+  for (const indexes of groups.values()) {
+    if (evaluations >= maxEvaluations) break;
+    const free = indexes.filter(index => flexible(rows[index]));
+    const working = free.filter(index => isWorking(rows[index]));
+    const template = rows[working[0]];
+    // Keep heterogeneous, overnight or extra-hour patterns exactly as proposed.
+    if (!template || !Number.isFinite(time(template.shiftStart)) || time(template.shiftEnd) <= time(template.shiftStart) || Number(template.extraHours) || working.some(index => JSON.stringify(payload(rows[index])) !== JSON.stringify(payload(template)))) continue;
+    const target = working.length;
+    free.forEach(index => { rows[index] = { ...rows[index], ...payload(template) }; });
+    let count = free.length;
+    while (count > target && evaluations < maxEvaluations) {
+      let best = null;
+      for (const index of free) {
+        const source = rows[index];
+        if (!isWorking(source)) continue;
+        rows[index] = rest(source);
+        evaluations++;
+        const date = new Set([source.date]);
+        const analysis = analyzeProposalCoverage(rows, requirements, context, date);
+        const issues = scheduleRuleIssues(rows.filter(row => row.userId === source.userId), context.history || []).filter(issue => issue.blocking).length;
+        // The secondary score spreads spare capacity instead of filling one day.
+        const load = rows.filter(row => row.date === source.date && row.dept === source.dept && isWorking(row)).length;
+        const candidate = { index, missing: analysis.missingMinutes, issues, load };
+        rows[index] = source;
+        if (!best || candidate.issues < best.issues || (candidate.issues === best.issues && (candidate.missing < best.missing || (candidate.missing === best.missing && candidate.load > best.load)))) best = candidate;
+        if (evaluations >= maxEvaluations) break;
+      }
+      if (!best) break;
+      rows[best.index] = rest(rows[best.index]);
+      count--;
+    }
+    // Never leave a partially allocated week when the search budget expires.
+    if (count !== target) indexes.forEach(index => { rows[index] = { ...original[index] }; });
+  }
+  const originalIssues = new Set(scheduleRuleIssues(original, context.history || []).filter(issue => issue.blocking).map(issue => `${issue.key}|${issue.message}`));
+  const newIssue = scheduleRuleIssues(rows, context.history || []).some(issue => issue.blocking && !originalIssues.has(`${issue.key}|${issue.message}`));
+  const seed = !newIssue && analyzeProposalCoverage(rows, requirements, context).missingMinutes <= before.missingMinutes ? rows : original;
+  const result = optimizeScheduleCoverage(seed, requirements, context);
+  const changedDays = result.rows.filter((row, index) => row.status !== original[index].status).length;
+  return { ...result, before, swaps: Math.floor(changedDays / 2), evaluations: evaluations + result.evaluations, limited: result.limited || evaluations >= maxEvaluations };
 }
 
 // Bounded local search: swap one workday/rest day of the same person and week.

@@ -19,6 +19,7 @@ const incomingDraft = (source, reason) => ({ ...publishedScheduleDraft(source), 
 export function publishedSwapIssues(source, sourceDate, target, targetDate, context = {}) {
   if (!source || !target || source.id === target.id || String(source.userId) === String(target.userId)) return ['Escolha outro colaborador com uma escala publicada.'];
   if (!active(source, sourceDate) || !active(target, targetDate)) return ['A escala escolhida não corresponde ao dia informado.'];
+  if (JSON.stringify(publishedScheduleDraft(source)) === JSON.stringify(publishedScheduleDraft(target))) return ['As duas pessoas já têm a mesma jornada. Escolha uma folga ou um turno diferente para que a troca altere o calendário.'];
   const first = publishedEditIssues(source, incomingDraft(target, ''), sourceDate, context);
   const second = publishedEditIssues(target, incomingDraft(source, ''), targetDate, context);
   return [...new Set([...first, ...second])];

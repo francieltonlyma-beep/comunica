@@ -56,7 +56,8 @@ test('aprovação grava as duas escalas e o pedido na mesma transação', async 
       delete: ref => writes.push(['delete', ref]), set: (ref, data) => writes.push(['set', ref, data]), update: (ref, data) => writes.push(['update', ref, data]),
     };
     const ctx = { isFirebaseAvailable: true, dbUser: { uid: 'manager' }, currentUser: { id: 'manager', name: 'Gestora' }, db: {}, scheduleSignature,
-      getTenantCollection: name => name, getDocsFromServer: async () => ({ docs }), doc: (collection, id) => ({ collection, id }),
+      scopedScheduleSource: collection => collection, scheduleScope: { allDepartments: true }, query() {}, where() {},
+    getTenantCollection: name => name, getDocsFromServer: async () => ({ docs }), doc: (collection, id) => ({ collection, id }),
       runTransaction: async (_db, callback) => callback(transaction), recordAuditEvent: async () => {}, triggerNotification: message => notifications.push(message),
     };
     const save = extract('saveApprovedScheduleSwap', 'savePublishedScheduleSwap', ctx);
