@@ -130,6 +130,14 @@ service cloud.firestore {
       return manages(app, company) || (member(company)
         && role.matches('.*(coordenador|encarregado|supervis|diretor|gestor|gestao|rh).*'));
     }
+    function scheduleDepartmentInScope(app, company, data) {
+      let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data;
+      let department = data.get('dept', '');
+      return manages(app, company) || (member(company) && department != '' && (
+        department == profile.get('dept', '') || department == profile.get('department', '')
+        || department in profile.get('depts', []) || department in profile.get('departments', [])
+      ));
+    }
     function absencePostOwner(app, company, id) {
       return id.matches('post-abs-.+') && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/absences/$(id.replace('^post-abs-', ''))).data.get('userId', '') == request.auth.uid;
     }
@@ -171,7 +179,8 @@ service cloud.firestore {
       allow read: if access(company);
       allow write: if false;
       match /{kind}/{id} {
-        allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'schedules', 'settings', 'vacancies', 'activities', 'activityTemplates'] && access(company);
+        allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'settings', 'vacancies', 'activities', 'activityTemplates'] && access(company);
+        allow read: if kind == 'schedules' && access(company) && scheduleDepartmentInScope(app, company, resource.data);
         allow read: if kind == 'scheduleSwapRequests' && access(company) && ((scheduleManager(app, company) && canManageCalendar(app, company))
           || resource.data.get('requesterId', '') == request.auth.uid || resource.data.get('targetUserId', '') == request.auth.uid);
         allow read: if kind == 'documents' && documentAudience(app, company, resource.data);
@@ -185,7 +194,12 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('tabs', {}).get('whistleblowing', false) == true;
         allow create, update: if kind == 'settings' && id == 'schedule-rules'
           && scheduleManager(app, company) && canManageScheduleRules(app, company);
-        allow create, update, delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company);
+        allow create: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company)
+          && scheduleDepartmentInScope(app, company, request.resource.data);
+        allow update: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company)
+          && scheduleDepartmentInScope(app, company, resource.data) && scheduleDepartmentInScope(app, company, request.resource.data);
+        allow delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company)
+          && scheduleDepartmentInScope(app, company, resource.data);
         allow create: if kind == 'scheduleSwapRequests' && member(company)
           && request.resource.data.keys().hasOnly(['requesterId', 'requesterName', 'sourceScheduleId', 'sourceDate', 'targetUserId', 'targetName', 'targetScheduleId', 'targetDate', 'reason', 'status', 'scheduleSignature', 'createdAt', 'updatedAt'])
           && request.resource.data.get('requesterId', '') == request.auth.uid
