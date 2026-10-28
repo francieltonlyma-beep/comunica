@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { isProtectedProposalRow, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from '../src/scheduleOptimizer.js';
+import { schedulePublicationError } from '../src/schedulePublicationErrors.js';
 import { shiftDate, scheduleRuleIssues } from '../src/scheduleDayRules.js';
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
@@ -98,6 +99,7 @@ function transactionContext({ changedBefore = false, changedDuring = false, fail
       if (fail) throw Error('offline');
       committed.push(...pending);
     },
+    schedulePublicationError,
     triggerNotification: message => notifications.push(message),
     console: { error() {} },
   };
@@ -123,3 +125,4 @@ test('transação confirma exclusão e novas escalas sem gravações parciais', 
   assert.equal(ok, true);
   assert.deepEqual(state.committed.map(item => item[0]), ['delete', 'set']);
 });
+

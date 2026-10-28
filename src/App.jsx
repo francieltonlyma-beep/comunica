@@ -1,3 +1,4 @@
+import { schedulePublicationError } from './schedulePublicationErrors.js';
 import ScheduleShiftEditor from './ScheduleShiftEditor.jsx';
 import { normalizeScheduleShifts, validateScheduleShifts } from './scheduleShifts.js';
 import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
@@ -2280,7 +2281,7 @@ const getStatusEmTempoReal = (colaborador) => {
       return true;
     } catch (error) {
       console.error('Falha na gravação conjunta', error);
-      triggerNotification(error?.code === 'planning-stale' ? 'A escala mudou em outra sessão. Gere uma nova simulação; nenhuma alteração desta publicação foi salva.' : failureMessage, 'error');
+      triggerNotification(schedulePublicationError(error, failureMessage), 'error');
       return false;
     } finally {
       finishActivity();
