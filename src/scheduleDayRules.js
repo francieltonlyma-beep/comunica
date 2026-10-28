@@ -1,3 +1,4 @@
+import { scheduleRowFieldIssues } from './scheduleValidation.js';
 const DAY = 86400000;
 export const isWorking = row => ['Presencial', 'Home Office'].includes(row?.status);
 const stamp = date => Date.parse(`${date}T00:00:00Z`);
@@ -116,7 +117,17 @@ export function resolveDayRules(group, date, holiday, userId, base) {
   return { ...result, groupId: group?.id || '', groupName: group?.name || 'Padrão da empresa', ruleReason: reason, ruleConflicts: conflicts, ruleApplied: candidates.length > 0 };
 }
 
-function employeeScheduleBase(userId, rules, history, firstDate, group) {
+export function previousScheduleForDate(userId, date, history = [], firstDate = date) {
+  if (!dateValid(date) || !dateValid(firstDate)) return null;
+  const cutoff = shiftDate(firstDate, -1);
+  return history.filter(row => String(row.userId) === String(userId) && isWorking(row) && !row.ruleApplied && !row.manuallyAdjusted && !row.locked && !row.pinned && dateValid(row.startDate) && (!row.endDate || dateValid(row.endDate)) && row.startDate < firstDate && row.shiftStart && (row.baseShiftEnd || row.shiftEnd)).map(row => {
+    const last = (row.endDate || row.startDate) < cutoff ? (row.endDate || row.startDate) : cutoff;
+    const matchingDate = shiftDate(last, (weekday(date) - weekday(last) - 7) % 7);
+    return { row, matchingDate };
+  }).filter(item => item.matchingDate >= item.row.startDate).sort((a, b) => b.matchingDate.localeCompare(a.matchingDate) || Number(b.row.updatedAt || b.row.createdAt || 0) - Number(a.row.updatedAt || a.row.createdAt || 0))[0]?.row || null;
+}
+
+function employeeScheduleBase(userId, rules, history, firstDate, group, date = firstDate) {
   const shift = (rules.shifts || []).find(item => item.id === group?.shiftId);
   const shiftPolicy = shift ? Object.fromEntries(['shiftStart', 'shiftEnd', 'breakStart', 'breakEnd'].map(key => [key, shift[key] || ''])) : {};
   const groupPolicy = { ...shiftPolicy, ...Object.fromEntries(Object.entries(group?.policy || {}).filter(([, value]) => value !== '' && value != null)) };
@@ -125,7 +136,7 @@ function employeeScheduleBase(userId, rules, history, firstDate, group) {
     minRestHours: rules.minRestHours, maxDailyHours: rules.maxDailyHours, maxWeeklyHours: rules.maxWeeklyHours,
     maxExtraHoursPerDay: rules.maxExtraHoursPerDay, limitSeverity: rules.limitSeverity, ...groupPolicy };
   const override = rules.employeeOverrides?.[userId] || {};
-  const previous = rules.reuseLastSchedule ? history.filter(row => String(row.userId) === String(userId) && isWorking(row) && !row.ruleApplied && !row.manuallyAdjusted && row.startDate < firstDate && row.shiftStart && (row.baseShiftEnd || row.shiftEnd)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0] : null;
+  const previous = rules.reuseLastSchedule ? previousScheduleForDate(userId, date, history, firstDate) : null;
   const base = { status: 'Presencial', shiftStart: override.shiftStart || groupPolicy.shiftStart || previous?.shiftStart || policy.shiftStart, shiftEnd: override.shiftEnd || groupPolicy.shiftEnd || previous?.baseShiftEnd || previous?.shiftEnd || policy.shiftEnd, breakStart: groupPolicy.breakStart ?? previous?.breakStart ?? policy.breakStart, breakEnd: groupPolicy.breakEnd ?? previous?.breakEnd ?? policy.breakEnd };
   return { base, policy, override, previous };
 }
@@ -138,7 +149,7 @@ function workRowForDate(base, override, date) {
 
 export function holidayWorkTemplate(userId, date, rules, history = [], firstDate = date) {
   const group = normalizeRuleGroups(rules.ruleGroups).find(item => item.userIds.includes(String(userId)));
-  const { base, override } = employeeScheduleBase(userId, rules, history, firstDate, group);
+  const { base, override } = employeeScheduleBase(userId, rules, history, firstDate, group, date);
   return workRowForDate(base, override, date);
 }
 
@@ -161,13 +172,14 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
   const proposals = [];
   for (const [userIndex, user] of users.entries()) {
     const group = groups.find(item => item.userIds.includes(String(user.id)));
-    const { base, policy, override, previous } = employeeScheduleBase(user.id, rules, history, dates[0], group);
+    const { policy } = employeeScheduleBase(user.id, rules, history, dates[0], group);
     const workDays = Number(policy.workDaysPerWeek);
     const restEvery = Number(policy.restEveryDays);
     const weeks = [...new Set(dates.map(monday))];
     for (const weekKey of weeks) {
       const weekDates = Array.from({ length: 7 }, (_, i) => shiftDate(weekKey, i));
       const rows = weekDates.map(date => {
+        const { base, override, previous } = employeeScheduleBase(user.id, rules, history, dates[0], group, date);
         const holiday = holidaySet.has(date);
         const allowed = (group?.weekdays || rules.allowedWeekdays).includes(weekday(date));
         const defaultRow = { ...workRowForDate(base, override, date), status: allowed ? 'Presencial' : 'Folga', holidayCountsAsRest: rules.holidaysCountAsRest !== false };
@@ -180,7 +192,7 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
           resolved = { ...resolved, status: assignment.status, shiftStart: working ? assignment.shiftStart : '', shiftEnd: working ? assignment.shiftEnd : '', breakStart: working ? assignment.breakStart || '' : '', breakEnd: working ? assignment.breakEnd || '' : '', breakMinutes: working && assignment.breakStart && assignment.breakEnd ? duration(assignment.breakStart, assignment.breakEnd) : 0, ruleReason: 'Feriado configurado individualmente', ruleConflicts: [], ruleApplied: true, holidayConfigured: true };
           pinned = true;
         }
-        return { ...resolved, date, holiday, holidayWorkingDay: holiday && rules.holidaysCountAsRest === false, pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
+        return { ...resolved, workTemplate: isWorking(resolved) && !resolved.ruleConflicts?.length ? Object.fromEntries(['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes'].map(key => [key, resolved[key]])) : null, date, holiday, holidayWorkingDay: holiday && rules.holidaysCountAsRest === false, pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
       });
       const pinnedWork = rows.filter(row => row.pinned && isWorking(row)).length;
       const flexible = rows.filter(row => !row.pinned && isWorking(row));
@@ -223,15 +235,15 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
 export function scheduleRuleIssues(rows, history = []) {
   const issues = [];
   for (const row of rows) {
-    if (row.ruleConflicts?.length) issues.push({ key: row.key, date: row.date, blocking: true, message: `${row.userName}: conflito entre ${row.ruleConflicts.join(' e ')}.` });
+    if (row.ruleConflicts?.length) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: 'status', code: 'rule-conflict', hint: 'Revise as regras indicadas ou escolha manualmente a situação e os horários somente deste dia.', date: row.date, blocking: true, message: `${row.userName}: conflito entre ${row.ruleConflicts.join(' e ')}.` });
     if (row.preservedExisting || !isWorking(row)) continue;
     const total = duration(row.shiftStart, row.shiftEnd);
     const interval = row.breakStart || row.breakEnd ? duration(row.breakStart, row.breakEnd) : 0;
-    if (!Number.isFinite(total) || !total || !Number.isFinite(interval) || interval >= total || (Boolean(row.breakStart) !== Boolean(row.breakEnd)) || (row.breakStart && (interval <= 0 || interval > 360 || duration(row.shiftStart, row.breakStart) + interval > total))) issues.push({ key: row.key, date: row.date, blocking: true, message: `${row.userName}: jornada ou intervalo inválido.` });
+    issues.push(...scheduleRowFieldIssues(row));
     const dayHours = (total - interval) / 60 + Number(row.extraHours || 0);
     const blocking = row.limitSeverity !== 'warning';
-    if (dayHours > Number(row.maxDailyHours || 24) + 0.001) issues.push({ key: row.key, date: row.date, blocking, message: `${row.userName}: jornada de ${dayHours.toFixed(2).replace('.', ',')}h supera o limite diário de ${Number(row.maxDailyHours).toFixed(2).replace('.', ',')}h.` });
-    if (Number(row.extraHours || 0) > Number(row.maxExtraHoursPerDay ?? 12) + 0.001) issues.push({ key: row.key, date: row.date, blocking, message: `${row.userName}: hora extra supera o limite diário do perfil.` });
+    if (dayHours > Number(row.maxDailyHours || 24) + 0.001) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: Number(row.extraHours) > 0 ? 'extraHours' : 'shiftEnd', code: 'daily-limit', hint: 'Reduza a hora extra ou corrija a saída base para respeitar o limite diário indicado.', date: row.date, blocking, message: `${row.userName}: jornada de ${dayHours.toFixed(2).replace('.', ',')}h supera o limite diário de ${Number(row.maxDailyHours).toFixed(2).replace('.', ',')}h.` });
+    if (Number(row.extraHours || 0) > Number(row.maxExtraHoursPerDay ?? 12) + 0.001) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: 'extraHours', code: 'overtime-limit', hint: 'Reduza a hora extra para o máximo diário permitido no perfil.', date: row.date, blocking, message: `${row.userName}: hora extra supera o limite diário do perfil.` });
   }
   for (const userId of new Set(rows.map(row => row.userId))) {
     const personRows = rows.filter(row => row.userId === userId).sort((a, b) => a.date.localeCompare(b.date));
@@ -245,7 +257,7 @@ export function scheduleRuleIssues(rows, history = []) {
       const existing = history.find(row => String(row.userId) === userId && row.startDate <= date && row.endDate >= date);
       const row = planned || existing;
       streak = isWorking(row) ? streak + 1 : 0;
-      if (streak >= limit && (planned || (date > personRows.at(-1).date && shiftDate(date, -(streak - 1)) <= personRows.at(-1).date))) issues.push({ key: `${userId}-${date}`, date, blocking: true, message: `${personRows[0].userName}: ${streak} dias consecutivos de trabalho (limite configurado: ${limit - 1}).` });
+      if (streak >= limit && (planned || (date > personRows.at(-1).date && shiftDate(date, -(streak - 1)) <= personRows.at(-1).date))) issues.push({ key: `${userId}-${date}`, rowKey: planned?.key || personRows.at(-1).key, userId, field: 'status', code: 'consecutive-days', hint: 'Defina uma folga na sequência indicada ou revise a regra de revezamento desta pessoa.', date, blocking: true, message: `${personRows[0].userName}: ${streak} dias consecutivos de trabalho (limite configurado: ${limit - 1}).` });
     }
     for (const weekKey of new Set(personRows.map(row => row.weekKey))) {
       const week = personRows.filter(row => row.weekKey === weekKey);
@@ -254,8 +266,8 @@ export function scheduleRuleIssues(rows, history = []) {
       const hours = week.filter(isWorking).reduce((sum, row) => sum + (duration(row.shiftStart, row.shiftEnd) - (row.breakStart && row.breakEnd ? duration(row.breakStart, row.breakEnd) : 0)) / 60 + Number(row.extraHours || 0), 0);
       const target = week[0].weekHoursTarget;
       const maxWeekly = Number(week[0].maxWeeklyHours || 84);
-      if (hours > maxWeekly + 0.02) issues.push({ key: `${userId}-${weekKey}`, date: weekKey, blocking: week[0].limitSeverity !== 'warning', message: `${personRows[0].userName}: semana com ${hours.toFixed(2).replace('.', ',')}h supera o limite de ${maxWeekly.toFixed(2).replace('.', ',')}h.` });
-      if (count !== week[0].workDaysPerWeek || Math.abs(hours - target) > 0.02) issues.push({ key: `${userId}-${weekKey}`, date: weekKey, blocking: false, message: `${week[0].userName}: semana de ${weekKey.split('-').reverse().join('/')} com ${count} dia(s) de trabalho e ${hours.toFixed(2).replace('.', ',')}h; confira a meta e as jornadas especiais.` });
+      if (hours > maxWeekly + 0.02) issues.push({ key: `${userId}-${weekKey}`, rowKey: (week.find(row => Number(row.extraHours) > 0) || week.filter(isWorking).at(-1) || week[0]).key, userId, field: week.some(row => Number(row.extraHours) > 0) ? 'extraHours' : 'shiftEnd', code: 'weekly-limit', hint: 'Revise as horas extras e as saídas desta pessoa ao longo da semana para respeitar o limite semanal.', date: weekKey, blocking: week[0].limitSeverity !== 'warning', message: `${personRows[0].userName}: semana com ${hours.toFixed(2).replace('.', ',')}h supera o limite de ${maxWeekly.toFixed(2).replace('.', ',')}h.` });
+      if (count !== week[0].workDaysPerWeek || Math.abs(hours - target) > 0.02) issues.push({ key: `${userId}-${weekKey}`, rowKey: week[0].key, userId, field: 'status', code: 'weekly-target', hint: 'Confira os dias e horários previstos nesta semana. A meta é um aviso e não altera os horários automaticamente.', date: weekKey, blocking: false, message: `${week[0].userName}: semana de ${weekKey.split('-').reverse().join('/')} com ${count} dia(s) de trabalho e ${hours.toFixed(2).replace('.', ',')}h; confira a meta e as jornadas especiais.` });
     }
     const plannedByDate = new Map(personRows.map(row => [row.date, row]));
     const at = date => plannedByDate.get(date) || history.find(row => String(row.userId) === userId && (row.startDate || row.date) <= date && (row.endDate || row.date || row.startDate) >= date);
@@ -267,7 +279,7 @@ export function scheduleRuleIssues(rows, history = []) {
       const extra = (previous.baseShiftEnd || plannedByDate.has(date)) ? Number(previous.extraHours || 0) * 60 : 0;
       const end = previousEnd + (previousEnd <= previousStart ? 1440 : 0) + extra;
       const rest = (1440 + nextStart - end) / 60, minimum = Number(next.minRestHours || previous.minRestHours || 0);
-      if (minimum > 0 && rest + 0.001 < minimum) issues.push({ key: `${userId}-${nextDate}`, date: nextDate, blocking: next.limitSeverity !== 'warning', message: `${personRows[0].userName}: descanso de ${Math.max(0, rest).toFixed(2).replace('.', ',')}h entre jornadas; mínimo configurado: ${minimum.toFixed(2).replace('.', ',')}h.` });
+      if (minimum > 0 && rest + 0.001 < minimum) issues.push({ key: `${userId}-${nextDate}`, rowKey: (plannedByDate.get(nextDate) || plannedByDate.get(date))?.key, userId, field: plannedByDate.has(nextDate) ? 'shiftStart' : 'shiftEnd', code: 'between-shifts', hint: 'Ajuste a entrada deste dia ou a saída do dia anterior para garantir o descanso mínimo indicado.', date: nextDate, blocking: next.limitSeverity !== 'warning', message: `${personRows[0].userName}: descanso de ${Math.max(0, rest).toFixed(2).replace('.', ',')}h entre jornadas; mínimo configurado: ${minimum.toFixed(2).replace('.', ',')}h.` });
     }
   }
   return issues;

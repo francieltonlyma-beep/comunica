@@ -25,6 +25,7 @@ function publicationContext(saved = true) {
     isProtectedProposalRow, scheduleRuleIssues, planSchedulePublication,
     civilDateShift: (date, { days = 0 }) => shiftDate(date, days),
     bulkSchedule: { notes: '' }, setAutomaticSchedulePreviewDate() {}, setIsSavingScheduleProposal() {},
+    openAutomaticScheduleProblem: issue => { context.problem = issue; }, reviewAutomaticScheduleDay() {},
     saveRelatedRecords: async (...args) => { writes.push(args); return saved; },
     setWorkSchedules: update => { context.updated = update(history); },
     setAutomaticScheduleProposal: value => { context.draft = value; },
@@ -58,6 +59,26 @@ test('falha de publicação preserva prévia e lançamentos existentes', async (
   assert.equal(state.modal.length, 0);
 });
 
+test('tentativa de publicação abre diretamente o campo inválido e não grava a escala', async () => {
+  const state = publicationContext();
+  state.context.automaticScheduleProposal[0].shiftStart = '';
+  await extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context)();
+  assert.equal(state.writes.length, 0);
+  assert.equal(state.context.problem.field, 'shiftStart');
+  assert.equal(state.context.problem.rowKey, state.context.automaticScheduleProposal[0].key);
+  assert.ok(state.context.problem.hint);
+});
+
+test('publicação de domingo mantém exatamente a entrada e a saída revisadas na prévia', async () => {
+  const state = publicationContext();
+  state.context.workSchedules = [];
+  state.context.automaticScheduleProposal = [{ ...state.context.automaticScheduleProposal[0], key: 'u-sunday', date: '2026-11-01', shiftStart: '07:00', shiftEnd: '11:00', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0 }];
+  await extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context)();
+  const written = state.writes[0][0].find(record => record.data?.startDate === '2026-11-01').data;
+  assert.equal(written.shiftStart, '07:00'); assert.equal(written.baseShiftEnd, '11:00'); assert.equal(written.shiftEnd, '11:00');
+  assert.equal(written.breakStart, ''); assert.equal(written.extraHours, 0);
+});
+
 test('publicação bloqueia falta de cobertura e horários sem confirmação', async () => {
   for (const analysis of [{ missingMinutes: 120, unknown: 0 }, { missingMinutes: 0, unknown: 1 }]) {
     const state = publicationContext();
@@ -68,6 +89,21 @@ test('publicação bloqueia falta de cobertura e horários sem confirmação', a
     await extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context)();
     assert.equal(state.writes.length, 0);
     assert.match(state.notifications[0], /falta de pessoas ou horários incompletos/);
+  }
+});
+
+test('falta de cobertura aponta a situação de uma pessoa do setor; horário externo não destaca campo errado', async () => {
+  for (const unknown of [0, 1]) {
+    const state = publicationContext();
+    state.context.automaticScheduleProposal[0].status = 'Folga';
+    state.context.automaticScheduleRules.coverageRequirements = [{ id: 'need' }];
+    state.context.scheduleScopedCoverageRequirements = [{ id: 'need' }];
+    state.context.schedulePlanningContext = () => ({});
+    state.context.analyzeProposalCoverage = () => ({ missingMinutes: 120, unknown, days: [{ date: '2026-11-02', rules: [{ department: 'op', unknown, segments: [{ start: '08:00', end: '12:00', missing: 2 }] }] }] });
+    await extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context)();
+    assert.equal(state.writes.length, 0);
+    if (unknown) { assert.equal(state.context.problem, undefined); assert.match(state.notifications[0], /marcações já existentes/); }
+    else { assert.equal(state.context.problem.field, 'status'); assert.equal(state.context.problem.code, 'coverage'); assert.match(state.context.problem.message, /Faltam 2/); }
   }
 });
 

@@ -20,6 +20,8 @@ const ScheduleDayEditor = lazy(() => import('./ScheduleDayEditor.jsx'));
 const ScheduleHolidayPlanner = lazy(() => import('./ScheduleHolidayPlanner.jsx'));
 const ScheduleDraftBar = lazy(() => import('./ScheduleDraftBar.jsx'));
 import { scheduleDraftHash, validateScheduleDraftScope } from './scheduleDrafts.js';
+import { scheduleStatusChange } from './scheduleStatusChange.js';
+import { scheduleIssueTarget, scheduleRowFieldIssues } from './scheduleValidation.js';
 import { schedulePublicationError } from './schedulePublicationErrors.js';
 const PublishedScheduleEditor = lazy(() => import('./PublishedScheduleEditor.jsx'));
 const PublishedScheduleSwap = lazy(() => import('./PublishedScheduleSwap.jsx'));
@@ -29,7 +31,7 @@ import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch 
 import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
-import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments } from './scheduleDayRules';
+import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
@@ -1006,6 +1008,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [isSavingScheduleRules, setIsSavingScheduleRules] = useState(false);
   const [automaticScheduleProposal, setAutomaticScheduleProposal] = useState([]);
   const [automaticScheduleProposalInput, setAutomaticScheduleProposalInput] = useState('');
+  const [automaticScheduleProblem, setAutomaticScheduleProblem] = useState(null);
   const [automaticScheduleDraftRestore, setAutomaticScheduleDraftRestore] = useState(null);
   const [automaticScheduleOptimization, setAutomaticScheduleOptimization] = useState(null);
   const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
@@ -3606,6 +3609,7 @@ const submitPresence = async (e) => {
   };
 
   const openBulkSchedule = (period = 'day') => {
+    setAutomaticScheduleProblem(null);
     const eligible = bulkScheduleEligibleEmployees({ ...bulkSchedule, employeeSearch: '', selectionFilter: 'Todos' });
     setBulkSchedule(previous => ({
       ...previous,
@@ -3665,7 +3669,7 @@ const submitPresence = async (e) => {
   const updateAutomaticScheduleRow = (key, changes) => {
     setAutomaticScheduleProposal(previous => previous.map(row => row.key === key && !isProtectedProposalRow(row) ? { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true, locked: true } : row));
   };
-  const changeAutomaticScheduleStatus = (item, status) => { const becomesWorking = ['Presencial', 'Home Office'].includes(status); const start = item.shiftStart || automaticScheduleRules.shiftStart; const breakStart = item.breakStart || automaticScheduleRules.breakStart; const breakEnd = item.breakEnd || automaticScheduleRules.breakEnd; const interval = scheduleIntervalMinutes(breakStart, breakEnd); const dailyTarget = Number(item.weekHoursTarget || scheduleTextToHours(automaticScheduleWeeklyHoursText)) / Number(item.workDaysPerWeek || automaticScheduleRules.workDaysPerWeek); const baseMinutes = scheduleTimeToMinutes(start) + Math.round(dailyTarget * 60) + interval; updateAutomaticScheduleRow(item.key, { status, shiftStart: becomesWorking ? start : '', shiftEnd: becomesWorking ? (item.shiftEnd || scheduleMinutesToTime(baseMinutes)) : '', breakStart: becomesWorking ? breakStart : '', breakEnd: becomesWorking ? breakEnd : '', breakMinutes: becomesWorking ? interval : 0, extraHours: becomesWorking ? Number(item.extraHours || 0) : 0 }); };
+  const changeAutomaticScheduleStatus = (item, status) => updateAutomaticScheduleRow(item.key, scheduleStatusChange(item, status, automaticScheduleRules, workSchedules, bulkSchedule.startDate));
   const repeatAutomaticScheduleOvertime = source => {
     const extraHours = Math.max(0, Number(source.extraHours) || 0);
     setAutomaticScheduleProposal(previous => previous.map(row => (
@@ -3741,6 +3745,7 @@ const submitPresence = async (e) => {
   const schedulePlanningContext = () => ({ history: scheduleScopedSchedules, absences: scheduleScopedAbsences, employees: scheduleScope.employees, getDepartments: getUserDepts });
   const schedulePlanningDataReady = () => scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready');
   const finishAutomaticScheduleGeneration = (proposal, dates) => {
+    setAutomaticScheduleProblem(null);
     const preserved = prepareScheduleProposal(proposal, { history: workSchedules, absences, rules: automaticScheduleRules, draftPins: automaticScheduleProposal });
     const prepared = balancePreparedScheduleProposal(preserved, proposal, scheduleScopedCoverageRequirements, schedulePlanningContext());
     if (!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically) {
@@ -3776,9 +3781,17 @@ const submitPresence = async (e) => {
     automaticScheduleDayEditorRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
     automaticScheduleDayEditorRef.current?.focus({ preventScroll: true });
   };
+  const openAutomaticScheduleProblem = issue => {
+    if (issue.key === 'stale') { setAutomaticScheduleRuleTab('planning'); triggerNotification('As regras ou os dados mudaram. Gere uma nova prévia para conferir a escala atual.', 'error'); return; }
+    const target = scheduleIssueTarget(issue, automaticScheduleProposal);
+    if (!target) return;
+    setAutomaticSchedulePreviewDate(target.date);
+    setAutomaticScheduleProblem({ ...target, token: globalThis.crypto.randomUUID() });
+  };
   const restoreAutomaticScheduleDraft = async saved => {
     validateScheduleDraftScope(saved, scheduleScope);
     if (!isManager || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) throw new Error('Seu perfil não pode editar escalas.');
+    setAutomaticScheduleProblem(null);
     setBulkSchedule(previous => ({ ...previous, ...saved.bulk }));
     setAutomaticScheduleHolidayDraft({ companyId: activeCompany.id, assignments: saved.holidayAssignments || {} });
     setAutomaticScheduleProposal(saved.rows);
@@ -3829,18 +3842,6 @@ const submitPresence = async (e) => {
     const proposal = targets.flatMap((user, userIndex) => {
       const employeeProposal = [];
       const employeeOverride = automaticScheduleRules.employeeOverrides?.[user.id] || {};
-      const latestWorkSchedule = automaticScheduleRules.reuseLastSchedule
-        ? workSchedules
-          .filter(item => String(item.userId) === String(user.id) && ['Presencial', 'Home Office'].includes(item.status) && item.shiftStart && (item.baseShiftEnd || item.shiftEnd))
-          .sort((a, b) => String(b.endDate || b.startDate || '').localeCompare(String(a.endDate || a.startDate || '')) || Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))[0]
-        : null;
-      const defaultShiftStart = employeeOverride.shiftStart || latestWorkSchedule?.shiftStart || automaticScheduleRules.shiftStart;
-      const defaultBreakStart = latestWorkSchedule?.breakStart || automaticScheduleRules.breakStart;
-      const defaultBreakEnd = latestWorkSchedule?.breakEnd || (latestWorkSchedule?.breakMinutes
-        ? scheduleMinutesToTime(scheduleTimeToMinutes(defaultBreakStart) + Number(latestWorkSchedule.breakMinutes))
-        : automaticScheduleRules.breakEnd);
-      const employeeBreakMinutes = scheduleIntervalMinutes(defaultBreakStart, defaultBreakEnd, breakMinutes);
-      const defaultShiftEnd = employeeOverride.shiftEnd || latestWorkSchedule?.baseShiftEnd || latestWorkSchedule?.shiftEnd || automaticScheduleRules.shiftEnd;
       const weekGroups = new Map();
       allDays.forEach(date => {
         const weekday = new Date(`${date}T00:00:00`).getDay();
@@ -3867,6 +3868,11 @@ const submitPresence = async (e) => {
           const status = holiday && automaticScheduleRules.holidaysCountAsRest ? 'Folga' : (workSet.has(date) ? 'Presencial' : 'Folga');
           const isWorkDay = status === 'Presencial';
           const weekday = new Date(`${date}T00:00:00`).getDay();
+          const latestWorkSchedule = automaticScheduleRules.reuseLastSchedule ? previousScheduleForDate(user.id, date, workSchedules, bulkSchedule.startDate) : null;
+          const template = holidayWorkTemplate(user.id, date, automaticScheduleRules, workSchedules, bulkSchedule.startDate);
+          const defaultShiftStart = template.shiftStart, defaultShiftEnd = template.shiftEnd;
+          const defaultBreakStart = template.breakStart, defaultBreakEnd = template.breakEnd;
+          const employeeBreakMinutes = template.breakMinutes;
           const dayShiftEnd = weekday === 6 && employeeOverride.saturdayEnd ? employeeOverride.saturdayEnd : defaultShiftEnd;
           const usesInterval = isWorkDay && scheduleTimeWithinShift(defaultBreakStart, defaultShiftStart, dayShiftEnd) && scheduleTimeWithinShift(defaultBreakEnd, defaultShiftStart, dayShiftEnd);
           weekRows.push({
@@ -3879,7 +3885,7 @@ const submitPresence = async (e) => {
             breakMinutes: usesInterval ? employeeBreakMinutes : 0,
             extraHours: 0,
             shift: isWorkDay ? `${defaultShiftStart}–${dayShiftEnd}` : status,
-            reusedPattern: Boolean(latestWorkSchedule),
+            workTemplate: template, reusedPattern: Boolean(latestWorkSchedule),
             sourceScheduleId: latestWorkSchedule?.id || '',
             holiday, holidayDaysInWeek: holidayDays.length,
             weekKey, weekHoursTarget: Number(targetWeekHours.toFixed(2)), plannedWorkDays,
@@ -3912,18 +3918,24 @@ const submitPresence = async (e) => {
     if (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false)) return triggerNotification('Seu perfil não pode publicar escalas.', 'error');
     if (!schedulePlanningDataReady()) return triggerNotification('Aguarde a confirmação dos dados da empresa.', 'error');
     if (automaticScheduleProposalInput !== automaticScheduleInput) return triggerNotification('As regras ou o período mudaram. Gere uma nova simulação antes de publicar.', 'error');
+    const ruleIssues = scheduleRuleIssues(automaticScheduleProposal, workSchedules).filter(issue => issue.blocking);
+    if (ruleIssues.length) {
+      openAutomaticScheduleProblem(ruleIssues[0]);
+      return triggerNotification(ruleIssues[0].message, 'error');
+    }
     if (automaticScheduleRules.coverageRequirements?.length) {
       const coverage = analyzeProposalCoverage(automaticScheduleProposal, scheduleScopedCoverageRequirements, schedulePlanningContext());
       if (coverage.missingMinutes || coverage.unknown) {
         const firstGap = coverage.days.find(day => day.rules.some(rule => rule.unknown || rule.segments.some(segment => segment.missing)));
-        if (firstGap) setAutomaticSchedulePreviewDate(firstGap.date);
-        return triggerNotification('A escala ainda tem falta de pessoas ou horários incompletos. Revise a cobertura antes de publicar.', 'error');
+        if (firstGap) {
+          const requirement = firstGap.rules.find(rule => rule.unknown || rule.segments.some(segment => segment.missing));
+          const missing = requirement.segments.find(segment => segment.missing);
+          const candidate = automaticScheduleProposal.find(row => row.date === firstGap.date && row.dept === requirement.department && !isProtectedProposalRow(row) && row.status === 'Folga') || automaticScheduleProposal.find(row => row.date === firstGap.date && row.dept === requirement.department);
+          if (candidate && !requirement.unknown) openAutomaticScheduleProblem({ rowKey: candidate.key, date: firstGap.date, field: 'status', code: 'coverage', message: missing ? `Faltam ${missing.missing} pessoa(s) entre ${missing.start} e ${missing.end}.` : 'Há horários incompletos na cobertura deste dia.', hint: 'Use a correção automática ou ajuste a situação e o turno de pessoas deste setor, respeitando as folgas e os limites.' });
+          else reviewAutomaticScheduleDay(firstGap.date);
+        }
+        return triggerNotification('A escala ainda tem falta de pessoas ou horários incompletos. Revise a cobertura antes de publicar.' + (coverage.unknown ? ' Confira os horários das marcações já existentes no calendário deste setor.' : ''), 'error');
       }
-    }
-    const ruleIssues = scheduleRuleIssues(automaticScheduleProposal, workSchedules).filter(issue => issue.blocking);
-    if (ruleIssues.length) {
-      setAutomaticSchedulePreviewDate(ruleIssues[0].date);
-      return triggerNotification(ruleIssues[0].message, 'error');
     }
     const invalidWorkRows = automaticScheduleProposal.filter(item => {
       if (isProtectedProposalRow(item) || !['Presencial', 'Home Office'].includes(item.status)) return false;
@@ -3934,7 +3946,7 @@ const submitPresence = async (e) => {
     });
     if (invalidWorkRows.length) {
       triggerNotification(`Revise ${invalidWorkRows.length} jornada(s) com horário ou carga inválida antes de publicar.`, 'error');
-      setAutomaticSchedulePreviewDate(invalidWorkRows[0].date);
+      openAutomaticScheduleProblem(scheduleRowFieldIssues(invalidWorkRows[0])[0] || { rowKey: invalidWorkRows[0].key, date: invalidWorkRows[0].date, field: 'shiftEnd', message: 'Confira a jornada e o intervalo deste dia.', hint: 'A entrada e a saída precisam comportar o intervalo informado.' });
       return;
     }
     const rows = automaticScheduleProposal.filter(item => !isProtectedProposalRow(item)).slice().sort((a, b) => a.userId.localeCompare(b.userId) || a.date.localeCompare(b.date));
@@ -10555,12 +10567,12 @@ const handleDownload = async (fileUrl, fileName) => {
                 </div>}
               </section>
               {automaticScheduleProposal.length > 0 && <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70">
-                <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Ajuste os dias livres da prévia. Lançamentos manuais, ausências e dias fixos são preservados.</p></div><button type="button" disabled={isSavingScheduleProposal || automaticScheduleCoverage.missingMinutes > 0 || automaticScheduleCoverage.unknown > 0 || automaticScheduleIssues.some(issue => issue.blocking)} onClick={saveAutomaticScheduleProposal} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />{isSavingScheduleProposal ? 'Publicando...' : 'Salvar e publicar no calendário'}</button></div>
+                <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Ajuste os dias livres da prévia. Lançamentos manuais, ausências e dias fixos são preservados.</p></div><button type="button" disabled={isSavingScheduleProposal} onClick={saveAutomaticScheduleProposal} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />{isSavingScheduleProposal ? 'Publicando...' : 'Salvar e publicar no calendário'}</button></div>
                 <ScheduleOptimizationSummary before={automaticScheduleOptimization?.before} analysis={automaticScheduleCoverage} swaps={automaticScheduleOptimization?.swaps || 0} limited={automaticScheduleOptimization?.limited} requirements={scheduleScopedCoverageRequirements} fixedDays={automaticScheduleProposal.filter(isFixedProposalRow).length} selectedDate={automaticScheduleVisibleDate} departments={scheduleScope.departments} rows={automaticScheduleProposal} onSelectDate={reviewAutomaticScheduleDay} onReviewRules={canConfigureScheduleRules ? () => { setAutomaticScheduleRuleTab('rules'); automaticScheduleDayEditorRef.current?.closest('form')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); } : undefined} onOptimize={reorganizeAutomaticSchedule} disabled={isSavingScheduleProposal || automaticScheduleInput !== automaticScheduleProposalInput} />
                 <ScheduleProposalCalendar rows={automaticScheduleProposal} analysis={automaticScheduleCoverage} issues={automaticScheduleIssues} selectedDate={automaticScheduleVisibleDate} onSelectDate={setAutomaticSchedulePreviewDate} onOpenDay={() => { automaticScheduleDayEditorRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); automaticScheduleDayEditorRef.current?.focus({ preventScroll: true }); }} disabled={isSavingScheduleProposal} />
-                {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => reviewAutomaticScheduleDay(automaticScheduleDates.includes(issue.date) ? issue.date : automaticScheduleDates.find(date => date >= issue.date) || automaticScheduleDates[0])}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
+                {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => openAutomaticScheduleProblem(issue)}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
                 <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[8px] font-black uppercase text-blue-700">Equipe no quadro</span><strong className="mt-1 block text-xl text-blue-950">{automaticScheduleVisibleRows.length}</strong></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[8px] font-black uppercase text-emerald-700">Em trabalho</span><strong className="mt-1 block text-xl text-emerald-950">{automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><span className="text-[8px] font-black uppercase text-amber-700">Folgas / ausências</span><strong className="mt-1 block text-xl text-amber-950">{automaticScheduleVisibleRows.length - automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[8px] font-black uppercase text-violet-700">Carga da equipe</span><strong className="mt-1 block text-xl text-violet-950">{scheduleDurationToText(automaticScheduleDayHours)}</strong></div></div>
-                <ScheduleDayEditor sectionRef={automaticScheduleDayEditorRef} key={automaticScheduleProposalInput} rows={automaticScheduleVisibleRows} date={automaticScheduleVisibleDate} departments={scheduleScope.departments} disabled={isSavingScheduleProposal} canConfigureRules={canConfigureScheduleRules} onChange={updateAutomaticScheduleRow} onStatusChange={changeAutomaticScheduleStatus} onToggleLock={toggleAutomaticScheduleDayLock} onRepeatOvertime={repeatAutomaticScheduleOvertime} onCreateRule={createRecurringRuleFromDay} getHours={automaticScheduleRowHours} formatDuration={scheduleDurationToText} parseHours={scheduleTextToHours} intervalMinutes={scheduleIntervalMinutes} renderTable={() => (<div className="max-h-[430px] overflow-auto border-y border-emerald-100 bg-white"><table className="w-full min-w-[1320px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-3 py-2.5">Regra aplicada / motivo</th><th className="px-2 py-2.5">Status</th><th className="px-2 py-2.5">Entrada</th><th className="px-2 py-2.5">Saída prevista<br/><span className="font-medium text-slate-400">sem hora extra</span></th><th className="px-2 py-2.5">Início intervalo</th><th className="px-2 py-2.5">Fim intervalo</th><th className="px-2 py-2.5">Hora extra<br/><span className="font-medium text-slate-400">hh:mm</span></th><th className="px-2 py-2.5">Saída final</th><th className="px-3 py-2.5 text-right">Carga do dia</th></tr></thead><tbody>{automaticScheduleVisibleRows.map(renderAutomaticScheduleRow)}</tbody></table></div>)} />
+                <ScheduleDayEditor problem={automaticScheduleProblem} issues={automaticScheduleIssues} onClearProblem={() => setAutomaticScheduleProblem(null)} onOptimize={reorganizeAutomaticSchedule} sectionRef={automaticScheduleDayEditorRef} key={automaticScheduleProposalInput} rows={automaticScheduleVisibleRows} date={automaticScheduleVisibleDate} departments={scheduleScope.departments} disabled={isSavingScheduleProposal} canConfigureRules={canConfigureScheduleRules} onChange={updateAutomaticScheduleRow} onStatusChange={changeAutomaticScheduleStatus} onToggleLock={toggleAutomaticScheduleDayLock} onRepeatOvertime={repeatAutomaticScheduleOvertime} onCreateRule={createRecurringRuleFromDay} getHours={automaticScheduleRowHours} formatDuration={scheduleDurationToText} parseHours={scheduleTextToHours} intervalMinutes={scheduleIntervalMinutes} renderTable={() => (<div className="max-h-[430px] overflow-auto border-y border-emerald-100 bg-white"><table className="w-full min-w-[1320px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-3 py-2.5">Regra aplicada / motivo</th><th className="px-2 py-2.5">Status</th><th className="px-2 py-2.5">Entrada</th><th className="px-2 py-2.5">Saída prevista<br/><span className="font-medium text-slate-400">sem hora extra</span></th><th className="px-2 py-2.5">Início intervalo</th><th className="px-2 py-2.5">Fim intervalo</th><th className="px-2 py-2.5">Hora extra<br/><span className="font-medium text-slate-400">hh:mm</span></th><th className="px-2 py-2.5">Saída final</th><th className="px-3 py-2.5 text-right">Carga do dia</th></tr></thead><tbody>{automaticScheduleVisibleRows.map(renderAutomaticScheduleRow)}</tbody></table></div>)} />
                 <div className="p-3"><h5 className="text-[9px] font-black uppercase tracking-wide text-slate-500">Carga total no período por colaborador</h5><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{automaticScheduleEmployeeTotals.map(item => <div key={item.userId} className={`rounded-xl border bg-white p-3 ${Math.abs(item.balance) < 0.02 ? 'border-emerald-200' : item.balance < 0 ? 'border-rose-200' : 'border-violet-200'}`}><strong className="block truncate text-[10px] text-slate-800">{item.userName}</strong><div className="mt-1 flex items-end justify-between gap-2"><span className="text-sm font-black text-slate-950">{scheduleDurationToText(item.total)}</span><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${Math.abs(item.balance) < 0.02 ? 'bg-emerald-100 text-emerald-800' : item.balance < 0 ? 'bg-rose-100 text-rose-800' : 'bg-violet-100 text-violet-800'}`}>{Math.abs(item.balance) < 0.02 ? 'CARGA OK' : item.balance > 0 ? `EXTRA ${scheduleDurationToText(item.projectedOvertime)}` : `FALTA ${scheduleDurationToText(item.missingHours)}`}</span></div><small className="mt-1 block text-[8px] text-slate-500">Meta {scheduleDurationToText(item.target)} · jornada base {scheduleDurationToText(item.regular)} · complemento sugerido {scheduleDurationToText(item.extra)}</small></div>)}</div></div>
                 {automaticScheduleEmployeeTotals.some(item => item.missingHours > 0.02) && <p className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-semibold text-amber-800">Há colaboradores com carga abaixo da meta. Confira as folgas e jornadas especiais antes de publicar. Com conjuntos de regras, horários reduzidos são preservados e não recebem complemento automático.</p>}
                 {automaticScheduleProposal.some(isProtectedProposalRow) && <p className="m-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-[10px] font-semibold text-cyan-900">Marcações manuais e ausências existentes serão preservadas. Apenas os blocos automáticos liberados dentro do período serão substituídos.</p>}

@@ -10,7 +10,7 @@ const saved = { bulk: { userIds: ['u'], startDate: '2026-11-02', endDate: '2026-
 function context() {
   const changes = {};
   const state = { validateScheduleDraftScope, scheduleScope: { employeeIds: ['u'], departmentIds: ['op'], allDepartments: false }, isManager: true, currentUser: { isAdmin: false }, effectiveAccessProfile: {}, activeCompany: { id: 'company' } };
-  for (const name of ['BulkSchedule', 'AutomaticScheduleHolidayDraft', 'AutomaticScheduleProposal', 'AutomaticScheduleProposalInput', 'AutomaticScheduleWeeklyHoursText', 'AutomaticSchedulePreviewDate', 'AutomaticScheduleOptimization', 'AutomaticScheduleRuleTab', 'BulkScheduleMode', 'AutomaticScheduleDraftRestore']) state[`set${name}`] = value => { changes[name] = typeof value === 'function' ? value({}) : value; };
+  for (const name of ['AutomaticScheduleProblem', 'BulkSchedule', 'AutomaticScheduleHolidayDraft', 'AutomaticScheduleProposal', 'AutomaticScheduleProposalInput', 'AutomaticScheduleWeeklyHoursText', 'AutomaticSchedulePreviewDate', 'AutomaticScheduleOptimization', 'AutomaticScheduleRuleTab', 'BulkScheduleMode', 'AutomaticScheduleDraftRestore']) state[`set${name}`] = value => { changes[name] = typeof value === 'function' ? value({}) : value; };
   return { state, changes };
 }
 

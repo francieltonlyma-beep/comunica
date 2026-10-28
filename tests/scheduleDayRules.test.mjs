@@ -154,7 +154,7 @@ test('feriado marcado é descanso e desmarcado segue a distribuição normal', (
 
 test('jornada especial anterior não vira o novo padrão nos dias comuns', () => {
   const history = [
-    { userId: '1', startDate: '2026-10-23', endDate: '2026-10-23', ...base, shiftStart: '09:00', baseShiftEnd: '18:00' },
+    { userId: '1', startDate: '2026-10-19', endDate: '2026-10-23', ...base, shiftStart: '09:00', baseShiftEnd: '18:00' },
     { userId: '1', startDate: '2026-10-24', endDate: '2026-10-24', ...base, shiftEnd: '12:00', baseShiftEnd: '12:00', ruleApplied: true },
     { userId: '1', startDate: '2026-10-25', endDate: '2026-10-25', ...base, shiftEnd: '13:00', baseShiftEnd: '13:00', manuallyAdjusted: true },
   ];
