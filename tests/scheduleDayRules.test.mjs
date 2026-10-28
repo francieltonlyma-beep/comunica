@@ -141,13 +141,15 @@ test('diferença de carga gera aviso sem estender o sábado reduzido', () => {
   assert.equal(rows.find(row => row.date === '2026-10-31').shiftEnd, '12:00');
 });
 
-test('feriado pode preservar ou substituir uma das folgas da semana', () => {
+test('feriado marcado é descanso e desmarcado segue a distribuição normal', () => {
   const holiday = ['2026-10-28'];
   const counted = generate([], { holidays: holiday });
   const separate = generate([], { holidays: holiday, rules: { ...rules([]), holidaysCountAsRest: false } });
   assert.equal(counted.filter(row => row.status === 'Presencial').length, 5);
-  assert.equal(separate.filter(row => row.status === 'Presencial').length, 4);
-  assert.equal(separate.find(row => row.date === holiday[0]).status, 'Feriado');
+  assert.equal(separate.filter(row => row.status === 'Presencial').length, 5);
+  assert.ok(separate.every(row => ['Presencial', 'Folga'].includes(row.status)));
+  const weekdaysOnly = generate([], { holidays: holiday, rules: { ...rules([]), holidaysCountAsRest: false, allowedWeekdays: [1, 2, 3, 4, 5] } });
+  assert.equal(weekdaysOnly.find(row => row.date === holiday[0]).status, 'Presencial');
 });
 
 test('jornada especial anterior não vira o novo padrão nos dias comuns', () => {
@@ -189,3 +191,4 @@ test('descanso mínimo entre jornadas considera o histórico anterior e o dia se
   assert.ok(scheduleRuleIssues(rows, history).some(issue => issue.blocking && /descanso de 7,00h/.test(issue.message)));
   assert.ok(validateRuleGroups([{ ...group([]), policy: { workDaysPerWeek: 6, restEveryDays: 6 } }]).some(issue => /descanso/.test(issue)));
 });
+

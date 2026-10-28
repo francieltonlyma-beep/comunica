@@ -1,4 +1,3 @@
-import { schedulePublicationError } from './schedulePublicationErrors.js';
 import ScheduleShiftEditor from './ScheduleShiftEditor.jsx';
 import { normalizeScheduleShifts, validateScheduleShifts } from './scheduleShifts.js';
 import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
@@ -18,6 +17,10 @@ const ScheduleCalendar = lazy(() => import('./ScheduleCalendar.jsx'));
 const ScheduleOptimizationSummary = lazy(() => import('./ScheduleOptimizationSummary.jsx'));
 const ScheduleProposalCalendar = lazy(() => import('./ScheduleProposalCalendar.jsx'));
 const ScheduleDayEditor = lazy(() => import('./ScheduleDayEditor.jsx'));
+const ScheduleHolidayPlanner = lazy(() => import('./ScheduleHolidayPlanner.jsx'));
+const ScheduleDraftBar = lazy(() => import('./ScheduleDraftBar.jsx'));
+import { scheduleDraftHash, validateScheduleDraftScope } from './scheduleDrafts.js';
+import { schedulePublicationError } from './schedulePublicationErrors.js';
 const PublishedScheduleEditor = lazy(() => import('./PublishedScheduleEditor.jsx'));
 const PublishedScheduleSwap = lazy(() => import('./PublishedScheduleSwap.jsx'));
 import { canEditPublishedSchedule, planPublishedDayEdit } from './publishedScheduleEdit.js';
@@ -26,7 +29,7 @@ import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch 
 import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
-import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues } from './scheduleDayRules';
+import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
@@ -997,10 +1000,13 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [scheduleCoverageError, setScheduleCoverageError] = useState('');
   const [automaticScheduleRules, setAutomaticScheduleRules] = useState(() => sanitizeAutomaticScheduleRules({}));
   const [automaticScheduleWeeklyHoursText, setAutomaticScheduleWeeklyHoursText] = useState('40:00');
+  const [automaticScheduleHolidayDraft, setAutomaticScheduleHolidayDraft] = useState({ companyId: '', assignments: {} });
+  const automaticScheduleHolidayAssignments = automaticScheduleHolidayDraft.companyId === activeCompany?.id ? automaticScheduleHolidayDraft.assignments : {};
   const [automaticScheduleRuleTab, setAutomaticScheduleRuleTab] = useState('rules');
   const [isSavingScheduleRules, setIsSavingScheduleRules] = useState(false);
   const [automaticScheduleProposal, setAutomaticScheduleProposal] = useState([]);
   const [automaticScheduleProposalInput, setAutomaticScheduleProposalInput] = useState('');
+  const [automaticScheduleDraftRestore, setAutomaticScheduleDraftRestore] = useState(null);
   const [automaticScheduleOptimization, setAutomaticScheduleOptimization] = useState(null);
   const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
   const [publishedScheduleEdit, setPublishedScheduleEdit] = useState(null);
@@ -1009,7 +1015,17 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [isSavingPublishedSchedule, setIsSavingPublishedSchedule] = useState(false);
   const [isSavingScheduleSwapRequest, setIsSavingScheduleSwapRequest] = useState(false);
   const [automaticScheduleEditorFocus, setAutomaticScheduleEditorFocus] = useState(null);
-  const automaticScheduleInput = JSON.stringify({ company: activeCompany?.id, history: workSchedules, absences, employees: employeesList.map(user => ({ id: user.id, name: user.name, departments: getUserDepts(user) })), rules: automaticScheduleRules, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
+  const automaticScheduleInput = JSON.stringify({ company: activeCompany?.id, history: workSchedules, absences, employees: employeesList.map(user => ({ id: user.id, name: user.name, departments: getUserDepts(user) })), rules: automaticScheduleRules, holidayAssignments: automaticScheduleHolidayAssignments, hours: automaticScheduleWeeklyHoursText, start: bulkSchedule.startDate, end: bulkSchedule.endDate, users: bulkSchedule.userIds, holidays: calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date).sort() });
+  useEffect(() => {
+    if (!automaticScheduleDraftRestore || automaticScheduleDraftRestore.companyId !== activeCompany?.id) return;
+    let cancelled = false;
+    scheduleDraftHash(automaticScheduleInput).then(hash => {
+      if (cancelled) return;
+      if (hash === automaticScheduleDraftRestore.inputHash) setAutomaticScheduleProposalInput(automaticScheduleInput);
+      setAutomaticScheduleDraftRestore(null);
+    }).catch(() => { if (!cancelled) setAutomaticScheduleDraftRestore(null); });
+    return () => { cancelled = true; };
+  }, [automaticScheduleDraftRestore, automaticScheduleInput, activeCompany?.id]);
   const [automaticSchedulePreviewDate, setAutomaticSchedulePreviewDate] = useState('');
   const automaticScheduleDayEditorRef = useRef(null);
   const [newEvent, setNewEvent] = useState({ title: '', date: todayStr, type: 'Confraternização', location: '', description: '' });
@@ -3760,6 +3776,20 @@ const submitPresence = async (e) => {
     automaticScheduleDayEditorRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
     automaticScheduleDayEditorRef.current?.focus({ preventScroll: true });
   };
+  const restoreAutomaticScheduleDraft = async saved => {
+    validateScheduleDraftScope(saved, scheduleScope);
+    if (!isManager || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) throw new Error('Seu perfil não pode editar escalas.');
+    setBulkSchedule(previous => ({ ...previous, ...saved.bulk }));
+    setAutomaticScheduleHolidayDraft({ companyId: activeCompany.id, assignments: saved.holidayAssignments || {} });
+    setAutomaticScheduleProposal(saved.rows);
+    setAutomaticScheduleProposalInput('draft-restored');
+    setAutomaticScheduleWeeklyHoursText(saved.weeklyHours || '40:00');
+    setAutomaticSchedulePreviewDate(saved.selectedDate || saved.bulk.startDate);
+    setAutomaticScheduleOptimization(null);
+    setAutomaticScheduleRuleTab('planning');
+    setBulkScheduleMode('smart');
+    setAutomaticScheduleDraftRestore({ companyId: activeCompany.id, inputHash: saved.inputHash });
+  };
   const toggleAutomaticScheduleDayLock = key => {
     setAutomaticScheduleProposal(previous => previous.map(row => row.key !== key || isProtectedProposalRow(row) || row.pinned || row.ruleApplied || row.constraintLocked ? row : { ...row, locked: !(row.locked || row.manuallyAdjusted), manuallyAdjusted: false }));
   };
@@ -3785,12 +3815,14 @@ const submitPresence = async (e) => {
     if (allowedWeekdays.size < workDays) return triggerNotification('Selecione dias da semana suficientes para cumprir os dias de trabalho definidos.', 'error');
     const allDays = Array.from({ length: dayCount }, (_, index) => civilDateShift(bulkSchedule.startDate, { days: index }));
     const holidayDates = new Set(calendarEvents.filter(event => normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).map(event => event.date));
+    const holidayError = validateHolidayAssignments(automaticScheduleHolidayAssignments, allDays.filter(date => holidayDates.has(date)), targets.map(user => String(user.id)));
+    if (holidayError) return triggerNotification(holidayError, 'error');
     const shiftError = validateScheduleShifts(automaticScheduleRules.shifts || [], automaticScheduleRules.ruleGroups || []);
     if (shiftError) return triggerNotification(shiftError, 'error');
     const ruleErrors = validateRuleGroups(automaticScheduleRules.ruleGroups || []);
     if (ruleErrors.length) return triggerNotification(ruleErrors[0], 'error');
-    if (automaticScheduleRules.ruleGroups?.length || automaticScheduleRules.shifts?.length || automaticScheduleRules.coverageRequirements?.length) {
-      const proposal = buildRuleSchedule({ dates: allDays, users: targets, rules: { ...automaticScheduleRules, hoursPerWeek: weeklyHours }, holidays: [...holidayDates], history: workSchedules, getDepartment: user => scheduleDepartmentForEmployee(user, scheduleScope, getUserDepts) });
+    if (automaticScheduleRules.ruleGroups?.length || automaticScheduleRules.shifts?.length || automaticScheduleRules.coverageRequirements?.length || allDays.some(date => holidayDates.has(date))) {
+      const proposal = buildRuleSchedule({ dates: allDays, users: targets, rules: { ...automaticScheduleRules, hoursPerWeek: weeklyHours, holidayAssignments: automaticScheduleHolidayAssignments }, holidays: [...holidayDates], history: workSchedules, getDepartment: user => scheduleDepartmentForEmployee(user, scheduleScope, getUserDepts) });
       finishAutomaticScheduleGeneration(proposal, allDays);
       return;
     }
@@ -3818,7 +3850,7 @@ const submitPresence = async (e) => {
       });
       [...weekGroups.entries()].forEach(([weekStart, dates], weekIndex) => {
         const holidayDays = dates.filter(date => holidayDates.has(date));
-        const availableDays = dates.filter(date => !holidayDates.has(date) && allowedWeekdays.has(new Date(`${date}T00:00:00`).getDay()));
+        const availableDays = dates.filter(date => (!holidayDates.has(date) || !automaticScheduleRules.holidaysCountAsRest) && allowedWeekdays.has(new Date(`${date}T00:00:00`).getDay()));
         const baseRestDays = Math.max(0, dates.length - workDays, Math.floor(dates.length / restEvery));
         const remainingRestDays = Math.max(0, baseRestDays - (automaticScheduleRules.holidaysCountAsRest ? holidayDays.length : 0));
         const plannedWorkDays = Math.min(workDays, Math.max(0, availableDays.length - remainingRestDays));
@@ -3832,9 +3864,7 @@ const submitPresence = async (e) => {
         const weekRows = [];
         dates.forEach(date => {
           const holiday = holidayDates.has(date);
-          const status = holiday
-            ? (automaticScheduleRules.holidaysCountAsRest ? 'Folga' : 'Feriado')
-            : (workSet.has(date) ? 'Presencial' : 'Folga');
+          const status = holiday && automaticScheduleRules.holidaysCountAsRest ? 'Folga' : (workSet.has(date) ? 'Presencial' : 'Folga');
           const isWorkDay = status === 'Presencial';
           const weekday = new Date(`${date}T00:00:00`).getDay();
           const dayShiftEnd = weekday === 6 && employeeOverride.saturdayEnd ? employeeOverride.saturdayEnd : defaultShiftEnd;
@@ -10466,6 +10496,7 @@ const handleDownload = async (fileUrl, fileName) => {
             <form onSubmit={event => { if (bulkScheduleMode === 'manual') return saveBulkSchedule(event); event.preventDefault(); generateAutomaticSchedule(); }} className="space-y-4 p-5 sm:p-6"><fieldset disabled={isSavingScheduleProposal} className="contents">
               <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-1.5"><button type="button" onClick={() => setBulkScheduleMode('smart')} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${bulkScheduleMode === 'smart' ? 'bg-white text-cyan-900 shadow-sm' : 'text-slate-500'}`}><Sparkles className="mr-1.5 inline h-4 w-4" />Escala inteligente</button><button type="button" onClick={() => { setBulkScheduleMode('manual'); setAutomaticScheduleProposal([]); }} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${bulkScheduleMode === 'manual' ? 'bg-white text-violet-900 shadow-sm' : 'text-slate-500'}`}><Edit2 className="mr-1.5 inline h-4 w-4" />Marcação simples</button></div>
               {bulkScheduleMode === 'smart' && <>
+              {isFirebaseAvailable && dbUser && activeCompany?.id && <ScheduleDraftBar key={`${activeCompany.id}|${dbUser.uid}`} api={{ db, collection, doc, getDoc, getDocs, runTransaction }} appId={appId} companyId={activeCompany.id} ownerId={dbUser.uid} snapshot={{ bulk: bulkSchedule, rows: automaticScheduleProposal, holidayAssignments: automaticScheduleHolidayAssignments, weeklyHours: automaticScheduleWeeklyHoursText, selectedDate: automaticSchedulePreviewDate, proposalInput: automaticScheduleProposalInput }} departmentIds={[...new Set([...automaticScheduleProposal.map(row => row.dept), ...scheduleScope.employees.filter(user => bulkSchedule.userIds.some(id => String(id) === String(user.id))).map(user => scheduleDepartmentForEmployee(user, scheduleScope, getUserDepts))].filter(Boolean))]} onRestore={restoreAutomaticScheduleDraft} disabled={isSavingScheduleProposal || !schedulePlanningDataReady() || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))} />}
               <section className="overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-violet-50">
                 <div className="flex flex-col gap-3 border-b border-cyan-100 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div><span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-100 px-2.5 py-1 text-[9px] font-black uppercase tracking-wide text-cyan-900"><Sparkles className="h-3.5 w-3.5" /> Planejamento inteligente</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Monte uma escala baseada em regras reais</h4><p className="mt-1 max-w-2xl text-[11px] leading-5 text-slate-600">Defina a política uma vez, reutilize o padrão de cada colaborador e revise o quadro antes de publicar.</p></div>
@@ -10504,7 +10535,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white/80 p-3"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Dias padrão para turmas sem dias próprios</strong><p className="text-[9px] leading-4 text-slate-500">As folgas serão distribuídas entre os dias liberados, em rodízio por colaborador.</p></div><span className="text-[9px] font-bold text-slate-500">{automaticScheduleRules.allowedWeekdays.length} dia(s) liberado(s)</span></div><div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">{SCHEDULE_WEEKDAYS.map(day => { const active = automaticScheduleRules.allowedWeekdays.includes(day.value); return <button type="button" key={day.value} onClick={() => setAutomaticScheduleRules(previous => ({ ...previous, allowedWeekdays: active ? previous.allowedWeekdays.filter(value => value !== day.value) : [...previous.allowedWeekdays, day.value].sort() }))} className={`rounded-lg border px-2 py-2 text-[10px] font-black ${active ? 'border-cyan-300 bg-cyan-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>{day.label}</button>; })}</div></div>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.holidaysCountAsRest ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.holidaysCountAsRest} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, holidaysCountAsRest: event.target.checked }))} className="mt-0.5 accent-amber-700" /><span><strong className="block text-[10px] text-slate-800">Feriado conta como descanso</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Quando ativo, um feriado reduz a necessidade de outra folga naquela semana.</small></span></label>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.holidaysCountAsRest ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.holidaysCountAsRest} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, holidaysCountAsRest: event.target.checked }))} className="mt-0.5 accent-amber-700" /><span><strong className="block text-[10px] text-slate-800">Feriado conta como descanso</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Ativo: feriado é folga por padrão. Desativado: segue a escala normal. Na geração, você pode escolher individualmente quem trabalha em cada feriado.</small></span></label>
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.reuseLastSchedule ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" checked={automaticScheduleRules.reuseLastSchedule} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, reuseLastSchedule: event.target.checked }))} className="mt-0.5 accent-emerald-700" /><span><strong className="block text-[10px] text-slate-800">Reutilizar o último padrão individual</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Mantém entrada, saída e intervalo usados anteriormente por cada colaborador. Horas extras não são copiadas.</small></span></label>
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.calculateExtraAutomatically ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" disabled={Boolean(automaticScheduleRules.ruleGroups?.length)} checked={!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, calculateExtraAutomatically: event.target.checked }))} className="mt-0.5 accent-violet-700" /><span><strong className="block text-[10px] text-slate-800">Calcular complemento automaticamente</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Se a jornada prevista ficar abaixo da carga semanal, o saldo é sugerido como hora extra para revisão.</small></span></label>
                   </div>
@@ -10517,6 +10548,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <div className="grid gap-3 rounded-xl border border-cyan-100 bg-white/80 p-3 sm:grid-cols-3"><label className="text-[9px] font-bold uppercase text-slate-600">Início do planejamento<input required type="date" value={bulkSchedule.startDate} onChange={event => { setBulkSchedule(previous => ({ ...previous, startDate: event.target.value })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label><label className="text-[9px] font-bold uppercase text-slate-600">Fim do planejamento<input required type="date" value={bulkSchedule.endDate} onChange={event => { setBulkSchedule(previous => ({ ...previous, endDate: event.target.value })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label><div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"><span className="text-[9px] font-bold uppercase text-slate-500">Equipe selecionada</span><strong className="mt-1 block text-lg text-slate-900">{bulkSchedule.userIds.length}</strong><small className="text-[9px] text-slate-500">{automaticScheduleRules.reuseLastSchedule ? `${automaticScheduleReusablePatterns} com padrão anterior encontrado` : 'Uso do padrão anterior desativado'}</small></div></div>
                   <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[9px] font-black uppercase text-blue-700">Jornada base</span><strong className="mt-1 block text-xs text-slate-900">Entrada até saída prevista</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">É o tempo regular de trabalho, já descontando o intervalo.</p></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[9px] font-black uppercase text-violet-700">Hora extra</span><strong className="mt-1 block text-xs text-slate-900">Tempo adicional do dia</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">É somada depois da saída base e altera somente a saída final.</p></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[9px] font-black uppercase text-emerald-700">Carga total</span><strong className="mt-1 block text-xs text-slate-900">Base + extra</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">Todos os totais são exibidos no padrão hh:mm.</p></div></div>
                   <div className="flex flex-col gap-3 rounded-xl border border-amber-100 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-amber-950">Feriados do período</strong><p className="mt-0.5 text-[10px] leading-4 text-slate-600">São os dias cadastrados no calendário como “Feriado”.</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black ${automaticScheduleDetectedHolidays.length ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-500'}`}>{automaticScheduleDetectedHolidays.length ? `${automaticScheduleDetectedHolidays.length} detectado(s)` : 'Nenhum detectado'}</span></div>
+                  <ScheduleHolidayPlanner key={activeCompany?.id || 'holiday-planner'} holidays={automaticScheduleDetectedHolidays} employees={scheduleScope.employees.filter(user => bulkSchedule.userIds.some(id => String(id) === String(user.id)))} rules={automaticScheduleRules} history={scheduleScopedSchedules} absences={scheduleScopedAbsences} startDate={bulkSchedule.startDate} assignments={automaticScheduleHolidayAssignments} onChange={assignments => { setAutomaticScheduleHolidayDraft({ companyId: activeCompany.id, assignments }); setAutomaticScheduleProposal([]); }} disabled={isSavingScheduleProposal || !schedulePlanningDataReady()} />
                   {(automaticScheduleRules.ruleGroups || []).length > 0 && <p className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-[11px] leading-5 text-cyan-900">As regras especiais serão respeitadas integralmente. Diferenças de carga serão indicadas para revisão; jornadas reduzidas não recebem complemento automático. Períodos que cobrem parte da semana exibem uma meta proporcional aos dias do período.</p>}
                   {!scheduleScopedCoverageRequirements.length && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Cadastre o mínimo de pessoas por setor e horário para gerar pela necessidade da operação. Sem essa meta, a simulação considera somente jornadas e folgas.{canConfigureScheduleRules && <button type="button" onClick={() => setAutomaticScheduleRuleTab('team')} className="ml-2 underline">Configurar necessidade</button>}</div>}
                   <div className="flex justify-end"><button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-5 py-3 text-xs font-bold text-white shadow-sm hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro para revisão</button></div>

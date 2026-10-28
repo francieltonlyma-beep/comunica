@@ -138,6 +138,18 @@ service cloud.firestore {
         || department in profile.get('depts', []) || department in profile.get('departments', [])
       ));
     }
+    function scheduleDraftInScope(app, company, data) {
+      let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data;
+      let allowed = profile.get('depts', []).concat(profile.get('departments', [])).concat([profile.get('dept', ''), profile.get('department', '')]);
+      return manages(app, company) || (member(company) && data.get('departmentIds', []).size() > 0 && data.get('departmentIds', []).hasOnly(allowed));
+    }
+    function validScheduleDraft(data) {
+      return data.keys().hasOnly(['revision', 'updatedAt', 'startDate', 'endDate', 'partCount', 'encoding', 'departmentIds'])
+        && data.revision is string && data.revision.size() <= 80
+        && data.updatedAt is int && data.startDate is string && data.endDate is string
+        && data.partCount is int && data.partCount >= 1 && data.partCount <= 100
+        && data.encoding in ['json', 'gzip-base64'] && data.departmentIds is list && data.departmentIds.size() <= 500;
+    }
     function absencePostOwner(app, company, id) {
       return id.matches('post-abs-.+') && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/absences/$(id.replace('^post-abs-', ''))).data.get('userId', '') == request.auth.uid;
     }
@@ -178,6 +190,23 @@ service cloud.firestore {
     match /artifacts/{app}/public/data/companies/{company} {
       allow read: if access(company);
       allow write: if false;
+      match /users/{uid}/scheduleDrafts/{draftId} {
+        function ownsDraft() { return request.auth != null && request.auth.uid == uid && scheduleManager(app, company) && canManageCalendar(app, company); }
+        allow read: if ownsDraft();
+        allow create: if ownsDraft() && validScheduleDraft(request.resource.data) && scheduleDraftInScope(app, company, request.resource.data);
+        allow update: if ownsDraft() && validScheduleDraft(request.resource.data) && scheduleDraftInScope(app, company, resource.data) && scheduleDraftInScope(app, company, request.resource.data);
+        allow delete: if false;
+        match /parts/{partId} {
+          allow read: if ownsDraft()
+            && scheduleDraftInScope(app, company, get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data)
+            && resource.data.revision == get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data.revision;
+          allow create, update: if ownsDraft()
+            && scheduleDraftInScope(app, company, getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data)
+            && request.resource.data.keys().hasOnly(['revision', 'payload']) && request.resource.data.payload is string && request.resource.data.payload.size() <= 600000
+            && request.resource.data.revision == getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data.revision;
+          allow delete: if ownsDraft() && scheduleDraftInScope(app, company, getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data);
+        }
+      }
       match /{kind}/{id} {
         allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'settings', 'vacancies', 'activities', 'activityTemplates'] && access(company);
         allow read: if kind == 'schedules' && access(company) && scheduleDepartmentInScope(app, company, resource.data);
@@ -280,3 +309,4 @@ service cloud.firestore {
     // Regras ativas: validar no emulador antes de cada alteracao publicada.
   }
 }
+

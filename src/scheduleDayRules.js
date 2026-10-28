@@ -102,8 +102,8 @@ export function resolveDayRules(group, date, holiday, userId, base) {
   let conflicts = [];
   const ranks = [...new Set([...candidates.map(item => item.rank), ...(holiday ? [199] : [])])].sort((a, b) => a - b);
   for (const rank of ranks) {
-    if (rank === 199 && !candidates.some(item => item.rule.kind === 'holiday')) {
-      result = { ...result, status: base.holidayFallbackStatus || 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0 };
+    if (rank === 199 && base.holidayCountsAsRest !== false && !candidates.some(item => item.rule.kind === 'holiday')) {
+      result = { ...result, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0 };
       reason = 'Feriado conforme a regra padrão';
       conflicts = [];
     }
@@ -116,43 +116,75 @@ export function resolveDayRules(group, date, holiday, userId, base) {
   return { ...result, groupId: group?.id || '', groupName: group?.name || 'Padrão da empresa', ruleReason: reason, ruleConflicts: conflicts, ruleApplied: candidates.length > 0 };
 }
 
+function employeeScheduleBase(userId, rules, history, firstDate, group) {
+  const shift = (rules.shifts || []).find(item => item.id === group?.shiftId);
+  const shiftPolicy = shift ? Object.fromEntries(['shiftStart', 'shiftEnd', 'breakStart', 'breakEnd'].map(key => [key, shift[key] || ''])) : {};
+  const groupPolicy = { ...shiftPolicy, ...Object.fromEntries(Object.entries(group?.policy || {}).filter(([, value]) => value !== '' && value != null)) };
+  const policy = { workDaysPerWeek: rules.workDaysPerWeek, hoursPerWeek: rules.hoursPerWeek, restEveryDays: rules.restEveryDays,
+    shiftStart: rules.shiftStart, shiftEnd: rules.shiftEnd, breakStart: rules.breakStart, breakEnd: rules.breakEnd,
+    minRestHours: rules.minRestHours, maxDailyHours: rules.maxDailyHours, maxWeeklyHours: rules.maxWeeklyHours,
+    maxExtraHoursPerDay: rules.maxExtraHoursPerDay, limitSeverity: rules.limitSeverity, ...groupPolicy };
+  const override = rules.employeeOverrides?.[userId] || {};
+  const previous = rules.reuseLastSchedule ? history.filter(row => String(row.userId) === String(userId) && isWorking(row) && !row.ruleApplied && !row.manuallyAdjusted && row.startDate < firstDate && row.shiftStart && (row.baseShiftEnd || row.shiftEnd)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0] : null;
+  const base = { status: 'Presencial', shiftStart: override.shiftStart || groupPolicy.shiftStart || previous?.shiftStart || policy.shiftStart, shiftEnd: override.shiftEnd || groupPolicy.shiftEnd || previous?.baseShiftEnd || previous?.shiftEnd || policy.shiftEnd, breakStart: groupPolicy.breakStart ?? previous?.breakStart ?? policy.breakStart, breakEnd: groupPolicy.breakEnd ?? previous?.breakEnd ?? policy.breakEnd };
+  return { base, policy, override, previous };
+}
+
+function workRowForDate(base, override, date) {
+  const shiftEnd = weekday(date) === 6 && override.saturdayEnd ? override.saturdayEnd : base.shiftEnd;
+  const intervalFits = base.breakStart && base.breakEnd && duration(base.shiftStart, base.breakStart) + duration(base.breakStart, base.breakEnd) <= duration(base.shiftStart, shiftEnd);
+  return { ...base, shiftEnd, breakStart: intervalFits ? base.breakStart : '', breakEnd: intervalFits ? base.breakEnd : '', breakMinutes: intervalFits ? duration(base.breakStart, base.breakEnd) : 0 };
+}
+
+export function holidayWorkTemplate(userId, date, rules, history = [], firstDate = date) {
+  const group = normalizeRuleGroups(rules.ruleGroups).find(item => item.userIds.includes(String(userId)));
+  const { base, override } = employeeScheduleBase(userId, rules, history, firstDate, group);
+  return workRowForDate(base, override, date);
+}
+
+export function validateHolidayAssignments(assignments, holidays, userIds) {
+  for (const date of holidays) for (const userId of userIds) {
+    const item = assignments?.[date]?.[userId];
+    if (!item) continue;
+    if (!['Presencial', 'Home Office', 'Folga'].includes(item.status)) return `Feriado de ${date}: escolha trabalho ou folga.`;
+    if (!isWorking(item)) continue;
+    const total = duration(item.shiftStart, item.shiftEnd);
+    const interval = item.breakStart || item.breakEnd ? duration(item.breakStart, item.breakEnd) : 0;
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(interval) || Boolean(item.breakStart) !== Boolean(item.breakEnd) || interval >= total || (item.breakStart && (interval <= 0 || interval > 360 || duration(item.shiftStart, item.breakStart) + interval > total))) return `Feriado de ${date}: revise entrada, saída e intervalo da escala individual.`;
+  }
+  return '';
+}
+
 export function buildRuleSchedule({ dates, users, rules, holidays, history = [], getDepartment = () => '' }) {
   const holidaySet = new Set(holidays);
   const groups = normalizeRuleGroups(rules.ruleGroups);
   const proposals = [];
   for (const [userIndex, user] of users.entries()) {
     const group = groups.find(item => item.userIds.includes(String(user.id)));
-    const shift = (rules.shifts || []).find(item => item.id === group?.shiftId);
-    const shiftPolicy = shift ? Object.fromEntries(['shiftStart', 'shiftEnd', 'breakStart', 'breakEnd'].map(key => [key, shift[key] || ''])) : {};
-    const groupPolicy = { ...shiftPolicy, ...Object.fromEntries(Object.entries(group?.policy || {}).filter(([, value]) => value !== '' && value != null)) };
-    const policy = { workDaysPerWeek: rules.workDaysPerWeek, hoursPerWeek: rules.hoursPerWeek, restEveryDays: rules.restEveryDays,
-      shiftStart: rules.shiftStart, shiftEnd: rules.shiftEnd, breakStart: rules.breakStart, breakEnd: rules.breakEnd,
-      minRestHours: rules.minRestHours, maxDailyHours: rules.maxDailyHours, maxWeeklyHours: rules.maxWeeklyHours,
-      maxExtraHoursPerDay: rules.maxExtraHoursPerDay, limitSeverity: rules.limitSeverity, ...groupPolicy };
+    const { base, policy, override, previous } = employeeScheduleBase(user.id, rules, history, dates[0], group);
     const workDays = Number(policy.workDaysPerWeek);
     const restEvery = Number(policy.restEveryDays);
-    const override = rules.employeeOverrides?.[user.id] || {};
-    const previous = rules.reuseLastSchedule ? history.filter(row => String(row.userId) === String(user.id) && isWorking(row) && !row.ruleApplied && !row.manuallyAdjusted && row.startDate < dates[0] && row.shiftStart && (row.baseShiftEnd || row.shiftEnd)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0] : null;
-    const base = { status: 'Presencial', shiftStart: override.shiftStart || groupPolicy.shiftStart || previous?.shiftStart || policy.shiftStart, shiftEnd: override.shiftEnd || groupPolicy.shiftEnd || previous?.baseShiftEnd || previous?.shiftEnd || policy.shiftEnd, breakStart: groupPolicy.breakStart ?? previous?.breakStart ?? policy.breakStart, breakEnd: groupPolicy.breakEnd ?? previous?.breakEnd ?? policy.breakEnd };
     const weeks = [...new Set(dates.map(monday))];
     for (const weekKey of weeks) {
       const weekDates = Array.from({ length: 7 }, (_, i) => shiftDate(weekKey, i));
       const rows = weekDates.map(date => {
         const holiday = holidaySet.has(date);
         const allowed = (group?.weekdays || rules.allowedWeekdays).includes(weekday(date));
-        const shiftEnd = weekday(date) === 6 && override.saturdayEnd ? override.saturdayEnd : base.shiftEnd;
-        const intervalFits = base.breakStart && base.breakEnd && duration(base.shiftStart, base.breakStart) + duration(base.breakStart, base.breakEnd) <= duration(base.shiftStart, shiftEnd);
-        const defaultRow = { ...base, shiftEnd, breakStart: intervalFits ? base.breakStart : '', breakEnd: intervalFits ? base.breakEnd : '', breakMinutes: intervalFits ? duration(base.breakStart, base.breakEnd) : 0, status: allowed ? 'Presencial' : 'Folga' };
-        defaultRow.holidayFallbackStatus = rules.holidaysCountAsRest ? 'Folga' : 'Feriado';
-        const resolved = resolveDayRules(group, date, holiday, user.id, defaultRow);
+        const defaultRow = { ...workRowForDate(base, override, date), status: allowed ? 'Presencial' : 'Folga', holidayCountsAsRest: rules.holidaysCountAsRest !== false };
+        let resolved = resolveDayRules(group, date, holiday, user.id, defaultRow);
         // A fixed work/rest rule pins the day; an hours-only rule leaves room for a rotating rest day.
-        const pinned = (group?.dayRules || []).some(rule => matchesDayRule(rule, date, holiday, user.id) && rule.action !== 'hours' && !(rule.kind === 'holiday' && rule.action === 'work' && !rule.holidayMayActivate));
-        return { ...resolved, date, holiday, pinned, allowed, userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
+        let pinned = (group?.dayRules || []).some(rule => matchesDayRule(rule, date, holiday, user.id) && rule.action !== 'hours' && !(rule.kind === 'holiday' && rule.action === 'work' && !rule.holidayMayActivate));
+        const assignment = holiday && rules.holidayAssignments?.[date]?.[user.id];
+        if (assignment) {
+          const working = isWorking(assignment);
+          resolved = { ...resolved, status: assignment.status, shiftStart: working ? assignment.shiftStart : '', shiftEnd: working ? assignment.shiftEnd : '', breakStart: working ? assignment.breakStart || '' : '', breakEnd: working ? assignment.breakEnd || '' : '', breakMinutes: working && assignment.breakStart && assignment.breakEnd ? duration(assignment.breakStart, assignment.breakEnd) : 0, ruleReason: 'Feriado configurado individualmente', ruleConflicts: [], ruleApplied: true, holidayConfigured: true };
+          pinned = true;
+        }
+        return { ...resolved, date, holiday, holidayWorkingDay: holiday && rules.holidaysCountAsRest === false, pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
       });
       const pinnedWork = rows.filter(row => row.pinned && isWorking(row)).length;
       const flexible = rows.filter(row => !row.pinned && isWorking(row));
-      const additionalHolidayRest = rules.holidaysCountAsRest ? 0 : rows.filter(row => row.holiday && row.allowed && !isWorking(row)).length;
-      const desired = Math.max(pinnedWork, workDays - additionalHolidayRest);
+      const desired = Math.max(pinnedWork, workDays);
       const restCount = Math.max(0, flexible.length - Math.max(0, desired - pinnedWork));
       const weekNumber = Math.floor(stamp(weekKey) / (7 * DAY));
       const restSet = new Set();
@@ -240,3 +272,4 @@ export function scheduleRuleIssues(rows, history = []) {
   }
   return issues;
 }
+
