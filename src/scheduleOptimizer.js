@@ -78,7 +78,7 @@ export function balancePreparedScheduleProposal(prepared, baseline, requirements
   return rows;
 }
 
-export function proposalScheduleRecords(rows, history = []) {
+function retainedScheduleRecords(rows, history) {
   if (!rows.length) return history;
   const users = new Set(rows.map(row => String(row.userId)));
   const dates = rows.map(row => row.date).sort(), start = dates[0], end = dates.at(-1);
@@ -88,135 +88,155 @@ export function proposalScheduleRecords(rows, history = []) {
     if (item.startDate < start) retained.push({ ...item, endDate: shiftDate(start, -1) });
     if (item.endDate > end) retained.push({ ...item, startDate: shiftDate(end, 1) });
   }
-  const created = rows.filter(row => !isProtectedProposalRow(row)).map(row => {
-    const end = time(row.shiftEnd) + Math.round((Number(row.extraHours) || 0) * 60);
-    return { ...row, id: `preview-${row.key}`, startDate: row.date, endDate: row.date, shiftEnd: isWorking(row) && Number.isFinite(end) ? clock(end) : row.shiftEnd };
-  });
-  return [...retained, ...created];
+  return retained;
 }
 
-export function analyzeProposalCoverage(rows, requirements, { history = [], absences = [], employees = [], getDepartments } = {}, selectedDates = null) {
-  const schedules = proposalScheduleRecords(rows, history);
-  const days = [...new Set(rows.map(row => row.date))].filter(date => !selectedDates || selectedDates.has(date)).sort().map(date => ({ date, ...coverageForDay(date, requirements, { schedules, absences, employees, getDepartments }) }));
+const proposalRecord = row => {
+  const end = time(row.shiftEnd) + Math.round((Number(row.extraHours) || 0) * 60);
+  return { ...row, id: `preview-${row.key}`, startDate: row.date, endDate: row.date, shiftEnd: isWorking(row) && Number.isFinite(end) ? clock(end) : row.shiftEnd };
+};
+
+export function proposalScheduleRecords(rows, history = []) {
+  return [...retainedScheduleRecords(rows, history), ...rows.filter(row => !isProtectedProposalRow(row)).map(proposalRecord)];
+}
+
+// Keep stable calendar records indexed while evaluating only changed civil days.
+// The previous day remains present so overnight shifts and absences still count.
+function proposalCoverageEvaluator(rows, requirements, { history = [], absences = [], employees = [], getDepartments } = {}) {
+  const retained = retainedScheduleRecords(rows, history);
+  const byDate = new Map();
+  rows.forEach((row, index) => byDate.set(row.date, [...(byDate.get(row.date) || []), index]));
+  const stableByDate = new Map();
+  return date => {
+    const yesterday = shiftDate(date, -1);
+    if (!stableByDate.has(date)) stableByDate.set(date, retained.filter(row => inRange(row, date) || inRange(row, yesterday)));
+    const changing = [...(byDate.get(date) || []), ...(byDate.get(yesterday) || [])].map(index => rows[index]).filter(row => !isProtectedProposalRow(row)).map(proposalRecord);
+    return { date, ...coverageForDay(date, requirements, { schedules: [...stableByDate.get(date), ...changing], absences, employees, getDepartments }) };
+  };
+}
+
+const dayMetrics = day => {
+  let required = 0, missing = 0, severity = 0, spare = 0;
+  for (const rule of day.rules) for (const segment of rule.segments) {
+    const duration = time(segment.end) - time(segment.start);
+    required += duration * rule.minimum;
+    missing += duration * segment.missing;
+    // At equal total shortage, avoid concentrating the deficit on a few days.
+    severity += duration * segment.missing ** 2 / rule.minimum;
+    spare += duration * Math.max(0, segment.available - rule.minimum);
+  }
+  return { required, missing, severity, spare };
+};
+
+export function analyzeProposalCoverage(rows, requirements, context = {}, selectedDates = null) {
+  const evaluate = proposalCoverageEvaluator(rows, requirements, context);
+  const days = [...new Set(rows.map(row => row.date))].filter(date => !selectedDates || selectedDates.has(date)).sort().map(evaluate);
   let requiredMinutes = 0, missingMinutes = 0, gaps = 0, unknown = 0;
-  for (const day of days) for (const rule of day.rules) {
-    unknown += rule.unknown;
-    for (const segment of rule.segments) {
-      const duration = time(segment.end) - time(segment.start);
-      requiredMinutes += duration * rule.minimum;
-      missingMinutes += duration * segment.missing;
-      if (segment.missing) gaps++;
-    }
+  for (const day of days) {
+    const metrics = dayMetrics(day);
+    requiredMinutes += metrics.required;
+    missingMinutes += metrics.missing;
+    for (const rule of day.rules) { unknown += rule.unknown; gaps += rule.segments.filter(segment => segment.missing > 0).length; }
   }
   return { days, requiredMinutes, missingMinutes, gaps, unknown, coveredPercent: requiredMinutes ? Math.round(1000 * (1 - missingMinutes / requiredMinutes)) / 10 : null };
 }
 
-// Start with the available capacity and place rest days where they cost the least
-// coverage. Only interchangeable daytime shifts participate; fixed rules survive.
-export function buildCoverageFirstProposal(input, requirements, context = {}, { maxEvaluations = 2400 } = {}) {
-  if (!requirements.length) return optimizeScheduleCoverage(input, requirements, context);
-  const original = input.map(row => ({ ...row }));
+export function buildCoverageFirstProposal(input, requirements, context = {}, options = {}) {
+  return optimizeScheduleCoverage(input, requirements, context, options);
+}
+
+// One actionable entry per requirement/day, showing its worst uncovered slot.
+export function coverageShortfalls(analysis, rows = []) {
+  return analysis.days.flatMap(day => day.rules.flatMap(rule => {
+    const worst = rule.segments.filter(segment => segment.missing > 0).sort((a, b) => b.missing - a.missing || a.start.localeCompare(b.start))[0];
+    if (!worst) return [];
+    const off = rows.filter(row => row.date === day.date && row.dept === rule.department && row.status === 'Folga');
+    return [{ ...worst, date: day.date, department: rule.department, ruleId: rule.id, minimum: rule.minimum,
+      adjustableRest: off.filter(row => !isFixedProposalRow(row) && !row.holiday && row.allowed !== false).length,
+      fixedRest: off.filter(row => isFixedProposalRow(row) || row.holiday || row.allowed === false).length }];
+  })).sort((a, b) => b.missing / b.minimum - a.missing / a.minimum || b.missing - a.missing || a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
+}
+
+// Repair the largest coverage deficits first, moving an existing workday to a
+// free day of the same person/week. Never increase days, hours or rule conflicts.
+export function optimizeScheduleCoverage(input, requirements, context = {}, options = {}) {
   const rows = input.map(row => ({ ...row }));
-  const before = analyzeProposalCoverage(original, requirements, context);
-  const groups = new Map();
+  const before = analyzeProposalCoverage(rows, requirements, context);
+  let evaluations = 0, swaps = 0, limited = false;
+  if (!before.requiredMinutes || !before.missingMinutes) return { rows, before, after: before, swaps, evaluations, limited };
+  const history = context.history || [];
+  const groups = new Map(), people = new Map(), weeks = new Map();
   rows.forEach((row, index) => {
     const key = `${row.userId}|${row.weekKey}`;
     groups.set(key, [...(groups.get(key) || []), index]);
+    people.set(String(row.userId), [...(people.get(String(row.userId)) || []), index]);
+    weeks.set(row.weekKey, [...(weeks.get(row.weekKey) || []), index]);
   });
-  const flexible = row => !isFixedProposalRow(row) && !row.holiday && row.allowed !== false && ['Presencial', 'Home Office', 'Folga'].includes(row.status);
-  const payload = row => Object.fromEntries(operational.map(field => [field, row[field] ?? '']));
-  const rest = row => ({ ...row, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, shift: 'Folga', coverageAdjusted: true, ruleReason: 'Folga definida pela necessidade de cobertura' });
-  let evaluations = 0;
-  for (const indexes of groups.values()) {
-    if (evaluations >= maxEvaluations) break;
-    const free = indexes.filter(index => flexible(rows[index]));
-    const working = free.filter(index => isWorking(rows[index]));
-    const template = rows[working[0]];
-    // Keep heterogeneous, overnight or extra-hour patterns exactly as proposed.
-    if (!template || !Number.isFinite(time(template.shiftStart)) || time(template.shiftEnd) <= time(template.shiftStart) || Number(template.extraHours) || working.some(index => JSON.stringify(payload(rows[index])) !== JSON.stringify(payload(template)))) continue;
-    const target = working.length;
-    free.forEach(index => { rows[index] = { ...rows[index], ...payload(template) }; });
-    let count = free.length;
-    while (count > target && evaluations < maxEvaluations) {
-      let best = null;
-      for (const index of free) {
-        const source = rows[index];
-        if (!isWorking(source)) continue;
-        rows[index] = rest(source);
-        evaluations++;
-        const date = new Set([source.date]);
-        const analysis = analyzeProposalCoverage(rows, requirements, context, date);
-        const issues = scheduleRuleIssues(rows.filter(row => row.userId === source.userId), context.history || []).filter(issue => issue.blocking).length;
-        // The secondary score spreads spare capacity instead of filling one day.
-        const load = rows.filter(row => row.date === source.date && row.dept === source.dept && isWorking(row)).length;
-        const candidate = { index, missing: analysis.missingMinutes, issues, load };
-        rows[index] = source;
-        if (!best || candidate.issues < best.issues || (candidate.issues === best.issues && (candidate.missing < best.missing || (candidate.missing === best.missing && candidate.load > best.load)))) best = candidate;
-        if (evaluations >= maxEvaluations) break;
-      }
-      if (!best) break;
-      rows[best.index] = rest(rows[best.index]);
-      count--;
-    }
-    // Never leave a partially allocated week when the search budget expires.
-    if (count !== target) indexes.forEach(index => { rows[index] = { ...original[index] }; });
-  }
-  const originalIssues = new Set(scheduleRuleIssues(original, context.history || []).filter(issue => issue.blocking).map(issue => `${issue.key}|${issue.message}`));
-  const newIssue = scheduleRuleIssues(rows, context.history || []).some(issue => issue.blocking && !originalIssues.has(`${issue.key}|${issue.message}`));
-  const seed = !newIssue && analyzeProposalCoverage(rows, requirements, context).missingMinutes <= before.missingMinutes ? rows : original;
-  const result = optimizeScheduleCoverage(seed, requirements, context);
-  const changedDays = result.rows.filter((row, index) => row.status !== original[index].status).length;
-  return { ...result, before, swaps: Math.floor(changedDays / 2), evaluations: evaluations + result.evaluations, limited: result.limited || evaluations >= maxEvaluations };
-}
-
-// Bounded local search: swap one workday/rest day of the same person and week.
-// It preserves weekly workdays/hours, explicit rules, absences and manual pins.
-export function optimizeScheduleCoverage(input, requirements, context = {}, { maxEvaluations = 1600, maxSwaps = 100 } = {}) {
-  const rows = input.map(row => ({ ...row }));
-  const before = analyzeProposalCoverage(rows, requirements, context);
-  let evaluations = 0, swaps = 0;
-  if (!before.requiredMinutes || !before.missingMinutes) return { rows, before, after: before, swaps, evaluations, limited: false };
-  const history = context.history || [];
-  const groups = new Map();
-  rows.forEach((row, index) => { const key = `${row.userId}|${row.weekKey}`; groups.set(key, [...(groups.get(key) || []), index]); });
+  const maxEvaluations = options.maxEvaluations ?? Math.min(24000, Math.max(1600, groups.size * 40));
+  const maxSwaps = options.maxSwaps ?? Math.max(100, groups.size * 5);
   const isFlexible = row => !isFixedProposalRow(row) && !row.holiday && row.allowed !== false && ['Presencial', 'Home Office', 'Folga'].includes(row.status);
   const safeDaytime = row => Number.isFinite(time(row.shiftStart)) && time(row.shiftEnd) > time(row.shiftStart) && time(row.shiftEnd) + (Number(row.extraHours) || 0) * 60 < 1440;
-  const score = result => result.missingMinutes;
-  // Only two civil dates change; nighttime shifts are deliberately kept in place.
-  const measure = (proposal, dates) => analyzeProposalCoverage(proposal, requirements, context, dates).days;
-  const dayMissing = day => day.rules.reduce((sum, rule) => sum + rule.segments.reduce((total, segment) => total + (time(segment.end) - time(segment.start)) * segment.missing, 0), 0);
-  let changed = true;
-  while (changed && evaluations < maxEvaluations && swaps < maxSwaps) {
-    changed = false;
-    for (const indexes of groups.values()) {
-      if (evaluations >= maxEvaluations || swaps >= maxSwaps) break;
-      for (const workIndex of indexes) {
-        if (!isFlexible(rows[workIndex]) || !isWorking(rows[workIndex]) || !safeDaytime(rows[workIndex])) continue;
-        for (const offIndex of indexes) {
-          if (evaluations >= maxEvaluations || swaps >= maxSwaps) break;
+  const evaluate = proposalCoverageEvaluator(rows, requirements, context);
+  const days = new Map(before.days.map(day => [day.date, day]));
+  const personIssues = userId => scheduleRuleIssues(people.get(String(userId)).map(index => rows[index]), history).filter(issue => issue.blocking);
+  const issueKey = issue => `${issue.key}|${issue.message}`;
+  const baselineIssues = new Map([...people.keys()].map(userId => [userId, new Set(personIssues(userId).map(issueKey))]));
+  // Each week gets a share of the budget. Earlier weeks cannot exhaust the month.
+  // Start from the end: following-week rest days are known before moving a weekend.
+  let weekIndex = 0;
+  for (const [, indexes] of [...weeks.entries()].sort(([a], [b]) => String(b).localeCompare(String(a)))) {
+    const budget = Math.floor(maxEvaluations / weeks.size) + (weekIndex++ < maxEvaluations % weeks.size ? 1 : 0);
+    const deadline = evaluations + budget;
+    const dates = [...new Set(indexes.map(index => rows[index].date))];
+    let changed = true;
+    while (changed && evaluations < deadline && swaps < maxSwaps) {
+      changed = false;
+      const targets = dates.filter(date => dayMetrics(days.get(date)).missing > 0).sort((a, b) => {
+        const worst = date => Math.max(0, ...days.get(date).rules.flatMap(rule => rule.segments.map(segment => segment.missing / rule.minimum)));
+        return worst(b) - worst(a) || dayMetrics(days.get(b)).missing - dayMetrics(days.get(a)).missing || a.localeCompare(b);
+      });
+      for (const targetDate of targets) {
+        let applied = false;
+        const target = days.get(targetDate);
+        const departments = new Set(target.rules.filter(rule => rule.segments.some(segment => segment.missing > 0)).map(rule => rule.department));
+        const candidates = indexes.filter(index => {
+          const row = rows[index];
+          const employee = context.employees?.find(user => String(user.id) === String(row.userId));
+          const department = row.dept || (employee && context.getDepartments ? context.getDepartments(employee)[0] : '');
+          return row.date === targetDate && row.status === 'Folga' && isFlexible(row) && departments.has(department);
+        }).flatMap(offIndex => (groups.get(`${rows[offIndex].userId}|${rows[offIndex].weekKey}`) || []).filter(workIndex => isFlexible(rows[workIndex]) && isWorking(rows[workIndex]) && safeDaytime(rows[workIndex])).map(workIndex => ({ offIndex, workIndex })));
+        // Prefer donors with spare coverage, avoiding irrelevant moves and scans.
+        candidates.sort((a, b) => dayMetrics(days.get(rows[b.workIndex].date)).spare - dayMetrics(days.get(rows[a.workIndex].date)).spare || a.offIndex - b.offIndex || a.workIndex - b.workIndex);
+        for (const { offIndex, workIndex } of candidates) {
+          if (evaluations >= deadline || swaps >= maxSwaps) break;
           const work = rows[workIndex], off = rows[offIndex];
-          if (!isFlexible(off) || off.status !== 'Folga') continue;
-          evaluations++;
-          const dates = new Set([work.date, off.date]);
-          const oldDays = measure(rows, dates);
+          const oldWorkDay = days.get(work.date), oldOffDay = days.get(off.date);
+          const oldWork = dayMetrics(oldWorkDay), oldOff = dayMetrics(oldOffDay);
           const payload = Object.fromEntries(operational.map(field => [field, work[field] ?? '']));
-          rows[workIndex] = { ...work, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, shift: 'Folga', coverageAdjusted: true, ruleReason: 'Folga reorganizada para melhorar a cobertura' };
-          rows[offIndex] = { ...off, ...payload, coverageAdjusted: true, ruleReason: 'Trabalho reorganizado para melhorar a cobertura' };
-          const personRows = rows.filter(row => String(row.userId) === String(work.userId));
-          const issues = scheduleRuleIssues(personRows, history).filter(issue => issue.blocking);
-          const newDays = issues.length ? null : measure(rows, dates);
-          const improved = newDays && newDays.reduce((sum, day) => sum + dayMissing(day), 0) < oldDays.reduce((sum, day) => sum + dayMissing(day), 0)
-            && newDays.every(day => dayMissing(day) === 0 || dayMissing(oldDays.find(old => old.date === day.date)) > 0);
-          if (improved) { swaps++; changed = true; break; }
+          rows[workIndex] = { ...work, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, shift: 'Folga', coverageAdjusted: true, ruleReason: 'Folga reorganizada para atender o mínimo de pessoas' };
+          rows[offIndex] = { ...off, ...payload, coverageAdjusted: true, ruleReason: 'Trabalho redistribuído de um dia com mais cobertura' };
+          evaluations++;
+          const newWorkDay = evaluate(work.date), newOffDay = evaluate(off.date);
+          const nextWork = dayMetrics(newWorkDay), nextOff = dayMetrics(newOffDay);
+          const oldMissing = oldWork.missing + oldOff.missing, nextMissing = nextWork.missing + nextOff.missing;
+          const improves = nextMissing < oldMissing || (nextMissing === oldMissing && nextWork.severity + nextOff.severity < oldWork.severity + oldOff.severity - 0.001);
+          const keepsCovered = [newWorkDay, newOffDay].every(day => day.rules.every(rule => rule.segments.every(segment => !segment.missing || (days.get(day.date).rules.find(old => old.id === rule.id)?.segments || []).filter(old => time(old.start) < time(segment.end) && time(old.end) > time(segment.start)).every(old => old.missing > 0))));
+          const valid = improves && keepsCovered && !personIssues(work.userId).some(issue => !baselineIssues.get(String(work.userId)).has(issueKey(issue)));
+          if (valid) {
+            days.set(work.date, newWorkDay); days.set(off.date, newOffDay);
+            swaps++; changed = true; applied = true;
+            break;
+          }
           rows[workIndex] = work; rows[offIndex] = off;
         }
+        if (applied) break; // Re-rank deficits after each accepted move.
       }
     }
+    if (dates.some(date => dayMetrics(days.get(date)).missing > 0) && (evaluations >= deadline || swaps >= maxSwaps)) limited = true;
   }
   const after = analyzeProposalCoverage(rows, requirements, context);
-  // Defensive guard for future changes in coverage calculation.
-  if (score(after) > score(before)) return { rows: input, before, after: before, swaps: 0, evaluations, limited: true };
-  return { rows, before, after, swaps, evaluations, limited: evaluations >= maxEvaluations || swaps >= maxSwaps };
+  if (after.missingMinutes > before.missingMinutes) return { rows: input, before, after: before, swaps: 0, evaluations, limited: true };
+  return { rows, before, after, swaps, evaluations, limited };
 }
 
 export function planSchedulePublication(rows, history, segments, publicationId) {
@@ -248,3 +268,4 @@ export function planSchedulePublication(rows, history, segments, publicationId) 
   if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('Há identificações repetidas na publicação.');
   return { records, replaced, schedules: [...retained, ...segments], deletedIds: replaced.map(item => item.id) };
 }
+
