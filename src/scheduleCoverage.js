@@ -12,6 +12,7 @@ export function normalizeCoverageRequirements(value) {
     department: String(rule?.department || '').slice(0, 100),
     start: String(rule?.start || ''), end: String(rule?.end || ''),
     minimum: Number(rule?.minimum),
+    maximum: rule?.maximum === '' || rule?.maximum == null ? null : Number(rule.maximum),
     weekdays: [...new Set((Array.isArray(rule?.weekdays) ? rule.weekdays : []).map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))].sort(),
     includeRemote: rule?.includeRemote === true,
   }));
@@ -26,6 +27,7 @@ export function validateCoverageRequirements(rules, departments) {
     if (!departments.some(item => item.id === rule.department)) return 'Selecione um setor válido.';
     if (minutes(rule.start) == null || minutes(rule.end) == null || minutes(rule.start) >= minutes(rule.end)) return 'O fim da faixa deve ser posterior ao início. Para a madrugada, cadastre faixas separadas por dia.';
     if (!Number.isInteger(rule.minimum) || rule.minimum < 1 || rule.minimum > 500) return 'Informe um mínimo inteiro de 1 a 500 pessoas.';
+    if (rule.maximum != null && (!Number.isInteger(rule.maximum) || rule.maximum < rule.minimum || rule.maximum > 500)) return 'Informe um máximo inteiro entre o mínimo e 500 pessoas, ou deixe o campo vazio.';
     if (!rule.weekdays?.length || rule.weekdays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) return 'Selecione ao menos um dia da semana.';
   }
   return '';
@@ -102,7 +104,7 @@ export function coverageForDay(date, requirements, { schedules = [], absences = 
         && !(blocks.get(item.id) || []).some(([x, y]) => x < b && y > a)).map(item => item.id)).size;
       const last = segments.at(-1);
       if (last && last.available === available && last.end === clock(a)) last.end = clock(b);
-      else segments.push({ start: clock(a), end: clock(b), available, missing: Math.max(0, rule.minimum - available) });
+      else segments.push({ start: clock(a), end: clock(b), available, missing: Math.max(0, rule.minimum - available), ...(rule.maximum == null ? {} : { excess: Math.max(0, available - rule.maximum) }) });
     }
     const shortage = segments.some(item => item.missing > 0);
     results.push({ ...rule, segments, unknown: unknown.size, status: shortage ? (unknown.size ? 'unknown' : 'shortage') : 'sufficient' });
@@ -111,5 +113,7 @@ export function coverageForDay(date, requirements, { schedules = [], absences = 
     rules: results,
     status: results.some(item => item.status === 'shortage') ? 'shortage' : results.some(item => item.status === 'unknown') ? 'unknown' : results.length ? 'sufficient' : 'none',
     missingMax: Math.max(0, ...results.flatMap(item => item.segments.map(segment => segment.missing))),
+    excessMax: Math.max(0, ...results.flatMap(item => item.segments.map(segment => segment.excess || 0))),
   };
 }
+

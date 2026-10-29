@@ -119,29 +119,31 @@ function proposalCoverageEvaluator(rows, requirements, { history = [], absences 
 }
 
 const dayMetrics = day => {
-  let required = 0, missing = 0, severity = 0, spare = 0;
+  let required = 0, missing = 0, severity = 0, spare = 0, excess = 0;
   for (const rule of day.rules) for (const segment of rule.segments) {
     const duration = time(segment.end) - time(segment.start);
     required += duration * rule.minimum;
     missing += duration * segment.missing;
     // At equal total shortage, avoid concentrating the deficit on a few days.
     severity += duration * segment.missing ** 2 / rule.minimum;
-    spare += duration * Math.max(0, segment.available - rule.minimum);
+    excess += duration * (segment.excess || 0);
+    spare += duration * Math.max(0, segment.available - (rule.maximum ?? rule.minimum));
   }
-  return { required, missing, severity, spare };
+  return { required, missing, severity, spare, excess };
 };
 
 export function analyzeProposalCoverage(rows, requirements, context = {}, selectedDates = null) {
   const evaluate = proposalCoverageEvaluator(rows, requirements, context);
   const days = [...new Set(rows.map(row => row.date))].filter(date => !selectedDates || selectedDates.has(date)).sort().map(evaluate);
-  let requiredMinutes = 0, missingMinutes = 0, gaps = 0, unknown = 0;
+  let requiredMinutes = 0, missingMinutes = 0, excessMinutes = 0, gaps = 0, unknown = 0;
   for (const day of days) {
     const metrics = dayMetrics(day);
     requiredMinutes += metrics.required;
     missingMinutes += metrics.missing;
+    excessMinutes += metrics.excess;
     for (const rule of day.rules) { unknown += rule.unknown; gaps += rule.segments.filter(segment => segment.missing > 0).length; }
   }
-  return { days, requiredMinutes, missingMinutes, gaps, unknown, coveredPercent: requiredMinutes ? Math.round(1000 * (1 - missingMinutes / requiredMinutes)) / 10 : null };
+  return { days, requiredMinutes, missingMinutes, excessMinutes, gaps, unknown, coveredPercent: requiredMinutes ? Math.round(1000 * (1 - missingMinutes / requiredMinutes)) / 10 : null };
 }
 
 export function buildCoverageFirstProposal(input, requirements, context = {}, options = {}) {
@@ -177,7 +179,11 @@ export function optimizeScheduleCoverage(input, requirements, context = {}, opti
   });
   const maxEvaluations = options.maxEvaluations ?? Math.min(24000, Math.max(1600, groups.size * 40));
   const maxSwaps = options.maxSwaps ?? Math.max(100, groups.size * 5);
-  const isFlexible = row => !isFixedProposalRow(row) && (!row.holiday || row.holidayWorkingDay) && row.allowed !== false && ['Presencial', 'Home Office', 'Folga'].includes(row.status);
+  const weekday = date => new Date(`${date}T12:00:00`).getDay();
+  const operationalNeed = row => requirements.some(rule => rule.department === row.dept && rule.weekdays?.includes(weekday(row.date)) && Number(rule.minimum) > 0);
+  // A necessidade da operação pode ativar um dia fora do padrão genérico. Regras
+  // individuais, ausências, feriados protegidos e dias fixados continuam imutáveis.
+  const isFlexible = row => !isFixedProposalRow(row) && (!row.holiday || row.holidayWorkingDay) && (row.allowed !== false || operationalNeed(row)) && ['Presencial', 'Home Office', 'Folga'].includes(row.status);
   const safeDaytime = row => Number.isFinite(time(row.shiftStart)) && time(row.shiftEnd) > time(row.shiftStart) && time(row.shiftEnd) + (Number(row.extraHours) || 0) * 60 < 1440;
   const evaluate = proposalCoverageEvaluator(rows, requirements, context);
   const days = new Map(before.days.map(day => [day.date, day]));
@@ -222,9 +228,11 @@ export function optimizeScheduleCoverage(input, requirements, context = {}, opti
           const newWorkDay = evaluate(work.date), newOffDay = evaluate(off.date);
           const nextWork = dayMetrics(newWorkDay), nextOff = dayMetrics(newOffDay);
           const oldMissing = oldWork.missing + oldOff.missing, nextMissing = nextWork.missing + nextOff.missing;
-          const improves = nextMissing < oldMissing || (nextMissing === oldMissing && nextWork.severity + nextOff.severity < oldWork.severity + oldOff.severity - 0.001);
+          const oldExcess = oldWork.excess + oldOff.excess, nextExcess = nextWork.excess + nextOff.excess;
+          const improves = nextMissing < oldMissing || (nextMissing === oldMissing && (nextExcess < oldExcess || (nextExcess === oldExcess && nextWork.severity + nextOff.severity < oldWork.severity + oldOff.severity - 0.001)));
           const keepsCovered = [newWorkDay, newOffDay].every(day => day.rules.every(rule => rule.segments.every(segment => !segment.missing || (days.get(day.date).rules.find(old => old.id === rule.id)?.segments || []).filter(old => time(old.start) < time(segment.end) && time(old.end) > time(segment.start)).every(old => old.missing > 0))));
-          const valid = improves && keepsCovered && !personIssues(work.userId).some(issue => !baselineIssues.get(String(work.userId)).has(issueKey(issue)));
+          const keepsMaximum = [newWorkDay, newOffDay].every(day => day.rules.every(rule => rule.segments.every(segment => !segment.excess || (days.get(day.date).rules.find(old => old.id === rule.id)?.segments || []).filter(old => time(old.start) < time(segment.end) && time(old.end) > time(segment.start)).some(old => old.excess > 0))));
+          const valid = improves && keepsCovered && keepsMaximum && !personIssues(work.userId).some(issue => !baselineIssues.get(String(work.userId)).has(issueKey(issue)));
           if (valid) {
             days.set(work.date, newWorkDay); days.set(off.date, newOffDay);
             swaps++; changed = true; applied = true;
@@ -274,4 +282,5 @@ export function planSchedulePublication(rows, history, segments, publicationId) 
   if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('Há identificações repetidas na publicação.');
   return { records, replaced, schedules: [...retained, ...segments], deletedIds: replaced.map(item => item.id) };
 }
+
 

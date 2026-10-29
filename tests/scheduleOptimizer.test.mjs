@@ -28,6 +28,16 @@ test('melhora cobertura com troca dentro da semana, sem mudar dias nem horas da 
   assert.equal(original[1].status, 'Folga');
 });
 
+test('necessidade de domingo ativa o dia mesmo fora dos dias padrão', () => {
+  const rows = week().map(row => ({ ...row, allowed: new Date(`${row.date}T12:00:00`).getDay() !== 0 }));
+  const sundayNeed = { ...requirement, weekdays: [0] };
+  const result = optimizeScheduleCoverage(rows, [sundayNeed], context);
+  const sunday = result.rows.find(row => new Date(`${row.date}T12:00:00`).getDay() === 0);
+  assert.equal(result.after.missingMinutes, 0);
+  assert.equal(sunday.status, 'Presencial');
+  assert.equal(result.rows.filter(row => row.status === 'Presencial').length, 5);
+});
+
 test('não cria falta em uma faixa que já estava coberta', () => {
   const rows = week().map(row => ({ ...row, locked: row.date !== start && row.date !== shiftDate(start, 1) }));
   const monday = { ...requirement, id: 'monday', weekdays: [1] };
@@ -206,4 +216,5 @@ test('pendências mostram a pior faixa, priorizam maior déficit relativo e dist
   assert.equal(items.find(item => item.date === shiftDate(start, 6)).adjustableRest, 2);
   assert.deepEqual(coverageShortfalls({ days: [] }), []);
 });
+
 

@@ -86,3 +86,16 @@ test('validação rejeita setor inválido, mínimo fracionário, dias vazios e f
   assert.ok(validateCoverageRequirements([rule, rule], departments));
   assert.deepEqual(normalizeCoverageRequirements(null), []);
 });
+
+test('máximo é opcional, precisa respeitar o mínimo e aponta concentração', () => {
+  const departments = [{ id: 'op' }];
+  assert.equal(validateCoverageRequirements([{ ...rule, maximum: null }], departments), '');
+  assert.equal(validateCoverageRequirements([{ ...rule, maximum: 1 }], departments), 'Informe um máximo inteiro entre o mínimo e 500 pessoas, ou deixe o campo vazio.');
+  const normalized = normalizeCoverageRequirements([{ ...rule, maximum: '' }, { ...rule, id: 'r2', maximum: '3' }]);
+  assert.equal(normalized[0].maximum, null);
+  assert.equal(normalized[1].maximum, 3);
+  const result = coverageForDay(date, [{ ...rule, minimum: 1, maximum: 2 }], data([shift(1), shift(2), shift(3)]));
+  assert.equal(result.rules[0].segments[0].excess, 1);
+  assert.equal(result.excessMax, 1);
+});
+
