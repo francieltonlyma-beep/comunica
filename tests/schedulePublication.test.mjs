@@ -1,3 +1,5 @@
+import { TextEncoder } from 'node:util';
+import { assertSchedulePublicationSize } from '../src/schedulePublicationLimits.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -122,7 +124,7 @@ function transactionContext({ changedBefore = false, changedDuring = false, fail
   const source = [history[0]], committed = [], notifications = [];
   const snapshot = item => ({ id: item.id, exists: () => true, data: () => ({ ...item }) });
   const context = {
-    isFirebaseAvailable: true, dbUser: { uid: 'admin' }, activeCompany: { id: 'company' }, db: {},
+    assertSchedulePublicationSize, TextEncoder, isFirebaseAvailable: true, dbUser: { uid: 'admin' }, activeCompany: { id: 'company' }, db: {},
     scopedScheduleSource: collection => collection, scheduleScope: { allDepartments: true }, query() {}, where() {},
     getTenantCollection: () => 'schedules', doc: (collection, id) => collection + '/' + id, scheduleSignature,
     getDocsFromServer: async () => ({ docs: (changedBefore ? [{ ...source[0], locked: true }] : source).map(snapshot) }),
@@ -160,5 +162,28 @@ test('transação confirma exclusão e novas escalas sem gravações parciais', 
   );
   assert.equal(ok, true);
   assert.deepEqual(state.committed.map(item => item[0]), ['delete', 'set']);
+});
+
+test('mais de 450 operações publicam em uma única transação e falha não deixa parte da escala salva', async () => {
+  const records = [{ collection: 'schedules', id: 'auto', operation: 'delete' }, ...Array.from({ length: 930 }, (_, index) => ({ collection: 'schedules', id: `day-${index}`, data: { userId: `u-${index % 30}`, dept: 'op', status: 'Folga' } }))];
+  for (const fail of [false, true]) {
+    const state = transactionContext({ fail });
+    const save = extract('saveRelatedRecords', 'updateDocField', state.context);
+    const ok = await save(records, 'Falha', { companyId: 'company', history: state.source, replaced: state.source });
+    assert.equal(ok, !fail);
+    assert.equal(state.committed.length, fail ? 0 : 931);
+  }
+});
+
+test('volume excessivo é recusado antes de consultar ou gravar no servidor', async () => {
+  const state = transactionContext();
+  state.context.getDocsFromServer = () => { throw new Error('Não deve consultar o servidor'); };
+  const ok = await extract('saveRelatedRecords', 'updateDocField', state.context)(
+    [{ collection: 'schedules', id: 'oversized', data: { notes: 'x'.repeat(7 * 1024 * 1024) } }],
+    'Falha', { companyId: 'company', history: state.source, replaced: state.source },
+  );
+  assert.equal(ok, false);
+  assert.equal(state.committed.length, 0);
+  assert.match(state.notifications[0], /volume de dados/);
 });
 

@@ -99,11 +99,9 @@ test('publicação parcial conserva datas externas e não exclui marcações man
   assert.ok(effective.some(row => row.id === 'manual'));
 });
 
-test('recusa dias ausentes, novas marcações fixas e publicações acima do limite atômico', () => {
+test('recusa dias ausentes e novas marcações fixas', () => {
   assert.throws(() => planSchedulePublication([week()[0], week()[2]], [], [], 'p'), /todos os dias/);
   assert.throws(() => planSchedulePublication(week(), [{ id: 'new-manual', userId: 'u', startDate: start, endDate: start, status: 'Folga' }], [], 'p'), /fixa/);
-  const segments = Array.from({ length: 451 }, (_, index) => ({ id: 'segment-' + index }));
-  assert.throws(() => planSchedulePublication(week(), [], segments, 'p'), /450/);
 });
 
 test('assinatura detecta alterações e independe da ordem retornada pela nuvem', () => {

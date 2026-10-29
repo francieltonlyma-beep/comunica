@@ -1,4 +1,5 @@
 import { coverageForDay } from './scheduleCoverage.js';
+import { assertSchedulePublicationSize } from './schedulePublicationLimits.js';
 import { isWorking, scheduleRuleIssues, shiftDate } from './scheduleDayRules.js';
 
 const operational = ['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes', 'extraHours', 'shift'];
@@ -264,7 +265,7 @@ export function planSchedulePublication(rows, history, segments, publicationId) 
     ...[...retained, ...segments].map(item => ({ collection: 'schedules', id: item.id, data: item })),
   ];
   if (!records.length) return { records: [], replaced, schedules: retained, deletedIds: [] };
-  if (records.length > 450) throw new Error('Reduza o período ou a equipe: a reorganização ultrapassa 450 operações por publicação.');
+  assertSchedulePublicationSize(records, replaced);
   if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('Há identificações repetidas na publicação.');
   return { records, replaced, schedules: [...retained, ...segments], deletedIds: replaced.map(item => item.id) };
 }

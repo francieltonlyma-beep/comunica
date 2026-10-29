@@ -1,3 +1,4 @@
+import { assertSchedulePublicationSize } from './schedulePublicationLimits.js';
 import ScheduleShiftEditor from './ScheduleShiftEditor.jsx';
 import { normalizeScheduleShifts, validateScheduleShifts } from './scheduleShifts.js';
 import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
@@ -2270,7 +2271,8 @@ const getStatusEmTempoReal = (colaborador) => {
     try {
       if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
       if (scheduleGuard) {
-        if (scheduleGuard.companyId !== activeCompany?.id || !records.length || records.length > 450 || records.some(record => record.collection !== 'schedules')) throw new Error('Publicação de escala inválida.');
+        if (scheduleGuard.companyId !== activeCompany?.id || !records.length || records.some(record => record.collection !== 'schedules')) throw new Error('Publicação de escala inválida.');
+        assertSchedulePublicationSize(records, scheduleGuard.replaced);
         const schedulesCollection = getTenantCollection('schedules');
         const fresh = await getDocsFromServer(scopedScheduleSource(schedulesCollection, scheduleScope, { query, where }));
         const currentSchedules = fresh.docs.map(item => ({ id: item.id, ...item.data() }));
