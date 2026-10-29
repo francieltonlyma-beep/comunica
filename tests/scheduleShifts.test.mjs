@@ -18,6 +18,10 @@ test('turno e dias da turma sobrevivem à normalização e são usados na geraç
   assert.ok(rows.slice(5).every(row => row.status === 'Folga'));
 });
 
+test('dias antigos salvos como texto continuam compatíveis após normalização', () => {
+  assert.deepEqual(normalizeRuleGroups([{ ...rules.ruleGroups[0], weekdays: ['1', '2', '2', '9'] }])[0].weekdays, [1, 2]);
+});
+
 test('turno sem intervalo não herda intervalo de uma jornada anterior', () => {
   const rows = build({ ...rules, shifts: [{ ...shift, breakStart: '', breakEnd: '' }] });
   assert.ok(rows.filter(isWorking).every(row => row.breakStart === '' && row.breakEnd === ''));

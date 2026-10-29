@@ -1,5 +1,6 @@
 import { isWorking, scheduleRuleIssues, shiftDate } from './scheduleDayRules.js';
 import { coverageForDay } from './scheduleCoverage.js';
+import { findScheduleAbsence, isFullDayAbsence } from './scheduleAbsences.js';
 
 const statuses = ['Presencial', 'Home Office', 'Folga', 'Feriado'];
 const minutes = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || '') ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : NaN;
@@ -33,7 +34,8 @@ export function publishedEditIssues(source, draft, date, { history = [], absence
     if (!Number.isFinite(Number(draft.extraHours)) || Number(draft.extraHours) < 0 || Number(draft.extraHours) > 12) return ['A hora extra deve ficar entre 00:00 e 12:00.'];
     if (hours.total <= 0 || (hours.regular * 60 + hours.breakMinutes + hours.extra * 60) >= 1440) return ['A jornada com hora extra deve ser menor que 24 horas.'];
     if (!draft.breakStart && !draft.breakEnd && Number(source.breakMinutes) > 0) return ['Informe o início e o fim do intervalo registrado.'];
-    if (absences.some(item => String(item.userId) === String(source.userId) && active(item, date) && (!item.startTime || !item.endTime || item.startTime === item.endTime))) return ['Esta pessoa tem uma ausência de dia inteiro. Ajuste a ausência no calendário antes de marcar trabalho.'];
+    const absence = findScheduleAbsence(absences, source.userId, date, draft.shiftStart, draft.shiftEnd);
+    if (absence) return [isFullDayAbsence(absence, date) ? 'Esta pessoa tem uma ausência de dia inteiro. Ajuste a ausência no calendário antes de marcar trabalho.' : 'A jornada informada coincide com uma ausência parcial desta pessoa. Ajuste a ausência ou os horários antes de marcar trabalho.'];
   }
   return scheduleRuleIssues([{ ...draft, key: 'published-edit', userId: String(source.userId), userName: source.userName, date,
     restEveryDays: Number(source.restEveryDays || rules.restEveryDays) || 7, minRestHours: Number(source.minRestHours ?? rules.minRestHours) || 0,

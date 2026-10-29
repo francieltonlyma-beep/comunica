@@ -62,7 +62,7 @@ test('novo planejamento reaproveita o último padrão individual sem copiar hora
 });
 
 test('operação possui entrada, saída e dias da semana configuráveis', () => {
-  assert.match(app, /shiftEnd: '21:00'/);
+  assert.match(app, /shiftEnd: '17:00'/);
   assert.match(app, /allowedWeekdays: \[0, 1, 2, 3, 4, 5, 6\]/);
   assert.match(app, /Dias padrão para turmas sem dias próprios/);
   assert.match(app, /Saída padrão/);

@@ -69,6 +69,13 @@ test('preserva registros manuais, férias, ausências parciais e pins da prévia
   assert.equal(prepared[3].status, 'Folga');
 });
 
+test('ausência noturna do dia anterior fixa a jornada da madrugada seguinte', () => {
+  const row = { ...week()[1], shiftStart: '00:00', shiftEnd: '06:00', breakStart: '', breakEnd: '', breakMinutes: 0 };
+  const prepared = prepareScheduleProposal([row], { rules, absences: [{ userId: 'u', date: start, startTime: '22:00', endTime: '02:00', reason: 'Consulta' }] });
+  assert.equal(prepared[0].constraintLocked, true);
+  assert.match(prepared[0].ruleReason, /ausência parcial/);
+});
+
 test('sem necessidade ou com cobertura suficiente, não executa busca desnecessária', () => {
   assert.equal(optimizeScheduleCoverage(week(), [], context).evaluations, 0);
   assert.equal(optimizeScheduleCoverage(week(), [{ ...requirement, weekdays: [1] }], context).evaluations, 0);
@@ -102,6 +109,12 @@ test('publicação parcial conserva datas externas e não exclui marcações man
 test('recusa dias ausentes e novas marcações fixas', () => {
   assert.throws(() => planSchedulePublication([week()[0], week()[2]], [], [], 'p'), /todos os dias/);
   assert.throws(() => planSchedulePublication(week(), [{ id: 'new-manual', userId: 'u', startDate: start, endDate: start, status: 'Folga' }], [], 'p'), /fixa/);
+});
+
+test('publicação recusa datas e períodos consolidados incompatíveis', () => {
+  const rows = week().slice(0, 2);
+  assert.throws(() => planSchedulePublication([{ ...rows[0], date: '2026-02-31' }, rows[1]], [], [], 'bad-date'), /data inválida/);
+  assert.throws(() => planSchedulePublication(rows, [], [{ id: 'bad-segment', userId: 'u', startDate: start, endDate: shiftDate(start, 3) }], 'bad-segment'), /períodos consolidados/);
 });
 
 test('assinatura detecta alterações e independe da ordem retornada pela nuvem', () => {

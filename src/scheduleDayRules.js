@@ -19,17 +19,19 @@ const normalizeGroupPolicy = policy => ({
   limitSeverity: policy?.limitSeverity === 'warning' ? 'warning' : policy?.limitSeverity === 'blocking' ? 'blocking' : '',
 });
 export const newDayRule = () => ({ id: `day-${globalThis.crypto.randomUUID()}`, name: '', kind: 'weekday', weekdays: [6], occurrences: [1, 3], referenceDate: '', referenceWorks: false, action: 'work', shiftStart: '08:00', shiftEnd: '12:00', breakStart: '', breakEnd: '', status: 'Presencial', startDate: '', endDate: '', userIds: [], holidayMayActivate: false, priority: 0, enabled: true });
-export const normalizeRuleGroups = groups => Array.isArray(groups) ? groups.map(group => ({
-  id: String(group.id || ''), name: String(group.name || 'Conjunto de regras').slice(0, 80),
+export const normalizeRuleGroups = groups => Array.isArray(groups) ? groups.map((group, groupIndex) => ({
+  id: String(group.id || `group-${groupIndex + 1}`), name: String(group.name || 'Conjunto de regras').slice(0, 80),
   userIds: [...new Set((group.userIds || []).map(String))],
   shiftId: String(group.shiftId || ''),
-  weekdays: Array.isArray(group.weekdays) ? [...new Set(group.weekdays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6))] : null,
+  weekdays: Array.isArray(group.weekdays) ? [...new Set(group.weekdays.map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))] : null,
   policy: normalizeGroupPolicy(group.policy),
-  dayRules: Array.isArray(group.dayRules) ? group.dayRules.map(rule => ({ ...rule, userIds: (rule.userIds || []).map(String), enabled: rule.enabled !== false })) : [],
+  dayRules: Array.isArray(group.dayRules) ? group.dayRules.map((rule, ruleIndex) => ({ ...rule, id: String(rule.id || `${group.id || `group-${groupIndex + 1}`}-rule-${ruleIndex + 1}`), userIds: [...new Set((rule.userIds || []).map(String))], weekdays: Array.isArray(rule.weekdays) ? [...new Set(rule.weekdays.map(Number))] : rule.weekdays, occurrences: Array.isArray(rule.occurrences) ? [...new Set(rule.occurrences.map(Number))] : rule.occurrences, priority: Math.max(0, Math.min(9, Number(rule.priority) || 0)), enabled: rule.enabled !== false })) : [],
 })) : [];
 
 export function validateRuleGroups(groups) {
   const errors = [];
+  if (groups.length > 100) errors.push('Cadastre no máximo 100 conjuntos de regras.');
+  if (groups.reduce((total, group) => total + (group.dayRules?.length || 0), 0) > 500) errors.push('Cadastre no máximo 500 exceções de dia.');
   const owners = new Map();
   const groupIds = new Set();
   for (const group of groups) {
@@ -44,8 +46,11 @@ export function validateRuleGroups(groups) {
     if (policy.workDaysPerWeek !== '' && policy.restEveryDays !== '' && Number(policy.workDaysPerWeek) >= Number(policy.restEveryDays)) errors.push(`${group.name}: o descanso deve ocorrer depois dos dias previstos de trabalho.`);
     if (policy.hoursPerWeek !== '' && policy.maxWeeklyHours !== '' && Number(policy.hoursPerWeek) > Number(policy.maxWeeklyHours)) errors.push(`${group.name}: a carga semanal supera o limite do perfil.`);
     if (Boolean(policy.breakStart) !== Boolean(policy.breakEnd)) errors.push(`${group.name}: informe início e fim do intervalo do perfil.`);
+    const ruleIds = new Set();
     for (const rule of group.dayRules.filter(rule => rule.enabled !== false)) {
       const label = `${group.name}: ${rule.name || 'regra sem nome'}`;
+      if (!rule.id || ruleIds.has(rule.id)) errors.push(`${label} — cada regra precisa de uma identificação única.`);
+      ruleIds.add(rule.id);
       if (!rule.name?.trim()) errors.push(`${label} — informe um nome.`);
       if (!['weekday', 'alternating', 'monthly', 'holiday', 'date'].includes(rule.kind)) errors.push(`${label} — tipo inválido.`);
       if (rule.kind !== 'holiday' && rule.kind !== 'date' && (!rule.weekdays?.length || rule.weekdays.some(day => !Number.isInteger(day) || day < 0 || day > 6))) errors.push(`${label} — escolha os dias da semana.`);
@@ -54,6 +59,7 @@ export function validateRuleGroups(groups) {
       if (rule.kind === 'date' && !dateValid(rule.startDate)) errors.push(`${label} — informe a data inicial.`);
       if ((rule.startDate && !dateValid(rule.startDate)) || (rule.endDate && (!dateValid(rule.endDate) || (rule.startDate && rule.endDate < rule.startDate)))) errors.push(`${label} — período inválido.`);
       if (!['work', 'rest', 'hours'].includes(rule.action)) errors.push(`${label} — ação inválida.`);
+      if (rule.action !== 'rest' && rule.status && !['Presencial', 'Home Office'].includes(rule.status)) errors.push(`${label} — modalidade inválida.`);
       if (rule.kind === 'alternating' && rule.action === 'hours') errors.push(`${label} — alternância deve definir trabalho e folga.`);
       if (rule.action !== 'rest' || rule.kind === 'alternating') {
         const total = duration(rule.shiftStart, rule.shiftEnd);
@@ -245,8 +251,8 @@ export function scheduleRuleIssues(rows, history = []) {
     if (dayHours > Number(row.maxDailyHours || 24) + 0.001) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: Number(row.extraHours) > 0 ? 'extraHours' : 'shiftEnd', code: 'daily-limit', hint: 'Reduza a hora extra ou corrija a saída base para respeitar o limite diário indicado.', date: row.date, blocking, message: `${row.userName}: jornada de ${dayHours.toFixed(2).replace('.', ',')}h supera o limite diário de ${Number(row.maxDailyHours).toFixed(2).replace('.', ',')}h.` });
     if (Number(row.extraHours || 0) > Number(row.maxExtraHoursPerDay ?? 12) + 0.001) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: 'extraHours', code: 'overtime-limit', hint: 'Reduza a hora extra para o máximo diário permitido no perfil.', date: row.date, blocking, message: `${row.userName}: hora extra supera o limite diário do perfil.` });
   }
-  for (const userId of new Set(rows.map(row => row.userId))) {
-    const personRows = rows.filter(row => row.userId === userId).sort((a, b) => a.date.localeCompare(b.date));
+  for (const userId of new Set(rows.map(row => String(row.userId)))) {
+    const personRows = rows.filter(row => String(row.userId) === userId).sort((a, b) => a.date.localeCompare(b.date));
     const limit = personRows[0]?.restEveryDays;
     if (!limit) continue;
     const first = shiftDate(personRows[0].date, -limit);

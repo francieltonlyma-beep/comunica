@@ -174,6 +174,12 @@ test('conjunto pode ter perfil próprio de jornada e limites com versão rastre�
   assert.equal(work.profileName, 'Operação 44h'); assert.equal(work.rulesVersion, 4); assert.equal(work.maxExtraHoursPerDay, 2);
 });
 
+test('período parcial usa a mesma proporção semanal com ou sem turmas', () => {
+  const partialDates = dates('2026-10-26', 3), policy = rules([]);
+  const partial = buildRuleSchedule({ dates: partialDates, users: [{ id: '1', name: 'Ana' }], rules: policy, holidays: [], getDepartment: () => 'op' });
+  assert.equal(partial[0].weekHoursTarget, Number((policy.hoursPerWeek * 3 / 7).toFixed(2)));
+});
+
 test('limites diários, semanais e de hora extra podem bloquear ou apenas avisar', () => {
   const week = generate([]).map(row => ({ ...row, maxDailyHours: 7, maxWeeklyHours: 35, maxExtraHoursPerDay: 1, limitSeverity: 'blocking' }));
   const firstWork = week.find(row => row.status === 'Presencial'); firstWork.extraHours = 2;

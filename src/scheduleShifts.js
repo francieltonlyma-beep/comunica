@@ -6,6 +6,7 @@ export const normalizeScheduleShifts = shifts => Array.isArray(shifts) ? shifts.
 })) : [];
 
 export function validateScheduleShifts(shifts, groups = []) {
+  if (shifts.length > 100) return 'Cadastre no máximo 100 turnos.';
   const ids = new Set();
   const minutes = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
   for (const shift of shifts) {

@@ -1,9 +1,11 @@
 import { assertSchedulePublicationSize } from './schedulePublicationLimits.js';
+import { auditScheduleConfiguration, suggestCompatibleScheduleRules } from './scheduleConfigurationAudit.js';
 import ScheduleShiftEditor from './ScheduleShiftEditor.jsx';
 import { normalizeScheduleShifts, validateScheduleShifts } from './scheduleShifts.js';
 import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
 import { scopedScheduleSource } from './scheduleScope.js';
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
+const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAudit.jsx'));
 import { isCompanyEmployee } from './teamMembership';
 import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
@@ -114,7 +116,7 @@ const DEFAULT_AUTOMATIC_SCHEDULE_RULES = {
   version: 1,
   versionHistory: [],
   shiftStart: '08:00',
-  shiftEnd: '21:00',
+  shiftEnd: '17:00',
   breakStart: '12:00',
   breakEnd: '13:00',
   allowedWeekdays: [0, 1, 2, 3, 4, 5, 6],
@@ -124,6 +126,7 @@ const DEFAULT_AUTOMATIC_SCHEDULE_RULES = {
   reuseLastSchedule: true,
   calculateExtraAutomatically: true,
 };
+const SCHEDULE_CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const SCHEDULE_WEEKDAYS = [
   { value: 1, label: 'Seg' }, { value: 2, label: 'Ter' }, { value: 3, label: 'Qua' },
   { value: 4, label: 'Qui' }, { value: 5, label: 'Sex' }, { value: 6, label: 'Sáb' },
@@ -146,17 +149,17 @@ const sanitizeAutomaticScheduleRules = (value = {}) => ({
   limitSeverity: value.limitSeverity === 'warning' ? 'warning' : 'blocking',
   version: Math.max(1, Number(value.version) || 1),
   versionHistory: Array.isArray(value.versionHistory) ? value.versionHistory.slice(-12).map(item => ({ version: Math.max(1, Number(item.version) || 1), savedAt: Number(item.savedAt) || 0, savedBy: String(item.savedBy || '').slice(0, 120), summary: String(item.summary || '').slice(0, 240) })) : [],
-  shiftStart: /^\d{2}:\d{2}$/.test(String(value.shiftStart || '')) ? value.shiftStart : '08:00',
-  shiftEnd: /^\d{2}:\d{2}$/.test(String(value.shiftEnd || '')) ? value.shiftEnd : '21:00',
-  breakStart: /^\d{2}:\d{2}$/.test(String(value.breakStart || '')) ? value.breakStart : '12:00',
-  breakEnd: /^\d{2}:\d{2}$/.test(String(value.breakEnd || '')) ? value.breakEnd : '13:00',
+  shiftStart: SCHEDULE_CLOCK_PATTERN.test(String(value.shiftStart || '')) ? value.shiftStart : DEFAULT_AUTOMATIC_SCHEDULE_RULES.shiftStart,
+  shiftEnd: SCHEDULE_CLOCK_PATTERN.test(String(value.shiftEnd || '')) ? value.shiftEnd : DEFAULT_AUTOMATIC_SCHEDULE_RULES.shiftEnd,
+  breakStart: SCHEDULE_CLOCK_PATTERN.test(String(value.breakStart || '')) ? value.breakStart : DEFAULT_AUTOMATIC_SCHEDULE_RULES.breakStart,
+  breakEnd: SCHEDULE_CLOCK_PATTERN.test(String(value.breakEnd || '')) ? value.breakEnd : DEFAULT_AUTOMATIC_SCHEDULE_RULES.breakEnd,
   allowedWeekdays: Array.isArray(value.allowedWeekdays)
     ? [...new Set(value.allowedWeekdays.map(Number).filter(day => day >= 0 && day <= 6))].sort()
     : [0, 1, 2, 3, 4, 5, 6],
   employeeOverrides: Object.fromEntries(Object.entries(value.employeeOverrides || {}).map(([userId, override]) => [userId, {
-    shiftStart: /^\d{2}:\d{2}$/.test(String(override?.shiftStart || '')) ? override.shiftStart : '',
-    shiftEnd: /^\d{2}:\d{2}$/.test(String(override?.shiftEnd || '')) ? override.shiftEnd : '',
-    saturdayEnd: /^\d{2}:\d{2}$/.test(String(override?.saturdayEnd || '')) ? override.saturdayEnd : '',
+    shiftStart: SCHEDULE_CLOCK_PATTERN.test(String(override?.shiftStart || '')) ? override.shiftStart : '',
+    shiftEnd: SCHEDULE_CLOCK_PATTERN.test(String(override?.shiftEnd || '')) ? override.shiftEnd : '',
+    saturdayEnd: SCHEDULE_CLOCK_PATTERN.test(String(override?.saturdayEnd || '')) ? override.saturdayEnd : '',
   }])),
   holidaysCountAsRest: value.holidaysCountAsRest !== false,
   reuseLastSchedule: value.reuseLastSchedule !== false,
@@ -3695,6 +3698,8 @@ const submitPresence = async (e) => {
     if (shiftError) return triggerNotification(shiftError, 'error');
     const ruleErrors = validateRuleGroups(normalized.ruleGroups);
     if (ruleErrors.length) return triggerNotification(ruleErrors[0], 'error');
+    const configurationAudit = auditScheduleConfiguration(normalized);
+    if (configurationAudit.errors.length) return triggerNotification(configurationAudit.errors[0].message, 'error');
     const intervalMinutes = scheduleIntervalMinutes(normalized.breakStart, normalized.breakEnd);
     if (!normalized.breakStart || !normalized.breakEnd || intervalMinutes <= 0 || intervalMinutes > 360) {
       return triggerNotification('Informe um intervalo válido, com início e fim, de até 06:00.', 'error');
@@ -3823,6 +3828,11 @@ const submitPresence = async (e) => {
     const restEvery = Math.max(2, Math.min(14, Number(automaticScheduleRules.restEveryDays) || 7));
     if (!/^\d{1,3}:[0-5]\d$/.test(automaticScheduleWeeklyHoursText)) return triggerNotification('Informe a carga semanal no formato hh:mm antes de gerar a escala.', 'error');
     const weeklyHours = Math.max(1, Math.min(84, scheduleTextToHours(automaticScheduleWeeklyHoursText) || Number(automaticScheduleRules.hoursPerWeek) || 40));
+    const configurationAudit = auditScheduleConfiguration({ ...automaticScheduleRules, hoursPerWeek: weeklyHours });
+    if (configurationAudit.errors.length) {
+      if (canConfigureScheduleRules) setAutomaticScheduleRuleTab('rules');
+      return triggerNotification(configurationAudit.errors[0].message, 'error');
+    }
     const breakMinutes = scheduleIntervalMinutes(automaticScheduleRules.breakStart, automaticScheduleRules.breakEnd);
     if (breakMinutes <= 0 || breakMinutes > 360) return triggerNotification('Defina um intervalo válido, com horário de início e fim, antes de gerar a escala.', 'error');
     if (workDays >= restEvery) return triggerNotification('As regras são incompatíveis: reduza os dias trabalhados ou aumente o intervalo de descanso.', 'error');
@@ -3858,7 +3868,7 @@ const submitPresence = async (e) => {
         const remainingRestDays = Math.max(0, baseRestDays - (automaticScheduleRules.holidaysCountAsRest ? holidayDays.length : 0));
         const plannedWorkDays = Math.min(workDays, Math.max(0, availableDays.length - remainingRestDays));
         const weekKey = weekStart;
-        const targetWeekHours = weeklyHours * Math.min(1, dates.length / workDays);
+        const targetWeekHours = weeklyHours * Math.min(1, dates.length / 7);
         const restCount = Math.max(0, availableDays.length - plannedWorkDays);
         const restSet = new Set();
         const restStep = restCount ? Math.max(1, Math.floor(availableDays.length / restCount)) : 1;
@@ -5058,6 +5068,7 @@ try {
     return { userId, userName: rows[0]?.userName || '', ...totals, target, balance: total - target, total, projectedOvertime: Math.max(0, total - target), missingHours: Math.max(0, target - total) };
   }).sort((a, b) => a.userName.localeCompare(b.userName, 'pt-BR'));
   const automaticScheduleDetectedHolidays = calendarEvents.filter(event => event.date >= bulkSchedule.startDate && event.date <= bulkSchedule.endDate && normalizedText(`${event.type || ''} ${event.title || ''}`).includes('feriado')).sort((a, b) => a.date.localeCompare(b.date));
+  const automaticScheduleConfigurationAudit = auditScheduleConfiguration({ ...automaticScheduleRules, hoursPerWeek: scheduleTextToHours(automaticScheduleWeeklyHoursText) || automaticScheduleRules.hoursPerWeek });
   const automaticScheduleCoverage = analyzeProposalCoverage(automaticScheduleProposal, scheduleScopedCoverageRequirements, schedulePlanningContext());
   const automaticScheduleIssues = [
     ...scheduleRuleIssues(automaticScheduleProposal, workSchedules),
@@ -10517,6 +10528,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <div className={`grid w-full gap-1 rounded-xl border border-cyan-100 bg-white/80 p-1 sm:w-auto ${canConfigureScheduleRules ? 'grid-cols-3 sm:min-w-[390px]' : 'grid-cols-1 sm:min-w-[180px]'}`}>{canConfigureScheduleRules && <><button type="button" onClick={() => setAutomaticScheduleRuleTab('rules')} className={`rounded-lg px-2 py-2 text-[9px] font-extrabold sm:px-3 sm:text-[10px] ${automaticScheduleRuleTab === 'rules' ? 'bg-cyan-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Settings2 className="mr-1 inline h-3.5 w-3.5" />Turnos e turmas</button><button type="button" onClick={() => setAutomaticScheduleRuleTab('team')} className={`rounded-lg px-2 py-2 text-[9px] font-extrabold sm:px-3 sm:text-[10px] ${automaticScheduleRuleTab === 'team' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Users className="mr-1 inline h-3.5 w-3.5" />Necessidade da operação</button></>}<button type="button" onClick={() => setAutomaticScheduleRuleTab('planning')} className={`rounded-lg px-2 py-2 text-[9px] font-extrabold sm:px-3 sm:text-[10px] ${automaticScheduleRuleTab === 'planning' ? 'bg-violet-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}><Calendar className="mr-1 inline h-3.5 w-3.5" />Gerar e revisar</button></div>
                 </div>
                 {automaticScheduleRuleTab === 'rules' && canConfigureScheduleRules ? <div className="space-y-4 p-4">
+                  <ScheduleConfigurationAudit audit={automaticScheduleConfigurationAudit} onApplySuggestion={() => { const suggested = suggestCompatibleScheduleRules({ ...automaticScheduleRules, hoursPerWeek: scheduleTextToHours(automaticScheduleWeeklyHoursText) || automaticScheduleRules.hoursPerWeek }); setAutomaticScheduleRules(suggested); setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(suggested.hoursPerWeek)); setAutomaticScheduleProposal([]); triggerNotification('A base foi ajustada para compatibilizar carga, jornada, descanso e dias disponíveis. Revise e salve a nova versão.'); }} />
                   <ScheduleShiftEditor shifts={automaticScheduleRules.shifts || []} groups={automaticScheduleRules.ruleGroups || []} onChange={shifts => { setAutomaticScheduleRules(previous => ({ ...previous, shifts })); setAutomaticScheduleProposal([]); }} />
                   <ScheduleRuleEditor baseRules={automaticScheduleRules} key={automaticScheduleEditorFocus?.ruleId || 'editor'} initialGroupId={automaticScheduleEditorFocus?.groupId} initialRuleId={automaticScheduleEditorFocus?.ruleId} shifts={automaticScheduleRules.shifts || []} groups={automaticScheduleRules.ruleGroups || []} employees={scheduleScope.employees} departments={scheduleScope.departments} onChange={ruleGroups => { setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups })); setAutomaticScheduleProposal([]); }} />
                   <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold text-slate-700">Exceções e vínculo individual</summary><div className="mt-3 space-y-3">
@@ -10559,6 +10571,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <CoverageRequirementEditor embedded requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} canConfigure={canConfigureScheduleRules} onSave={saveScheduleCoverageRequirements} defaultDepartment={scheduleScope.departmentIds[0] || 'all'} ready={scheduleCoverageReady} error="" />
                 </div> : <div className="space-y-4 p-4">
                   {!canConfigureScheduleRules && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-5 text-amber-900"><strong className="block">Uso liberado; configuração protegida</strong>Você pode simular e publicar a escala com as regras existentes. A alteração de conjuntos, jornadas e exceções depende da permissão “Configurar regras da escala inteligente”.</div>}
+                  <ScheduleConfigurationAudit compact audit={automaticScheduleConfigurationAudit} />
                   <div className="grid gap-3 rounded-xl border border-cyan-100 bg-white/80 p-3 sm:grid-cols-3"><label className="text-[9px] font-bold uppercase text-slate-600">Início do planejamento<input required type="date" value={bulkSchedule.startDate} onChange={event => { setBulkSchedule(previous => ({ ...previous, startDate: event.target.value })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label><label className="text-[9px] font-bold uppercase text-slate-600">Fim do planejamento<input required type="date" value={bulkSchedule.endDate} onChange={event => { setBulkSchedule(previous => ({ ...previous, endDate: event.target.value })); setAutomaticScheduleProposal([]); }} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800" /></label><div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"><span className="text-[9px] font-bold uppercase text-slate-500">Equipe selecionada</span><strong className="mt-1 block text-lg text-slate-900">{bulkSchedule.userIds.length}</strong><small className="text-[9px] text-slate-500">{automaticScheduleRules.reuseLastSchedule ? `${automaticScheduleReusablePatterns} com padrão anterior encontrado` : 'Uso do padrão anterior desativado'}</small></div></div>
                   <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[9px] font-black uppercase text-blue-700">Jornada base</span><strong className="mt-1 block text-xs text-slate-900">Entrada até saída prevista</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">É o tempo regular de trabalho, já descontando o intervalo.</p></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[9px] font-black uppercase text-violet-700">Hora extra</span><strong className="mt-1 block text-xs text-slate-900">Tempo adicional do dia</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">É somada depois da saída base e altera somente a saída final.</p></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[9px] font-black uppercase text-emerald-700">Carga total</span><strong className="mt-1 block text-xs text-slate-900">Base + extra</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">Todos os totais são exibidos no padrão hh:mm.</p></div></div>
                   <div className="flex flex-col gap-3 rounded-xl border border-amber-100 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-amber-950">Feriados do período</strong><p className="mt-0.5 text-[10px] leading-4 text-slate-600">São os dias cadastrados no calendário como “Feriado”.</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black ${automaticScheduleDetectedHolidays.length ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-500'}`}>{automaticScheduleDetectedHolidays.length ? `${automaticScheduleDetectedHolidays.length} detectado(s)` : 'Nenhum detectado'}</span></div>

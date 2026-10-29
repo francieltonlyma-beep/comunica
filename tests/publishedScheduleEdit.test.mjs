@@ -49,6 +49,13 @@ test('recusa jornadas inválidas, ausências integrais, sobreposição e sétimo
   assert.equal(canEditPublishedSchedule({ ...source, status: 'Férias' }), false);
 });
 
+test('ausência parcial bloqueia somente a jornada que cruza seu horário', () => {
+  const draft = publishedScheduleDraft(source);
+  const overlapping = { userId: 'u', date, startTime: '16:30', endTime: '18:00', reason: 'Consulta' };
+  assert.match(publishedEditIssues(source, draft, date, { ...context, absences: [overlapping] }).join(' '), /ausência parcial/);
+  assert.equal(publishedEditIssues(source, draft, date, { ...context, absences: [{ ...overlapping, startTime: '18:30', endTime: '19:00' }] }).length, 0);
+});
+
 test('cobertura usa toda a equipe e compara também o dia seguinte em turno noturno', () => {
   const night = { ...source, shiftStart: '22:00', baseShiftEnd: '06:00', shiftEnd: '06:00', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0 };
   const ctx = { ...context, history: [night], employees: [{ id: 'u', depts: ['op'] }], getDepartments: user => user.depts };

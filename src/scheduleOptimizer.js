@@ -1,6 +1,7 @@
 import { coverageForDay } from './scheduleCoverage.js';
 import { assertSchedulePublicationSize } from './schedulePublicationLimits.js';
 import { isWorking, scheduleRuleIssues, shiftDate } from './scheduleDayRules.js';
+import { findScheduleAbsence, isFullDayAbsence } from './scheduleAbsences.js';
 
 const operational = ['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes', 'extraHours', 'shift'];
 const inRange = (row, date) => (row.startDate || row.date) <= date && (row.endDate || row.date || row.startDate) >= date;
@@ -29,9 +30,10 @@ export function prepareScheduleProposal(rows, { history = [], absences = [], rul
         locked: true, preservedExisting: true, sourceScheduleId: item.id, ruleConflicts: saved.length > 1 ? ['Marcações existentes sobrepostas; revise o calendário'] : [],
         ruleReason: 'Marcação já publicada preservada', manuallyAdjusted: Boolean(item.manuallyAdjusted) };
     }
-    const absence = absences.find(item => String(item.userId) === row.userId && inRange(item, row.date));
+    const sameDayAbsence = absences.find(item => String(item.userId) === row.userId && inRange(item, row.date));
+    const absence = findScheduleAbsence(absences, row.userId, row.date, row.shiftStart, row.shiftEnd) || sameDayAbsence;
     if (absence) {
-      const fullDay = !absence.startTime || !absence.endTime || absence.startTime === absence.endTime || (absence.startTime <= (row.shiftStart || rules.shiftStart || '08:00') && absence.endTime >= (row.shiftEnd || rules.shiftEnd || '17:00'));
+      const fullDay = isFullDayAbsence(absence, row.date);
       if (fullDay) return { ...row, status: /f[eé]rias/i.test(absence.reason || '') ? 'Férias' : 'Ausência', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, locked: true, preservedAbsence: true, ruleReason: 'Ausência registrada preservada' };
       row.constraintLocked = true;
       row.ruleReason = 'Dia com ausência parcial preservado';
@@ -242,6 +244,8 @@ export function optimizeScheduleCoverage(input, requirements, context = {}, opti
 
 export function planSchedulePublication(rows, history, segments, publicationId) {
   if (!rows.length || !publicationId) throw new Error('Planejamento vazio ou sem identificação.');
+  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  if (rows.some(row => !row.userId || !validDate(row.date))) throw new Error('A simulação contém colaborador ou data inválida. Gere o quadro novamente.');
   const users = new Set(rows.map(row => String(row.userId)));
   const dates = rows.map(row => row.date).sort(), start = dates[0], end = dates.at(-1);
   const rowKeys = new Set(rows.map(keyOf));
@@ -255,6 +259,7 @@ export function planSchedulePublication(rows, history, segments, publicationId) 
     if (source.some(item => !isReplaceableSchedule(item) && String(item.userId) === String(row.userId) && inRange(item, row.date))) throw new Error('Uma marcação fixa foi alterada. Gere a simulação novamente.');
   }
   const replaced = source.filter(isReplaceableSchedule);
+  if (segments.some(item => !item.id || !users.has(String(item.userId)) || !validDate(item.startDate) || !validDate(item.endDate) || item.startDate > item.endDate || item.startDate < start || item.endDate > end)) throw new Error('Os períodos consolidados da simulação são incompatíveis. Gere o quadro novamente.');
   const retained = [];
   replaced.forEach((item, index) => {
     if (item.startDate < start) retained.push({ ...item, id: `schedule-retained-${publicationId}-${index}-left`, endDate: shiftDate(start, -1) });
