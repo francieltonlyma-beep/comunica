@@ -127,6 +127,15 @@ test('publicação recusa datas e períodos consolidados incompatíveis', () => 
   assert.throws(() => planSchedulePublication(rows, [], [{ id: 'bad-segment', userId: 'u', startDate: start, endDate: shiftDate(start, 3) }], 'bad-segment'), /períodos consolidados/);
 });
 
+test('publicação remove campos opcionais indefinidos antes de chamar o Firestore', () => {
+  const rows = week().slice(0, 2);
+  const segments = rows.map((row, index) => ({ id: `new-${index}`, userId: row.userId, userName: undefined, dept: row.dept, startDate: row.date, endDate: row.date, status: row.status, ruleGroupName: undefined }));
+  const plan = planSchedulePublication(rows, [], segments, 'clean');
+  assert.ok(plan.records.every(record => !record.data || Object.values(record.data).every(value => value !== undefined)));
+  assert.ok(plan.schedules.every(item => item.userName === 'Pessoa' && !('ruleGroupName' in item)));
+  assert.throws(() => planSchedulePublication(rows.map(row => ({ ...row, dept: '' })), [], [{ ...segments[0], dept: '' }, segments[1]], 'missing-dept'), /sem setor/);
+});
+
 test('assinatura detecta alterações e independe da ordem retornada pela nuvem', () => {
   const a = { id: 'a', status: 'Folga', locked: true }, b = { id: 'b', status: 'Presencial' };
   assert.equal(scheduleSignature([a, b]), scheduleSignature([b, { locked: true, status: 'Folga', id: 'a' }]));

@@ -268,19 +268,33 @@ export function planSchedulePublication(rows, history, segments, publicationId) 
   }
   const replaced = source.filter(isReplaceableSchedule);
   if (segments.some(item => !item.id || !users.has(String(item.userId)) || !validDate(item.startDate) || !validDate(item.endDate) || item.startDate > item.endDate || item.startDate < start || item.endDate > end)) throw new Error('Os períodos consolidados da simulação são incompatíveis. Gere o quadro novamente.');
+  const cleanData = item => {
+    const row = rows.find(candidate => String(candidate.userId) === String(item.userId));
+    const sourceData = { ...item, dept: item.dept || row?.dept, userName: item.userName || row?.userName };
+    const data = {};
+    for (const [field, value] of Object.entries(sourceData)) {
+      if (value === undefined) continue;
+      if (typeof value === 'number' && !Number.isFinite(value)) throw new Error(`A escala contém um número inválido no campo ${field}. Gere a revisão novamente.`);
+      data[field] = value;
+    }
+    for (const field of ['id', 'userId', 'dept', 'startDate', 'endDate', 'status']) if (!String(data[field] || '').trim()) throw new Error(`A escala contém um registro sem ${field === 'dept' ? 'setor' : field === 'userId' ? 'colaborador' : field}. Corrija o cadastro e gere a revisão novamente.`);
+    if (String(data.id).includes('/')) throw new Error('A escala contém uma identificação inválida. Gere a revisão novamente.');
+    return data;
+  };
   const retained = [];
   replaced.forEach((item, index) => {
     if (item.startDate < start) retained.push({ ...item, id: `schedule-retained-${publicationId}-${index}-left`, endDate: shiftDate(start, -1) });
     if (item.endDate > end) retained.push({ ...item, id: `schedule-retained-${publicationId}-${index}-right`, startDate: shiftDate(end, 1) });
   });
+  const published = [...retained, ...segments].map(cleanData);
   const records = [
     ...replaced.map(item => ({ collection: 'schedules', id: item.id, operation: 'delete' })),
-    ...[...retained, ...segments].map(item => ({ collection: 'schedules', id: item.id, data: item })),
+    ...published.map(item => ({ collection: 'schedules', id: item.id, data: item })),
   ];
   if (!records.length) return { records: [], replaced, schedules: retained, deletedIds: [] };
   assertSchedulePublicationSize(records, replaced);
   if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('Há identificações repetidas na publicação.');
-  return { records, replaced, schedules: [...retained, ...segments], deletedIds: replaced.map(item => item.id) };
+  return { records, replaced, schedules: published, deletedIds: replaced.map(item => item.id) };
 }
 
 
