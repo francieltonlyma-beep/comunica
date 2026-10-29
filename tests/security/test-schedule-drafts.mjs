@@ -8,7 +8,7 @@ const encode=value=>typeof value==='string'?{stringValue:value}:typeof value==='
 const fields=value=>Object.fromEntries(Object.entries(value).map(([key,v])=>[key,encode(v)]));
 const token=(uid,companyId='company')=>{const now=Math.floor(Date.now()/1000);return [Buffer.from(JSON.stringify({alg:'none',typ:'JWT'})).toString('base64url'),Buffer.from(JSON.stringify({iss:`https://securetoken.google.com/${project}`,aud:project,sub:uid,user_id:uid,iat:now,exp:now+3600,auth_time:now,companyId,firebase:{sign_in_provider:'custom',identities:{}}})).toString('base64url'),''].join('.')};
 const request=async(method,path,body,auth='owner')=>{const response=await fetch(`${host}/v1/${prefix}${path?'/'+path:''}`,{method,headers:{authorization:`Bearer ${auth}`,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:response.status,body:await response.json()};};
-for(const [uid,profile]of Object.entries({manager:{name:'Gestor',role:'Coordenador',dept:'op',depts:['op'],permissions:{canManageCalendar:true}},other:{name:'Outro',role:'Coordenador',depts:['op']},reader:{name:'Leitor',role:'Colaborador',depts:['op']},readonly:{name:'Consulta',role:'Coordenador',depts:['op'],permissions:{canManageCalendar:false}}})){const r=await request('PATCH',`${base}/users/${uid}`,{fields:fields(profile)});assert.equal(r.status,200,JSON.stringify(r.body));}
+for(const [uid,profile]of Object.entries({admin:{name:'Administrador',isAdmin:true,depts:['adm']},manager:{name:'Gestor',role:'Coordenador',dept:'op',depts:['op'],permissions:{canManageCalendar:true}},other:{name:'Outro',role:'Coordenador',depts:['op']},reader:{name:'Leitor',role:'Colaborador',depts:['op']},readonly:{name:'Consulta',role:'Coordenador',depts:['op'],permissions:{canManageCalendar:false}}})){const r=await request('PATCH',`${base}/users/${uid}`,{fields:fields(profile)});assert.equal(r.status,200,JSON.stringify(r.body));}
 const root=`${base}/users/manager/scheduleDrafts/draft`,part=`${root}/parts/v1-0`;
 const meta={revision:'v1',updatedAt:Date.now(),startDate:'2026-11-02',endDate:'2026-11-02',partCount:1,encoding:'json',departmentIds:['op']};
 const write={writes:[{update:{name:`${prefix}/${root}`,fields:fields(meta)}},{update:{name:`${prefix}/${part}`,fields:fields({revision:'v1',payload:'{}'})}}]};
@@ -16,6 +16,9 @@ const commit=async(body,auth)=>{const r=await fetch(`${host}/v1/projects/${proje
 let r=await commit(write,token('manager'));assert.equal(r.status,200,JSON.stringify(r.body));
 assert.equal((await request('GET',part,null,token('manager'))).status,200);
 assert.equal((await request('GET',`${base}/users/manager/scheduleDrafts`,null,token('manager'))).status,200);
+assert.equal((await request('GET',part,null,token('admin'))).status,200);
+assert.equal((await request('GET',`${base}/users/manager/scheduleDrafts`,null,token('admin'))).status,200);
+r=await request('PATCH',root,{fields:fields({...meta,revision:'admin-edit'})},token('admin'));assert.equal(r.status,403);
 for(const auth of [token('other'),token('reader'),token('manager','other-company')])assert.equal((await request('GET',part,null,auth)).status,403);
 r=await request('PATCH',root,{fields:fields({...meta,departmentIds:['finance']})},token('manager'));assert.equal(r.status,403);
 const updated={...meta,revision:'v2'};
@@ -26,4 +29,4 @@ assert.equal((await request('GET',`${root}/parts/v2-0`,null,token('manager'))).s
 await request('PATCH',`${base}/users/manager`,{fields:fields({role:'Coordenador',depts:['op']})});
 r=await request('PATCH',`${base}/users/readonly/scheduleDrafts/draft`,{fields:fields(meta)},token('readonly'));assert.equal(r.status,403);
 r=await request('PATCH',`${base}/schedules/example`,{fields:fields({userId:'manager',dept:'op',status:'Presencial',startDate:'2026-11-02',endDate:'2026-11-02',shiftStart:'08:00',shiftEnd:'12:00'})},token('manager'));assert.equal(r.status,200,JSON.stringify(r.body));
-console.log('Regras: rascunho privado e publicação no setor permitidos; outro usuário, empresa, setor e perfil de consulta recusados.');
+console.log('Regras: administrador lê rascunho da equipe sem alterá-lo; outro usuário, empresa, setor e perfil de consulta são recusados.');

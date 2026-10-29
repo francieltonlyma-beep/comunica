@@ -192,12 +192,13 @@ service cloud.firestore {
       allow write: if false;
       match /users/{uid}/scheduleDrafts/{draftId} {
         function ownsDraft() { return request.auth != null && request.auth.uid == uid && scheduleManager(app, company) && canManageCalendar(app, company); }
-        allow read: if ownsDraft();
+        function canReadDraft() { return ownsDraft() || (request.auth != null && manages(app, company)); }
+        allow read: if canReadDraft();
         allow create: if ownsDraft() && validScheduleDraft(request.resource.data) && scheduleDraftInScope(app, company, request.resource.data);
         allow update: if ownsDraft() && validScheduleDraft(request.resource.data) && scheduleDraftInScope(app, company, resource.data) && scheduleDraftInScope(app, company, request.resource.data);
         allow delete: if false;
         match /parts/{partId} {
-          allow read: if ownsDraft()
+          allow read: if canReadDraft()
             && scheduleDraftInScope(app, company, get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data)
             && resource.data.revision == get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data.revision;
           allow create, update: if ownsDraft()

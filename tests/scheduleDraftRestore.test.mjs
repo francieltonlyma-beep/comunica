@@ -34,3 +34,11 @@ test('reabertura não altera estado quando há usuário fora do setor ou permiss
     assert.equal(Object.keys(changes).length, 0);
   }
 });
+
+test('administrador pode escolher o autor e a tela informa que publicação mantém o original', () => {
+  const bar = readFileSync(new URL('../src/ScheduleDraftBar.jsx', import.meta.url), 'utf8');
+  assert.match(bar, /Autor do rascunho/);
+  assert.match(bar, /O original será mantido/);
+  assert.match(bar, /Publicar uma escala não apaga o rascunho original/);
+  assert.match(source, /canViewTeamDrafts=\{Boolean\(currentUser\.isAdmin \|\| currentUser\.isDeveloper\)\}/);
+});
