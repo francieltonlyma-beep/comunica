@@ -10,8 +10,9 @@ const coverageLabels = { sufficient: 'Suficiente', shortage: 'Falta de equipe', 
 
 export default function ScheduleTeamMonth({ companyName, days, employees, departments, filters, getDepartments, today, selectedDate, selectedPerson, onSelectCell, onSelectCoverage, showAbsences, showEvents, showCoverage, coverageReady, coverageError }) {
   const [showHours, setShowHours] = useState(false);
+  const [onlyScheduled, setOnlyScheduled] = useState(false);
   const [printError, setPrintError] = useState('');
-  const rows = teamMonthRows(days, employees, { filters, getDepartments, showAbsences });
+  const rows = teamMonthRows(days, employees, { filters, getDepartments, showAbsences, onlyScheduled });
   const printMonth = () => {
     setPrintError('');
     const labels = [];
@@ -19,12 +20,13 @@ export default function ScheduleTeamMonth({ companyName, days, employees, depart
     if (filters.employee !== 'all') labels.push(`Colaborador: ${employees.find(item => String(item.id) === String(filters.employee))?.name || filters.employee}`);
     if (filters.status !== 'all') labels.push(`Situação: ${filters.status}`);
     if (filters.search.trim()) labels.push(`Busca: ${filters.search.trim()}`);
+    if (onlyScheduled) labels.push('Somente pessoas escaladas');
     if (!showAbsences) labels.push('Ausências ocultas');
     try { openSchedulePrintView({ rows, days, departments, companyName, filterLabels: labels, showHours, showCoverage, showEvents }); }
     catch (error) { setPrintError(error.message || 'Não foi possível abrir a impressão. Tente novamente.'); }
   };
   return <section className="stm" aria-label="Escala mensal lado a lado">
-    <div className="stm-toolbar"><div><strong>Equipe lado a lado</strong><span>{rows.length} colaborador(es) · {days.length} dias</span></div><div className="stm-print-tools"><label><input type="checkbox" checked={showHours} onChange={event => setShowHours(event.target.checked)}/>Exibir horários</label><button type="button" onClick={printMonth} disabled={!rows.length || !coverageReady || Boolean(coverageError)} title="Abrir uma versão de impressão da equipe visível; na janela de impressão, escolha Salvar como PDF"><Printer size={14}/>Imprimir / PDF</button></div></div>
+    <div className="stm-toolbar"><div><strong>Equipe lado a lado</strong><span>{rows.length} colaborador(es) · {days.length} dias</span></div><div className="stm-print-tools"><label><input type="checkbox" checked={onlyScheduled} onChange={event => setOnlyScheduled(event.target.checked)}/>Só pessoas escaladas</label><label><input type="checkbox" checked={showHours} onChange={event => setShowHours(event.target.checked)}/>Exibir horários</label><button type="button" onClick={printMonth} disabled={!rows.length || !coverageReady || Boolean(coverageError)} title="Abrir uma versão de impressão da equipe visível; na janela de impressão, escolha Salvar como PDF"><Printer size={14}/>Imprimir / PDF</button></div></div>
     {printError && <p className="stm-print-error" role="alert">{printError}</p>}
     <p className="stm-help">Role para os lados para percorrer o mês. Os nomes ficam fixos. Clique em uma célula para consultar ou editar aquele dia.</p>
     <div className={`stm-scroll ${showHours ? 'stm-with-hours' : ''}`} tabIndex={0} aria-label="Quadro mensal da equipe; role para os lados e para baixo">
@@ -37,7 +39,7 @@ export default function ScheduleTeamMonth({ companyName, days, employees, depart
           })}</tr>)}
         </tbody>
       </table>
-      {!rows.length && <p className="stm-empty">Nenhum colaborador encontrado. Confira os filtros do calendário.</p>}
+      {!rows.length && <p className="stm-empty">{onlyScheduled ? 'Nenhuma pessoa possui escala publicada neste mês com os filtros atuais.' : 'Nenhum colaborador encontrado. Confira os filtros do calendário.'}</p>}
     </div>
     <div className="stm-legend">{[['work','P · Presencial'],['remote','HO · Home office'],['off','F · Folga'],['holiday','FE · Feriado'],['vacation','V · Férias'],['absence','A · Ausência'],['empty','— · Sem registro']].map(([tone, label]) => <span key={tone}><i className={`stm-${tone}`}/>{label}</span>)}<span>• Dia fixado</span><span>2 reg. · Mais de uma marcação</span></div>
     <p className="stm-help">Ausências de dia inteiro aparecem sobre a marcação de trabalho. A sobrescrito indica ausência parcial. A cobertura considera intervalos e toda a equipe do setor, mesmo quando a grade está filtrada.</p>

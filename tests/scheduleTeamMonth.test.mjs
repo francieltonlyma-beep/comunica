@@ -24,6 +24,15 @@ test('equipe mensal inclui todo fevereiro bissexto e pessoas sem marcação', ()
   assert.equal(teamDaySummary(rows.find(row => row.userId === '1').cells[28]).fixed, true);
 });
 
+test('filtro de escalados mostra somente pessoas com marcação publicada no mês', () => {
+  const days = scheduleCalendarDates('2024-02-01').filter(date => date.startsWith('2024-02')).map(date => calendarRecordsForDay(date, data));
+  const rows = teamMonthRows(days, employees, { onlyScheduled: true });
+  assert.deepEqual(rows.map(row => row.userId), ['removed', '1', '2']);
+  const absenceOnly = [{ id: 'absence', userId: '3', date: '2024-02-01', reason: 'Consulta' }];
+  const withAbsence = days.map(day => calendarRecordsForDay(day.date, { ...data, absences: absenceOnly }));
+  assert.equal(teamMonthRows(withAbsence, employees, { onlyScheduled: true }).some(row => row.userId === '3'), false);
+});
+
 test('setor atribuído na marcação não desaparece por ter vínculo em outro setor', () => {
   const rows = build({ department: 'op' });
   assert.ok(rows.some(row => row.userId === '2'));

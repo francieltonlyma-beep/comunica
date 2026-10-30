@@ -6,7 +6,7 @@ export const teamScheduleCode = status => status === 'Feriado' ? 'FE' : ({ work:
 
 // Days already contain the calendar's filtered records. Seed registered people too,
 // so an empty cell means no published assignment, rather than an assumed day off.
-export function teamMonthRows(days, employees, { filters = {}, getDepartments = user => user.depts || [], showAbsences = true } = {}) {
+export function teamMonthRows(days, employees, { filters = {}, getDepartments = user => user.depts || [], showAbsences = true, onlyScheduled = false } = {}) {
   const { department = 'all', employee = 'all', status = 'all', search = '' } = filters;
   const people = new Map(employees.map(user => [String(user.id), user]));
   const rows = new Map();
@@ -26,7 +26,8 @@ export function teamMonthRows(days, employees, { filters = {}, getDepartments = 
       ensure(key, people.get(key), record).cells[index][kind].push(record);
     }
   });
-  return [...rows.values()].filter(row => status === 'all' || row.cells.some(cell => cell.schedules.length || cell.absences.length))
+  return [...rows.values()].filter(row => (!onlyScheduled || row.cells.some(cell => cell.schedules.length))
+      && (status === 'all' || row.cells.some(cell => cell.schedules.length || cell.absences.length)))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
