@@ -20,7 +20,7 @@ jobs:
       VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID || secrets.VITE_FIREBASE_MESSAGING_SENDER_ID || '328110966548' }}
       VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID || secrets.VITE_FIREBASE_APP_ID || '1:328110966548:web:64c36a5985214157422401' }}
       VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID || secrets.VITE_FIREBASE_MEASUREMENT_ID }}
-      VITE_FIREBASE_VAPID_KEY: ${{ vars.VITE_FIREBASE_VAPID_KEY || secrets.VITE_FIREBASE_VAPID_KEY }}
+      VITE_FIREBASE_VAPID_KEY: ${{ vars.VITE_FIREBASE_VAPID_KEY || secrets.VITE_FIREBASE_VAPID_KEY || 'BIIJJDDcZjAVp7trxlTFPZxOQF94Ior1pIVMXIxNEundc3nakQh8CcjjmnzBMke4tE-1XdrJSpaBLfQJR3doeZg' }}
       VITE_APP_DATA_ID: ${{ vars.VITE_APP_DATA_ID || 'comunica-salvador' }}
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
       - name: Validate production configuration before deploying
         shell: bash
         run: |
-          for name in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID; do
+          for name in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID VITE_FIREBASE_VAPID_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error::Configure $name in repository Actions variables or secrets."
               exit 1
