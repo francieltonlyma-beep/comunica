@@ -59,8 +59,14 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath, serverTimestamp, runTransaction, getDocsFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import {
+  getAppleMobileVersion,
+  getPushActivationErrorMessage,
+  getWebPushTokenWithRecovery,
+  isAppleMobileDevice,
+} from './pushNotifications.js';
 const LazyEmojiPicker = lazy(() => import('./LazyEmojiPicker.jsx'));
 let notificationDispatcher = null;
 const DEFAULT_AVATAR = '/assets/comunica-avatar-neutral.png';
@@ -1413,31 +1419,48 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       triggerNotification('Este navegador não oferece notificações para o Comunica.', 'error');
       return;
     }
-    const appleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const appleMobile = isAppleMobileDevice(navigator);
     if (appleMobile && !window.navigator.standalone && !window.matchMedia?.('(display-mode: standalone)').matches) {
       triggerNotification('No iPhone, adicione o Comunica à Tela de Início e abra pelo ícone antes de ativar as notificações.', 'error');
       setShowInstallHelp(true);
       return;
     }
     try {
+      const appleMobileVersion = appleMobile ? getAppleMobileVersion(navigator) : null;
+      if (appleMobileVersion && (appleMobileVersion.major < 16 || (appleMobileVersion.major === 16 && appleMobileVersion.minor < 4))) {
+        throw Object.assign(new Error('ios-version-unsupported'), { code: 'ios-version-unsupported' });
+      }
+
+      // No Safari, a permissão precisa partir diretamente do toque no botão.
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        triggerNotification('Permissão não concedida. Você pode ativá-la depois nas configurações de notificações do aparelho.', 'error');
+        triggerNotification(getPushActivationErrorMessage(
+          Object.assign(new Error('permission-blocked'), { code: 'permission-blocked' }),
+          { appleMobile, permission },
+        ), 'error');
         return;
+      }
+      if (!await isMessagingSupported()) {
+        throw Object.assign(new Error('messaging/unsupported-browser'), { code: 'messaging/unsupported-browser' });
       }
       setBrowserPushGranted(true);
       const messaging = getMessaging();
       const serviceWorkerRegistration = await navigator.serviceWorker.ready;
-      const token = await getToken(messaging, {
+      const token = await getWebPushTokenWithRecovery({
+        messaging,
+        registration: serviceWorkerRegistration,
         vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-        serviceWorkerRegistration,
+        getToken,
       });
       if (!token) throw new Error('O navegador não forneceu um token de notificação.');
       setPushToken(token);
       triggerNotification('Notificações ativadas neste dispositivo.');
     } catch (error) {
       console.error('Não foi possível ativar notificações neste dispositivo.', error);
-      triggerNotification('Não foi possível ativar notificações. Confira a instalação, a permissão e tente novamente.', 'error');
+      triggerNotification(getPushActivationErrorMessage(error, {
+        appleMobile,
+        permission: Notification.permission,
+      }), 'error');
     }
   };
 // 1. Pede permissão e configura o Firebase Messaging (web e APK)
