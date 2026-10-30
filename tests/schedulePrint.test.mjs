@@ -42,3 +42,13 @@ test('janela permite revisar antes de imprimir, sem manter acesso à página pri
     handlers['schedule-print-close'](); assert.equal(calls.at(-1), 'closed');
   } finally { delete globalThis.window; }
 });
+
+
+test('PDF conserva contagem por intervalo e aviso de horários incompletos', () => {
+  const coverage = { status: 'unknown', rules: [{ id: 'r', department: 'op', minimum: 4, unknown: 1,
+    segments: [{ start: '08:00', end: '12:00', available: 3, missing: 1 }] }] };
+  const html = schedulePrintHtml({ ...options, days: [{ ...days[0], coverage }] });
+  assert.ok(html.includes('Disponíveis / mínimo'));
+  assert.ok(html.includes('3/4 ?'));
+  assert.ok(html.includes('sem somar horários ou setores diferentes'));
+});

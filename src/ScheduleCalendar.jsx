@@ -21,7 +21,7 @@ export default function ScheduleCalendar({
   coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
   const [anchor, setAnchor] = useState(selectedDate || today);
-  const [view, setView] = useState('month');
+  const [view, setView] = useState('team');
   const [fullscreen, setFullscreen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailEmployee, setDetailEmployee] = useState('');
@@ -153,7 +153,7 @@ export default function ScheduleCalendar({
         <div className="sc-view-tools">
           <div className="sc-segment" aria-label="Visualização do calendário">
             <button type="button" aria-pressed={view === 'month'} onClick={() => { setDetailEmployee(''); setView('month'); setAnchor(selectedDate); }}>Mês</button>
-            <button type="button" aria-pressed={view === 'team'} onClick={() => { setDetailEmployee(''); setView('team'); setAnchor(selectedDate); setDetailsOpen(false); }}>Equipe</button>
+            <button type="button" aria-pressed={view === 'team'} onClick={() => { setDetailEmployee(''); setView('team'); setAnchor(selectedDate); setDetailsOpen(false); }}>Equipe mensal</button>
             <button type="button" aria-pressed={view === 'week'} onClick={() => { setDetailEmployee(''); setView('week'); setAnchor(selectedDate); }}>Semana</button>
           </div>
           <button type="button" className={`sc-button ${hasFilters ? 'sc-filter-active' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(value => !value)}><SlidersHorizontal size={16} /> Filtros{hasFilters ? ' •' : ''}</button>

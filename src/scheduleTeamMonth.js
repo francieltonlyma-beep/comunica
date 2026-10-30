@@ -4,6 +4,33 @@ const normalized = value => String(value || '').normalize('NFD').replace(/[\u030
 const personKey = record => record.userId != null ? String(record.userId) : `legacy:${normalized(record.userName) || record.id}`;
 export const teamScheduleCode = status => status === 'Feriado' ? 'FE' : ({ work: 'P', remote: 'HO', off: 'F', vacation: 'V', absence: 'A' }[scheduleTone(status)] || 'P');
 
+// Show one real interval, never a sum of people who work at different times or
+// in different sectors. Details retain every requirement, including other gaps.
+export function teamCoverageSummary(coverage, departments = [], { ready = true, error = '' } = {}) {
+  if (error || !ready) return { tone: 'unknown', code: '?', label: error || 'Carregando cobertura', details: '', actionable: false };
+  const rules = coverage?.rules || [];
+  const slots = rules.flatMap(rule => rule.segments.map(segment => ({ ...segment, rule })));
+  if (!slots.length) return { tone: 'none', code: '—', label: 'Sem necessidade cadastrada', details: '', actionable: false };
+  const unknown = rules.some(rule => rule.unknown > 0);
+  const missing = slots.some(slot => slot.missing > 0);
+  const excess = slots.some(slot => slot.excess > 0);
+  const tone = coverage.status === 'shortage' ? 'shortage' : unknown ? 'unknown' : missing ? 'shortage' : excess ? 'excess' : 'sufficient';
+  const rank = slot => tone === 'excess' ? slot.excess || 0 : slot.missing;
+  const worst = slots.reduce((best, slot) => rank(slot) > rank(best)
+    || (rank(slot) === rank(best) && slot.available - slot.rule.minimum < best.available - best.rule.minimum) ? slot : best);
+  const label = tone === 'shortage' ? 'Falta de equipe' : tone === 'unknown' ? 'Revisar horários' : tone === 'excess' ? 'Acima do máximo desejado' : 'Mínimo atendido';
+  const details = rules.map(rule => `${departments.find(item => item.id === rule.department)?.name || rule.department}: ${rule.segments.map(slot => `${slot.start}–${slot.end}: ${slot.available} disponível(is), mínimo ${rule.minimum}${rule.maximum == null ? '' : `, máximo ${rule.maximum}`}${slot.missing ? `; faltam ${slot.missing}` : slot.excess ? `; excesso de ${slot.excess}` : ''}`).join('; ')}${rule.unknown ? `; ${rule.unknown} pessoa(s) com horário ou intervalo incompleto` : ''}`).join('\n');
+  return { tone, code: `${worst.available}/${worst.rule.minimum}`, label, details,
+    actionable: tone !== 'sufficient', unknown, excess,
+    interval: `${worst.start}–${worst.end}`,
+    department: worst.rule.department };
+}
+
+export function nextTeamCoverageDate(days, selectedDate, departments = []) {
+  const pending = days.filter(day => teamCoverageSummary(day.coverage, departments).actionable).map(day => day.date);
+  return pending.find(date => date > selectedDate) || pending[0] || '';
+}
+
 // Days already contain the calendar's filtered records. Seed registered people too,
 // so an empty cell means no published assignment, rather than an assumed day off.
 export function teamMonthRows(days, employees, { filters = {}, getDepartments = user => user.depts || [], showAbsences = true, onlyScheduled = false } = {}) {
@@ -41,3 +68,4 @@ export function teamDaySummary(cell) {
     hours: !absence && cell.schedules.length === 1 && ['Presencial', 'Home Office'].includes(cell.schedules[0].status) && cell.schedules[0].shiftStart && cell.schedules[0].shiftEnd ? `${cell.schedules[0].shiftStart}–${cell.schedules[0].shiftEnd}` : '',
     fixed: cell.schedules.some(item => item.locked || item.manuallyAdjusted) };
 }
+

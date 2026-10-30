@@ -16,3 +16,11 @@
 @media(max-width:640px){.stm-table .stm-person{min-width:126px;width:126px;max-width:126px;padding:7px 9px}.stm-person strong{font-size:10px}.stm-person small{font-size:8px}.stm-scroll{max-height:520px;scroll-padding-left:126px}.stm-toolbar{padding:12px}.stm-help{padding-inline:12px}.stm-legend{padding-inline:12px}.sc-fullscreen .stm-scroll{max-height:55dvh}}
 
 .stm-print-tools{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.stm-print-tools button{display:flex;align-items:center;gap:6px;border:1px solid var(--sc-line,#dce7ea);border-radius:8px;padding:8px 10px;background:var(--sc-bg,#fff);color:var(--sc-text,#203b45);font-size:11px;font-weight:700}.stm-print-error{margin:0 16px 12px;padding:10px;border:1px solid #e8c78c;border-radius:8px;background:#fff8e9;color:#875614;font-size:11px;line-height:1.5}
+
+.stm-month-coverage{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:0 16px 12px;padding:12px;border:1px solid var(--sc-line,#dce7ea);border-radius:10px;background:var(--sc-soft,#f2f7f9);font-size:11px;color:var(--sc-muted,#61757c)}
+.stm-month-coverage>strong{font-size:11px;color:var(--sc-text,#203b45)}.stm-month-coverage>span{display:flex;align-items:center;gap:5px}.stm-month-coverage button{display:flex;align-items:center;gap:5px;padding:8px 10px;border:1px solid var(--sc-line,#dce7ea);border-radius:8px;background:var(--sc-bg,#fff);color:var(--sc-text,#203b45);font-size:11px;font-weight:700}
+.stm-summary-sufficient{color:#267653}.stm-summary-shortage{color:#a25112}.stm-summary-unknown,.stm-summary-excess{color:#875614}
+.stm-table th:not(.stm-person),.stm-table td{min-width:48px;width:48px}.stm-coverage{min-width:48px;min-height:50px}.stm-coverage small{font-size:8px;font-weight:500}.stm-excess{background:#fff5e5;color:#875614}
+.stm-coverage-row>th,.stm-coverage-row>td{position:sticky;top:50px;z-index:2;background:var(--sc-soft,#f2f7f9)}.stm-coverage-row>.stm-person{z-index:3}
+.stm-month-coverage button:focus-visible{outline:3px solid #0e7490;outline-offset:2px}
+@media(max-width:640px){.stm-month-coverage{margin-inline:12px;gap:10px}.stm-month-coverage>strong{width:100%}}
