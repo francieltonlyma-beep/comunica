@@ -1416,6 +1416,28 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     }
   };
 
+  const persistBrowserPushToken = async (token) => {
+    if (!token || !currentUser || !dbUser || !isFirebaseAvailable) {
+      throw Object.assign(new Error('push-token-account-unavailable'), { code: 'push-token-account-unavailable' });
+    }
+    const savedTokens = Array.isArray(currentUser.pushTokens) ? currentUser.pushTokens : [];
+    if (savedTokens.includes(token)) return true;
+
+    if (currentUser.isDeveloper) {
+      const result = await httpsCallable(functionsClient, 'registerSupportPushToken')({token});
+      if (!result.data?.registered) throw Object.assign(new Error('push-token-save-failed'), { code: 'push-token-save-failed' });
+    } else {
+      if (!activeCompany?.id) throw Object.assign(new Error('push-token-account-unavailable'), { code: 'push-token-account-unavailable' });
+      const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'companies', activeCompany.id, 'users', currentUser.id);
+      await updateDoc(userRef, {pushTokens: arrayUnion(token)});
+    }
+
+    setCurrentUser(previous => previous?.id === currentUser.id
+      ? {...previous, pushTokens: [...new Set([...(previous.pushTokens || []), token])]}
+      : previous);
+    return true;
+  };
+
   const handleEnablePushNotifications = async () => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       triggerNotification('Este navegador não oferece notificações para o Comunica.', 'error');
@@ -1458,9 +1480,10 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       }
       const token = await webPushTokenRequestRef.current;
       if (!token) throw new Error('O navegador não forneceu um token de notificação.');
+      await persistBrowserPushToken(token);
       setPushToken(token);
       setBrowserPushGranted(true);
-      triggerNotification('Notificações ativadas neste dispositivo.');
+      triggerNotification('Notificações ativadas e vinculadas à sua conta neste dispositivo.');
     } catch (error) {
       console.error('Não foi possível ativar notificações neste dispositivo.', error);
       const message = getPushActivationErrorMessage(error, {

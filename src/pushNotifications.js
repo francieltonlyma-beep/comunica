@@ -53,6 +53,9 @@ export const getPushActivationErrorMessage = (error, {
   if (details.includes('vapid') || details.includes('missing-push-configuration')) {
     return 'A configuração de notificações do Comunica está incompleta. Avise o suporte para corrigir a chave de envio.';
   }
+  if (details.includes('push-token-account-unavailable') || details.includes('push-token-save-failed')) {
+    return 'O iPhone recebeu a permissão, mas o aparelho não foi vinculado à sua conta. Entre novamente no Comunica e repita a ativação.';
+  }
   if (error?.code === 11 || details.includes('invalidstateerror')) {
     return appleMobile
       ? 'O Safari manteve um registro antigo de notificações neste iPhone. O Comunica tentou substituí-lo, mas o iOS ainda não o liberou. Reinicie o iPhone e tente novamente.'

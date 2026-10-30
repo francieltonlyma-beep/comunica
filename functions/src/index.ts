@@ -807,7 +807,13 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
     android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
     webpush: {
       headers: {Urgency: "high", TTL: "3600"},
-      notification: {icon: "/favicon.png", tag: `comunica-message-${threadId || event.id || "new"}`, renotify: true},
+      notification: {
+        title: "Nova mensagem no Comunica",
+        body: `${String(content.senderName ?? "Alguém")}: ${String(content.subject ?? content.content ?? "Você recebeu uma nova mensagem.")}`,
+        icon: "/pwa/icon-192.png",
+        tag: `comunica-message-${threadId || event.id || "new"}`,
+        renotify: true,
+      },
       fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(event.params.companyId)}&messageThread=${encodeURIComponent(threadId)}`},
     },
   });

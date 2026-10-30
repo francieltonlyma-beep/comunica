@@ -1,5 +1,5 @@
-importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.14.0/firebase-messaging-compat.js');
 
 const COMUNICA_CACHE = 'comunica-shell-v3';
 const COMUNICA_SHELL = ['/', '/manifest.json', '/pwa/icon-192.png', '/pwa/icon-512.png'];
@@ -96,3 +96,4 @@ firebase.messaging();
 // As notificações enviadas pelo Firebase já possuem título e conteúdo.
 // O próprio Firebase as apresenta em segundo plano; criar outra manualmente
 // aqui fazia cada publicação aparecer duas vezes no navegador.
+
