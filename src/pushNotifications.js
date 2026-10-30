@@ -23,7 +23,8 @@ export const isRecoverablePushRegistrationError = (error) => {
 };
 
 export const getPushActivationDiagnosticCode = (error) => {
-  const code = String(error?.code || error?.name || 'unknown').toLowerCase();
+  const rawCode = typeof error?.code === 'string' ? error.code : error?.name || error?.code || 'unknown';
+  const code = String(rawCode).toLowerCase();
   return code.replace(/^messaging\//, '').replace(/[^a-z0-9_-]/g, '-').slice(0, 48) || 'unknown';
 };
 
@@ -52,6 +53,11 @@ export const getPushActivationErrorMessage = (error, {
   if (details.includes('vapid') || details.includes('missing-push-configuration')) {
     return 'A configuração de notificações do Comunica está incompleta. Avise o suporte para corrigir a chave de envio.';
   }
+  if (error?.code === 11 || details.includes('invalidstateerror')) {
+    return appleMobile
+      ? 'O Safari manteve um registro antigo de notificações neste iPhone. O Comunica tentou substituí-lo, mas o iOS ainda não o liberou. Reinicie o iPhone e tente novamente.'
+      : 'O navegador manteve um registro antigo de notificações. Reinicie o navegador e tente novamente.';
+  }
   if (isRecoverablePushRegistrationError(error)) {
     return appleMobile
       ? 'O iPhone não concluiu o registro das notificações. Feche o Comunica, abra novamente pelo ícone da Tela de Início e toque no sino outra vez.'
@@ -75,14 +81,38 @@ const hasCompletePushSubscription = (subscription) => Boolean(
   && subscription?.getKey?.('p256dh')
 );
 
+const subscriptionUsesVapidKey = (subscription, expectedKey) => {
+  const currentKey = subscription?.options?.applicationServerKey;
+  if (!currentKey) return null;
+  const currentBytes = new Uint8Array(currentKey);
+  if (currentBytes.length !== expectedKey.length) return false;
+  return currentBytes.every((value, index) => value === expectedKey[index]);
+};
+
+const waitForSubscriptionRelease = async (pushManager) => {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const remaining = await pushManager.getSubscription();
+    if (!remaining) return true;
+    await remaining.unsubscribe?.().catch(() => false);
+    await new Promise(resolve => setTimeout(resolve, 80 * (attempt + 1)));
+  }
+  return !(await pushManager.getSubscription());
+};
+
 export const ensureWebPushSubscription = async ({ registration, vapidKey }) => {
+  const expectedKey = base64UrlToUint8Array(vapidKey);
   const current = await registration?.pushManager?.getSubscription?.();
-  if (hasCompletePushSubscription(current)) return current;
+  const keyMatches = subscriptionUsesVapidKey(current, expectedKey);
+  if (hasCompletePushSubscription(current) && keyMatches !== false) return current;
   await current?.unsubscribe?.().catch(() => false);
+  const released = await waitForSubscriptionRelease(registration.pushManager);
+  if (!released) {
+    throw new DOMException('O Safari não liberou a inscrição anterior.', 'InvalidStateError');
+  }
 
   const subscription = await registration?.pushManager?.subscribe?.({
     userVisibleOnly: true,
-    applicationServerKey: base64UrlToUint8Array(vapidKey),
+    applicationServerKey: expectedKey,
   });
   if (!hasCompletePushSubscription(subscription)) {
     await subscription?.unsubscribe?.().catch(() => false);

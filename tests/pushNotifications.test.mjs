@@ -60,7 +60,7 @@ test('refaz uma inscrição do Safari que falhou antes de desistir', async () =>
   };
 
   const token = await getWebPushTokenWithRecovery({
-    messaging: {}, registration, vapidKey: 'chave', getToken,
+    messaging: {}, registration, vapidKey: 'AQ', getToken,
   });
 
   assert.equal(token, 'token-recuperado');
@@ -105,6 +105,51 @@ test('gera um código curto e seguro para o suporte', () => {
   );
 });
 
+test('preserva o nome do DOMException quando o código é numérico', () => {
+  assert.equal(
+    getPushActivationDiagnosticCode({ code: 11, name: 'InvalidStateError' }),
+    'invalidstateerror',
+  );
+});
+
+test('substitui uma inscrição criada com outra chave VAPID', async () => {
+  const previousAtob = globalThis.atob;
+  globalThis.atob = value => Buffer.from(value, 'base64').toString('binary');
+  let current;
+  let unsubscribed = false;
+  let subscribed = false;
+  const oldKey = Uint8Array.from([9]).buffer;
+  current = {
+    endpoint: 'https://push.example/old',
+    options: { applicationServerKey: oldKey },
+    getKey: () => new Uint8Array([1]),
+    unsubscribe: async () => { unsubscribed = true; current = null; return true; },
+  };
+  try {
+    const replacement = await ensureWebPushSubscription({
+      registration: {
+        pushManager: {
+          getSubscription: async () => current,
+          subscribe: async () => {
+            subscribed = true;
+            current = {
+              endpoint: 'https://push.example/new',
+              getKey: () => new Uint8Array([2]),
+            };
+            return current;
+          },
+        },
+      },
+      vapidKey: 'AQ',
+    });
+    assert.equal(replacement.endpoint, 'https://push.example/new');
+    assert.equal(unsubscribed, true);
+    assert.equal(subscribed, true);
+  } finally {
+    globalThis.atob = previousAtob;
+  }
+});
+
 test('não repete falhas que não são de registro', async () => {
   let attempts = 0;
   await assert.rejects(
@@ -118,7 +163,7 @@ test('não repete falhas que não são de registro', async () => {
           }),
         },
       },
-      vapidKey: 'chave',
+      vapidKey: 'AQ',
       getToken: async () => {
         attempts += 1;
         throw Object.assign(new Error('bad vapid key'), { code: 'messaging/invalid-vapid-key' });
