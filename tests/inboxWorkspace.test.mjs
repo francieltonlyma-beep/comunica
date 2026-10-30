@@ -26,6 +26,14 @@ test('layout adapta lista e leitura sem perder o contexto da conversa', () => {
   assert.match(app, /h-\[calc\(100dvh-7rem\)\]/);
 });
 
+test('lista lateral e balões usam separação clara e cores suaves', () => {
+  assert.match(app, /min-h-0 flex-1 space-y-2 overflow-y-auto p-3/);
+  assert.match(app, /border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50/);
+  assert.match(app, /rounded-br-md border-blue-200\/90 bg-blue-50\/95 text-slate-900/);
+  assert.match(app, /rounded-bl-md border-slate-200\/90 bg-white\/95 text-slate-900/);
+  assert.doesNotMatch(app, /from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md/);
+});
+
 test('triagem permite fixar, silenciar, arquivar e localizar demandas próprias', () => {
   for (const field of ['pinnedBy', 'mutedBy']) assert.match(app, new RegExp(field));
   assert.match(app, /Minhas demandas/);
