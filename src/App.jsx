@@ -63,6 +63,7 @@ import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupporte
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   getAppleMobileVersion,
+  getPushActivationDiagnosticCode,
   getPushActivationErrorMessage,
   getWebPushTokenWithRecovery,
   isAppleMobileDevice,
@@ -826,6 +827,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isStandaloneApp, setIsStandaloneApp] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const [browserPushGranted, setBrowserPushGranted] = useState(() => 'Notification' in window && Notification.permission === 'granted');
+  const webPushTokenRequestRef = useRef(null);
 
   const [announcementFilter, setAnnouncementFilter] = useState('Todos');
   const [sectorFilter, setSectorFilter] = useState('all');
@@ -1443,25 +1445,29 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       if (!await isMessagingSupported()) {
         throw Object.assign(new Error('messaging/unsupported-browser'), { code: 'messaging/unsupported-browser' });
       }
-      setBrowserPushGranted(true);
       const messaging = getMessaging();
       const serviceWorkerRegistration = await navigator.serviceWorker.ready;
-      const token = await getWebPushTokenWithRecovery({
-        messaging,
-        registration: serviceWorkerRegistration,
-        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-        getToken,
-        deleteToken,
-      });
+      if (!webPushTokenRequestRef.current) {
+        webPushTokenRequestRef.current = getWebPushTokenWithRecovery({
+          messaging,
+          registration: serviceWorkerRegistration,
+          vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+          getToken,
+          deleteToken,
+        }).finally(() => { webPushTokenRequestRef.current = null; });
+      }
+      const token = await webPushTokenRequestRef.current;
       if (!token) throw new Error('O navegador não forneceu um token de notificação.');
       setPushToken(token);
+      setBrowserPushGranted(true);
       triggerNotification('Notificações ativadas neste dispositivo.');
     } catch (error) {
       console.error('Não foi possível ativar notificações neste dispositivo.', error);
-      triggerNotification(getPushActivationErrorMessage(error, {
+      const message = getPushActivationErrorMessage(error, {
         appleMobile,
         permission: Notification.permission,
-      }), 'error');
+      });
+      triggerNotification(`${message} (Código: ${getPushActivationDiagnosticCode(error)})`, 'error');
     }
   };
 // 1. Pede permissão e configura o Firebase Messaging (web e APK)
@@ -1520,11 +1526,24 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         try {
           const messaging = getMessaging();
           const serviceWorkerRegistration = await navigator.serviceWorker.ready;
-          const currentToken = await getToken(messaging, {
-            vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
-            serviceWorkerRegistration,
-          });
-          if (currentToken) setPushToken(currentToken);
+          const existingSubscription = await serviceWorkerRegistration.pushManager.getSubscription();
+          const subscriptionIsComplete = Boolean(
+            existingSubscription?.endpoint
+            && existingSubscription?.getKey?.('auth')
+            && existingSubscription?.getKey?.('p256dh')
+          );
+          // A restauração automática nunca cria uma inscrição. No Safari, a criação deve
+          // partir do toque no sino e não pode disputar o registro com outra tentativa.
+          if (subscriptionIsComplete) {
+            if (!webPushTokenRequestRef.current) {
+              webPushTokenRequestRef.current = getToken(messaging, {
+                vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+                serviceWorkerRegistration,
+              }).finally(() => { webPushTokenRequestRef.current = null; });
+            }
+            const currentToken = await webPushTokenRequestRef.current;
+            if (currentToken) setPushToken(currentToken);
+          }
           unsubscribeWebMessage = onMessage(messaging, (payload) => {
             const eventId = payload.data?.eventId || payload.messageId;
             if (shouldDisplayPush(eventId)) {
@@ -1546,7 +1565,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           });
         } catch (error) {
           console.error('Erro ao configurar notificações do navegador.', error);
-          triggerNotification('Não foi possível ativar notificações do navegador. Confira a permissão do site.', 'error');
         }
       };
       configureWebMessaging();

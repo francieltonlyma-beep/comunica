@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getAppleMobileVersion,
   getPushActivationErrorMessage,
+  getPushActivationDiagnosticCode,
   getWebPushTokenWithRecovery,
   ensureWebPushSubscription,
   isAppleMobileDevice,
@@ -95,6 +96,13 @@ test('explica a correção quando o iOS devolve um registro vazio', () => {
     { appleMobile: true },
   );
   assert.match(message, /Ajustes > Geral > Atualização de Software/);
+});
+
+test('gera um código curto e seguro para o suporte', () => {
+  assert.equal(
+    getPushActivationDiagnosticCode({ code: 'messaging/token-subscribe-failed' }),
+    'token-subscribe-failed',
+  );
 });
 
 test('não repete falhas que não são de registro', async () => {

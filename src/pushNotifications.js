@@ -22,6 +22,11 @@ export const isRecoverablePushRegistrationError = (error) => {
   return PUSH_REGISTRATION_FAILURES.some(value => details.includes(value));
 };
 
+export const getPushActivationDiagnosticCode = (error) => {
+  const code = String(error?.code || error?.name || 'unknown').toLowerCase();
+  return code.replace(/^messaging\//, '').replace(/[^a-z0-9_-]/g, '-').slice(0, 48) || 'unknown';
+};
+
 export const getPushActivationErrorMessage = (error, {
   appleMobile = false,
   permission = globalThis.Notification?.permission,
