@@ -59,7 +59,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath, serverTimestamp, runTransaction, getDocsFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
-import { getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
+import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   getAppleMobileVersion,
@@ -1451,6 +1451,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         registration: serviceWorkerRegistration,
         vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
         getToken,
+        deleteToken,
       });
       if (!token) throw new Error('O navegador não forneceu um token de notificação.');
       setPushToken(token);

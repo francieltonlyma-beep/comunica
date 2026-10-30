@@ -4,6 +4,7 @@ import {
   getAppleMobileVersion,
   getPushActivationErrorMessage,
   getWebPushTokenWithRecovery,
+  ensureWebPushSubscription,
   isAppleMobileDevice,
 } from '../src/pushNotifications.js';
 
@@ -44,7 +45,15 @@ test('refaz uma inscrição do Safari que falhou antes de desistir', async () =>
   };
   const registration = {
     pushManager: {
-      getSubscription: async () => ({ unsubscribe: async () => { unsubscribed = true; } }),
+      getSubscription: async () => ({
+        endpoint: 'https://push.example/device',
+        getKey: () => new Uint8Array([1]),
+        unsubscribe: async () => { unsubscribed = true; },
+      }),
+      subscribe: async () => ({
+        endpoint: 'https://push.example/device-new',
+        getKey: () => new Uint8Array([2]),
+      }),
     },
     update: async () => { updated = true; },
   };
@@ -59,12 +68,48 @@ test('refaz uma inscrição do Safari que falhou antes de desistir', async () =>
   assert.equal(updated, true);
 });
 
+test('identifica o registro vazio devolvido pelo Safari', async () => {
+  const previousAtob = globalThis.atob;
+  globalThis.atob = value => Buffer.from(value, 'base64').toString('binary');
+  try {
+    await assert.rejects(
+      ensureWebPushSubscription({
+        registration: {
+          pushManager: {
+            getSubscription: async () => null,
+            subscribe: async () => ({ endpoint: '', getKey: () => null, unsubscribe: async () => true }),
+          },
+        },
+        vapidKey: 'AQ',
+      }),
+      error => error?.code === 'safari-empty-push-subscription',
+    );
+  } finally {
+    globalThis.atob = previousAtob;
+  }
+});
+
+test('explica a correção quando o iOS devolve um registro vazio', () => {
+  const message = getPushActivationErrorMessage(
+    Object.assign(new Error('safari-empty-push-subscription'), { code: 'safari-empty-push-subscription' }),
+    { appleMobile: true },
+  );
+  assert.match(message, /Ajustes > Geral > Atualização de Software/);
+});
+
 test('não repete falhas que não são de registro', async () => {
   let attempts = 0;
   await assert.rejects(
     getWebPushTokenWithRecovery({
       messaging: {},
-      registration: {},
+      registration: {
+        pushManager: {
+          getSubscription: async () => ({
+            endpoint: 'https://push.example/device',
+            getKey: () => new Uint8Array([1]),
+          }),
+        },
+      },
       vapidKey: 'chave',
       getToken: async () => {
         attempts += 1;
