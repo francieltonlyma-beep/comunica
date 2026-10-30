@@ -6,6 +6,7 @@ import {
   getPushActivationDiagnosticCode,
   getWebPushTokenWithRecovery,
   ensureWebPushSubscription,
+  repairWebPushServiceWorker,
   isAppleMobileDevice,
 } from '../src/pushNotifications.js';
 
@@ -148,6 +149,31 @@ test('substitui uma inscrição criada com outra chave VAPID', async () => {
   } finally {
     globalThis.atob = previousAtob;
   }
+});
+
+test('recria o serviço de notificações sem apagar dados do aplicativo', async () => {
+  let unsubscribed = false;
+  let unregistered = false;
+  let registeredPath = '';
+  const activeWorker = { state: 'activated' };
+  const repaired = await repairWebPushServiceWorker({
+    registration: {
+      pushManager: {
+        getSubscription: async () => ({ unsubscribe: async () => { unsubscribed = true; } }),
+      },
+      unregister: async () => { unregistered = true; return true; },
+    },
+    serviceWorkerContainer: {
+      register: async (path, options) => {
+        registeredPath = `${path}:${options.scope}`;
+        return { active: activeWorker, update: async () => undefined };
+      },
+    },
+  });
+  assert.equal(unsubscribed, true);
+  assert.equal(unregistered, true);
+  assert.equal(registeredPath, '/firebase-messaging-sw.js:/');
+  assert.equal(repaired.active, activeWorker);
 });
 
 test('não repete falhas que não são de registro', async () => {

@@ -99,6 +99,33 @@ const waitForSubscriptionRelease = async (pushManager) => {
   return !(await pushManager.getSubscription());
 };
 
+const waitForActiveWorker = async (registration) => {
+  if (registration?.active) return registration;
+  const worker = registration?.installing || registration?.waiting;
+  if (!worker) throw Object.assign(new Error('service-worker-inactive'), { code: 'service-worker-inactive' });
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(Object.assign(new Error('service-worker-inactive'), { code: 'service-worker-inactive' })), 10000);
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'activated') {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+  });
+  return registration;
+};
+
+export const repairWebPushServiceWorker = async ({ registration, serviceWorkerContainer = globalThis.navigator?.serviceWorker }) => {
+  const subscription = await registration?.pushManager?.getSubscription?.().catch(() => null);
+  await subscription?.unsubscribe?.().catch(() => false);
+  await registration?.unregister?.().catch(() => false);
+
+  const repaired = await serviceWorkerContainer?.register?.('/firebase-messaging-sw.js', { scope: '/' });
+  if (!repaired) throw Object.assign(new Error('service-worker-repair-failed'), { code: 'service-worker-repair-failed' });
+  await repaired.update?.().catch(() => undefined);
+  return waitForActiveWorker(repaired);
+};
+
 export const ensureWebPushSubscription = async ({ registration, vapidKey }) => {
   const expectedKey = base64UrlToUint8Array(vapidKey);
   const current = await registration?.pushManager?.getSubscription?.();
@@ -126,19 +153,28 @@ export const ensureWebPushSubscription = async ({ registration, vapidKey }) => {
 export const getWebPushTokenWithRecovery = async ({ messaging, registration, vapidKey, getToken, deleteToken }) => {
   if (!vapidKey) throw Object.assign(new Error('missing-push-configuration'), { code: 'missing-push-configuration' });
 
-  const options = { vapidKey, serviceWorkerRegistration: registration };
+  let activeRegistration = registration;
+  const options = { vapidKey, serviceWorkerRegistration: activeRegistration };
   try {
-    await ensureWebPushSubscription({ registration, vapidKey });
+    await ensureWebPushSubscription({ registration: activeRegistration, vapidKey });
     return await getToken(messaging, options);
   } catch (error) {
     if (error?.code === 'safari-empty-push-subscription') throw error;
     if (!isRecoverablePushRegistrationError(error)) throw error;
 
     await deleteToken?.(messaging).catch(() => false);
-    const existingSubscription = await registration?.pushManager?.getSubscription?.().catch(() => null);
+    const existingSubscription = await activeRegistration?.pushManager?.getSubscription?.().catch(() => null);
     await existingSubscription?.unsubscribe?.().catch(() => false);
-    await registration?.update?.().catch(() => undefined);
-    await ensureWebPushSubscription({ registration, vapidKey });
+    await activeRegistration?.update?.().catch(() => undefined);
+    try {
+      await ensureWebPushSubscription({ registration: activeRegistration, vapidKey });
+    } catch (retryError) {
+      const retryDetails = `${retryError?.code || ''} ${retryError?.name || ''}`.toLowerCase();
+      if (retryError?.code !== 11 && !retryDetails.includes('invalidstate')) throw retryError;
+      activeRegistration = await repairWebPushServiceWorker({ registration: activeRegistration });
+      options.serviceWorkerRegistration = activeRegistration;
+      await ensureWebPushSubscription({ registration: activeRegistration, vapidKey });
+    }
     return getToken(messaging, options);
   }
 };
