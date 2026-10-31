@@ -10,7 +10,13 @@ export function teamCoverageSummary(coverage, departments = [], { ready = true, 
   if (error || !ready) return { tone: 'unknown', code: '?', label: error || 'Carregando cobertura', details: '', actionable: false };
   const rules = coverage?.rules || [];
   const slots = rules.flatMap(rule => rule.segments.map(segment => ({ ...segment, rule })));
-  if (!slots.length) return { tone: 'none', code: '—', label: 'Sem necessidade cadastrada', details: '', actionable: false };
+  if (!slots.length) {
+    const pending = rules.some(rule => rule.unknown > 0);
+    const closed = rules.length > 0 && rules.every(rule => rule.closed) && !pending;
+    return { tone: pending ? 'unknown' : closed ? 'closed' : 'none', code: pending ? '?' : closed ? 'Fech.' : '—',
+      label: pending ? 'Funcionamento a revisar' : closed ? 'Setor fechado' : 'Sem necessidade cadastrada',
+      details: rules.map(rule => `${departments.find(item => item.id === rule.department)?.name || rule.department}: ${rule.configurationMissing ? 'defina se este domingo ou feriado está aberto ou fechado' : rule.closedConflict ? 'setor fechado com trabalho escalado; corrija a marcação' : 'fechado'}`).join('\n'), actionable: pending };
+  }
   const unknown = rules.some(rule => rule.unknown > 0);
   const missing = slots.some(slot => slot.missing > 0);
   const excess = slots.some(slot => slot.excess > 0);
@@ -19,7 +25,7 @@ export function teamCoverageSummary(coverage, departments = [], { ready = true, 
   const worst = slots.reduce((best, slot) => rank(slot) > rank(best)
     || (rank(slot) === rank(best) && slot.available - slot.rule.minimum < best.available - best.rule.minimum) ? slot : best);
   const label = tone === 'shortage' ? 'Falta de equipe' : tone === 'unknown' ? 'Revisar horários' : tone === 'excess' ? 'Acima do máximo desejado' : 'Mínimo atendido';
-  const details = rules.map(rule => `${departments.find(item => item.id === rule.department)?.name || rule.department}: ${rule.segments.map(slot => `${slot.start}–${slot.end}: ${slot.available} disponível(is), mínimo ${rule.minimum}${rule.maximum == null ? '' : `, máximo ${rule.maximum}`}${slot.missing ? `; faltam ${slot.missing}` : slot.excess ? `; excesso de ${slot.excess}` : ''}`).join('; ')}${rule.unknown ? `; ${rule.unknown} pessoa(s) com horário ou intervalo incompleto` : ''}`).join('\n');
+  const details = rules.map(rule => `${departments.find(item => item.id === rule.department)?.name || rule.department}: ${rule.configurationMissing ? 'funcionamento de domingo ou feriado não definido' : rule.closed ? (rule.closedConflict ? 'fechado com trabalho escalado' : 'fechado') : rule.segments.map(slot => `${slot.start}–${slot.end}: ${slot.available} disponível(is), mínimo ${rule.minimum}${rule.maximum == null ? '' : `, máximo ${rule.maximum}`}${slot.missing ? `; faltam ${slot.missing}` : slot.excess ? `; excesso de ${slot.excess}` : ''}`).join('; ')}${rule.unknown ? `; ${rule.unknown} pessoa(s) com horário ou intervalo incompleto` : ''}`).join('\n');
   return { tone, code: `${worst.available}/${worst.rule.minimum}`, label, details,
     actionable: tone !== 'sufficient', unknown, excess,
     interval: `${worst.start}–${worst.end}`,

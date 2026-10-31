@@ -1,3 +1,4 @@
+import { coverageChangeError, coverageChangesForDates } from './scheduleCoverageChange.js';
 import { coverageForDay } from './scheduleCoverage.js';
 import { isWorking, shiftDate } from './scheduleDayRules.js';
 import { canEditPublishedSchedule, planPublishedDayEdit, publishedEditIssues, publishedScheduleDraft } from './publishedScheduleEdit.js';
@@ -30,13 +31,18 @@ export function planPublishedScheduleSwap(source, sourceDate, target, targetDate
   if (issues.length) throw new Error(issues[0]);
   const note = String(reason || '').trim().slice(0, 240) || `Troca com ${target.userName || 'outro colaborador'}`;
   const reverseNote = String(reason || '').trim().slice(0, 240) || `Troca com ${source.userName || 'outro colaborador'}`;
-  const first = planPublishedDayEdit(source, incomingDraft(target, note), sourceDate, { ...context, publicationId: `${publicationId}-a`, actor, now });
-  const second = planPublishedDayEdit(target, incomingDraft(source, reverseNote), targetDate, { ...context, publicationId: `${publicationId}-b`, actor, now });
+  const first = planPublishedDayEdit(source, incomingDraft(target, note), sourceDate, { ...context, publicationId: `${publicationId}-a`, actor, now, skipCoverageCheck: true });
+  const second = planPublishedDayEdit(target, incomingDraft(source, reverseNote), targetDate, { ...context, publicationId: `${publicationId}-b`, actor, now, skipCoverageCheck: true });
+  if (!context.skipCoverageCheck && context.rules?.coverageRequirements?.length) {
+    const after = [...context.history.filter(item => item.id !== source.id && item.id !== target.id), ...first.schedules, ...second.schedules];
+    const problem = coverageChangeError(coverageChangesForDates([sourceDate, shiftDate(sourceDate, 1), targetDate, shiftDate(targetDate, 1)], context.history, after, context.rules.coverageRequirements, context));
+    if (problem) throw new Error(problem);
+  }
   return { records: [...first.records, ...second.records], schedules: [...first.schedules, ...second.schedules], replaced: [source, target] };
 }
 
 export function publishedSwapCoverage(source, sourceDate, target, targetDate, requirements, context) {
-  const plan = planPublishedScheduleSwap(source, sourceDate, target, targetDate, { ...context, publicationId: 'preview', actor: { id: 'preview', name: '' }, now: 0 });
+  const plan = planPublishedScheduleSwap(source, sourceDate, target, targetDate, { ...context, publicationId: 'preview', skipCoverageCheck: true, actor: { id: 'preview', name: '' }, now: 0 });
   const removed = new Set([source.id, target.id]);
   const schedules = [...context.history.filter(item => !removed.has(item.id)), ...plan.schedules];
   const dates = [...new Set([sourceDate, shiftDate(sourceDate, 1), targetDate, shiftDate(targetDate, 1)])].sort();

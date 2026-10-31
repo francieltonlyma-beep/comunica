@@ -66,7 +66,7 @@ const extract = (name, next, ctx) => vm.runInNewContext('(' + app.split('const '
 test('salvamento real confirma os dois registros em uma transação protegida', async () => {
   for (const ok of [false, true]) {
     const swap = { source: work, date: sourceDate, companyId: 'company', history, absences: [], rules: context.rules };
-    const ctx = { currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {}, publishedScheduleSwap: swap,
+    const ctx = { calendarEvents: [], scheduleScope: { employees: [] }, getUserDepts: user => user?.depts || [], currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {}, publishedScheduleSwap: swap,
       setWorkSchedules: update => { ctx.updated = update(history); }, isSavingPublishedSchedule: false, activeCompany: { id: 'company' }, workSchedules: history, absences: [], automaticScheduleRules: context.rules,
       schedulePlanningDataReady: () => true, scheduleSignature, planPublishedScheduleSwap, crypto: webcrypto, notifications: [], writes: [], setIsSavingPublishedSchedule() {},
     };

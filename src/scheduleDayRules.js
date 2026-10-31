@@ -1,3 +1,4 @@
+import { coverageRequirementsForDate } from './scheduleCoverage.js';
 import { scheduleRowFieldIssues } from './scheduleValidation.js';
 const DAY = 86400000;
 export const isWorking = row => ['Presencial', 'Home Office'].includes(row?.status);
@@ -198,7 +199,12 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
           resolved = { ...resolved, status: assignment.status, shiftStart: working ? assignment.shiftStart : '', shiftEnd: working ? assignment.shiftEnd : '', breakStart: working ? assignment.breakStart || '' : '', breakEnd: working ? assignment.breakEnd || '' : '', breakMinutes: working && assignment.breakStart && assignment.breakEnd ? duration(assignment.breakStart, assignment.breakEnd) : 0, ruleReason: 'Feriado configurado individualmente', ruleConflicts: [], ruleApplied: true, holidayConfigured: true };
           pinned = true;
         }
-        return { ...resolved, workTemplate: isWorking(resolved) && !resolved.ruleConflicts?.length ? Object.fromEntries(['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes'].map(key => [key, resolved[key]])) : null, date, holiday, holidayWorkingDay: holiday && rules.holidaysCountAsRest === false, pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
+        const operation = coverageRequirementsForDate(date, rules.coverageRequirements || [], getDepartment(user), { holidays });
+        if (operation.some(rule => rule.closed)) {
+          if (pinned && isWorking(resolved)) resolved = { ...resolved, ruleConflicts: [...(resolved.ruleConflicts || []), 'Regra individual de trabalho em um dia com setor fechado'] };
+          else { resolved = { ...resolved, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, ruleReason: 'Setor fechado conforme necessidade de pessoas', ruleApplied: true }; pinned = true; }
+        }
+        return { ...resolved, workTemplate: isWorking(resolved) && !resolved.ruleConflicts?.length ? Object.fromEntries(['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes'].map(key => [key, resolved[key]])) : null, date, holiday, holidayWorkingDay: holiday && (rules.holidaysCountAsRest === false || operation.some(rule => !rule.closed && rule.minimum > 0)), pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)) || operation.some(rule => !rule.closed && rule.minimum > 0), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
       });
       const pinnedWork = rows.filter(row => row.pinned && isWorking(row)).length;
       const flexible = rows.filter(row => !row.pinned && isWorking(row));
@@ -290,4 +296,5 @@ export function scheduleRuleIssues(rows, history = []) {
   }
   return issues;
 }
+
 

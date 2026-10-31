@@ -1,4 +1,4 @@
-import { coverageForDay } from './scheduleCoverage.js';
+import { coverageForDay, coverageRequirementsForDate } from './scheduleCoverage.js';
 import { assertSchedulePublicationSize } from './schedulePublicationLimits.js';
 import { isWorking, scheduleRuleIssues, shiftDate } from './scheduleDayRules.js';
 import { findScheduleAbsence, isFullDayAbsence } from './scheduleAbsences.js';
@@ -105,7 +105,7 @@ export function proposalScheduleRecords(rows, history = []) {
 
 // Keep stable calendar records indexed while evaluating only changed civil days.
 // The previous day remains present so overnight shifts and absences still count.
-function proposalCoverageEvaluator(rows, requirements, { history = [], absences = [], employees = [], getDepartments } = {}) {
+function proposalCoverageEvaluator(rows, requirements, { history = [], absences = [], employees = [], getDepartments, holidays = [], events = [] } = {}) {
   const retained = retainedScheduleRecords(rows, history);
   const byDate = new Map();
   rows.forEach((row, index) => byDate.set(row.date, [...(byDate.get(row.date) || []), index]));
@@ -114,7 +114,7 @@ function proposalCoverageEvaluator(rows, requirements, { history = [], absences 
     const yesterday = shiftDate(date, -1);
     if (!stableByDate.has(date)) stableByDate.set(date, retained.filter(row => inRange(row, date) || inRange(row, yesterday)));
     const changing = [...(byDate.get(date) || []), ...(byDate.get(yesterday) || [])].map(index => rows[index]).filter(row => !isProtectedProposalRow(row)).map(proposalRecord);
-    return { date, ...coverageForDay(date, requirements, { schedules: [...stableByDate.get(date), ...changing], absences, employees, getDepartments }) };
+    return { date, ...coverageForDay(date, requirements, { schedules: [...stableByDate.get(date), ...changing], absences, employees, getDepartments, holidays, events }) };
   };
 }
 
@@ -179,8 +179,7 @@ export function optimizeScheduleCoverage(input, requirements, context = {}, opti
   });
   const maxEvaluations = options.maxEvaluations ?? Math.min(24000, Math.max(1600, groups.size * 40));
   const maxSwaps = options.maxSwaps ?? Math.max(100, groups.size * 5);
-  const weekday = date => new Date(`${date}T12:00:00`).getDay();
-  const operationalNeed = row => requirements.some(rule => rule.department === row.dept && rule.weekdays?.includes(weekday(row.date)) && Number(rule.minimum) > 0);
+  const operationalNeed = row => coverageRequirementsForDate(row.date, requirements, row.dept, context).some(rule => !rule.closed && Number(rule.minimum) > 0);
   // A necessidade da operação pode ativar um dia fora do padrão genérico. Regras
   // individuais, ausências, feriados protegidos e dias fixados continuam imutáveis.
   const isFlexible = row => !isFixedProposalRow(row) && (!row.holiday || row.holidayWorkingDay) && (row.allowed !== false || operationalNeed(row)) && ['Presencial', 'Home Office', 'Folga'].includes(row.status);

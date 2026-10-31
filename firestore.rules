@@ -128,7 +128,7 @@ service cloud.firestore {
     function scheduleManager(app, company) {
       let role = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('role', '').lower();
       return manages(app, company) || (member(company)
-        && role.matches('.*(coordenador|encarregado|supervis|diretor|gestor|gestao|rh).*'));
+        && role.matches('.*(coordenador|encarregado|supervis|diretor|gestor|gest[aã]o|rh).*'));
     }
     function scheduleDepartmentInScope(app, company, data) {
       let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data;
@@ -215,7 +215,7 @@ service cloud.firestore {
           || resource.data.get('requesterId', '') == request.auth.uid || resource.data.get('targetUserId', '') == request.auth.uid);
         allow read: if kind == 'documents' && documentAudience(app, company, resource.data);
         allow read: if kind == 'applications' && (support() || careerManager(app, company));
-        allow write: if kind in ['departments', 'roles', 'settings', 'events', 'presence'] && manages(app, company);
+        allow write: if kind in ['departments', 'roles', 'settings', 'events', 'presence'] && manages(app, company) && !(kind == 'settings' && id == 'schedule-rules' && request.method == 'delete');
         allow create, update: if kind == 'presence' && access(company) && (
           (scheduleManager(app, company) && canManageCalendar(app, company))
           || (canPublishAbsenceForOthers(app, company) && request.resource.data.get('status', '') == 'Férias'
@@ -223,12 +223,14 @@ service cloud.firestore {
         allow write: if kind == 'settings' && id == 'whistleblowing-poster' && member(company)
           && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('tabs', {}).get('whistleblowing', false) == true;
         allow create, update: if kind == 'settings' && id == 'schedule-rules'
-          && scheduleManager(app, company) && canManageScheduleRules(app, company);
-        allow create: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company)
+          && scheduleManager(app, company) && canManageScheduleRules(app, company) && canEdit(app, company)
+          && (manages(app, company) || (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/$(id))
+            && request.resource.data.get('coverageRequirements', []) == resource.data.get('coverageRequirements', [])));
+        allow create: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company) && canEdit(app, company)
           && scheduleDepartmentInScope(app, company, request.resource.data);
-        allow update: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company)
+        allow update: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company) && canEdit(app, company)
           && scheduleDepartmentInScope(app, company, resource.data) && scheduleDepartmentInScope(app, company, request.resource.data);
-        allow delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company)
+        allow delete: if kind == 'schedules' && scheduleManager(app, company) && canManageCalendar(app, company) && canEdit(app, company)
           && scheduleDepartmentInScope(app, company, resource.data);
         allow create: if kind == 'scheduleSwapRequests' && member(company)
           && request.resource.data.keys().hasOnly(['requesterId', 'requesterName', 'sourceScheduleId', 'sourceDate', 'targetUserId', 'targetName', 'targetScheduleId', 'targetDate', 'reason', 'status', 'scheduleSignature', 'createdAt', 'updatedAt'])
@@ -293,6 +295,19 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'pinnedBy', 'mutedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy', 'resolutionRating', 'resolutionFeedback', 'resolutionEvaluatedAt', 'servicePriority', 'servicePriorityLabel', 'serviceDecision', 'serviceDecisionBy', 'serviceDecisionAt', 'serviceStatus', 'serviceAssigneeId', 'serviceAssigneeName', 'serviceStartedAt', 'serviceWaitingSince', 'servicePromisedDate', 'serviceProgress', 'serviceProgressNote', 'serviceProgressUpdatedAt', 'serviceProgressUpdatedBy', 'likedBy', 'savedBy', 'highlightedBy', 'activity'])
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activity']) || canManageActivities(app, company));
         allow delete: if false;
+      }
+      match /scheduleCoverageApprovals/{id} {
+        allow read: if manages(app, company);
+        allow create: if manages(app, company)
+          && request.resource.data.keys().hasOnly(['publicationId', 'actorId', 'actorName', 'reason', 'snapshotHash', 'rulesVersion', 'gaps', 'departmentIds', 'startDate', 'endDate', 'approvedAt'])
+          && request.resource.data.publicationId == id && request.resource.data.actorId == request.auth.uid
+          && request.resource.data.approvedAt == request.time
+          && request.resource.data.reason is string && request.resource.data.reason.size() >= 10 && request.resource.data.reason.size() <= 1000
+          && request.resource.data.gaps is list && request.resource.data.gaps.size() > 0 && request.resource.data.gaps.size() <= 5000
+          && request.resource.data.actorName is string && request.resource.data.snapshotHash is string
+          && request.resource.data.rulesVersion is number && request.resource.data.departmentIds is list
+          && request.resource.data.startDate is string && request.resource.data.endDate is string;
+        allow update, delete: if false;
       }
       match /auditLogs/{id} {
         allow read: if manages(app, company);

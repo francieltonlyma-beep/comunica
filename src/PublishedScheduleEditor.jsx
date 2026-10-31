@@ -1,3 +1,4 @@
+import { coverageChangeError } from './scheduleCoverageChange.js';
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { DayCoverage } from './ScheduleCoveragePanel.jsx';
@@ -33,11 +34,12 @@ export default function PublishedScheduleEditor({ edit, context, requirements = 
   const working = ['Presencial', 'Home Office'].includes(draft.status);
   const issues = publishedEditIssues(edit.source, draft, edit.date, context);
   const coverage = issues.length ? [] : publishedEditCoverage(edit.source, draft, edit.date, requirements, context);
+  const coverageProblem = coverageChangeError(coverage);
   const hours = publishedDayHours(draft);
   const changed = JSON.stringify(draft) !== JSON.stringify(publishedScheduleDraft(edit.source));
   const submit = async event => {
     event.preventDefault();
-    if (disabled || !ready || stale || issues.length || !changed) return;
+    if (disabled || !ready || stale || coverageProblem || issues.length || !changed) return;
     try { if (!await onSave(draft)) setSubmitError('O salvamento não foi confirmado. Sua edição foi preservada.'); }
     catch { setSubmitError('Não foi possível salvar. Sua edição foi preservada; tente novamente.'); }
   };
@@ -59,8 +61,9 @@ export default function PublishedScheduleEditor({ edit, context, requirements = 
         {!requirements.length ? <p>Sem necessidades de cobertura cadastradas. Não há uma meta para comparar.</p> : coverage.map(day => <div key={day.date} className="pse-day"><strong>{shortDate(day.date)}</strong><p>Antes: {missingLabel(coverageMissingMinutes(day.before))}<br/>Depois: {missingLabel(coverageMissingMinutes(day.after))}</p>{coverageMissingMinutes(day.after) > coverageMissingMinutes(day.before) && <p className="pse-warning">Este ajuste aumenta a falta de cobertura. Confira a equipe antes de salvar.</p>}<details><summary>Ver faixas de cobertura após o ajuste</summary><DayCoverage coverage={day.after} departments={departments} ready={ready} error=""/></details></div>)}
       </section>}
       {(edit.source.updatedBy || edit.source.updatedAt) && <p className="pse-history">Última alteração: {edit.source.updatedBy || 'responsável não informado'}{Number(edit.source.updatedAt) > 0 ? ` · ${new Date(edit.source.updatedAt).toLocaleString('pt-BR')}` : ''}</p>}
+      {coverageProblem && <p className="pse-warning" role="alert">{coverageProblem}</p>}
       {submitError && <p className="pse-warning" role="alert">{submitError}</p>}
-      <footer className="pse-footer"><button type="button" disabled={disabled} onClick={onClose}>Cancelar</button><button type="submit" disabled={disabled || !ready || stale || issues.length > 0 || !changed}>{disabled ? 'Salvando...' : 'Salvar alteração deste dia'}</button></footer>
+      <footer className="pse-footer"><button type="button" disabled={disabled} onClick={onClose}>Cancelar</button><button type="submit" disabled={disabled || !ready || stale || Boolean(coverageProblem) || issues.length > 0 || !changed}>{disabled ? 'Salvando...' : 'Salvar alteração deste dia'}</button></footer>
     </form>
   </section></div>;
 }

@@ -1,3 +1,5 @@
+import { buildCoverageApproval } from '../src/scheduleCoverageApproval.js';
+import { scheduleDraftHash } from '../src/scheduleDrafts.js';
 import { TextEncoder } from 'node:util';
 import { assertSchedulePublicationSize } from '../src/schedulePublicationLimits.js';
 import test from 'node:test';
@@ -19,7 +21,7 @@ function publicationContext(saved = true) {
   const writes = [], notifications = [], modal = [];
   const rows = ['2026-11-02', '2026-11-03', '2026-11-04'].map(date => ({ key: 'u-' + date, userId: 'u', userName: 'Pessoa', dept: 'op', date, weekKey: '2026-11-02', status: 'Presencial', shiftStart: '08:00', shiftEnd: '17:00', breakStart: '12:00', breakEnd: '13:00', breakMinutes: 60, extraHours: 0 }));
   const context = {
-    crypto: webcrypto, isSavingScheduleProposal: false, isManager: true, currentUser: { isAdmin: true, name: 'Admin' },
+    crypto: webcrypto, dbUser: { uid: 'admin' }, absences: [], buildCoverageApproval, scheduleDraftHash, serverTimestamp: () => 'server-time', isSavingScheduleProposal: false, isManager: true, currentUser: { isAdmin: true, name: 'Admin' },
     effectiveAccessProfile: {}, schedulePlanningDataReady: () => true,
     automaticScheduleRules: { name: 'Regra padrão da empresa', version: 1, restEveryDays: 7, workDaysPerWeek: 5, minRestHours: 11, maxDailyHours: 12, maxWeeklyHours: 44, maxExtraHoursPerDay: 2, limitSeverity: 'blocking' },
     automaticScheduleInput: 'same', automaticScheduleProposalInput: 'same',
@@ -126,7 +128,7 @@ function transactionContext({ changedBefore = false, changedDuring = false, fail
   const context = {
     assertSchedulePublicationSize, TextEncoder, isFirebaseAvailable: true, dbUser: { uid: 'admin' }, activeCompany: { id: 'company' }, db: {},
     scopedScheduleSource: collection => collection, scheduleScope: { allDepartments: true }, query() {}, where() {},
-    getTenantCollection: () => 'schedules', doc: (collection, id) => collection + '/' + id, scheduleSignature,
+    getTenantCollection: name => name, doc: (collection, id) => collection + '/' + id, scheduleSignature,
     getDocsFromServer: async () => ({ docs: (changedBefore ? [{ ...source[0], locked: true }] : source).map(snapshot) }),
     runTransaction: async (db, callback) => {
       const pending = [];
@@ -187,3 +189,48 @@ test('volume excessivo é recusado antes de consultar ou gravar no servidor', as
   assert.match(state.notifications[0], /volume de dados/);
 });
 
+
+
+
+test('publicação com déficit exige autorização atual e registra auditoria junto às escalas', async () => {
+  const state = publicationContext();
+  const analysis = { missingMinutes: 240, unknown: 0, days: [{ date: '2026-11-02', rules: [{ id: 'need', department: 'op', minimum: 2, unknown: 0, segments: [{ start: '08:00', end: '12:00', available: 1, missing: 1 }] }] }] };
+  state.context.automaticScheduleRules.coverageRequirements = [{ id: 'need' }];
+  state.context.scheduleScopedCoverageRequirements = [{ id: 'need' }];
+  state.context.schedulePlanningContext = () => ({});
+  state.context.analyzeProposalCoverage = () => analysis;
+  const save = extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context);
+  const binding = JSON.stringify({ input: state.context.automaticScheduleInput, rows: state.context.automaticScheduleProposal });
+  await save({ reason: 'Equipe reduzida com atendimento priorizado.', binding: 'old' });
+  assert.equal(state.writes.length, 0);
+  await save({ reason: 'Equipe reduzida com atendimento priorizado.', binding });
+  assert.equal(state.writes.length, 1);
+  const [records, , guard] = state.writes[0];
+  const audit = records.find(record => record.collection === 'scheduleCoverageApprovals');
+  assert.equal(audit.data.actorId, 'admin'); assert.equal(audit.data.approvedAt, 'server-time');
+  assert.equal(audit.data.gaps[0].missing, 1); assert.equal(guard.rulesVersion, 1);
+  assert.ok(records.some(record => record.collection === 'schedules'));
+});
+
+test('gestor comum não publica déficit mesmo enviando uma autorização forjada', async () => {
+  const state = publicationContext();
+  state.context.currentUser.isAdmin = false;
+  state.context.automaticScheduleRules.coverageRequirements = [{ id: 'need' }];
+  state.context.scheduleScopedCoverageRequirements = [{ id: 'need' }];
+  state.context.schedulePlanningContext = () => ({});
+  state.context.analyzeProposalCoverage = () => ({ missingMinutes: 1, unknown: 0, days: [] });
+  await extract('saveAutomaticScheduleProposal', 'saveBulkSchedule', state.context)({ reason: 'Uma justificativa forjada', binding: 'fake' });
+  assert.equal(state.writes.length, 0);
+});
+
+
+test('autorização e escalas são atômicas e uma mudança de regras aborta a gravação', async () => {
+  for (const options of [{ fail: true }, { rulesVersion: 2 }]) {
+    const state = transactionContext(options);
+    const saved = await extract('saveRelatedRecords', 'updateDocField', state.context)([
+      { collection: 'schedules', id: 'new', data: { status: 'Folga' } },
+      { collection: 'scheduleCoverageApprovals', id: 'approval', data: { reason: 'Justificativa de teste' } },
+    ], 'Falha', { companyId: 'company', history: state.source, replaced: state.source, ...(options.rulesVersion ? { rulesVersion: options.rulesVersion } : {}) });
+    assert.equal(saved, false); assert.equal(state.committed.length, 0);
+  }
+});

@@ -69,7 +69,7 @@ test('cobertura usa toda a equipe e compara também o dia seguinte em turno notu
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const extract = (name, next, ctx) => vm.runInNewContext('(' + app.split('const ' + name + ' = ')[1].split('const ' + next + ' = ')[0].trim().replace(/;$/, '') + ')', ctx);
 function savingContext(ok = true) {
-  const ctx = { currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {},
+  const ctx = { calendarEvents: [], scheduleScope: { employees: [] }, getUserDepts: user => user?.depts || [], currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {},
     publishedScheduleEdit: { source, date, companyId: 'company', history: [source], absences: [], rules: context.rules }, isSavingPublishedSchedule: false,
     activeCompany: { id: 'company' }, workSchedules: [source], absences: [], automaticScheduleRules: context.rules,
     schedulePlanningDataReady: () => true, scheduleSignature, planPublishedDayEdit, canEditPublishedSchedule, crypto: webcrypto,
@@ -99,3 +99,4 @@ test('mudança de empresa, versão desatualizada ou perda de permissão impedem 
     assert.equal(ctx.writes.length, 0);
   }
 });
+

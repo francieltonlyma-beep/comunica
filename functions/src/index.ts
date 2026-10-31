@@ -28,6 +28,7 @@ import {randomUUID} from 'node:crypto';
 import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivateReports, updatePrivateReport, deletePrivateReport, deleteConfirmedTestReport} from './whistleblowing';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
+import {saveCoverageSettings} from './scheduleCoverage';
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
@@ -1391,4 +1392,13 @@ export const notifyConversationDeadlines = onSchedule({
       throw error;
     }
   }
+});
+
+
+
+export const saveScheduleCoverage = onCall({region: 'us-central1', maxInstances: 3}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente no Comunica.');
+  return saveCoverageSettings(getFirestore(), String(request.data?.companyId || ''), {
+    uid: request.auth.uid, companyId: String(request.auth.token.companyId || ''), isDeveloper: request.auth.token.isDeveloper === true,
+  }, request.data?.requirements, Number(request.data?.expectedVersion));
 });

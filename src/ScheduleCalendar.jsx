@@ -18,7 +18,7 @@ export default function ScheduleCalendar({
   companyName, today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
   currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onSwapSchedule, onRequestSwap, swapRequests = [], swapRequestBusy = false, onSwapRequestAction, onReviewSwapRequest, onDeleteAbsence, onDeleteEvent,
   onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
-  coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
+  coverageHistory = null, coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
   const [anchor, setAnchor] = useState(selectedDate || today);
   const [view, setView] = useState('team');
@@ -141,6 +141,7 @@ export default function ScheduleCalendar({
       </header>
 
       {needsOpen && <CoverageRequirementEditor requirements={coverageRequirements} departments={departments} canConfigure={canConfigureCoverage && canWrite} onSave={onSaveCoverage} defaultDepartment={department} ready={coverageReady} error={coverageError} />}
+      {coverageHistory}
       {swapRequestsOpen && <ScheduleSwapRequestsPanel requests={swapRequests} currentUser={currentUser} canManage={canManage} busy={swapRequestBusy} onClose={() => setSwapRequestsOpen(false)} onAction={onSwapRequestAction} onReview={onReviewSwapRequest}/>}
 
       <div className="sc-toolbar">
@@ -203,7 +204,7 @@ export default function ScheduleCalendar({
                   aria-label={`${longDate(day.date)}: ${day.schedules.length} registros de escala${showAbsences ? `, ${day.absences.length} ausências` : ''}${showEvents ? `, ${day.events.length} eventos` : ''}`}
                   className={`sc-day ${outside ? 'sc-outside' : ''} ${selected ? 'sc-selected' : ''} ${day.date === today ? 'sc-is-today' : ''}`}>
                   <span className="sc-day-top"><span className="sc-day-number">{Number(day.date.slice(-2))}</span>{day.date === today && <span className="sc-today-label">Hoje</span>}</span>
-                  {showCoverage && coverageReady && day.coverage.status !== 'none' && <span className={`sc-coverage-badge sc-coverage-${day.coverage.status}`} title={day.coverage.status === 'shortage' ? `Faltam até ${day.coverage.missingMax} pessoas em uma faixa do dia` : day.coverage.status === 'unknown' ? 'Horários incompletos: revise a cobertura' : 'Mínimo atendido em todas as faixas configuradas'}><span className="sc-coverage-wide">{day.coverage.status === 'shortage' ? `Faltam até ${day.coverage.missingMax}` : day.coverage.status === 'unknown' ? 'Revisar horários' : 'Suficiente'}</span><span className="sc-coverage-compact">{day.coverage.status === 'shortage' ? `−${day.coverage.missingMax}` : day.coverage.status === 'unknown' ? '?' : '✓'}</span></span>}
+                  {showCoverage && coverageReady && day.coverage.status !== 'none' && <span className={`sc-coverage-badge sc-coverage-${day.coverage.status}`} title={day.coverage.status === 'shortage' ? `Faltam até ${day.coverage.missingMax} pessoas em uma faixa do dia` : day.coverage.status === 'unknown' ? 'Horários incompletos: revise a cobertura' : day.coverage.status === 'closed' ? 'Setor fechado' : 'Mínimo atendido em todas as faixas configuradas'}><span className="sc-coverage-wide">{day.coverage.status === 'shortage' ? `Faltam até ${day.coverage.missingMax}` : day.coverage.status === 'unknown' ? 'Revisar horários' : day.coverage.status === 'closed' ? 'Fechado' : 'Suficiente'}</span><span className="sc-coverage-compact">{day.coverage.status === 'shortage' ? `−${day.coverage.missingMax}` : day.coverage.status === 'unknown' ? '?' : day.coverage.status === 'closed' ? 'Fech.' : '✓'}</span></span>}
                   <span className="sc-day-groups">{groups.map(([tone, count]) => <span key={tone} className={`sc-count sc-${tone}`} title={`${count} · ${toneNames[tone]}`}><i />{count}<span>{toneNames[tone]}</span></span>)}</span>
                   <span className="sc-mobile-markers">{showAbsences && day.absences.length > 0 && <span className="sc-count sc-absence"><Clock size={9} />{day.absences.length}</span>}{showEvents && day.events.length > 0 && <span className="sc-count sc-event"><CalendarCheck size={9} />{day.events.length}</span>}</span>
                   <span className="sc-day-entries">

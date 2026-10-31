@@ -49,7 +49,10 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
       - name: Install Firebase Functions dependencies
-        run: npm --prefix functions ci
+        run: |
+          npm --prefix functions ci
+          npm --prefix functions run build
+          node --test functions/tests/scheduleCoverage.test.cjs
       - name: Deploy Firestore rules
         run: npx --yes firebase-tools deploy --only firestore:rules --project comunica-salvador --non-interactive
       - name: Deploy Firebase Storage rules
@@ -88,3 +91,4 @@ jobs:
           channelId: live
       - name: Deploy active Firebase Functions
         run: npx --yes firebase-tools deploy --only functions --project comunica-salvador --non-interactive
+

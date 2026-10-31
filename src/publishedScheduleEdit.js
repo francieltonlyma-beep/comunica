@@ -1,5 +1,6 @@
+import { coverageChangeError, coverageChangesForDates } from './scheduleCoverageChange.js';
 import { isWorking, scheduleRuleIssues, shiftDate } from './scheduleDayRules.js';
-import { coverageForDay } from './scheduleCoverage.js';
+import { coverageForDay, coverageRequirementsForDate } from './scheduleCoverage.js';
 import { findScheduleAbsence, isFullDayAbsence } from './scheduleAbsences.js';
 
 const statuses = ['Presencial', 'Home Office', 'Folga', 'Feriado'];
@@ -24,11 +25,13 @@ export function publishedDayHours(draft) {
   return { regular, extra, total: regular + extra, breakMinutes, actualEnd: Number.isFinite(end) ? clock(start + duration + Math.round(extra * 60)) : '' };
 }
 
-export function publishedEditIssues(source, draft, date, { history = [], absences = [], rules = {} } = {}) {
+export function publishedEditIssues(source, draft, date, { history = [], absences = [], rules = {}, events = [] } = {}) {
   if (!canEditPublishedSchedule(source) || !validDate(date) || !validDate(source.startDate || source.date) || !validDate(source.endDate || source.date || source.startDate) || !active(source, date)) return ['Selecione um dia válido dentro desta escala.'];
   if (!statuses.includes(draft.status)) return ['Escolha uma situação válida.'];
   if (history.some(item => item.id !== source.id && String(item.userId) === String(source.userId) && active(item, date))) return ['Há mais de uma escala desta pessoa neste dia. Revise as marcações sobrepostas antes de editar.'];
   if (isWorking(draft)) {
+    const operation = coverageRequirementsForDate(date, rules.coverageRequirements || [], source.dept, { events });
+    if (operation.some(rule => rule.closed || rule.configurationMissing)) return ['Este setor está fechado ou não tem funcionamento definido para este dia. Revise a necessidade de pessoas antes de marcar trabalho.'];
     if (![draft.shiftStart, draft.shiftEnd].every(value => Number.isFinite(minutes(value))) || draft.shiftStart === draft.shiftEnd) return ['Informe entrada e saída base válidas e diferentes.'];
     const hours = publishedDayHours(draft);
     if (!Number.isFinite(Number(draft.extraHours)) || Number(draft.extraHours) < 0 || Number(draft.extraHours) > 12) return ['A hora extra deve ficar entre 00:00 e 12:00.'];
@@ -43,8 +46,8 @@ export function publishedEditIssues(source, draft, date, { history = [], absence
     maxExtraHoursPerDay: Number(source.maxExtraHoursPerDay ?? rules.maxExtraHoursPerDay ?? 12), limitSeverity: source.limitSeverity || rules.limitSeverity || 'blocking' }], history).filter(issue => issue.blocking).map(issue => issue.message);
 }
 
-export function planPublishedDayEdit(source, draft, date, { publicationId, actor, now, history = [], absences = [], rules = {} }) {
-  const issues = publishedEditIssues(source, draft, date, { history, absences, rules });
+export function planPublishedDayEdit(source, draft, date, { publicationId, actor, now, history = [], absences = [], rules = {}, events = [], employees = [], getDepartments, skipCoverageCheck = false }) {
+  const issues = publishedEditIssues(source, draft, date, { history, absences, rules, events });
   if (issues.length) throw new Error(issues[0]);
   if (!publicationId || !actor?.id || !Number.isFinite(now)) throw new Error('Identificação da alteração indisponível.');
   const start = source.startDate || source.date, end = source.endDate || source.date || start;
@@ -66,11 +69,16 @@ export function planPublishedDayEdit(source, draft, date, { publicationId, actor
     sourceScheduleId: sourceId, adjustmentReason: String(draft.reason || '').trim().slice(0, 240), updatedAt: now, updatedBy: actor.name || 'Usuário autenticado', updatedById: actor.id,
   });
   for (const item of schedules) { const { id, ...data } = item; records.push({ collection: 'schedules', id, operation: single && id === sourceId ? 'update' : 'set', data }); }
+  if (!skipCoverageCheck && rules.coverageRequirements?.length) {
+    const after = [...history.filter(item => item.id !== source.id), ...schedules];
+    const problem = coverageChangeError(coverageChangesForDates([date, shiftDate(date, 1)], history, after, rules.coverageRequirements, { absences, events, employees, getDepartments }, source.dept));
+    if (problem) throw new Error(problem);
+  }
   return { schedules, records, replaced: [source], removedIds: [sourceId] };
 }
 
 export function publishedEditCoverage(source, draft, date, requirements, context) {
-  const plan = planPublishedDayEdit(source, draft, date, { ...context, publicationId: 'preview', actor: { id: 'preview', name: '' }, now: 0 });
+  const plan = planPublishedDayEdit(source, draft, date, { ...context, publicationId: 'preview', skipCoverageCheck: true, actor: { id: 'preview', name: '' }, now: 0 });
   const schedules = [...context.history.filter(item => item.id !== source.id), ...plan.schedules];
   return [date, shiftDate(date, 1)].map(day => ({ date: day,
     before: coverageForDay(day, requirements, { ...context, schedules: context.history }),
@@ -82,3 +90,4 @@ export function coverageMissingMinutes(coverage) {
   const minute = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
   return coverage.rules.reduce((sum, rule) => sum + rule.segments.reduce((total, segment) => total + (minute(segment.end) - minute(segment.start)) * segment.missing, 0), 0);
 }
+

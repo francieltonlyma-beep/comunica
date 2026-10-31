@@ -1,3 +1,4 @@
+import { coverageChangeError } from './scheduleCoverageChange.js';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeftRight, X } from 'lucide-react';
 import { DayCoverage } from './ScheduleCoveragePanel.jsx';
@@ -36,9 +37,10 @@ export default function PublishedScheduleSwap({ swap, context, requirements = []
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
   };
+  const coverageProblem = coverageChangeError(coverage);
   const submit = async event => {
     event.preventDefault();
-    if (disabled || !ready || stale || issues.length || !target) return;
+    if (disabled || !ready || stale || coverageProblem || issues.length || !target) return;
     setSubmitError('');
     try { if (!await onSave({ target, targetDate, reason })) setSubmitError('O salvamento não foi confirmado. Sua troca foi preservada.'); }
     catch { setSubmitError('Não foi possível salvar. Sua troca foi preservada; tente novamente.'); }
@@ -59,8 +61,9 @@ export default function PublishedScheduleSwap({ swap, context, requirements = []
       {!issues.length && <section className="pse-coverage" aria-label="Impacto da troca na cobertura"><h4>Confira a cobertura antes de salvar</h4><p>Os dias seguintes também são conferidos quando há jornada que atravessa a meia-noite.</p>
         {!requirements.length ? <p>Sem necessidades de cobertura cadastradas. Não há uma meta para comparar.</p> : coverage.map(day => <div key={day.date} className="pse-day"><strong>{shortDate(day.date)}</strong><p>Antes: {missingLabel(coverageMissingMinutes(day.before))}<br/>Depois: {missingLabel(coverageMissingMinutes(day.after))}</p>{coverageMissingMinutes(day.after) > coverageMissingMinutes(day.before) && <p className="pse-warning">A troca aumenta a falta de cobertura neste período.</p>}<details><summary>Ver faixas após a troca</summary><DayCoverage coverage={day.after} departments={departments} ready={ready} error=""/></details></div>)}
       </section>}
+      {coverageProblem && <p className="pse-warning" role="alert">{coverageProblem}</p>}
       {submitError && <p className="pse-warning" role="alert">{submitError}</p>}
-      <footer className="pse-footer"><button type="button" disabled={disabled} onClick={onClose}>Cancelar</button><button type="submit" disabled={disabled || !ready || stale || issues.length > 0}>{disabled ? 'Salvando...' : mode === 'request' ? 'Enviar solicitação de troca' : mode === 'approval' ? 'Aprovar e aplicar troca' : 'Confirmar troca dos dois dias'}</button></footer>
+      <footer className="pse-footer"><button type="button" disabled={disabled} onClick={onClose}>Cancelar</button><button type="submit" disabled={disabled || !ready || stale || Boolean(coverageProblem) || issues.length > 0}>{disabled ? 'Salvando...' : mode === 'request' ? 'Enviar solicitação de troca' : mode === 'approval' ? 'Aprovar e aplicar troca' : 'Confirmar troca dos dois dias'}</button></footer>
     </form>
   </section></div>;
 }

@@ -24,3 +24,5 @@
 .stm-coverage-row>th,.stm-coverage-row>td{position:sticky;top:50px;z-index:2;background:var(--sc-soft,#f2f7f9)}.stm-coverage-row>.stm-person{z-index:3}
 .stm-month-coverage button:focus-visible{outline:3px solid #0e7490;outline-offset:2px}
 @media(max-width:640px){.stm-month-coverage{margin-inline:12px;gap:10px}.stm-month-coverage>strong{width:100%}}
+
+.stm-closed{background:var(--sc-soft,#f2f7f9);color:var(--sc-muted,#61757c)}

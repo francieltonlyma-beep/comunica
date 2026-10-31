@@ -9,6 +9,8 @@
     "outDir": "lib",
     "sourceMap": true,
     "strict": true,
+    "allowJs": true,
+    "checkJs": false,
     "target": "es2017",
     "skipLibCheck": true,
     "esModuleInterop": true,
