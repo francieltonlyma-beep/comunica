@@ -59,6 +59,7 @@ html.comunica-dark body {
 }
 html.comunica-dark .bg-white,
 html.comunica-dark [class~="bg-white/60"],
+html.comunica-dark [class~="bg-white/65"],
 html.comunica-dark [class~="bg-white/70"],
 html.comunica-dark [class~="bg-white/80"],
 html.comunica-dark [class~="bg-white/90"],
@@ -103,9 +104,11 @@ html.comunica-dark [class~="bg-blue-50/20"],
 html.comunica-dark [class~="bg-blue-50/40"],
 html.comunica-dark [class~="bg-blue-50/60"],
 html.comunica-dark [class~="bg-blue-50/70"],
+html.comunica-dark [class~="bg-blue-50/95"],
 html.comunica-dark .bg-blue-100 { background-color: #132c4d !important; }
 html.comunica-dark .bg-cyan-50,
-html.comunica-dark [class~="bg-cyan-50/40"] { background-color: #10333c !important; }
+html.comunica-dark [class~="bg-cyan-50/40"],
+html.comunica-dark [class~="bg-cyan-50/70"] { background-color: #10333c !important; }
 html.comunica-dark .bg-emerald-50,
 html.comunica-dark [class~="bg-emerald-50/70"],
 html.comunica-dark [class~="bg-emerald-50/80"],
@@ -113,6 +116,7 @@ html.comunica-dark .bg-emerald-100 { background-color: #12352f !important; }
 html.comunica-dark .bg-violet-50,
 html.comunica-dark [class~="bg-violet-50/60"],
 html.comunica-dark [class~="bg-violet-50/70"],
+html.comunica-dark [class~="bg-violet-50/80"],
 html.comunica-dark .bg-violet-100,
 html.comunica-dark .bg-indigo-100 { background-color: #28213f !important; }
 html.comunica-dark .bg-amber-50,
@@ -293,3 +297,24 @@ html.comunica-dark .sde-totals { background: #152238; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Reading surfaces must change together with the dark-theme text colors. */
+html.comunica-dark .comunica-thread-shell,
+html.comunica-dark .comunica-thread-timeline {
+  background-image: none !important;
+  background-color: #0b1422 !important;
+  color: #f1f5f9;
+}
+html.comunica-dark .comunica-thread-surface { background-color: #111c2e !important; }
+html.comunica-dark [data-tour="inbox-overview"] [data-message-id] {
+  background-color: #17263b !important;
+  border-color: #34465f !important;
+  color: #f1f5f9 !important;
+}
+html.comunica-dark [data-tour="inbox-overview"] [data-message-id][class~="rounded-br-md"] {
+  background-color: #18334d !important;
+  border-color: #385b7b !important;
+}
+html.comunica-dark [data-tour="inbox-overview"] [data-message-id] .text-slate-400,
+html.comunica-dark .comunica-thread-timeline .text-slate-500 { color: #b8c6d8 !important; }

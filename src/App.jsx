@@ -7490,7 +7490,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   </form>
                 </div>
               ) : activeThreadId ? (
-                <div className="relative flex min-h-0 h-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-100/60">
+                <div className="comunica-thread-shell relative flex min-h-0 h-full bg-gradient-to-br from-slate-100 via-slate-50 to-blue-100/60">
                   <aside className="hidden w-[320px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/70 lg:flex">
                     <div className="border-b border-slate-200 bg-white px-4 py-4">
                       <span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas</span>
@@ -7524,7 +7524,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                       })()}
                     </div>
                   </aside>
-                  <div className="flex min-w-0 flex-1 flex-col bg-white/65 backdrop-blur-sm">
+                  <div className="comunica-thread-surface flex min-w-0 flex-1 flex-col bg-white/65 backdrop-blur-sm">
                   {/* HEADER DO CHAT ABERTO */}
                   <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'p-4 sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
                     <div className="flex flex-wrap items-start gap-2 sm:gap-3">
@@ -7637,7 +7637,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   </div>
 
                   {/* ÁREA DE MENSAGENS */}
-                  <div ref={messageListRef} className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#ffffff_0%,#f8fafc_55%,#eff6ff_100%)] px-3 py-5 sm:px-8 sm:py-7">
+                  <div ref={messageListRef} className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#ffffff_0%,#f8fafc_55%,#eff6ff_100%)] px-3 py-5 sm:px-8 sm:py-7 comunica-thread-timeline">
                     <div className="pointer-events-none sticky top-[46%] z-0 flex h-0 w-full -translate-y-1/2 items-center justify-center overflow-visible" aria-hidden="true">
                       <img src="/assets/comunica-logo-transparent.png" alt="" className="max-h-[42vh] w-[min(62%,620px)] object-contain opacity-[0.055] grayscale-[35%] saturate-75" />
                     </div>
