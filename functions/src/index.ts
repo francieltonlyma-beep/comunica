@@ -29,6 +29,7 @@ import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivate
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
 import {saveCoverageSettings} from './scheduleCoverage';
+import {buildPendingReminders} from './pendingReminders.mjs';
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
@@ -914,7 +915,7 @@ const sendActivityPush = async ({
   actorId: string;
   title: string;
   body: string;
-  type: 'activity_assignment' | 'activity_update' | 'activity_deadline';
+  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message';
   threadId: string;
   messageId: string;
   eventId: string;
@@ -1400,9 +1401,84 @@ export const notifyConversationDeadlines = onSchedule({
 
 
 
+
 export const saveScheduleCoverage = onCall({region: 'us-central1', maxInstances: 3}, async request => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente no Comunica.');
   return saveCoverageSettings(getFirestore(), String(request.data?.companyId || ''), {
     uid: request.auth.uid, companyId: String(request.auth.token.companyId || ''), isDeveloper: request.auth.token.isDeveloper === true,
   }, request.data?.requirements, Number(request.data?.expectedVersion));
 });
+
+/** Independent of deadlines: remind about unread messages and 24-hour inactivity. */
+export const notifyPendingReminders = onSchedule({
+  schedule: '0 9 * * *',
+  timeZone: 'America/Sao_Paulo',
+  retryCount: 1,
+  maxInstances: 1,
+}, async () => {
+  const database = getFirestore();
+  const now = Date.now();
+  const notificationDate = saoPauloCivilDate();
+  const appId = 'comunica-salvador';
+  const companies = await database.collection(`artifacts/${appId}/public/data/companies`).get();
+  let failed = false;
+  let delivered = 0;
+  for (const company of companies.docs) {
+    const companyId = company.id;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) continue;
+    const [messages, activities] = await Promise.all([
+      company.ref.collection('messages').select(
+        'threadId', 'senderId', 'participants', 'readBy', 'mutedBy',
+        'timestamp', 'subject', 'completedAt', 'activity',
+      ).get(),
+      company.ref.collection('activities').select(
+        'title', 'status', 'assigneeIds', 'createdBy', 'createdAt', 'updatedAt',
+      ).get(),
+    ]);
+    const reminders = buildPendingReminders(
+      messages.docs.map(item => ({...item.data(), id: item.id})),
+      activities.docs.map(item => ({...item.data(), id: item.id})),
+      now,
+    );
+    for (const reminder of reminders) {
+      const receiptId = `pending-${reminder.key}-${notificationDate}`;
+      const receiptRef = company.ref.collection('notificationReceipts').doc(receiptId);
+      const acquired = await database.runTransaction(async transaction => {
+        const existing = await transaction.get(receiptRef);
+        // Allow recovery after an interrupted execution, retaining same-day deduplication.
+        if (existing.exists && !(existing.data()?.status === 'processing' &&
+            now - Number(existing.data()?.createdAt || now) > 10 * 60 * 1000)) return false;
+        transaction.set(receiptRef, {
+          type: 'pending_reminder', kind: reminder.kind, notificationDate,
+          threadId: reminder.threadId, messageId: reminder.messageId,
+          status: 'processing', createdAt: now,
+        });
+        return true;
+      });
+      if (!acquired) continue;
+      try {
+        const delivery = await sendActivityPush({
+          database, appId, companyId, recipientIds: reminder.recipientIds,
+          actorId: '', title: reminder.title, body: reminder.body,
+          type: reminder.kind === 'unread' ? 'message' : 'activity_update',
+          threadId: reminder.threadId, messageId: reminder.messageId, eventId: receiptId,
+        });
+        if (delivery.successCount === 0 && delivery.failureCount > 0) {
+          throw new Error('No pending reminder could be delivered to registered devices.');
+        }
+        await receiptRef.set({
+          status: delivery.successCount > 0 ? 'delivered' : 'no_registered_devices',
+          ...delivery, completedAt: Date.now(),
+        }, {merge: true});
+        delivered += delivery.successCount;
+      } catch (error) {
+        failed = true;
+        await receiptRef.delete();
+        console.error('Pending reminder failed', {companyId, kind: reminder.kind, error});
+      }
+    }
+  }
+  console.info('Pending reminders completed', {notificationDate, delivered, failed});
+  if (failed) throw new Error('Some pending reminders failed; retry requested.');
+});
+
