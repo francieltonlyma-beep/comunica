@@ -30,5 +30,7 @@ jobs:
         run: npm ci
       - name: Verificar codigo
         run: npm run lint
+      - name: Executar testes
+        run: node --test tests/*.test.mjs
       - name: Compilar aplicativo
         run: npm run build

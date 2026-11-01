@@ -1,0 +1,56 @@
+{
+  "comunica/index.js": {
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/App.jsx": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 25
+    },
+    "no-useless-assignment": {
+      "count": 2
+    },
+    "no-useless-escape": {
+      "count": 2
+    },
+    "react-hooks/immutability": {
+      "count": 3
+    },
+    "react-hooks/purity": {
+      "count": 83
+    },
+    "react-hooks/refs": {
+      "count": 4
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 15
+    }
+  },
+  "src/Careers.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/FeatureTutorial.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "src/Privacy.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/PublicWhistleblowing.jsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  }
+}
