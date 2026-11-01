@@ -16,11 +16,11 @@ test('activity changes notify new assignees and relevant status updates', () => 
 });
 
 test('scheduled deadline scan includes message activities without duplicating delivery', () => {
-  assert.match(functionsSource, /where\('activity\.dueDate', 'in'/);
+  assert.match(functionsSource, /where\('activity\.dueDate', '>'/);
   assert.match(functionsSource, /activity-deadline-\$\{activity\.messageId\}/);
   assert.match(functionsSource, /type: 'activity_deadline'/);
   assert.match(functionsSource, /notificationReceipts\/\$\{receiptId\}/);
-  assert.match(functionsSource, /collection\('activities'\)\.where\('dueDate', 'in'/);
+  assert.match(functionsSource, /collection\('activities'\)\.where\('dueDate', '>'/);
 });
 
 test('standalone and recurring activities are generated and notified by the server', () => {
