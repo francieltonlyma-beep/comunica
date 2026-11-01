@@ -1219,11 +1219,15 @@ export const notifyConversationDeadlines = onSchedule({
   maxInstances: 1,
 }, async () => {
   const database = getFirestore();
-  const dateStages = new Map<string, ConversationDeadlineStage>([
-    [saoPauloCivilDate(1), 'due_soon'],
-    [saoPauloCivilDate(0), 'due_today'],
-    [saoPauloCivilDate(-1), 'overdue'],
-  ]);
+  const notificationDate = saoPauloCivilDate();
+  const tomorrow = saoPauloCivilDate(1);
+  const deadlineStage = (dueDate: string): ConversationDeadlineStage | undefined => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return undefined;
+    if (dueDate < notificationDate) return 'overdue';
+    if (dueDate === notificationDate) return 'due_today';
+    if (dueDate === tomorrow) return 'due_soon';
+    return undefined;
+  };
   const conversations = new Map<string, ConversationDeadlineItem>();
   const activities = new Map<string, ActivityDeadlineItem>();
   const appId = 'comunica-salvador';
@@ -1231,12 +1235,12 @@ export const notifyConversationDeadlines = onSchedule({
   for (const company of companies.docs) {
     const companyId = company.id;
     if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) continue;
-    const messageSnapshot = await company.ref.collection('messages').where('dueDate', 'in', [...dateStages.keys()]).get();
+    const messageSnapshot = await company.ref.collection('messages').where('dueDate', '>', '').where('dueDate', '<=', tomorrow).get();
     messageSnapshot.docs.forEach((messageDocument) => {
       const content = messageDocument.data();
       const threadId = String(content.threadId || '');
       const dueDate = String(content.dueDate || '');
-      const stage = dateStages.get(dueDate);
+      const stage = deadlineStage(dueDate);
       const participants = Array.isArray(content.participants)
         ? [...new Set(content.participants.filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id)))]
         : [];
@@ -1259,13 +1263,13 @@ export const notifyConversationDeadlines = onSchedule({
       }
     });
 
-    const activitySnapshot = await company.ref.collection('messages').where('activity.dueDate', 'in', [...dateStages.keys()]).get();
+    const activitySnapshot = await company.ref.collection('messages').where('activity.dueDate', '>', '').where('activity.dueDate', '<=', tomorrow).get();
     activitySnapshot.docs.forEach((messageDocument) => {
       const content = messageDocument.data();
       const activity = messageActivityData(content.activity);
       const threadId = String(content.threadId || '');
       const dueDate = activity?.dueDate || '';
-      const stage = dateStages.get(dueDate);
+      const stage = deadlineStage(dueDate);
       if (!activity || activity.status === 'resolved' || !stage || !/^[a-zA-Z0-9_-]+$/.test(threadId)) return;
       const mutedBy = Array.isArray(content.mutedBy) ? content.mutedBy.filter((id): id is string => typeof id === 'string') : [];
       const recipientIds = (activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean))
@@ -1277,12 +1281,12 @@ export const notifyConversationDeadlines = onSchedule({
       });
     });
 
-    const standaloneActivitySnapshot = await company.ref.collection('activities').where('dueDate', 'in', [...dateStages.keys()]).get();
+    const standaloneActivitySnapshot = await company.ref.collection('activities').where('dueDate', '>', '').where('dueDate', '<=', tomorrow).get();
     standaloneActivitySnapshot.docs.forEach((activityDocument) => {
       const content = activityDocument.data();
       const activity = messageActivityData(content);
       const dueDate = activity?.dueDate || '';
-      const stage = dateStages.get(dueDate);
+      const stage = deadlineStage(dueDate);
       if (!activity || activity.status === 'resolved' || !stage) return;
       const recipientIds = activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean);
       if (recipientIds.length === 0) return;
@@ -1305,13 +1309,13 @@ export const notifyConversationDeadlines = onSchedule({
           : [],
       ])));
     }
-    const receiptId = `deadline-${conversation.threadId}-${conversation.dueDate}-${conversation.stage}`;
+    const receiptId = `deadline-${conversation.threadId}-${conversation.dueDate}-${conversation.stage}-${notificationDate}`;
     const receiptRef = database.doc(`artifacts/${conversation.appId}/public/data/companies/${conversation.companyId}/notificationReceipts/${receiptId}`);
     const acquired = await database.runTransaction(async (transaction) => {
       if ((await transaction.get(receiptRef)).exists) return false;
       transaction.create(receiptRef, {
         type: 'conversation_deadline', threadId: conversation.threadId, dueDate: conversation.dueDate,
-        stage: conversation.stage, status: 'processing', createdAt: Date.now(),
+        stage: conversation.stage, notificationDate, status: 'processing', createdAt: Date.now(),
       });
       return true;
     });
@@ -1360,13 +1364,13 @@ export const notifyConversationDeadlines = onSchedule({
   }
 
   for (const activity of activities.values()) {
-    const receiptId = `activity-deadline-${activity.messageId}-${activity.dueDate}-${activity.stage}`;
+    const receiptId = `activity-deadline-${activity.messageId}-${activity.dueDate}-${activity.stage}-${notificationDate}`;
     const receiptRef = database.doc(`artifacts/${activity.appId}/public/data/companies/${activity.companyId}/notificationReceipts/${receiptId}`);
     const acquired = await database.runTransaction(async (transaction) => {
       if ((await transaction.get(receiptRef)).exists) return false;
       transaction.create(receiptRef, {
         type: 'activity_deadline', threadId: activity.threadId, messageId: activity.messageId,
-        dueDate: activity.dueDate, stage: activity.stage, status: 'processing', createdAt: Date.now(),
+        dueDate: activity.dueDate, stage: activity.stage, notificationDate, status: 'processing', createdAt: Date.now(),
       });
       return true;
     });
