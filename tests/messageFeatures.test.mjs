@@ -66,7 +66,7 @@ test('checklist templates and productivity indicators use normalized activity da
   const template = normalizeActivityTemplate({ id: 't1', name: ' Fechamento ', priority: 'high', checklist: [{ text: 'Conferir' }, { text: '' }] });
   assert.equal(template.name, 'Fechamento');
   assert.equal(template.checklist.length, 1);
-  const now = new Date('2026-10-22T12:00:00-03:00').getTime();
+  const now = new Date(2026, 9, 22, 12).getTime();
   const metrics = activityProductivityMetrics([
     { ...createMessageActivity(), createdAt: now - 7200000, resolvedAt: now, status: 'resolved', dueDate: '2026-10-22' },
     { ...createMessageActivity(), createdAt: now - 3600000, status: 'pending', dueDate: '2026-10-21', recurrence: { frequency: 'weekly', interval: 1 } },

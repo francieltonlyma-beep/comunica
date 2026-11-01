@@ -65,6 +65,7 @@ import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDo
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { appHistoryState, appNavigationKey, readAppNavigation } from './appNavigationHistory.js';
 import {
   getAppleMobileVersion,
   getPushActivationDiagnosticCode,
@@ -1100,6 +1101,11 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [commentText, setCommentText] = useState({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const navigationHistoryReadyRef = useRef(false);
+  const navigationHistoryApplyingRef = useRef(false);
+  const navigationHistoryKeyRef = useRef('');
+  const navigationSessionActiveRef = useRef(false);
+  const navigationHistoryScopeRef = useRef('');
   const [customNotification, setCustomNotification] = useState(null);
   const notificationTimerRef = useRef(null);
 
@@ -1117,6 +1123,78 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [activeTab]);
+
+  useEffect(() => {
+    const handleNavigationPopState = event => {
+      if (!navigationSessionActiveRef.current) return;
+      const navigation = readAppNavigation(event.state);
+      if (!navigation) return;
+      navigationHistoryApplyingRef.current = true;
+      setActiveTab(navigation.tab);
+      setActiveThreadId(navigation.threadId || null);
+      setIsComposingMsg(navigation.composing);
+      setShowMessagesModal(navigation.messagesModal);
+      setServiceWorkspace(navigation.serviceWorkspace);
+      setMgmtSubTab(navigation.managementTab);
+      setDashboardDetail(navigation.dashboardDetail || null);
+      setSelectedServiceActivityKey(navigation.serviceActivityKey);
+      setShowThreadInfoPanel(navigation.threadInfo);
+      setShowAddParticipant(navigation.addParticipant);
+      setMobileMenuOpen(false);
+      setShowNotificationsDropdown(false);
+    };
+    window.addEventListener('popstate', handleNavigationPopState);
+    return () => window.removeEventListener('popstate', handleNavigationPopState);
+  }, []);
+
+  useEffect(() => {
+    const sessionActive = Boolean(currentUser?.id && activeCompany?.id);
+    const navigationScope = sessionActive ? `${currentUser.id}:${activeCompany.id}` : '';
+    navigationSessionActiveRef.current = sessionActive;
+    if (!sessionActive) {
+      navigationHistoryReadyRef.current = false;
+      navigationHistoryApplyingRef.current = false;
+      navigationHistoryKeyRef.current = '';
+      navigationHistoryScopeRef.current = '';
+      return;
+    }
+    if (navigationHistoryScopeRef.current !== navigationScope) {
+      navigationHistoryReadyRef.current = false;
+      navigationHistoryApplyingRef.current = false;
+      navigationHistoryKeyRef.current = '';
+      navigationHistoryScopeRef.current = navigationScope;
+    }
+
+    const navigation = {
+      tab: activeTab,
+      threadId: activeThreadId || '',
+      composing: isComposingMsg,
+      messagesModal: showMessagesModal,
+      serviceWorkspace,
+      managementTab: mgmtSubTab,
+      dashboardDetail: dashboardDetail || '',
+      serviceActivityKey: selectedServiceActivityKey,
+      threadInfo: showThreadInfoPanel,
+      addParticipant: showAddParticipant,
+    };
+    const navigationKey = appNavigationKey(navigation);
+
+    if (navigationHistoryApplyingRef.current) {
+      navigationHistoryApplyingRef.current = false;
+      navigationHistoryReadyRef.current = true;
+      navigationHistoryKeyRef.current = navigationKey;
+      return;
+    }
+    if (!navigationHistoryReadyRef.current) {
+      window.history.replaceState(appHistoryState(window.history.state, navigation), '', window.location.href);
+      navigationHistoryReadyRef.current = true;
+      navigationHistoryKeyRef.current = navigationKey;
+      return;
+    }
+    if (navigationKey === navigationHistoryKeyRef.current) return;
+    window.history.pushState(appHistoryState(window.history.state, navigation), '', window.location.href);
+    navigationHistoryKeyRef.current = navigationKey;
+  }, [activeCompany?.id, activeTab, activeThreadId, currentUser?.id, dashboardDetail, isComposingMsg, mgmtSubTab, selectedServiceActivityKey, serviceWorkspace, showAddParticipant, showMessagesModal, showThreadInfoPanel]);
 
   useEffect(() => {
     const validIds = new Set(departmentsList.map(dept => dept.id));
