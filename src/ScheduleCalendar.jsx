@@ -6,6 +6,7 @@ import { coverageForDay } from './scheduleCoverage.js';
 import { CoverageRequirementEditor, DayCoverage } from './ScheduleCoveragePanel.jsx';
 import { canEditPublishedSchedule } from './publishedScheduleEdit.js';
 import ScheduleTeamMonth from './ScheduleTeamMonth.jsx';
+import ScheduleEmployeeManagement from './ScheduleEmployeeManagement.jsx';
 import ScheduleSwapRequestsPanel from './ScheduleSwapRequestsPanel.jsx';
 import './ScheduleCalendar.css';
 
@@ -155,6 +156,7 @@ export default function ScheduleCalendar({
           <div className="sc-segment" aria-label="Visualização do calendário">
             <button type="button" aria-pressed={view === 'month'} onClick={() => { setDetailEmployee(''); setView('month'); setAnchor(selectedDate); }}>Mês</button>
             <button type="button" aria-pressed={view === 'team'} onClick={() => { setDetailEmployee(''); setView('team'); setAnchor(selectedDate); setDetailsOpen(false); }}>Equipe mensal</button>
+            <button type="button" aria-pressed={view === 'employee'} onClick={() => { setView('employee'); setDetailsOpen(false); }}>Gestão do colaborador</button>
             <button type="button" aria-pressed={view === 'week'} onClick={() => { setDetailEmployee(''); setView('week'); setAnchor(selectedDate); }}>Semana</button>
           </div>
           <button type="button" className={`sc-button ${hasFilters ? 'sc-filter-active' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(value => !value)}><SlidersHorizontal size={16} /> Filtros{hasFilters ? ' •' : ''}</button>
@@ -189,7 +191,7 @@ export default function ScheduleCalendar({
 
       <div className={`sc-workspace ${detailsOpen ? 'sc-with-details' : ''}`}>
         <div className="sc-grid-area">
-          {view === 'team' ? <ScheduleTeamMonth companyName={companyName} days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category) => { setDayTab(category); chooseDate(date, person); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
+          {view === 'employee' ? <ScheduleEmployeeManagement days={dates.filter(date => date.startsWith(month)).map(date => calendarRecordsForDay(date, data, { ...filters, status: 'all' }))} employees={employees} filters={{ ...filters, status: 'all' }} getDepartments={getDepartments} onSelectDay={(date, person) => { setDayTab('schedules'); chooseDate(date, person); }} /> : view === 'team' ? <ScheduleTeamMonth companyName={companyName} days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category) => { setDayTab(category); chooseDate(date, person); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
           <div className="sc-grid-scroll" tabIndex={0} aria-label="Grade do calendário; role horizontalmente em telas pequenas">
             <div className={`sc-grid sc-${view}-view`}>
               {weekdays.map(day => <div key={day} className="sc-weekday">{day}</div>)}
