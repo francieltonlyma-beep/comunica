@@ -1,5 +1,4 @@
 import { coverageChangeError, coverageChangesForDates } from './scheduleCoverageChange.js';
-import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ScheduleCoverageApproval from './ScheduleCoverageApproval.jsx';
 import ScheduleCoverageApprovalHistory from './ScheduleCoverageApprovalHistory.jsx';
 import { buildCoverageApproval } from './scheduleCoverageApproval.js';
@@ -21,6 +20,7 @@ import { DEFAULT_DOCUMENT_FOLDER, normalizeDocumentFolder, documentFileType, doc
 import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion, normalizePollQuestions, pollTimelineItems } from './pollInsights';
 const FeatureTutorial = lazy(() => import('./FeatureTutorial.jsx'));
 const ScheduleRuleEditor = lazy(() => import('./ScheduleRuleEditor.jsx'));
+const ScheduleCalendar = lazy(() => import('./ScheduleCalendar.jsx'));
 const ScheduleOptimizationSummary = lazy(() => import('./ScheduleOptimizationSummary.jsx'));
 const ScheduleProposalCalendar = lazy(() => import('./ScheduleProposalCalendar.jsx'));
 const ScheduleDayEditor = lazy(() => import('./ScheduleDayEditor.jsx'));
@@ -39,8 +39,8 @@ import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzePro
 import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
 import { coverageRequirementsForDate, normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
-import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
-import PlatformUpdates from './PlatformUpdates.jsx';
+const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
+const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
@@ -298,6 +298,7 @@ const formatCareerDate = value => value ? new Intl.DateTimeFormat('pt-BR', { tim
 const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
 const isVacationAbsence = absence => normalizedText(absence?.reason) === 'ferias';
 const isAutomaticSectorPost = post => post?.authorId === 'system' || String(post?.id || '').startsWith('post-abs-');
+const ModuleLoading = ({ label }) => <section className="grid min-h-52 place-items-center rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm" role="status" aria-live="polite"><div><LoaderCircle className="mx-auto h-6 w-6 animate-spin text-blue-700" /><strong className="mt-3 block text-sm text-slate-800">Carregando {label}</strong><span className="mt-1 block text-xs text-slate-500">Você pode continuar usando o menu normalmente.</span></div></section>;
 const civilDateShift = (value, { days = 0, months = 0 } = {}) => {
   const matched = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!matched) return value;
@@ -8329,7 +8330,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
           {/* TAB: SUPPORT */}
           {activeTab === 'updates' && (
-            <div data-tour="updates"><PlatformUpdates
+            <Suspense fallback={<ModuleLoading label="as novidades" />}><div data-tour="updates"><PlatformUpdates
               updates={platformUpdates}
               readIds={platformUpdateReadIds}
               onRead={handlePlatformUpdateRead}
@@ -8338,7 +8339,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               onImprove={handleImprovePlatformUpdate}
               canOpenModule={canOpenModule}
               isDeveloper={Boolean(currentUser.isDeveloper)}
-            /></div>
+            /></div></Suspense>
           )}
 
           {activeTab === 'support' && currentUser.isDeveloper && (
@@ -9242,7 +9243,7 @@ const handleDownload = async (fileUrl, fileName) => {
 
           {/* TAB: DOCUMENTS */}
           {activeTab === 'whistleblowing' && canManageWhistleblowing && (
-            <div data-tour="whistleblowing"><WhistleblowingAdmin
+            <Suspense fallback={<ModuleLoading label="a Central de Denúncias" />}><div data-tour="whistleblowing"><WhistleblowingAdmin
               key={activeCompany?.id}
               functionsClient={functionsClient}
               company={activeCompany}
@@ -9254,7 +9255,7 @@ const handleDownload = async (fileUrl, fileName) => {
               }}
               savePosterSettings={settings => saveDoc('settings', 'whistleblowing-poster', settings)}
               uploadPosterLogo={async file => (await uploadFileToStorage(file, 'whistleblowing-poster'))?.url || ''}
-            /></div>
+            /></div></Suspense>
           )}
 
           {activeTab === 'careers' && canOpenModule('careers') && (
@@ -9417,7 +9418,7 @@ const handleDownload = async (fileUrl, fileName) => {
 
           {/* TAB: SCALE & CALENDAR */}
           {activeTab === 'scale' && (
-            <ScheduleCalendar
+            <Suspense fallback={<ModuleLoading label="as escalas" />}><ScheduleCalendar
               key={activeCompany?.id || 'local'} companyName={activeCompany?.name || 'Comunica'}
               today={todayStr} selectedDate={selectedCalendarDay} onSelectDate={setSelectedCalendarDay}
               schedules={scheduleScopedSchedules} absences={scheduleScopedAbsences} events={calendarEvents}
@@ -9448,7 +9449,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 setNewPresence({ name: currentUser.name, dept: getUserDepts(currentUser)[0] || 'rh', status: existingPresence?.status || 'Presencial', notes: existingPresence?.notes || '', startDate: date, endDate: date });
                 setShowPresenceModal(true);
               }}
-            />
+            /></Suspense>
           )}
 
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
