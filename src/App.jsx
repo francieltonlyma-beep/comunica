@@ -1204,6 +1204,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   useEffect(() => {
     setThreadHeaderExpanded(false);
     setShowAddParticipant(false);
+    setShowThreadInfoPanel(false);
   }, [activeThreadId]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -7421,9 +7422,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     const assignees = participants.filter(user => user.id !== opener?.senderId);
     const canManage = canManageServiceThread(activeThreadId);
     return <div className="flex h-full flex-col bg-gradient-to-b from-slate-50 via-slate-50 to-blue-50/70">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4"><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Informações</span><h4 className="mt-1 text-sm font-extrabold text-slate-950">Detalhes da conversa</h4></div><button type="button" onClick={() => setShowThreadInfoPanel(false)} aria-label="Fechar informações" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button></div>
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))]"><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Informações</span><h4 className="mt-1 text-sm font-extrabold text-slate-950">Detalhes da conversa</h4></div><button type="button" onClick={() => setShowThreadInfoPanel(false)} aria-label="Fechar informações" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button></div>
       <div className="grid grid-cols-3 gap-1 border-b border-slate-200 bg-slate-50 p-2">{[['summary', 'Resumo'], ['files', `Arquivos (${attachments.length})`], ['history', 'Histórico']].map(([id, label]) => <button key={id} type="button" onClick={() => setThreadInfoTab(id)} className={`rounded-lg px-2 py-2 text-[10px] font-bold ${threadInfoTab === id ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{label}</button>)}</div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {threadInfoTab === 'summary' && <div className="space-y-3">
           <section className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4"><span className="text-[9px] font-black uppercase text-blue-600">Ticket</span><strong className="mt-1 block text-lg text-blue-950">#{ticket?.ticket || '—'}</strong><p className="mt-2 break-words text-xs font-semibold text-slate-800">{metadata.subject || 'Conversa sem assunto'}</p></section>
           <div className="grid grid-cols-2 gap-2"><div className="rounded-xl border border-slate-200 p-3"><span className="text-[8px] font-black uppercase text-slate-400">Situação</span><strong className={`mt-1 block text-[10px] ${deadline.className.split(' ').find(item => item.startsWith('text-')) || 'text-slate-700'}`}>{deadline.label}</strong></div><div className="rounded-xl border border-slate-200 p-3"><span className="text-[8px] font-black uppercase text-slate-400">Prazo</span><strong className="mt-1 block text-[10px] text-slate-800">{formatDueDate(metadata.dueDate)}</strong></div></div>
@@ -7604,7 +7605,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   </aside>
                   <div className="comunica-thread-surface flex min-w-0 flex-1 flex-col bg-white/65 backdrop-blur-sm">
                   {/* HEADER DO CHAT ABERTO */}
-                  <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'p-4 sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
+                  <div className={`bg-white border-b border-slate-200 shrink-0 flex flex-col gap-3 relative shadow-[0_8px_25px_-24px_rgba(15,23,42,.45)] z-[2] transition-all ${threadHeaderExpanded ? 'max-h-[45dvh] overflow-y-auto p-4 sm:max-h-none sm:overflow-visible sm:px-7 sm:py-5' : 'px-3 py-2.5 sm:px-5 sm:py-3'}`}>
                     <div className="flex flex-wrap items-start gap-2 sm:gap-3">
                       <button type="button" aria-label="Voltar às conversas" onClick={() => { setActiveThreadId(null); setShowAddParticipant(false); }} className="text-slate-500 hover:text-slate-900 p-2 bg-slate-50 border border-slate-200 rounded-xl transition-all"><ChevronLeft className="h-5 w-5"/></button>
                       <div className="min-w-0 flex-1">
@@ -7838,7 +7839,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     </>}
                   </div>
                   </div>
-                  {showThreadInfoPanel && <><button type="button" aria-label="Fechar painel de informações" onClick={() => setShowThreadInfoPanel(false)} className="absolute inset-0 z-20 bg-slate-950/20 backdrop-blur-[1px]" /><aside className="absolute inset-y-0 right-0 z-30 w-full border-l border-blue-100 bg-slate-50 shadow-2xl sm:w-[390px]">{renderThreadInfoPanel()}</aside></>}
+                  {showThreadInfoPanel && createPortal(<div className="fixed inset-0 z-[10010] flex justify-end"><button type="button" aria-label="Fechar painel de informações" onClick={() => setShowThreadInfoPanel(false)} className="absolute inset-0 bg-slate-950/30 backdrop-blur-[1px]" /><aside role="dialog" aria-modal="true" aria-label="Detalhes da conversa" className="relative h-full min-h-0 w-full overflow-hidden border-l border-blue-100 bg-slate-50 shadow-2xl sm:w-[390px]">{renderThreadInfoPanel()}</aside></div>, document.body)}
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3">
