@@ -141,7 +141,7 @@ export default function WhistleblowingAdmin({ functionsClient, company, onNotice
   };
 
   return <div className="space-y-5 animate-in fade-in duration-300">
-    <section className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-rose-950 to-red-800 p-6 text-white shadow-xl">
+    <section className="relative overflow-hidden rounded-[1.7rem] bg-gradient-to-br from-slate-950 via-rose-950 to-red-800 p-5 text-white shadow-xl sm:p-6">
       <div className="pointer-events-none absolute -right-12 -top-16 h-56 w-56 rounded-full bg-rose-400/20 blur-3xl" />
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div><span className="inline-flex items-center gap-2 rounded-full border border-rose-100/20 bg-white/10 px-3 py-1 text-[9px] font-black uppercase tracking-[.16em] text-rose-100"><ShieldCheck className="h-3.5 w-3.5" /> Canal confidencial</span><h2 className="mt-3 text-2xl font-black">Central de Denúncias</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-rose-100/80">Relatos ficam em armazenamento privado. Somente administradores e pessoas de RH autorizadas podem consultar e tratar os casos.</p></div>

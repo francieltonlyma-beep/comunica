@@ -47,9 +47,9 @@ export default function PlatformUpdates({ updates, readIds, onRead, onPublish, o
   };
 
   return <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 animate-in fade-in duration-300">
-    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-800 p-6 text-white shadow-lg sm:p-8">
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-800 p-5 text-white shadow-lg sm:p-6">
       <div className="pointer-events-none absolute -right-12 -top-16 h-56 w-56 rounded-full bg-cyan-300/15 blur-3xl" />
-      <div className="relative flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/15 bg-white/10 text-cyan-200"><Sparkles className="h-6 w-6" /></span><div><span className="text-[10px] font-extrabold uppercase tracking-[.18em] text-cyan-200">Evolução contínua</span><h2 className="mt-1 text-2xl font-black tracking-tight">Novidades do Comunica</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/80">Conheça os recursos novos, veja como eles ajudam no dia a dia e acesse cada ferramenta diretamente por aqui.</p></div></div>
+      <div className="relative flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/15 bg-white/10 text-cyan-200"><Sparkles className="h-5 w-5" /></span><div><span className="text-[9px] font-extrabold uppercase tracking-[.18em] text-cyan-200">Evolução contínua</span><h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">Novidades do Comunica</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-blue-100/80">Conheça os recursos novos, veja como eles ajudam no dia a dia e acesse cada ferramenta diretamente por aqui.</p></div></div>
     </section>
 
     {isDeveloper && <section className="rounded-3xl border border-blue-100 bg-white p-5 shadow-sm sm:p-6">

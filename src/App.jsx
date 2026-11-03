@@ -1,4 +1,5 @@
 import { coverageChangeError, coverageChangesForDates } from './scheduleCoverageChange.js';
+import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ScheduleCoverageApproval from './ScheduleCoverageApproval.jsx';
 import ScheduleCoverageApprovalHistory from './ScheduleCoverageApprovalHistory.jsx';
 import { buildCoverageApproval } from './scheduleCoverageApproval.js';
@@ -20,7 +21,6 @@ import { DEFAULT_DOCUMENT_FOLDER, normalizeDocumentFolder, documentFileType, doc
 import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion, normalizePollQuestions, pollTimelineItems } from './pollInsights';
 const FeatureTutorial = lazy(() => import('./FeatureTutorial.jsx'));
 const ScheduleRuleEditor = lazy(() => import('./ScheduleRuleEditor.jsx'));
-const ScheduleCalendar = lazy(() => import('./ScheduleCalendar.jsx'));
 const ScheduleOptimizationSummary = lazy(() => import('./ScheduleOptimizationSummary.jsx'));
 const ScheduleProposalCalendar = lazy(() => import('./ScheduleProposalCalendar.jsx'));
 const ScheduleDayEditor = lazy(() => import('./ScheduleDayEditor.jsx'));
@@ -39,8 +39,8 @@ import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzePro
 import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
 import { coverageRequirementsForDate, normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
-const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
-const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
+import WhistleblowingAdmin from './WhistleblowingAdmin.jsx';
+import PlatformUpdates from './PlatformUpdates.jsx';
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
@@ -297,6 +297,7 @@ const applicationRetentionMs = application => careerDateMs(application.retention
 const formatCareerDate = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date(value)) : 'Prazo não definido';
 const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
 const isVacationAbsence = absence => normalizedText(absence?.reason) === 'ferias';
+const isAutomaticSectorPost = post => post?.authorId === 'system' || String(post?.id || '').startsWith('post-abs-');
 const civilDateShift = (value, { days = 0, months = 0 } = {}) => {
   const matched = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!matched) return value;
@@ -836,6 +837,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
   const [announcementFilter, setAnnouncementFilter] = useState('Todos');
   const [sectorFilter, setSectorFilter] = useState('all');
+  const [sectorPostType, setSectorPostType] = useState('all');
+  const [sectorPostLimit, setSectorPostLimit] = useState(8);
+  const [expandedAnnouncements, setExpandedAnnouncements] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
 
   const [showAnnModal, setShowAnnModal] = useState(false);
@@ -5183,6 +5187,12 @@ try {
   }).sort((a, b) => String(b.hireDate).localeCompare(String(a.hireDate))).slice(0, 4);
 
   const userAllowedDepts = currentUser ? (currentUser.isAdmin ? departmentsList.map(d => d.id) : getUserDepts(currentUser)) : [];
+  const filteredSectorPosts = sectorPosts.filter(post => {
+    if (!userAllowedDepts.includes(post.dept) || (sectorFilter !== 'all' && post.dept !== sectorFilter)) return false;
+    const automatic = isAutomaticSectorPost(post);
+    return sectorPostType === 'all' || (sectorPostType === 'automatic' ? automatic : !automatic);
+  });
+  const visibleSectorPosts = filteredSectorPosts.slice(0, sectorPostLimit);
   const accessibleDocuments = documentsList.filter(item => canAccessDocument(item, { allowedDepartments: userAllowedDepts, userId: currentUser?.id, isAdmin: currentUser?.isAdmin }));
   const availableDocumentFolders = documentFolders(accessibleDocuments);
   const visibleDocuments = filterDocuments(documentsList, {
@@ -6911,7 +6921,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   }, { total: 0, active: 0, approval: 0, overdue: 0, completed: 0, unassigned: 0, completedWithDeadline: 0, completedOnTime: 0, rated: 0, ratingSum: 0 });
   const serviceMetrics = {
     ...serviceMetricTotals,
-    slaRate: serviceMetricTotals.completedWithDeadline ? Math.round((serviceMetricTotals.completedOnTime / serviceMetricTotals.completedWithDeadline) * 100) : 0,
+    slaRate: serviceMetricTotals.completedWithDeadline ? Math.round((serviceMetricTotals.completedOnTime / serviceMetricTotals.completedWithDeadline) * 100) : null,
     averageRating: serviceMetricTotals.rated ? (serviceMetricTotals.ratingSum / serviceMetricTotals.rated).toFixed(1) : '—',
   };
 
@@ -7054,7 +7064,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   }, { total: 0, active: 0, overdue: 0, resolved: 0, withDeadline: 0, onTime: 0 });
   serviceManagementTotals.onTimeRate = serviceManagementTotals.withDeadline
     ? Math.round((serviceManagementTotals.onTime / serviceManagementTotals.withDeadline) * 100)
-    : 0;
+    : null;
   const formatManagementTimestamp = timestamp => timestamp
     ? new Date(timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     : 'Sem movimentação';
@@ -7071,7 +7081,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   const careerIndicatorApplications = careerApplications.filter(application => application.source === 'talent_pool' || careerIndicatorVacancyIds.has(application.vacancyId));
   const careerStageInsights = careerStageDefinitions.map(stage => ({ ...stage, count: careerIndicatorApplications.filter(item => (item.status || 'received') === stage.id).length }));
   const careerFitValues = careerIndicatorApplications.map(item => Number(item.fit?.percentage)).filter(Number.isFinite);
-  const careerAverageFit = careerFitValues.length ? Math.round(careerFitValues.reduce((sum, value) => sum + value, 0) / careerFitValues.length) : 0;
+  const careerAverageFit = careerFitValues.length ? Math.round(careerFitValues.reduce((sum, value) => sum + value, 0) / careerFitValues.length) : null;
   const careerRetentionSoon = careerIndicatorApplications.filter(item => {
     const until = applicationRetentionMs(item);
     return until > Date.now() && until <= Date.now() + 15 * 24 * 60 * 60 * 1000;
@@ -8281,7 +8291,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         </aside>
 
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
-        <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden outline-none">
+        <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
           <div className={`${activeTab === 'inbox' ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
@@ -8645,10 +8655,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           {/* TAB: CENTRAL DE SERVIÇOS */}
           {activeTab === 'services' && (
             <div data-tour="services" className="flex flex-col gap-6 animate-in fade-in duration-300">
-              <section data-tour="services-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-6 text-white shadow-xl shadow-blue-950/10 sm:p-8">
+              <section data-tour="services-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-5 text-white shadow-xl shadow-blue-950/10 sm:p-6">
                 <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-300/15 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-blue-400/15 blur-3xl" />
-                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div className="max-w-2xl">
                     <span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-cyan-100"><CheckCircle2 className="h-3.5 w-3.5" /> Atendimento interno</span>
                     <h3 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Central de Serviços</h3>
@@ -8684,7 +8694,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               </section>
 
               <section className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-emerald-700">SLA cumprido</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-emerald-900">{serviceMetrics.slaRate}%</strong><span className="pb-1 text-[10px] text-emerald-700">dos chamados concluídos com prazo</span></div></div>
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-emerald-700">SLA cumprido</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-emerald-900">{serviceMetrics.slaRate === null ? '—' : `${serviceMetrics.slaRate}%`}</strong><span className="pb-1 text-[10px] text-emerald-700">{serviceMetrics.slaRate === null ? 'sem chamados concluídos com prazo' : 'dos chamados concluídos com prazo'}</span></div></div>
                 <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-amber-700">Satisfação média</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-amber-900">{serviceMetrics.averageRating}</strong><span className="pb-1 text-[10px] text-amber-700">de 5 · {serviceMetrics.rated} avaliação(ões)</span></div></div>
                 <button type="button" aria-pressed={serviceAssigneeFilter === 'unassigned'} onClick={() => { setServiceAssigneeFilter(previous => previous === 'unassigned' ? 'all' : 'unassigned'); setServiceStatusFilter('active'); }} className={`rounded-2xl border border-violet-100 bg-violet-50/70 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${serviceAssigneeFilter === 'unassigned' ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="text-[9px] font-black uppercase tracking-wide text-violet-700">Sem responsável</span><div className="mt-2 flex items-end gap-2"><strong className="text-2xl font-black text-violet-900">{serviceMetrics.unassigned}</strong><span className="pb-1 text-[10px] text-violet-700">precisa(m) de atribuição</span></div><span className="mt-1 block text-[9px] font-semibold text-violet-600">Clique para filtrar</span></button>
               </section>
@@ -8753,7 +8763,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                       { label: 'Pendentes', value: serviceManagementTotals.active },
                       { label: 'Em atraso', value: serviceManagementTotals.overdue },
                       { label: 'Resolvidas', value: serviceManagementTotals.resolved },
-                      { label: 'No prazo', value: `${serviceManagementTotals.onTimeRate}%` },
+                      { label: 'No prazo', value: serviceManagementTotals.onTimeRate === null ? '—' : `${serviceManagementTotals.onTimeRate}%` },
                     ].map(metric => <div key={metric.label} className="rounded-xl border border-white/10 bg-white/10 p-3"><span className="text-[8px] font-black uppercase tracking-wide text-emerald-200">{metric.label}</span><strong className="mt-1 block text-2xl font-black">{metric.value}</strong></div>)}
                   </div>
                 </section>
@@ -8934,19 +8944,23 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data Inicial</label>
                     <input
                       type="date"
+                      lang="pt-BR"
                       value={prodFilterStart}
                       onChange={(e) => setProdFilterStart(e.target.value)}
                       className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
                     />
+                    <span className="mt-1 block text-[9px] font-semibold text-slate-400">{formatDate(prodFilterStart)}</span>
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data Final</label>
                     <input
                       type="date"
+                      lang="pt-BR"
                       value={prodFilterEnd}
                       onChange={(e) => setProdFilterEnd(e.target.value)}
                       className="px-3 py-2 w-full rounded-xl border border-slate-200 text-xs focus:outline-none"
                     />
+                    <span className="mt-1 block text-[9px] font-semibold text-slate-400">{formatDate(prodFilterEnd)}</span>
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Grupo de Produção</label>
@@ -8983,7 +8997,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     const filteredLogs = visibleProductivityLogs;
                     const totalProduced = filteredLogs.reduce((acc, log) => acc + log.quantity, 0);
                     const totalDefects = filteredLogs.reduce((acc, log) => acc + (log.defects || 0), 0);
-                    const qualityIndex = totalProduced > 0 ? (((totalProduced - totalDefects) / totalProduced) * 100).toFixed(1) : 100;
+                    const qualityIndex = totalProduced > 0 ? Number((((totalProduced - totalDefects) / totalProduced) * 100).toFixed(1)) : null;
 
                     // Cálculo de Tendência (Comparando com período anterior)
                     const startD = new Date(prodFilterStart);
@@ -9039,8 +9053,8 @@ const handleDownload = async (fileUrl, fileName) => {
                         </div>
                         <div className="flex items-center justify-between border-t border-blue-800 pt-1 mt-1">
                           <span className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Qualidade:</span>
-                          <span className={`text-sm font-black ${qualityIndex >= 95 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {qualityIndex}% <span className="text-[9px] font-normal text-blue-300">({totalDefects} perdas)</span>
+                          <span className={`text-sm font-black ${qualityIndex === null ? 'text-blue-100' : qualityIndex >= 95 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {qualityIndex === null ? '—' : `${qualityIndex}%`} <span className="text-[9px] font-normal text-blue-300">{qualityIndex === null ? '(sem produção no período)' : `(${totalDefects} perdas)`}</span>
                           </span>
                         </div>
                       </div>
@@ -9151,7 +9165,8 @@ const handleDownload = async (fileUrl, fileName) => {
 </span>                    </div>
                     <div>
                       <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{ann.title}</h4>
-                      <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><TextoComEmojis texto={ann.content} /></p>
+                      <p className={`text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${expandedAnnouncements[ann.id] ? '' : 'line-clamp-4'}`}><TextoComEmojis texto={ann.content} /></p>
+                      {String(ann.content || '').length > 240 && <button type="button" onClick={() => setExpandedAnnouncements(previous => ({ ...previous, [ann.id]: !previous[ann.id] }))} className="mt-2 text-[10px] font-extrabold text-blue-700 hover:underline" aria-expanded={Boolean(expandedAnnouncements[ann.id])}>{expandedAnnouncements[ann.id] ? 'Mostrar menos' : 'Ler comunicado completo'}</button>}
                       {ann.image && (
                         <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200">
                           <img src={ann.image} alt={ann.title} loading="lazy" className="block w-full h-auto rounded-xl object-contain" />
@@ -9254,7 +9269,7 @@ const handleDownload = async (fileUrl, fileName) => {
               </div>
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Funil de seleção</h4><p className="mt-1 text-xs text-slate-500">Distribuição das candidaturas por etapa.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{careerIndicatorApplications.length} no total</span></div><div className="mt-5 space-y-4">{careerStageInsights.map(stage => <div key={stage.id}><div className="mb-1.5 flex justify-between text-xs"><span className="font-semibold text-slate-700">{stage.label}</span><strong className="text-slate-900">{stage.count}</strong></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${stage.color}`} style={{ width: `${careerIndicatorApplications.length ? Math.max(4, Math.round(stage.count / careerIndicatorApplications.length * 100)) : 0}%` }} /></div></div>)}</div></section>
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-900">Qualidade da triagem</h4><p className="mt-1 text-xs text-slate-500">Indicadores de apoio, não de decisão automática.</p><div className="mt-5 flex items-center gap-5"><div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#2563eb ${careerAverageFit * 3.6}deg, #e2e8f0 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center"><strong className="text-xl text-slate-900">{careerAverageFit}%</strong><span className="text-[8px] font-bold uppercase text-slate-400">aderência</span></div></div><div className="space-y-2 text-xs"><p><strong className="text-slate-900">{careerFitValues.length}</strong> perfis com leitura disponível</p><p><strong className="text-slate-900">{careerRetentionSoon}</strong> currículo(s) vencem em até 15 dias</p><p className="text-slate-500">Revise sempre currículo e respostas antes de avançar.</p></div></div></section>
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-900">Qualidade da triagem</h4><p className="mt-1 text-xs text-slate-500">Indicadores de apoio, não de decisão automática.</p><div className="mt-5 flex items-center gap-5"><div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#2563eb ${(careerAverageFit || 0) * 3.6}deg, #e2e8f0 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center"><strong className="text-xl text-slate-900">{careerAverageFit === null ? '—' : `${careerAverageFit}%`}</strong><span className="text-[8px] font-bold uppercase text-slate-400">aderência</span></div></div><div className="space-y-2 text-xs"><p><strong className="text-slate-900">{careerFitValues.length}</strong> perfis com leitura disponível</p><p><strong className="text-slate-900">{careerRetentionSoon}</strong> currículo(s) vencem em até 15 dias</p><p className="text-slate-500">{careerAverageFit === null ? 'A aderência aparecerá após a primeira leitura válida.' : 'Revise sempre currículo e respostas antes de avançar.'}</p></div></div></section>
               </div>
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Candidaturas por vaga</h4><p className="mt-1 text-xs text-slate-500">As cinco vagas com maior volume de inscrições.</p></div><TrendingUp className="h-5 w-5 text-emerald-600" /></div>{careerApplicationsByVacancy.length ? <div className="mt-5 space-y-3">{careerApplicationsByVacancy.map(item => <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_42px] items-center gap-3"><div><div className="mb-1 flex justify-between gap-2 text-xs"><span className="truncate font-semibold text-slate-700">{item.title}</span><span className="shrink-0 text-slate-400">{item.count} inscrição(ões)</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${Math.max(4, Math.round(item.count / careerMaxApplications * 100))}%` }} /></div></div><strong className="text-right text-sm text-slate-900">{item.count}</strong></div>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">Publique uma vaga para acompanhar a evolução das inscrições aqui.</p>}</section>
               {careerApplications.some(item => applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950"><strong>Prazo de retenção dos currículos</strong><p className="mt-1">{careerApplications.filter(item => applicationRetentionMs(item) > Date.now() && applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000).length} currículo(s) expiram nos próximos 15 dias e {careerApplications.filter(item => applicationRetentionMs(item) <= Date.now()).length} já venceram.</p><div className="mt-3 flex flex-wrap gap-2">{careerApplications.some(item => applicationRetentionMs(item) <= Date.now()) && !confirmCareerCleanup && <button type="button" onClick={() => setConfirmCareerCleanup(true)} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Remover vencidos</button>}{confirmCareerCleanup && <><span className="self-center font-semibold">Remover definitivamente candidaturas e arquivos vencidos?</span><button type="button" onClick={handlePurgeExpiredCareers} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Confirmar limpeza</button><button type="button" onClick={() => setConfirmCareerCleanup(false)} className="rounded-lg border border-amber-300 px-3 py-2 font-bold">Cancelar</button></>}</div></div>}
@@ -9336,7 +9351,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <select
                     value={sectorFilter}
-                    onChange={(e) => setSectorFilter(e.target.value)}
+                    onChange={(e) => { setSectorFilter(e.target.value); setSectorPostLimit(8); }}
                     className="px-3 py-2 w-full sm:w-auto rounded-xl border border-slate-200 text-xs focus:outline-none flex-1"
                   >
                     <option value="all">Todos os meus setores</option>
@@ -9344,6 +9359,7 @@ const handleDownload = async (fileUrl, fileName) => {
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
+                  <select value={sectorPostType} onChange={event => { setSectorPostType(event.target.value); setSectorPostLimit(8); }} aria-label="Filtrar origem das publicações" className="px-3 py-2 w-full sm:w-auto rounded-xl border border-slate-200 bg-white text-xs focus:outline-none flex-1"><option value="all">Todas as publicações</option><option value="human">Publicações da equipe</option><option value="automatic">Avisos automáticos</option></select>
                   <button
                     onClick={() => { setNewPost(prev => ({ ...prev, depts: [sectorFilter === 'all' ? (userAllowedDepts[0] || 'rh') : sectorFilter] })); setShowPostModal(true); }}
                     className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow flex-shrink-0"
@@ -9354,14 +9370,10 @@ const handleDownload = async (fileUrl, fileName) => {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {sectorPosts
-                  .filter(p => userAllowedDepts.includes(p.dept) && (sectorFilter === 'all' || p.dept === sectorFilter))
-                  .map((post) => (
+                {visibleSectorPosts.map((post) => (
                   <div id={`notification-item-${post.id}`} key={post.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                      <span className="bg-slate-100 text-slate-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded border border-slate-200 uppercase">
-                        {departmentsList.find(d => d.id === post.dept)?.name || post.dept}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5"><span className="bg-slate-100 text-slate-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded border border-slate-200 uppercase">{departmentsList.find(d => d.id === post.dept)?.name || post.dept}</span>{isAutomaticSectorPost(post) && <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-extrabold uppercase text-amber-700">Aviso automático</span>}</div>
                       <span className="text-[10px] text-slate-400 font-semibold">{post.date}</span>
                     </div>
                     <div>
@@ -9398,6 +9410,8 @@ const handleDownload = async (fileUrl, fileName) => {
                   </div>
                 ))}
               </div>
+              {filteredSectorPosts.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-xs text-slate-500">Nenhuma publicação encontrada com os filtros selecionados.</div>}
+              {visibleSectorPosts.length < filteredSectorPosts.length && <button type="button" onClick={() => setSectorPostLimit(previous => previous + 8)} className="self-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-extrabold text-blue-700 shadow-sm hover:border-blue-200 hover:bg-blue-50">Mostrar mais {Math.min(8, filteredSectorPosts.length - visibleSectorPosts.length)} publicação(ões)</button>}
             </div>
           )}
 
@@ -9928,9 +9942,9 @@ const handleDownload = async (fileUrl, fileName) => {
         </main>
       </div>
       {/* BOTÃO FLUTUANTE DA IA */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
         {isChatOpen && (
-          <div className="bg-white rounded-2xl w-80 sm:w-96 h-[500px] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5">
+          <div className="bg-white rounded-2xl w-[calc(100vw-2rem)] max-w-96 h-[min(500px,72dvh)] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5">
             <div className="bg-slate-900 text-slate-100 p-4 flex items-center justify-between border-b border-slate-850">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700">
@@ -10021,7 +10035,7 @@ const handleDownload = async (fileUrl, fileName) => {
           className="bg-slate-900 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 hover:bg-slate-800 transition-all border border-slate-850 hover:scale-105 active:scale-95"
         >
           <Sparkles className="h-5.5 w-5.5 text-slate-300" />
-          <span className="text-xs font-bold pr-1">ComunicaAI</span>
+          <span className="hidden text-xs font-bold pr-1 sm:inline">ComunicaAI</span>
         </button>
       </div>
 
