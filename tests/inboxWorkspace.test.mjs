@@ -29,9 +29,14 @@ test('layout adapta lista e leitura sem perder o contexto da conversa', () => {
 test('lista lateral e balões usam separação clara e cores suaves', () => {
   assert.match(app, /min-h-0 flex-1 space-y-2 overflow-y-auto p-3/);
   assert.match(app, /border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50/);
-  assert.match(app, /rounded-br-md border-blue-200\/90 bg-blue-50\/95 text-slate-900/);
+  assert.match(app, /rounded-br-md border-blue-200\/90 bg-gradient-to-br from-blue-50 via-white to-cyan-50\/80 text-slate-900/);
   assert.match(app, /rounded-bl-md border-slate-200\/90 bg-white\/95 text-slate-900/);
   assert.doesNotMatch(app, /from-blue-600 to-blue-700 border-blue-500 text-white rounded-br-md/);
+  assert.match(app, /InboxParticipantStack/);
+  assert.match(app, /Ver participantes da conversa/);
+  assert.match(app, /messageAuthor\?\.role/);
+  assert.match(app, /activeTab === 'inbox' && activeThreadId \? 'bottom-\[calc/);
+  assert.match(app, /rows="1"/);
 });
 
 test('triagem permite fixar, silenciar, arquivar e localizar demandas próprias', () => {
