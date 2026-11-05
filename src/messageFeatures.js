@@ -37,6 +37,7 @@ export const createMessageActivity = (actor = {}) => {
     status: 'pending',
     priority: 'normal',
     assigneeIds: [],
+    dependencyIds: [],
     dueDate: '',
     checklist: [],
     comments: [],
@@ -63,6 +64,7 @@ export const normalizeMessageActivity = activity => activity && typeof activity 
   status: ['pending', 'in_progress', 'resolved'].includes(activity.status) ? activity.status : 'pending',
   priority: ['low', 'normal', 'high', 'urgent'].includes(activity.priority) ? activity.priority : 'normal',
   assigneeIds: normalizeMessageFeatureList(activity.assigneeIds),
+  dependencyIds: normalizeMessageFeatureList(activity.dependencyIds).map(String).slice(0, 20),
   dueDate: /^\d{4}-\d{2}-\d{2}$/.test(String(activity.dueDate || '')) ? String(activity.dueDate) : '',
   checklist: Array.isArray(activity.checklist) ? activity.checklist.map(item => ({
     id: String(item?.id || ''),
@@ -125,6 +127,7 @@ export const activityUpdateDescription = (currentValue, changes = {}, people = [
   if (changes.recurrence && changes.recurrence.frequency !== current.recurrence.frequency) {
     return `Recorrência alterada para ${activityRecurrenceLabel(changes.recurrence).toLocaleLowerCase('pt-BR')}`;
   }
+  if (changes.dependencyIds) return changes.dependencyIds.length ? 'Dependência da atividade atualizada' : 'Dependência removida';
   if (changes.checklist) return 'Checklist atualizado';
   return 'Atividade atualizada';
 };
@@ -193,6 +196,29 @@ export const activityProductivityMetrics = (activities = [], today = '', now = D
     overdue: normalized.filter(activity => activity.status !== 'resolved' && activity.dueDate && today && activity.dueDate < today).length,
     recurring: normalized.filter(activity => activity.recurrence.frequency !== 'none').length,
   };
+};
+
+export const unresolvedActivityDependencies = (activity, rows = []) => {
+  const dependencies = normalizeMessageFeatureList(activity?.dependencyIds).map(String);
+  return dependencies.map(key => rows.find(row => String(row?.key || '') === key))
+    .filter(row => row && normalizeMessageActivity(row.activity || row)?.status !== 'resolved');
+};
+
+export const activityDependencyCreatesCycle = (activityKey, dependencyIds = [], rows = []) => {
+  const target = String(activityKey || '');
+  if (!target) return false;
+  const graph = new Map(rows.map(row => [
+    String(row?.key || ''),
+    normalizeMessageFeatureList(row?.activity?.dependencyIds).map(String),
+  ]).filter(([key]) => key));
+  graph.set(target, normalizeMessageFeatureList(dependencyIds).map(String));
+  const visit = (key, path = new Set()) => {
+    if (key === target && path.size) return true;
+    if (path.has(key)) return false;
+    const nextPath = new Set(path).add(key);
+    return (graph.get(key) || []).some(next => visit(next, nextPath));
+  };
+  return (graph.get(target) || []).some(key => visit(key, new Set()));
 };
 
 export const messageActivityProgress = activity => {

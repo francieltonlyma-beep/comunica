@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, nextActivityDueDate, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser } from '../src/messageFeatures.js';
+import { activityDependencyCreatesCycle, activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, nextActivityDueDate, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser, unresolvedActivityDependencies } from '../src/messageFeatures.js';
 
 test('message reactions are toggled without duplicate users', () => {
   assert.deepEqual(toggleMessageUser(['u1', 'u1'], 'u2'), ['u1', 'u2']);
@@ -33,6 +33,20 @@ test('activity details normalize comments, attachments and audit history', () =>
   assert.equal(activity.history.length, 1);
   assert.equal(activityUpdateDescription(activity, { status: 'in_progress' }), 'Situação alterada para em andamento');
   assert.equal(activityUpdateDescription(activity, { assigneeIds: ['u2'] }, [{ id: 'u2', name: 'Bruno' }]), 'Responsável definido: Bruno');
+});
+
+test('activity dependencies block completion and reject circular chains', () => {
+  const base = createMessageActivity({ id: 'u1', name: 'Ana' });
+  const rows = [
+    { key: 'standalone:a', subject: 'Preparar dados', activity: { ...base, status: 'pending' } },
+    { key: 'standalone:b', subject: 'Publicar relatório', activity: { ...base, dependencyIds: ['standalone:a'] } },
+  ];
+  const normalized = normalizeMessageActivity({ ...base, dependencyIds: ['standalone:a', 'standalone:a'] });
+  assert.deepEqual(normalized.dependencyIds, ['standalone:a']);
+  assert.deepEqual(unresolvedActivityDependencies(rows[1].activity, rows).map(row => row.key), ['standalone:a']);
+  assert.equal(unresolvedActivityDependencies(rows[1].activity, [{ ...rows[0], activity: { ...base, status: 'resolved' } }]).length, 0);
+  assert.equal(activityDependencyCreatesCycle('standalone:a', ['standalone:b'], rows), true);
+  assert.equal(activityDependencyCreatesCycle('standalone:b', ['standalone:a'], rows), false);
 });
 
 test('activity exposes deadline and checklist progress to the service center', () => {
