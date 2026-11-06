@@ -23,7 +23,7 @@ const number = value => Number(value);
 
 export function purchaseFields(value = {}) {
   return {
-    item: text(value.item), specification: text(value.specification, 1000),
+    ...(value.category === undefined ? {} : { category: text(value.category, 80) || 'Sem categoria' }), item: text(value.item), specification: text(value.specification, 1000),
     quantity: number(value.quantity), unit: text(value.unit, 30),
     department: text(value.department, 120), destination: text(value.destination, 160),
     neededBy: text(value.neededBy, 10), reason: text(value.reason, 1000),
@@ -102,4 +102,45 @@ export function expectedApprover(policy, total, fallbackAdminId) {
   if (!policy?.enabled) return String(fallbackAdminId || '');
   if (!Number.isFinite(Number(policy.threshold)) || Number(policy.threshold) <= 0) return '';
   return String(total <= Number(policy.threshold) ? policy.lowerApproverId || '' : policy.upperApproverId || '');
+}
+
+export const PURCHASE_CATEGORIES = ['Alimentos e bebidas', 'Embalagens', 'Limpeza e higiene', 'Equipamentos', 'Manutenção', 'Material de escritório', 'Serviços', 'Outros'];
+export const PURCHASE_FILTERS = { requester: '', responsible: '', category: '', department: '', priority: '', from: '', to: '', view: '', sort: 'recent' };
+const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+export function pendingPurchaseRole(record) {
+  if (record.status === 'quotation' && (!record.supplier || !record.expectedDate || !(Number(record.quotedPrice) > 0))) return 'buyerId';
+  return ({ requested: 'buyerId', quotation: 'approverId', approved: 'buyerId', ordered: 'buyerId', in_transit: 'receiverId', received: 'receiverId', exception: 'receiverId', stored: 'recipientId', delivered: 'financeId' })[record.status] || '';
+}
+export function purchaseOverdue(record, today) {
+  return !['closed', 'cancelled', 'rejected', 'delivered'].includes(record.status) && Boolean(record.neededBy && record.neededBy < today);
+}
+export function filterPurchases(records, filters, search = '', stage = 'all', users = [], actorId = '', today = '') {
+  const names = new Map(users.map(person => [person.id, person.name]));
+  const roles = ['buyerId', 'approverId', 'receiverId', 'recipientId', 'financeId'];
+  const query = normalizedText(search);
+  return records.filter(item => {
+    const pending = pendingPurchaseRole(item);
+    return (stage === 'all' || item.status === stage)
+      && (!filters.requester || item.requesterId === filters.requester)
+      && (!filters.responsible || roles.some(role => item[role] === filters.responsible))
+      && (!filters.category || (item.category || 'Sem categoria') === filters.category)
+      && (!filters.department || item.department === filters.department)
+      && (!filters.priority || item.priority === filters.priority)
+      && (!filters.from || item.neededBy >= filters.from) && (!filters.to || item.neededBy <= filters.to)
+      && (!filters.view || (filters.view === 'overdue' ? purchaseOverdue(item, today)
+        : filters.view === 'mine' ? pending && item[pending] === actorId
+          : filters.view === 'unassigned' ? pending && !item[pending] : true))
+      && normalizedText([item.id, item.item, item.specification, item.requesterName, item.department, item.category,
+        item.orderNumber, item.supplier, item.destination, ...roles.map(role => names.get(item[role]) || '')].join(' ')).includes(query);
+  }).sort((a, b) => filters.sort === 'deadline' ? String(a.neededBy || '9999').localeCompare(String(b.neededBy || '9999'))
+    : filters.sort === 'value' ? Number(b.quotedPrice || 0) * Number(b.quantity) - Number(a.quotedPrice || 0) * Number(a.quantity)
+      : Number(b.createdAt || 0) - Number(a.createdAt || 0));
+}
+export function purchaseSaveError(problem) {
+  const code = String(problem?.code || 'unknown').replace('firestore/', '');
+  const message = code === 'permission-denied' ? 'O servidor recusou o envio. Verifique o vínculo da conta com a empresa e a liberação do Integra.'
+    : code === 'unauthenticated' ? 'Sua sessão expirou. Entre novamente para enviar.'
+      : ['unavailable', 'deadline-exceeded'].includes(code) ? 'Não foi possível confirmar o envio por falha de conexão. Confira a lista antes de tentar novamente.'
+        : 'Não foi possível salvar a solicitação.';
+  return `${message} Seus dados continuam no formulário. Código: ${code}.`;
 }

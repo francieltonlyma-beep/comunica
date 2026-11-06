@@ -57,3 +57,32 @@ test('alçada usa valor total e exige configuração completa', () => {
   assert.equal(expectedApprover({ enabled: false }, 5000, 'admin'), 'admin');
   assert.equal(expectedApprover({ enabled: true, threshold: 0 }, 5000, 'admin'), '');
 });
+
+test('filtros combinam pessoa, categoria, setor, prioridade e prazo sem alterar registros', async () => {
+  const { filterPurchases, PURCHASE_FILTERS } = await import('../src/purchaseFlow.js');
+  const records = [
+    { id: 'a', item: 'Luvas', requesterId: 'r', buyerId: 'b', department: 'Loja', category: 'Limpeza', priority: 'urgent', neededBy: '2026-11-01', status: 'requested', createdAt: 1 },
+    { id: 'b', item: 'Caixas', requesterId: 'r', buyerId: 'c', department: 'Loja', category: 'Embalagens', priority: 'normal', neededBy: '2026-12-01', status: 'closed', createdAt: 2 },
+  ];
+  const filters = { ...PURCHASE_FILTERS, requester: 'r', responsible: 'b', category: 'Limpeza', department: 'Loja', priority: 'urgent', from: '2026-11-01', to: '2026-11-30', view: 'mine' };
+  assert.deepEqual(filterPurchases(records, filters, 'JOAO', 'requested', [{ id:'b', name:'João' }], 'b', '2026-11-06').map(r => r.id), ['a']);
+  assert.equal(filterPurchases(records, { ...filters, responsible: 'c' }).length, 0);
+  assert.deepEqual(records.map(r => r.id), ['a','b']);
+});
+
+test('atrasos, falta de atribuição e categorias antigas ficam pesquisáveis', async () => {
+  const { filterPurchases, PURCHASE_FILTERS, purchaseOverdue } = await import('../src/purchaseFlow.js');
+  const rows = [{ id:'old', status:'requested', neededBy:'2026-11-01' }, { id:'closed', status:'closed', neededBy:'2026-11-01' }];
+  assert.equal(purchaseOverdue(rows[1], '2026-11-06'), false);
+  assert.equal(filterPurchases(rows, {...PURCHASE_FILTERS, view:'overdue'}, '', 'all', [], '', '2026-11-06').length, 1);
+  assert.deepEqual(filterPurchases(rows, {...PURCHASE_FILTERS, view:'unassigned', category:'Sem categoria'}).map(r=>r.id), ['old']);
+  assert.equal(Object.hasOwn(purchaseFields({item:'Antigo'}), 'category'), false);
+  assert.equal(purchaseFields({category:'Limpeza'}).category, 'Limpeza');
+});
+
+test('erro de envio informa código e mantém orientação para recuperar os dados', async () => {
+  const { purchaseSaveError } = await import('../src/purchaseFlow.js');
+  assert.match(purchaseSaveError({code:'permission-denied'}), /permission-denied/);
+  assert.match(purchaseSaveError({code:'unauthenticated'}), /sessão expirou/);
+  assert.match(purchaseSaveError({code:'unavailable'}), /Confira a lista/);
+});
