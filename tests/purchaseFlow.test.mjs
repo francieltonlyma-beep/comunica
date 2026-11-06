@@ -97,3 +97,32 @@ test('aprovação envia somente os campos da etapa e orienta salvar cotação pe
   assert.equal(Object.hasOwn(patch,'supplier'),false);
   assert.throws(() => purchaseTransitionPatch(record,'approved',{...record,quotedPrice:2},people.approver,101),/Salvar dados/);
 });
+
+test('Financeiro devolve NF não conforme e recebimento corrige antes da conclusão', () => {
+  const delivered = { ...fields, status:'delivered', updatedAt:100,history:[],supplier:'Fornecedor',quotedPrice:10,
+    expectedDate:'2026-11-18',orderNumber:'OC',invoiceNumber:'NF-1',receivedQuantity:10,condition:'ok',
+    storageAddress:'Prateleira',destinationRecipient:'Sala 1',buyerConfirmedAt:1,receiverConfirmedAt:2,
+    invoiceReceivedAt:2,recipientConfirmedAt:3 };
+  assert.throws(() => step(delivered,'finance_dispute',people.finance),/Descreva/);
+  const issue = step(delivered,'finance_dispute',people.finance,{financeIssue:'CNPJ da NF incorreto'});
+  assert.equal(issue.financeIssueBy,'finance');
+  assert.equal(issue.financeResolutionAt,0);
+  assert.throws(() => step(issue,'delivered',people.finance,{financeResolution:'NF corrigida'}),/responsável/);
+  assert.throws(() => step(issue,'delivered',people.receiver),/Descreva/);
+  const resolved = step(issue,'delivered',people.receiver,{invoiceNumber:'NF-2',financeResolution:'Fornecedor enviou NF corrigida'});
+  assert.equal(resolved.recipientConfirmedAt,3);
+  assert.equal(resolved.invoiceReceivedBy,'receiver');
+  assert.ok(resolved.financeResolutionAt > resolved.financeIssueAt);
+  const closed = step(resolved,'closed',people.finance);
+  assert.equal(closed.financeConfirmedBy,'finance');
+});
+
+test('cotação recusada pode ser revista e reapresentada à alçada', () => {
+  const quotation = {...fields,status:'quotation',updatedAt:100,history:[]};
+  assert.throws(() => step(quotation,'rejected',{...people.approver,isAdmin:true}),/motivo/);
+  const rejected = step(quotation,'rejected',{...people.approver,isAdmin:true},{note:'Rever preço e fornecedor'});
+  assert.equal(rejected.history.at(-1).detail,'Rever preço e fornecedor');
+  assert.throws(() => step(rejected,'quotation',people.receiver),/responsável/);
+  const reviewed = step(rejected,'quotation',people.buyer,{supplier:'Fornecedor B',quotedPrice:10,expectedDate:'2026-11-18'});
+  assert.equal(step(reviewed,'approved',people.approver).status,'approved');
+});
