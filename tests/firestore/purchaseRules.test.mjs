@@ -1,7 +1,7 @@
 import {initializeTestEnvironment, assertSucceeds, assertFails} from '@firebase/rules-unit-testing';
 import {doc,setDoc, collection, addDoc} from 'firebase/firestore';
 import {readFileSync} from 'node:fs';
-import {purchaseFields, purchaseTransition} from '../../src/purchaseFlow.js';
+import {purchaseFields, purchaseTransition, purchaseDataPatch} from '../../src/purchaseFlow.js';
 const env = await initializeTestEnvironment({projectId:'demo-comunica',firestore:{host:'127.0.0.1',port:8088,rules:readFileSync(new URL('../../firestore.rules', import.meta.url),'utf8')}});
 const base='artifacts/comunica-salvador/public/data/companies/company-a';
 await env.withSecurityRulesDisabled(async ctx => {
@@ -67,4 +67,57 @@ await assertSucceeds(updateDoc(doc(managerDb,base+'/purchaseRequests/legacy'), {
  updatedAt:now+100,updatedBy:'admin',history:[...oldRecord.history,{stage:'requested',by:'admin',at:now+100}],
 }));
 console.log('PASS: registro anterior migra sem alterar os dados da solicitação');
+// Reproduce the UI payload when the requester is also an administrator and buyer.
+const actorAdmin={id:'admin',name:'Administrador comprador',isAdmin:true};
+const adminData={...data,requesterId:'admin',requesterName:actorAdmin.name,updatedBy:'admin',participantIds:['admin'],history:[{stage:'requested',by:'admin',at:now}]};
+const adminRef=await assertSucceeds(addDoc(collection(managerDb,base+'/purchaseRequests'),adminData));
+const {runTransaction}=await import('firebase/firestore');
+await env.withSecurityRulesDisabled(async ctx=>{
+ for (const [id,isAdmin] of [['approver',true],['receiver',false],['recipient',false],['finance',false]]) {
+  await setDoc(doc(ctx.firestore(),base+'/users/'+id),{name:id,isAdmin});
+ }
+});
+const assignments={buyerId:'admin',approverId:'approver',receiverId:'receiver',recipientId:'recipient',financeId:'finance'};
+async function uiCommit(database, actor, stage='', edits={}) {
+ await runTransaction(database, async transaction=>{
+  const target=doc(database,adminRef.path);
+  const before=(await transaction.get(target)).data();
+  const draft=purchaseFields({...before,...edits});
+  const updatedAt=before.updatedAt+1;
+  const patch=stage ? purchaseTransition(before,stage,draft,actor,updatedAt)
+   : {...draft,...(actor.isAdmin ? {participantIds:[...new Set([before.requesterId,draft.buyerId,draft.approverId,draft.receiverId,draft.recipientId,draft.financeId].filter(Boolean))]} : {}),updatedAt,updatedBy:actor.id,history:[...before.history,{stage:before.status,by:actor.id,byName:actor.name,at:updatedAt,detail:'Dados e responsáveis atualizados'}].slice(-50)};
+  transaction.update(target,patch);
+ });
+}
+await assertSucceeds(uiCommit(managerDb,actorAdmin,'',assignments));
+console.log('PASS: administrador solicitante salva todos os responsáveis com o payload da interface');
+// Existing requests can contain legitimate values that the form normalizes on read.
+// Saving the full form would attempt to mutate immutable request fields.
+const existing={...adminData,item:' Luvas ',updatedAt:now+200,createdAt:now+200,
+ history:[{stage:'requested',by:'admin',byName:actorAdmin.name,at:now+200}]};
+await env.withSecurityRulesDisabled(async ctx=>setDoc(doc(ctx.firestore(),base+'/purchaseRequests/existing'),existing));
+const existingRef=doc(managerDb,base+'/purchaseRequests/existing');
+await assertFails(updateDoc(existingRef,{...purchaseFields(existing),buyerId:'admin',participantIds:['admin'],
+ updatedAt:now+201,updatedBy:'admin',history:[...existing.history,{stage:'requested',by:'admin',at:now+201}]}));
+const leanPatch=purchaseDataPatch(existing,{...purchaseFields(existing),buyerId:'admin'},true,actorAdmin,now+201);
+if ('item' in leanPatch || !('buyerId' in leanPatch)) throw new Error('A gravação incluiu campos imutáveis ou omitiu o comprador.');
+await assertSucceeds(updateDoc(existingRef,leanPatch));
+if (purchaseDataPatch((await getDoc(existingRef)).data(),purchaseFields((await getDoc(existingRef)).data()),true,actorAdmin,now+202) !== null) {
+ throw new Error('Salvar sem alterações precisa evitar uma gravação desnecessária.');
+}
+console.log('PASS: salvar dados antigos altera apenas os campos editados');
+await assertSucceeds(uiCommit(managerDb,actorAdmin,'',{note:'Observação antes da cotação'}));
+await assertSucceeds(uiCommit(managerDb,actorAdmin,'quotation'));
+console.log('PASS: administrador comprador avança para cotação');
+await assertSucceeds(uiCommit(managerDb,actorAdmin,'',{supplier:'Fornecedor',quotedPrice:10,expectedDate:'2026-11-09'}));
+for (const [stage,id,edits] of [
+ ['approved','approver',{}],['ordered','admin',{orderNumber:'OC-ADMIN'}],
+ ['received','receiver',{invoiceNumber:'NF-ADMIN',receivedQuantity:1,condition:'ok'}],
+ ['stored','receiver',{storageAddress:'Prateleira A'}],['delivered','recipient',{destinationRecipient:'Destinatário'}],['closed','finance',{}],
+]) {
+ const actor=id==='admin'?actorAdmin:{id,name:id,isAdmin:id==='approver'};
+ const actorDb=env.authenticatedContext(id,{companyId:'company-a'}).firestore();
+ await assertSucceeds(uiCommit(actorDb,actor,stage,edits));
+ console.log('PASS: transação da interface na etapa '+stage);
+}
 await env.cleanup();

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, query, runTransaction, setDoc, where } from 'firebase/firestore';
 import { ArrowRight, Box, CheckCircle2, ClipboardList, MapPin, PackageCheck, Plus, Search, Truck, X } from 'lucide-react';
-import { PURCHASE_CATEGORIES, PURCHASE_FILTERS, filterPurchases, pendingPurchaseRole, purchaseOverdue, purchaseSaveError, PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from './purchaseFlow.js';
+import { PURCHASE_CATEGORIES, PURCHASE_FILTERS, filterPurchases, pendingPurchaseRole, purchaseOverdue, purchaseSaveError, purchaseDataPatch, PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from './purchaseFlow.js';
 import './PurchaseManagement.css';
 import PurchaseSelect from './PurchaseSelect.jsx';
 
@@ -130,21 +130,22 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
       const ref = doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', selected.id);
       const nextDraft = purchaseFields(draft);
       if (next === 'delivered') nextDraft.destinationRecipient = user.name || 'Destinatário';
-      await runTransaction(db, async transaction => {
+      const saved = await runTransaction(db, async transaction => {
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists()) throw new Error('Esta solicitação não existe mais.');
         const current = snapshot.data();
         if (current.status !== selected.status || current.updatedAt !== selected.updatedAt) throw new Error('A solicitação mudou. Reabra o registro para ver os dados atuais.');
         const now = Math.max(Date.now(), Number(current.updatedAt || 0) + 1);
-        const change = next
-          ? purchaseTransition(current, next, nextDraft, user, now)
-          : { ...nextDraft, ...(manager ? { participantIds: [...new Set([current.requesterId, nextDraft.buyerId, nextDraft.approverId, nextDraft.receiverId, nextDraft.recipientId, nextDraft.financeId].filter(Boolean))] } : {}),
-            updatedAt: now, updatedBy: user.id,
-            history: [...(current.history || []), { stage: current.status, by: user.id, byName: user.name || 'Responsável', at: now, detail: 'Dados e responsáveis atualizados' }].slice(-50) };
+        const change = next ? purchaseTransition(current, next, nextDraft, user, now)
+          : purchaseDataPatch(current, nextDraft, manager, user, now);
+        if (!change) return false;
         transaction.update(ref, change);
+        return true;
       });
+      if (!saved) { setNotice('Nenhuma alteração para salvar.'); return; }
+      setNotice(next ? 'Etapa registrada com sucesso.' : 'Dados atualizados com sucesso.');
       setSelectedId(''); setDraft(null); setAcknowledged(false);
-    } catch (problem) { setError(problem.message || 'Não foi possível salvar. Tente novamente.'); }
+    } catch (problem) { setError(problem?.code ? purchaseSaveError(problem, next ? 'a mudança de etapa' : 'a atualização dos dados') : problem.message || 'Não foi possível salvar. Tente novamente.'); }
     finally { setBusy(false); }
   }
 

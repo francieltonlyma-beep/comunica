@@ -41,6 +41,25 @@ export function purchaseFields(value = {}) {
   };
 }
 
+const EDITABLE_PURCHASE_FIELDS = ['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode',
+  'invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','destinationRecipient','note',
+  'buyerId','approverId','receiverId','recipientId','financeId'];
+const PURCHASE_ROLES = ['buyerId','approverId','receiverId','recipientId','financeId'];
+
+export function purchaseDataPatch(current, draft, manager, actor, now) {
+  const before = purchaseFields(current);
+  const after = purchaseFields(draft);
+  const allowed = manager ? EDITABLE_PURCHASE_FIELDS : EDITABLE_PURCHASE_FIELDS.filter(key => !PURCHASE_ROLES.includes(key));
+  const changes = Object.fromEntries(allowed.filter(key => after[key] !== before[key]).map(key => [key, after[key]]));
+  if (Object.keys(changes).length === 0) return null;
+  if (PURCHASE_ROLES.some(key => key in changes)) {
+    changes.participantIds = [...new Set([current.requesterId, ...PURCHASE_ROLES.map(key => after[key])].filter(Boolean))];
+  }
+  return { ...changes, updatedAt: now, updatedBy: actor.id,
+    history: [...(current.history || []), { stage: current.status, by: actor.id, byName: actor.name || 'Responsável', at: now,
+      detail: 'Dados e responsáveis atualizados' }].slice(-50) };
+}
+
 export function validatePurchase(fields, stage = 'requested') {
   const data = purchaseFields(fields);
   if (!data.item || !data.specification || !data.unit || !data.department || !data.destination || !data.reason) return 'Preencha item, especificação, unidade, setor, destino e justificativa.';
@@ -136,11 +155,11 @@ export function filterPurchases(records, filters, search = '', stage = 'all', us
     : filters.sort === 'value' ? Number(b.quotedPrice || 0) * Number(b.quantity) - Number(a.quotedPrice || 0) * Number(a.quantity)
       : Number(b.createdAt || 0) - Number(a.createdAt || 0));
 }
-export function purchaseSaveError(problem) {
+export function purchaseSaveError(problem, action = 'o envio da solicitação') {
   const code = String(problem?.code || 'unknown').replace('firestore/', '');
-  const message = code === 'permission-denied' ? 'O servidor recusou o envio. Verifique o vínculo da conta com a empresa e a liberação do Integra.'
-    : code === 'unauthenticated' ? 'Sua sessão expirou. Entre novamente para enviar.'
-      : ['unavailable', 'deadline-exceeded'].includes(code) ? 'Não foi possível confirmar o envio por falha de conexão. Confira a lista antes de tentar novamente.'
+  const message = code === 'permission-denied' ? `O servidor recusou ${action}. Verifique seu acesso à empresa e os responsáveis desta etapa.`
+    : code === 'unauthenticated' ? 'Sua sessão expirou. Entre novamente e tente salvar.'
+      : ['unavailable', 'deadline-exceeded'].includes(code) ? 'Não foi possível confirmar a gravação por falha de conexão. Confira a lista antes de tentar novamente.'
         : 'Não foi possível salvar a solicitação.';
   return `${message} Seus dados continuam no formulário. Código: ${code}.`;
 }
