@@ -41,6 +41,7 @@ import { coverageRequirementsForDate, normalizeCoverageRequirements, validateCov
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
+const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityDependencyCreatesCycle, activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser, unresolvedActivityDependencies } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
@@ -52,7 +53,7 @@ import {
   Bell, Users, Megaphone, Layers, Calendar, Clock, Plus, Search, Heart, Smile,
   Share2, UserCheck, Briefcase, Sparkles, Filter, CheckCircle2, BookOpen,
   ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Menu, X, Coffee, Building, Send, Edit2,
-  Trash2, MapPin, FileText, ImageIcon, LogOut, Lock, KeyRound,
+  Trash2, MapPin, FileText, ImageIcon, LogOut, Lock, KeyRound, Package,
   PhoneCall, User, Activity, TrendingUp, TrendingDown, MessageSquare,
   Paperclip, File, Download, UserPlus, Upload, Database, LoaderCircle, Check, CheckCheck, Moon, Sun, Settings2,
   Reply, Bookmark, Highlighter, ListChecks, Flag, AtSign, ThumbsUp, Pin, VolumeX, Archive, FlaskConical, ExternalLink, Eye
@@ -109,6 +110,7 @@ const ACCESS_MODULES = [
   { id: 'polls', label: 'Enquetes e clima' },
   { id: 'documents', label: 'Documentos' },
   { id: 'services', label: 'Central de serviços' },
+  { id: 'integra', label: 'Comunica Integra' },
   { id: 'scale', label: 'Escalas e calendário' },
   { id: 'productivity', label: 'Produtividade' },
   { id: 'careers', label: 'Banco de talentos' },
@@ -8046,6 +8048,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       label: 'Trabalho',
       items: [
         { id: 'services', label: 'Central de serviços', description: 'Solicitações, atividades e checklists', icon: CheckCircle2, badge: (serviceMetrics.active + serviceActivityMetrics.active) || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
+        { id: 'integra', label: 'Comunica Integra', description: 'Gestão de compras', icon: Package, activeClass: 'from-teal-900 to-cyan-700', accent: 'text-teal-700' },
         { id: 'documents', label: 'Documentos', description: 'Arquivos e políticas', icon: FileText, badge: pendingDocumentReads || null, activeClass: 'from-emerald-800 to-teal-700', accent: 'text-emerald-600' },
         { id: 'scale', label: 'Escalas e calendário', description: 'Agenda e disponibilidade', icon: Calendar, activeClass: 'from-orange-700 to-amber-600', accent: 'text-orange-600' },
         canAccessProductivity ? { id: 'productivity', label: 'Produtividade', description: 'Registros de produção', icon: TrendingUp, activeClass: 'from-indigo-800 to-violet-700', accent: 'text-indigo-600' } : null,
@@ -8311,6 +8314,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
+          {activeTab === 'integra' && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} online={navigator.onLine && Boolean(dbUser)} /></Suspense>}
           <div className={`${activeTab === 'inbox' ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
               <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />

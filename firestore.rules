@@ -37,6 +37,56 @@ service cloud.firestore {
         )
       ));
     }
+
+    function purchaseStageChange(before, after) {
+      return before == after
+        || (before == 'requested' && after in ['approved','rejected','cancelled'])
+        || (before == 'approved' && after in ['quotation','cancelled'])
+        || (before == 'quotation' && after in ['ordered','cancelled'])
+        || (before == 'ordered' && after in ['in_transit','received','exception','cancelled'])
+        || (before == 'in_transit' && after in ['received','exception','cancelled'])
+        || (before == 'received' && after in ['stored','exception'])
+        || (before == 'exception' && after in ['received','cancelled'])
+        || (before == 'stored' && after == 'delivered')
+        || (before == 'delivered' && after == 'closed');
+    }
+    function validPurchase(data) {
+      return data.keys().hasOnly(['item','specification','quantity','unit','department','destination','neededBy','reason','priority',
+        'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','receivedQuantity',
+        'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','requesterId','requesterName',
+        'createdAt','updatedAt','updatedBy','history'])
+        && data.get('item','') is string && data.item.size() > 0 && data.item.size() <= 160
+        && data.get('specification','') is string && data.specification.size() > 0 && data.specification.size() <= 1000
+        && data.get('quantity',0) is number && data.quantity > 0 && data.quantity <= 1000000
+        && data.get('unit','') is string && data.unit.size() > 0 && data.unit.size() <= 30
+        && data.get('department','') is string && data.department.size() > 0 && data.department.size() <= 120
+        && data.get('destination','') is string && data.destination.size() > 0 && data.destination.size() <= 160
+        && data.get('reason','') is string && data.reason.size() > 0 && data.reason.size() <= 1000
+        && data.get('neededBy','') is string && data.neededBy.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && data.get('requesterId','') is string && data.requesterId.size() > 0
+        && data.get('requesterName','') is string && data.requesterName.size() > 0
+        && data.get('status','') in ['requested','approved','quotation','ordered','in_transit','received','exception','stored','delivered','closed','rejected','cancelled']
+        && data.get('createdAt',0) is int && data.get('updatedAt',0) is int
+        && data.get('updatedBy','') is string
+        && data.get('history',[]) is list && data.history.size() > 0 && data.history.size() <= 50
+        && data.get('quotedPrice',0) is number && data.quotedPrice >= 0
+        && data.get('receivedQuantity',0) is number && data.receivedQuantity >= 0 && data.receivedQuantity <= data.quantity
+        && data.get('condition','pending') in ['pending','ok','damaged'];
+    }
+    function validPurchaseStage(data) {
+      return (!(data.status in ['ordered','in_transit','received','exception','stored','delivered','closed'])
+          || (data.get('supplier','') is string && data.supplier.size() > 0
+            && data.get('orderNumber','') is string && data.orderNumber.size() > 0
+            && data.get('expectedDate','') is string && data.expectedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}'))
+        && (!(data.status in ['received','exception','stored','delivered','closed'])
+          || (data.get('invoiceNumber','') is string && data.invoiceNumber.size() > 0
+            && data.receivedQuantity > 0 && data.condition != 'pending'))
+        && (!(data.status in ['stored','delivered','closed'])
+          || (data.receivedQuantity == data.quantity && data.condition == 'ok'
+            && data.get('storageAddress','') is string && data.storageAddress.size() > 0))
+        && (!(data.status in ['delivered','closed'])
+          || (data.get('destinationRecipient','') is string && data.destinationRecipient.size() > 0));
+    }
     function access(company) { return member(company) || support(); }
     // Casos e limites de envio são acessíveis somente pelo Admin SDK no servidor.
     match /_privateWhistleblowing/{document=**} { allow read, write: if false; }
@@ -190,6 +240,27 @@ service cloud.firestore {
     match /artifacts/{app}/public/data/companies/{company} {
       allow read: if access(company);
       allow write: if false;
+      match /purchaseRequests/{id} {
+        allow get, list: if manages(app, company) || (member(company) && resource.data.get('requesterId','') == request.auth.uid);
+        allow create: if member(company) && validPurchase(request.resource.data) && validPurchaseStage(request.resource.data)
+          && request.resource.data.status == 'requested' && request.resource.data.requesterId == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.createdAt == request.resource.data.updatedAt
+          && request.resource.data.history.size() == 1
+          && request.resource.data.history[0].get('by','') == request.auth.uid
+          && request.resource.data.history[0].get('stage','') == 'requested';
+        allow update: if manages(app, company) && validPurchase(request.resource.data) && validPurchaseStage(request.resource.data)
+          && purchaseStageChange(resource.data.get('status',''), request.resource.data.status)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','receivedQuantity',
+            'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','updatedAt','updatedBy','history'])
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt >= resource.data.updatedAt
+          && request.resource.data.history.size() > 0
+          && request.resource.data.history[request.resource.data.history.size() - 1].get('by','') == request.auth.uid
+          && request.resource.data.history[request.resource.data.history.size() - 1].get('stage','') == request.resource.data.status;
+        allow delete: if false;
+      }
       match /users/{uid}/scheduleDrafts/{draftId} {
         function ownsDraft() { return request.auth != null && request.auth.uid == uid && scheduleManager(app, company) && canManageCalendar(app, company); }
         function canReadDraft() { return ownsDraft() || (request.auth != null && manages(app, company)); }
