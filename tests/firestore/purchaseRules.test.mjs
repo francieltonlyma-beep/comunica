@@ -140,4 +140,49 @@ const spacedRef=doc(managerDb,base+'/purchaseRequests/spaced');
 await assertFails(updateDoc(spacedRef,purchaseTransition(spaced,'approved',purchaseFields(spaced),actorAdmin,now+501)));
 await assertSucceeds(updateDoc(spacedRef,purchaseTransitionPatch(spaced,'approved',purchaseFields(spaced),actorAdmin,now+501)));
 console.log('PASS: aprovação mantém campos originais da solicitação intactos');
+const closedAdmin=(await getDoc(adminRef)).data();
+const financial={...closedAdmin,status:'delivered',updatedAt:now+900,updatedBy:'recipient',
+ history:[{stage:'delivered',by:'recipient',at:now+900}]};
+delete financial.financeConfirmedBy;
+delete financial.financeConfirmedAt;
+await env.withSecurityRulesDisabled(async ctx=>setDoc(doc(ctx.firestore(),base+'/purchaseRequests/financial'),financial));
+const financialRef=doc(managerDb,base+'/purchaseRequests/financial');
+const financeActor={id:'finance',name:'Financeiro'};
+const financeDb=env.authenticatedContext('finance',{companyId:'company-a'}).firestore();
+const receiverActor={id:'receiver',name:'Recebimento'};
+const receiverDb=env.authenticatedContext('receiver',{companyId:'company-a'}).firestore();
+let financialCurrent=(await getDoc(financialRef)).data();
+let issuePatch=purchaseTransitionPatch(financialCurrent,'finance_dispute',{...financialCurrent,financeIssue:'CNPJ divergente'},financeActor,now+901);
+await assertFails(updateDoc(doc(receiverDb,financialRef.path),issuePatch));
+await assertSucceeds(updateDoc(doc(financeDb,financialRef.path),issuePatch));
+financialCurrent=(await getDoc(financialRef)).data();
+await assertFails(updateDoc(doc(financeDb,financialRef.path),{status:'closed',updatedAt:now+902,updatedBy:'finance',
+ financeConfirmedBy:'finance',financeConfirmedAt:now+902,
+ history:[...financialCurrent.history,{stage:'closed',by:'finance',at:now+902}]}));
+const fixPatch=purchaseTransitionPatch(financialCurrent,'delivered',{...financialCurrent,invoiceNumber:'NF-CORRIGIDA',financeResolution:'Fornecedor emitiu NF corrigida'},receiverActor,now+902);
+await assertFails(updateDoc(doc(financeDb,financialRef.path),fixPatch));
+await assertSucceeds(updateDoc(doc(receiverDb,financialRef.path),fixPatch));
+financialCurrent=(await getDoc(financialRef)).data();
+await assertSucceeds(updateDoc(doc(financeDb,financialRef.path),purchaseTransitionPatch(financialCurrent,'closed',financialCurrent,financeActor,now+903)));
+console.log('PASS: Financeiro devolve NF, recebimento corrige e Financeiro conclui');
+const quotationForReview={...adminData,buyerId:'admin',approverId:'approver',receiverId:'receiver',recipientId:'recipient',financeId:'finance',
+ participantIds:['admin','approver','receiver','recipient','finance'],status:'quotation',updatedAt:now+1000,
+ history:[{stage:'quotation',by:'admin',at:now+1000}]};
+await env.withSecurityRulesDisabled(async ctx=>setDoc(doc(ctx.firestore(),base+'/purchaseRequests/review'),quotationForReview));
+const reviewRef=doc(managerDb,base+'/purchaseRequests/review');
+let reviewCurrent=(await getDoc(reviewRef)).data();
+await assertSucceeds(updateDoc(reviewRef,purchaseTransitionPatch(reviewCurrent,'rejected',{...reviewCurrent,note:'Nova cotação necessária'},actorAdmin,now+1001)));
+reviewCurrent=(await getDoc(reviewRef)).data();
+await assertSucceeds(updateDoc(reviewRef,purchaseTransitionPatch(reviewCurrent,'quotation',{...reviewCurrent,supplier:'Outro fornecedor',quotedPrice:11,expectedDate:'2026-11-10'},actorAdmin,now+1002)));
+reviewCurrent=(await getDoc(reviewRef)).data();
+const approverDb=env.authenticatedContext('approver',{companyId:'company-a'}).firestore();
+await assertSucceeds(updateDoc(doc(approverDb,reviewRef.path),purchaseTransitionPatch(reviewCurrent,'approved',reviewCurrent,{id:'approver',name:'Aprovador'},now+1003)));
+console.log('PASS: recusa com motivo, revisão da cotação e nova aprovação');
+const rejectedUnassigned={...adminData,status:'rejected',note:'Dados insuficientes',updatedAt:now+1100,
+ history:[{stage:'rejected',by:'admin',at:now+1100,detail:'Dados insuficientes'}]};
+await env.withSecurityRulesDisabled(async ctx=>setDoc(doc(ctx.firestore(),base+'/purchaseRequests/reopen'),rejectedUnassigned));
+const reopenRef=doc(managerDb,base+'/purchaseRequests/reopen');
+await assertFails(updateDoc(doc(db,reopenRef.path),purchaseTransitionPatch(rejectedUnassigned,'requested',rejectedUnassigned,{id:'employee',name:'Colaborador',isAdmin:true},now+1101)));
+await assertSucceeds(updateDoc(reopenRef,purchaseTransitionPatch(rejectedUnassigned,'requested',rejectedUnassigned,actorAdmin,now+1101)));
+console.log('PASS: administração reabre recusa sem comprador para novas atribuições');
 await env.cleanup();

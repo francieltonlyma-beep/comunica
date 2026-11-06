@@ -48,7 +48,9 @@ service cloud.firestore {
         || (before == 'received' && after in ['stored','exception'])
         || (before == 'exception' && after in ['received','cancelled'])
         || (before == 'stored' && after == 'delivered')
-        || (before == 'delivered' && after == 'closed');
+        || (before == 'delivered' && after in ['closed','finance_dispute'])
+        || (before == 'finance_dispute' && after == 'delivered')
+        || (before == 'rejected' && after in ['requested','quotation']);
     }
     function validPurchase(data) {
       return data.keys().hasOnly(['category','item','specification','quantity','unit','department','destination','neededBy','reason','priority',
@@ -57,7 +59,8 @@ service cloud.firestore {
         'createdAt','updatedAt','updatedBy','history','workflowVersion','participantIds',
         'buyerId','approverId','receiverId','recipientId','financeId',
         'approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt',
-        'invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt'])
+        'invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt',
+        'financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'])
         && data.get('category','') is string && data.get('category','').size() <= 80
         && data.item is string && data.item.size() > 0 && data.item.size() <= 160
         && data.specification is string && data.specification.size() > 0 && data.specification.size() <= 1000
@@ -69,7 +72,7 @@ service cloud.firestore {
         && data.neededBy is string && data.neededBy.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}')
         && data.requesterId is string && data.requesterId.size() > 0
         && data.requesterName is string && data.requesterName.size() > 0
-        && data.status in ['requested','approved','quotation','ordered','in_transit','received','exception','stored','delivered','closed','rejected','cancelled']
+        && data.status in ['requested','approved','quotation','ordered','in_transit','received','exception','stored','delivered','finance_dispute','closed','rejected','cancelled']
         && data.get('createdAt',0) is int
         && validPurchaseWorkflow(data)
         && data.get('approvedBy','') is string && data.get('approvedAt',0) is int
@@ -88,6 +91,12 @@ service cloud.firestore {
         && data.quotedPrice is number && data.quotedPrice >= 0
         && data.receivedQuantity is number && data.receivedQuantity >= 0 && data.receivedQuantity <= data.quantity
         && data.get('condition','pending') in ['pending','ok','damaged'];
+    }
+    function validFinanceReview(data) {
+      return data.get('financeIssue','') is string && data.get('financeIssue','').size() <= 1000
+        && data.get('financeIssueBy','') is string && data.get('financeIssueAt',0) is int
+        && data.get('financeResolution','') is string && data.get('financeResolution','').size() <= 1000
+        && data.get('financeResolutionBy','') is string && data.get('financeResolutionAt',0) is int;
     }
     function validPurchaseParticipants(data) {
       let version = data.get('workflowVersion',0);
@@ -111,7 +120,7 @@ service cloud.firestore {
     function validPurchaseStage(data) {
       let stage = data.status;
       let step = {'requested':0, 'quotation':1, 'approved':2, 'ordered':3, 'in_transit':3,
-        'received':4, 'exception':4, 'stored':5, 'delivered':6, 'closed':7, 'rejected':0, 'cancelled':0}[stage];
+        'received':4, 'exception':4, 'stored':5, 'delivered':6, 'finance_dispute':6, 'closed':7, 'rejected':0, 'cancelled':0}[stage];
       return step == 0 || (
         (step < 2 || (data.get('supplier','') is string && data.supplier.size() > 0
           && data.get('expectedDate','') is string && data.expectedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}') && data.quotedPrice > 0))
@@ -134,6 +143,14 @@ service cloud.firestore {
         ))
       );
     }
+    function validFinanceStage(data) {
+      return data.status == 'finance_dispute'
+        ? (data.get('financeIssue','') is string && data.financeIssue.size() > 0
+          && data.get('financeIssueAt',0) > 0 && data.get('financeIssueBy','') == data.financeId
+          && data.get('financeResolutionAt',0) == 0 && data.get('financeResolution','') == '')
+        : (data.get('financeIssueAt',0) == 0 || (data.get('financeResolutionAt',0) > data.financeIssueAt
+          && data.get('financeResolutionBy','') == data.receiverId));
+    }
     function purchaseAuthority(app, company, data) {
       return exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('enabled', false) == true
@@ -152,6 +169,7 @@ service cloud.firestore {
           && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','expectedDate']))
           && (before.get('buyerConfirmedAt',0) == 0 || !changed.hasAny(['orderNumber']))
           && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber']))
+          && !changed.hasAny(['financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'])
           && !changed.hasAny(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt']))
           || (actor == before.get('buyerId','') && actor != '' && before.status in ['requested','quotation','approved','ordered','in_transit']
             && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','orderNumber','expectedDate']))
@@ -160,7 +178,11 @@ service cloud.firestore {
             && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber']))
             && changed.hasOnly(['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note','updatedAt','updatedBy','history'])))
         : (!changed.hasAny(['buyerId','approverId','receiverId','recipientId','financeId','participantIds'])
-          && ((nextStage in ['rejected','cancelled'] && manages(app, company) && changed.hasOnly(['status','note','updatedAt','updatedBy','history']))
+          && ((nextStage == 'rejected' && manages(app, company) && changed.hasOnly(['status','note','updatedAt','updatedBy','history'])
+              && changed.hasAny(['note']) && after.note is string && after.note.size() > 0)
+            || (nextStage == 'cancelled' && manages(app, company) && changed.hasOnly(['status','note','updatedAt','updatedBy','history']))
+            || (nextStage == 'requested' && before.status == 'rejected' && manages(app, company)
+              && changed.hasOnly(['status','updatedAt','updatedBy','history']))
             || (nextStage == 'quotation' && actor == before.get('buyerId','') && actor != '' && changed.hasOnly(['status','updatedAt','updatedBy','history','supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note']))
             || (nextStage == 'approved' && actor == before.get('approverId','') && actor != '' && purchaseAuthority(app, company, after)
               && after.get('approvedBy','') == actor && after.get('approvedAt',0) == after.updatedAt
@@ -176,18 +198,70 @@ service cloud.firestore {
               && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt']))
             || (nextStage == 'stored' && actor == before.get('receiverId','') && actor != ''
               && changed.hasOnly(['status','updatedAt','updatedBy','history','storageAddress','lot','expiresAt','note']))
-            || (nextStage == 'delivered' && actor == before.get('recipientId','') && actor != ''
+            || (nextStage == 'delivered' && before.status == 'stored' && actor == before.get('recipientId','') && actor != ''
               && after.get('recipientConfirmedBy','') == actor && after.get('recipientConfirmedAt',0) == after.updatedAt
               && changed.hasOnly(['status','updatedAt','updatedBy','history','destinationRecipient','recipientConfirmedBy','recipientConfirmedAt']))
             || (nextStage == 'closed' && actor == before.get('financeId','') && actor != ''
               && after.get('financeConfirmedBy','') == actor && after.get('financeConfirmedAt',0) == after.updatedAt
               && changed.hasOnly(['status','updatedAt','updatedBy','history','financeConfirmedBy','financeConfirmedAt']))));
     }
-    function validPurchaseUpdate(app, company, before, after) {
+    // Closing changes only the Financeiro's proof. The delivered document has
+    // already passed every preceding stage, so avoid re-evaluating that entire
+    // history and exceeding the Firestore expression budget.
+    function validPurchaseClose(app, company, before, after) {
+      let actor = request.auth.uid;
       let changed = after.diff(before).affectedKeys();
       let history = after.history;
       let last = history[history.size() - 1];
       return (support() || (member(company) && integraEnabled(app, company)))
+        && before.get('workflowVersion',0) == 2 && before.status == 'delivered' && after.status == 'closed'
+        && actor == before.get('financeId','') && actor != ''
+        && changed.hasOnly(['status','updatedAt','updatedBy','history','financeConfirmedBy','financeConfirmedAt'])
+        && before.get('buyerConfirmedAt',0) > 0 && before.get('receiverConfirmedAt',0) > 0
+        && before.get('invoiceReceivedAt',0) > 0 && before.get('recipientConfirmedAt',0) > 0
+        && (before.get('financeIssueAt',0) == 0 || (before.get('financeResolutionAt',0) > before.financeIssueAt
+          && before.get('financeResolutionBy','') == before.receiverId))
+        && after.updatedAt is int && after.updatedAt > before.updatedAt && after.updatedBy == actor
+        && after.financeConfirmedBy == actor && after.financeConfirmedAt == after.updatedAt
+        && history is list && history.size() > 0 && history.size() <= 50
+        && last.get('by','') == actor && last.get('stage','') == 'closed';
+    }
+    function validFinanceReviewUpdate(app, company, before, after) {
+      let actor = request.auth.uid;
+      let changed = after.diff(before).affectedKeys();
+      let history = after.history;
+      let last = history[history.size() - 1];
+      return (support() || (member(company) && integraEnabled(app, company)))
+        && before.get('workflowVersion',0) == 2
+        && after.updatedAt is int && after.updatedAt > before.updatedAt && after.updatedBy == actor
+        && history is list && history.size() > 0 && history.size() <= 50
+        && last.get('by','') == actor && last.get('stage','') == after.status
+        && (after.status == 'finance_dispute'
+          ? (before.status == 'delivered' && actor == before.get('financeId','') && actor != ''
+            && changed.hasOnly(['status','updatedAt','updatedBy','history','financeIssue','financeIssueBy','financeIssueAt',
+              'financeResolution','financeResolutionBy','financeResolutionAt'])
+            && after.get('financeIssue','') is string && after.financeIssue.size() > 0 && after.financeIssue.size() <= 1000
+            && after.get('financeIssueBy','') == actor && after.get('financeIssueAt',0) == after.updatedAt
+            && after.get('financeResolution','') == '' && after.get('financeResolutionBy','') == '' && after.get('financeResolutionAt',0) == 0)
+          : (before.status == 'finance_dispute' && after.status == 'delivered'
+            && actor == before.get('receiverId','') && actor != '' && before.get('financeIssueAt',0) > 0
+            && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceNumber','financeResolution','financeResolutionBy','financeResolutionAt',
+              'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'])
+            && after.get('invoiceNumber','') is string && after.invoiceNumber.size() > 0 && after.invoiceNumber.size() <= 80
+            && after.get('financeResolution','') is string && after.financeResolution.size() > 0 && after.financeResolution.size() <= 1000
+            && after.get('financeResolutionBy','') == actor && after.get('financeResolutionAt',0) == after.updatedAt
+            && after.get('receiverConfirmedBy','') == actor && after.get('receiverConfirmedAt',0) == after.updatedAt
+            && after.get('invoiceReceivedBy','') == actor && after.get('invoiceReceivedAt',0) == after.updatedAt));
+    }
+    function validPurchaseUpdate(app, company, before, after) {
+      let changed = after.diff(before).affectedKeys();
+      let history = after.history;
+      let last = history[history.size() - 1];
+      return (before.status == 'finance_dispute' || after.status == 'finance_dispute')
+        ? validFinanceReviewUpdate(app, company, before, after)
+        : before.status == 'delivered' && after.status == 'closed'
+        ? validPurchaseClose(app, company, before, after)
+        : (support() || (member(company) && integraEnabled(app, company)))
           && after.get('workflowVersion',0) == 2
           && purchaseStageChange(before.get('status',''), after.status)
           && changed.hasOnly([
@@ -195,11 +269,14 @@ service cloud.firestore {
             'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','updatedAt','updatedBy','history',
             'buyerId','approverId','receiverId','recipientId','financeId','participantIds',
             'approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt',
-            'invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt'])
+            'invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt',
+            'financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'])
           && purchaseAction(app, company, before, after)
           // Immutable request fields were validated at creation or migration.
           // Revalidate only editable workflow fields to stay below the expression limit.
           && validPurchaseWorkflowFields(after) && validPurchaseStage(after)
+          && (!(after.status == 'finance_dispute' || (after.get('financeIssueAt',0) > 0 && after.status in ['delivered','closed'])) || validFinanceStage(after))
+          && (!changed.hasAny(['financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt']) || validFinanceReview(after))
           && (!changed.hasAny(['buyerId','approverId','receiverId','recipientId','financeId','participantIds']) || validPurchaseParticipants(after))
           && after.updatedBy == request.auth.uid
           && after.updatedAt > before.updatedAt
@@ -397,6 +474,8 @@ service cloud.firestore {
           && request.resource.data.workflowVersion == 2 && request.resource.data.participantIds == [request.auth.uid]
           && request.resource.data.buyerId == '' && request.resource.data.approverId == '' && request.resource.data.receiverId == ''
           && request.resource.data.recipientId == '' && request.resource.data.financeId == ''
+          && request.resource.data.get('financeIssue','') == '' && request.resource.data.get('financeResolution','') == ''
+          && !request.resource.data.keys().hasAny(['financeIssueBy','financeIssueAt','financeResolutionBy','financeResolutionAt'])
           && !request.resource.data.keys().hasAny(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt'])
           && request.resource.data.updatedBy == request.auth.uid
           && request.resource.data.createdAt == request.resource.data.updatedAt

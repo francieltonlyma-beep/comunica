@@ -1,7 +1,7 @@
 export const PURCHASE_STAGES = {
   requested: 'Solicitada', quotation: 'Em cotação', approved: 'Aprovada pela alçada', ordered: 'Pedido emitido',
   in_transit: 'Em transporte', received: 'Em conferência', exception: 'Divergência',
-  stored: 'Armazenada', delivered: 'Entregue ao destino', closed: 'Concluída pelo Financeiro',
+  stored: 'Armazenada', delivered: 'Entregue ao destino', finance_dispute: 'NF em correção', closed: 'Concluída pelo Financeiro',
   rejected: 'Recusada', cancelled: 'Cancelada',
 };
 
@@ -14,8 +14,9 @@ export const PURCHASE_NEXT = {
   received: ['stored', 'exception'],
   exception: ['received', 'cancelled'],
   stored: ['delivered'],
-  delivered: ['closed'],
-  closed: [], rejected: [], cancelled: [],
+  delivered: ['closed', 'finance_dispute'],
+  finance_dispute: ['delivered'],
+  closed: [], rejected: ['quotation','requested'], cancelled: [],
 };
 
 const text = (value, limit = 160) => String(value || '').trim().slice(0, limit);
@@ -35,7 +36,7 @@ export function purchaseFields(value = {}) {
     condition: ['pending', 'ok', 'damaged'].includes(value.condition) ? value.condition : 'pending',
     lot: text(value.lot, 100), expiresAt: text(value.expiresAt, 10),
     storageAddress: text(value.storageAddress, 160), destinationRecipient: text(value.destinationRecipient, 160),
-    note: text(value.note, 1000),
+    note: text(value.note, 1000), financeIssue: text(value.financeIssue, 1000), financeResolution: text(value.financeResolution, 1000),
     buyerId: text(value.buyerId, 128), approverId: text(value.approverId, 128),
     receiverId: text(value.receiverId, 128), recipientId: text(value.recipientId, 128), financeId: text(value.financeId, 128),
   };
@@ -65,21 +66,21 @@ export function validatePurchase(fields, stage = 'requested') {
   if (!data.item || !data.specification || !data.unit || !data.department || !data.destination || !data.reason) return 'Preencha item, especificação, unidade, setor, destino e justificativa.';
   if (!Number.isFinite(data.quantity) || data.quantity <= 0 || data.quantity > 1000000) return 'Informe uma quantidade válida.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.neededBy)) return 'Informe a data em que o item é necessário.';
-  if (['approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'closed'].includes(stage)) {
+  if (['approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'finance_dispute', 'closed'].includes(stage)) {
     if (!data.supplier || !Number.isFinite(data.quotedPrice) || data.quotedPrice <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(data.expectedDate)) return 'Informe fornecedor, preço unitário e previsão antes da aprovação.';
   }
-  if (['quotation', 'approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'closed'].includes(stage) && !data.buyerId) return 'Defina o comprador responsável.';
-  if (['approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'closed'].includes(stage) && !data.approverId) return 'Defina o aprovador da alçada.';
-  if (['ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'closed'].includes(stage) && !data.orderNumber) return 'Informe o número do pedido aprovado.';
-  if (['received', 'exception', 'stored', 'delivered', 'closed'].includes(stage)) {
+  if (['quotation', 'approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'finance_dispute', 'closed'].includes(stage) && !data.buyerId) return 'Defina o comprador responsável.';
+  if (['approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'finance_dispute', 'closed'].includes(stage) && !data.approverId) return 'Defina o aprovador da alçada.';
+  if (['ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'finance_dispute', 'closed'].includes(stage) && !data.orderNumber) return 'Informe o número do pedido aprovado.';
+  if (['received', 'exception', 'stored', 'delivered', 'finance_dispute', 'closed'].includes(stage)) {
     if (!data.receiverId) return 'Defina quem fará o recebimento.';
     if (!data.invoiceNumber || !Number.isFinite(data.receivedQuantity) || data.receivedQuantity <= 0 || data.receivedQuantity > data.quantity || data.condition === 'pending') return 'Confira NF, quantidade recebida e condição do item.';
   }
-  if (['stored', 'delivered', 'closed'].includes(stage)) {
+  if (['stored', 'delivered', 'finance_dispute', 'closed'].includes(stage)) {
     if (data.receivedQuantity !== data.quantity || data.condition !== 'ok') return 'Resolva a divergência e confira toda a quantidade antes de armazenar.';
     if (!data.storageAddress) return 'Identifique o endereço físico de armazenagem.';
   }
-  if (['delivered', 'closed'].includes(stage) && (!data.recipientId || !data.destinationRecipient)) return 'Defina o destinatário e identifique quem recebeu o item no destino.';
+  if (['delivered', 'finance_dispute', 'closed'].includes(stage) && (!data.recipientId || !data.destinationRecipient)) return 'Defina o destinatário e identifique quem recebeu o item no destino.';
   if (stage === 'closed' && !data.financeId) return 'Defina o responsável Financeiro.';
   return '';
 }
@@ -88,10 +89,12 @@ export function purchaseTransition(record, next, fields, actor, now = Date.now()
   if (!PURCHASE_NEXT[record?.status]?.includes(next)) throw new Error('Esta etapa não pode ser aplicada ao pedido atual.');
   const normalized = purchaseFields(fields);
   const actorId = String(actor?.id || '');
-  const responsible = { quotation: 'buyerId', approved: 'approverId', ordered: 'buyerId', in_transit: 'buyerId',
-    received: 'receiverId', exception: 'receiverId', stored: 'receiverId', delivered: 'recipientId', closed: 'financeId' }[next];
+  const responsible = next === 'delivered' && record.status === 'finance_dispute' ? 'receiverId' : { quotation: 'buyerId', approved: 'approverId', ordered: 'buyerId', in_transit: 'buyerId',
+    received: 'receiverId', exception: 'receiverId', stored: 'receiverId', delivered: 'recipientId', finance_dispute: 'financeId', closed: 'financeId' }[next];
   if (responsible && (!normalized[responsible] || normalized[responsible] !== actorId)) throw new Error('Esta confirmação pertence ao responsável designado para a etapa.');
   if (['rejected', 'cancelled'].includes(next) && !actor?.isAdmin && !actor?.isDeveloper) throw new Error('Somente a administração pode encerrar esta solicitação.');
+  if (next === 'requested' && !actor?.isAdmin && !actor?.isDeveloper) throw new Error('Somente a administração pode reabrir esta solicitação.');
+  if (next === 'rejected' && (!normalized.note || normalized.note === (record.note || ''))) throw new Error('Informe o motivo da recusa nas observações antes de continuar.');
   const error = validatePurchase(normalized, next);
   if (error) throw new Error(error);
   if (next === 'received' && (normalized.receivedQuantity < normalized.quantity || normalized.condition === 'damaged')) {
@@ -101,23 +104,32 @@ export function purchaseTransition(record, next, fields, actor, now = Date.now()
     throw new Error('Registre a divergência na quantidade ou condição antes de marcar esta etapa.');
   }
   if (next === 'ordered' && !record.approvedAt) throw new Error('A aprovação da alçada deve ocorrer antes do pedido.');
+  if (next === 'finance_dispute' && !normalized.financeIssue) throw new Error('Descreva por que a nota fiscal não está conforme.');
+  if (next === 'delivered' && record.status === 'finance_dispute' && !normalized.financeResolution) throw new Error('Descreva a correção da nota fiscal antes de devolver ao Financeiro.');
+  if (next === 'closed' && record.financeIssueAt && !(record.financeResolutionAt > record.financeIssueAt)) throw new Error('A nota fiscal ainda tem uma divergência pendente.');
   if (next === 'closed' && (!record.buyerConfirmedAt || !record.receiverConfirmedAt || !record.recipientConfirmedAt || !record.invoiceReceivedAt)) {
     throw new Error('Faltam os atestes do comprador, recebimento, nota fiscal ou destinatário.');
   }
-  const event = { stage: next, by: actorId, byName: text(actor?.name, 120), at: now };
+  const event = { stage: next, by: actorId, byName: text(actor?.name, 120), at: now,
+    ...(next === 'rejected' ? {detail:normalized.note} : next === 'finance_dispute' ? {detail:normalized.financeIssue}
+      : record.status === 'finance_dispute' && next === 'delivered' ? {detail:normalized.financeResolution} : {}) };
   const proof = {
     ...(next === 'approved' ? { approvedBy: actorId, approvedAt: now } : {}),
     ...(next === 'ordered' ? { buyerConfirmedBy: actorId, buyerConfirmedAt: now } : {}),
     ...(['received','exception'].includes(next) ? { receiverConfirmedBy: actorId, receiverConfirmedAt: now, invoiceReceivedBy: actorId, invoiceReceivedAt: now } : {}),
-    ...(next === 'delivered' ? { recipientConfirmedBy: actorId, recipientConfirmedAt: now } : {}),
+    ...(next === 'delivered' && record.status !== 'finance_dispute' ? { recipientConfirmedBy: actorId, recipientConfirmedAt: now } : {}),
+    ...(next === 'finance_dispute' ? { financeIssueBy: actorId, financeIssueAt: now, financeResolutionBy: '', financeResolutionAt: 0, financeResolution: '' } : {}),
+    ...(next === 'delivered' && record.status === 'finance_dispute' ? { financeResolutionBy: actorId, financeResolutionAt: now,
+      receiverConfirmedBy: actorId, receiverConfirmedAt: now, invoiceReceivedBy: actorId, invoiceReceivedAt: now } : {}),
     ...(next === 'closed' ? { financeConfirmedBy: actorId, financeConfirmedAt: now } : {}),
   };
-  const previousProofs = Object.fromEntries(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt'].filter(key => record[key] !== undefined).map(key => [key, record[key]]));
+  const previousProofs = Object.fromEntries(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt','financeIssueBy','financeIssueAt','financeResolutionBy','financeResolutionAt'].filter(key => record[key] !== undefined).map(key => [key, record[key]]));
   return { ...normalized, ...previousProofs, ...proof, status: next, updatedAt: now, updatedBy: event.by,
     history: [...(Array.isArray(record.history) ? record.history : []), event].slice(-50) };
 }
 
 const TRANSITION_FIELDS = {
+  requested: [],
   quotation: ['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note'],
   approved: ['approvedBy','approvedAt'],
   ordered: ['orderNumber','carrier','trackingCode','note','buyerConfirmedBy','buyerConfirmedAt'],
@@ -127,7 +139,8 @@ const TRANSITION_FIELDS = {
   exception: ['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
     'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
   stored: ['storageAddress','lot','expiresAt','note'],
-  delivered: ['destinationRecipient','recipientConfirmedBy','recipientConfirmedAt'],
+  delivered: ['destinationRecipient','recipientConfirmedBy','recipientConfirmedAt','invoiceNumber','financeResolution','financeResolutionBy','financeResolutionAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
+  finance_dispute: ['financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'],
   closed: ['financeConfirmedBy','financeConfirmedAt'],
   rejected: ['note'], cancelled: ['note'],
 };
@@ -155,7 +168,7 @@ export const PURCHASE_FILTERS = { requester: '', responsible: '', category: '', 
 const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 export function pendingPurchaseRole(record) {
   if (record.status === 'quotation' && (!record.supplier || !record.expectedDate || !(Number(record.quotedPrice) > 0))) return 'buyerId';
-  return ({ requested: 'buyerId', quotation: 'approverId', approved: 'buyerId', ordered: 'buyerId', in_transit: 'receiverId', received: 'receiverId', exception: 'receiverId', stored: 'recipientId', delivered: 'financeId' })[record.status] || '';
+  return ({ requested: 'buyerId', quotation: 'approverId', approved: 'buyerId', ordered: 'buyerId', in_transit: 'receiverId', received: 'receiverId', exception: 'receiverId', stored: 'recipientId', delivered: 'financeId', finance_dispute: 'receiverId' })[record.status] || '';
 }
 export function purchaseOverdue(record, today) {
   return !['closed', 'cancelled', 'rejected', 'delivered'].includes(record.status) && Boolean(record.neededBy && record.neededBy < today);
