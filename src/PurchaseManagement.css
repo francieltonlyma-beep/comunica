@@ -13,3 +13,7 @@
 .pm-ack input{margin-top:2px;accent-color:#176578}
 
 .pm-legacy{margin:12px 18px;padding:12px;border:1px solid #f1d6a6;border-radius:10px;background:#fff8eb;color:#704d13;font-size:12px;line-height:1.5}.pm-legacy button{display:block;margin-top:8px;border:0;border-radius:8px;padding:8px 10px;background:#7d5716;color:#fff;font-weight:700;cursor:pointer}
+
+.pm-notice{padding:12px;border:1px solid #acd7c5;border-radius:10px;background:#effaf5;color:#24654b;font-size:12px;overflow-wrap:anywhere}.pm-filters .pm-filter-field{display:grid;gap:4px;align-content:start;padding:8px;min-width:130px;flex:1 1 130px}.pm-filter-field span{font-size:10px;color:#617984;font-weight:700}.pm-filter-field select{width:100%;min-width:0;border:0;padding:5px 0}.pm-clear{border:1px solid #cbdde0;border-radius:10px;padding:9px;background:#f5f9fa;color:#30515e;cursor:pointer;font-size:12px}.pm-list-summary{padding:0 12px 12px}
+
+.pm-filter-more{width:100%}.pm-filter-more summary{padding:8px 0;color:#30515e;font-size:12px;cursor:pointer}.pm-filter-grid{display:flex;flex-wrap:wrap;gap:8px}

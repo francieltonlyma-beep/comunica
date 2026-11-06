@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, query, runTransaction, setDoc, where } from 'firebase/firestore';
 import { ArrowRight, Box, CheckCircle2, ClipboardList, MapPin, PackageCheck, Plus, Search, Truck, X } from 'lucide-react';
-import { PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from './purchaseFlow.js';
+import { PURCHASE_CATEGORIES, PURCHASE_FILTERS, filterPurchases, pendingPurchaseRole, purchaseOverdue, purchaseSaveError, PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from './purchaseFlow.js';
 import './PurchaseManagement.css';
 
-const INITIAL = { item: '', specification: '', quantity: 1, unit: 'un', department: '', destination: '', neededBy: '', reason: '', priority: 'normal' };
+const INITIAL = { category: 'Outros', item: '', specification: '', quantity: 1, unit: 'un', department: '', destination: '', neededBy: '', reason: '', priority: 'normal' };
 const dateBR = value => value ? new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 const stageColor = status => status === 'exception' || status === 'rejected' ? 'pm-danger' : status === 'closed' ? 'pm-done' : ['received', 'stored', 'delivered'].includes(status) ? 'pm-success' : 'pm-neutral';
 const PRIORITIES = { normal: 'Normal', high: 'Alta', urgent: 'Urgente' };
@@ -21,6 +21,9 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   const [form, setForm] = useState(INITIAL);
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState(null);
+  const sending = useRef(false);
+  const [notice, setNotice] = useState('');
+  const [filters, setFilters] = useState(PURCHASE_FILTERS);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
   const [policy, setPolicy] = useState(null);
@@ -56,8 +59,12 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   }, [appId, companyId, db, user?.id]);
 
   const selected = records.find(item => item.id === selectedId);
-  const visible = records.filter(item => (stageFilter === 'all' || item.status === stageFilter) &&
-    `${item.item} ${item.requesterName} ${item.department} ${item.orderNumber} ${item.supplier}`.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')));
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const visible = filterPurchases(records, filters, search, stageFilter, users, user?.id, today);
+  const categories = [...new Set([...PURCHASE_CATEGORIES, ...records.map(item => item.category || 'Sem categoria')])].sort();
+  const requesters = [...new Map(records.map(item => [item.requesterId, item.requesterName])).entries()];
+  const responsibleIds = new Set(records.flatMap(item => [item.buyerId, item.approverId, item.receiverId, item.recipientId, item.financeId]).filter(Boolean));
+  const resetFilters = () => { setFilters(PURCHASE_FILTERS); setSearch(''); setStageFilter('all'); };
   const metrics = { active: records.filter(item => !['closed', 'rejected', 'cancelled'].includes(item.status)).length,
     transit: records.filter(item => item.status === 'in_transit').length,
     exceptions: records.filter(item => item.status === 'exception').length,
@@ -90,21 +97,25 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
 
   async function createRequest(event) {
     event.preventDefault();
+    if (sending.current) return;
     const fields = purchaseFields(form);
     const issue = validatePurchase(fields);
     if (issue) return setError(issue);
     if (!online || !db || !companyId || !user?.id) return setError('Conecte-se à empresa para enviar a solicitação.');
-    setBusy(true); setError('');
+    sending.current = true;
+    setBusy(true); setError(''); setNotice('');
     try {
       const now = Date.now();
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests'), {
+      const saved = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests'), {
         ...fields, status: 'requested', requesterId: user.id, requesterName: user.name || 'Solicitante',
         createdAt: now, updatedAt: now, updatedBy: user.id, workflowVersion: 2, participantIds: [user.id],
         history: [{ stage: 'requested', by: user.id, byName: user.name || 'Solicitante', at: now }],
       });
+      resetFilters(); setSelectedId('');
+      setNotice(`Solicitação enviada com sucesso. Referência: ${saved.id}`);
       setForm(INITIAL); setFormOpen(false);
-    } catch { setError('Não foi possível salvar a solicitação. Seus dados continuam no formulário.'); }
-    finally { setBusy(false); }
+    } catch (problem) { setError(purchaseSaveError(problem)); }
+    finally { sending.current = false; setBusy(false); }
   }
 
   async function commit(next = '') {
@@ -176,11 +187,25 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
     <div className="pm-metrics" aria-label="Resumo de compras">
       {[[ClipboardList,'Em andamento',metrics.active], [Truck,'Em transporte',metrics.transit], [Box,'Divergências',metrics.exceptions], [CheckCircle2,'Concluídas',metrics.closed]].map(([Icon,label,value]) => <div key={label}><Icon size={18}/><span>{label}</span><strong>{value}</strong></div>)}
     </div>
+    {notice && <p className="pm-notice" role="status">{notice}</p>}
     {error && <p className="pm-error" role="alert">{error}</p>}
     <div className="pm-workspace">
       <div className="pm-list"><div className="pm-list-header"><h3>{manager ? 'Todas as solicitações' : 'Minhas solicitações'}</h3><span>{visible.length} registros</span></div>
-        <div className="pm-filters"><label><Search size={16}/><input aria-label="Pesquisar compras" placeholder="Item, setor, pedido ou fornecedor" value={search} onChange={event => setSearch(event.target.value)} /></label><select aria-label="Filtrar etapa" value={stageFilter} onChange={event => setStageFilter(event.target.value)}><option value="all">Todas as etapas</option>{Object.entries(PURCHASE_STAGES).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></div>
-        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visible.map(item => <button key={item.id} type="button" onClick={() => beginDetail(item)} className={`pm-card ${selectedId === item.id ? 'pm-selected' : ''}`}><div><strong>{item.item}</strong><span className={`pm-chip ${stageColor(item.status)}`}>{PURCHASE_STAGES[item.status] || item.status}</span></div><small>{item.requesterName} · {item.department} · {item.quantity} {item.unit}</small><p>{item.destination} · Necessário em {dateBR(item.neededBy)}</p>{item.status === 'exception' && <b>Conferir divergência</b>}</button>)}</div>}
+        <div className="pm-filters"><label><Search size={16}/><input aria-label="Pesquisar compras" placeholder="Item, pessoa, pedido ou fornecedor" value={search} onChange={event => setSearch(event.target.value)} /></label><select aria-label="Filtrar etapa" value={stageFilter} onChange={event => setStageFilter(event.target.value)}><option value="all">Todas as etapas</option>{Object.entries(PURCHASE_STAGES).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select>
+          <details className="pm-filter-more"><summary>Filtros avançados</summary><div className="pm-filter-grid">{[
+            ['requester', 'Solicitante', requesters],
+            ['responsible', 'Responsável', [...responsibleIds].map(id => [id, displayUser(id)])],
+            ['category', 'Categoria', categories.map(value => [value, value])],
+            ['department', 'Setor', [...new Set(records.map(item => item.department))].filter(Boolean).sort().map(value => [value, value])],
+            ['priority', 'Prioridade', Object.entries(PRIORITIES)],
+            ['view', 'Pendências', [['mine','Aguardando minha ação'],['overdue','Atrasadas'],['unassigned','Sem responsável pela próxima etapa']]],
+            ['sort', 'Ordenar', [['recent','Mais recentes'],['deadline','Prazo mais próximo'],['value','Maior valor cotado']]],
+          ].map(([key, label, options]) => <label className="pm-filter-field" key={key}><span>{label}</span><select aria-label={label} value={filters[key]} onChange={event => setField(setFilters, key, event.target.value)}>{key !== 'sort' && <option value="">Todos</option>}{options.map(([value, text]) => <option value={value} key={value}>{text}</option>)}</select></label>)}
+          {['from','to'].map(key => <label className="pm-filter-field" key={key}><span>{key === 'from' ? 'Necessário de' : 'Necessário até'}</span><input aria-label={key === 'from' ? 'Necessário de' : 'Necessário até'} type="date" value={filters[key]} onChange={event => setField(setFilters,key,event.target.value)} /></label>)}
+          <button type="button" className="pm-clear" onClick={resetFilters}>Limpar filtros</button></div></details>
+        </div>
+        <p className="pm-hint pm-list-summary">{visible.length} de {records.length} solicitações · Total cotado: {visible.reduce((sum,item) => sum + Number(item.quotedPrice || 0) * Number(item.quantity || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visible.map(item => <button key={item.id} type="button" onClick={() => beginDetail(item)} className={`pm-card ${selectedId === item.id ? 'pm-selected' : ''}`}><div><strong>{item.item}</strong><span className={`pm-chip ${stageColor(item.status)}`}>{PURCHASE_STAGES[item.status] || item.status}</span></div><small>{item.requesterName} · {item.department} · {item.quantity} {item.unit}</small><p>{item.destination} · Necessário em {dateBR(item.neededBy)}</p><p>{item.category || 'Sem categoria'} · {PRIORITIES[item.priority] || 'Normal'}</p>{pendingPurchaseRole(item) && <p>Próxima etapa: {displayUser(item[pendingPurchaseRole(item)])}</p>}{purchaseOverdue(item, today) && <b>Prazo da solicitação vencido</b>}{item.status === 'exception' && <b>Conferir divergência</b>}</button>)}</div>}
       </div>
       <div className="pm-detail">
         {!selected ? <div className="pm-prompt"><PackageCheck size={34}/><h3>Fluxo de ponta a ponta</h3><p>Selecione uma compra para acompanhar responsáveis, aprovação, recebimento, nota fiscal e aceite no destino. Cada pessoa confirma sua etapa; o Financeiro encerra após conferir os atestes.</p></div> : <>
@@ -192,7 +217,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
             {[['buyerId','Comprador'],['approverId','Aprovador'],['receiverId','Responsável pelo recebimento'],['recipientId','Destinatário'],['financeId','Responsável Financeiro']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><select value={draft[key] || ''} onChange={event => setField(setDraft,key,event.target.value)}><option value="">Selecione...</option>{users.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>)}</div>
             <p className="pm-hint">Aprovador previsto pela alçada: <strong>{policy?.enabled ? displayUser(expectedId) : 'qualquer administrador da empresa'}</strong>. Salve as atribuições antes de avançar a etapa. Os responsáveis confirmam usando suas próprias contas.</p>
           </>}</div>
-          <div className="pm-section"><h4>Solicitação e destino</h4><div className="pm-readonly"><div><span>Especificação</span><p>{selected.specification}</p></div><div><span>Justificativa</span><p>{selected.reason}</p></div><div><span>Quantidade e unidade</span><p>{selected.quantity} {selected.unit}</p></div><div><span>Destino solicitado</span><p>{selected.destination}</p></div><div><span>Data necessária</span><p>{dateBR(selected.neededBy)}</p></div><div><span>Prioridade</span><p>{PRIORITIES[selected.priority] || 'Normal'}</p></div></div></div>
+          <div className="pm-section"><h4>Solicitação e destino</h4><div className="pm-readonly"><div><span>Categoria</span><p>{selected.category || 'Sem categoria'}</p></div><div><span>Especificação</span><p>{selected.specification}</p></div><div><span>Justificativa</span><p>{selected.reason}</p></div><div><span>Quantidade e unidade</span><p>{selected.quantity} {selected.unit}</p></div><div><span>Destino solicitado</span><p>{selected.destination}</p></div><div><span>Data necessária</span><p>{dateBR(selected.neededBy)}</p></div><div><span>Prioridade</span><p>{PRIORITIES[selected.priority] || 'Normal'}</p></div></div></div>
           {editBuyer && draft && <div className="pm-section"><h4>Compra e rastreamento</h4><div className="pm-fields">{field('supplier','Fornecedor',{disabled:Boolean(selected.approvedAt)})}{field('quotedPrice','Preço unitário (R$)',{type:'number',min:'0',step:'0.01',disabled:Boolean(selected.approvedAt)})}{field('orderNumber','Número do pedido',{disabled:Boolean(selected.buyerConfirmedAt)})}{field('expectedDate','Previsão de entrega',{type:'date',disabled:Boolean(selected.approvedAt)})}{field('carrier','Transportadora ou retirada')}{field('trackingCode','Código ou referência de rastreamento')}</div></div>}
           {editReceiver && draft && <div className="pm-section"><h4>Recebimento e armazenagem</h4><div className="pm-fields">{field('invoiceNumber','Número da nota fiscal',{disabled:Boolean(selected.invoiceReceivedAt)})}{field('receivedQuantity','Quantidade conferida',{type:'number',min:'0',step:'any'})}{field('condition','Condição',{type:'select',options:[['pending','Não conferida'],['ok','Conforme'],['damaged','Avaria ou não conforme']]})}{field('lot','Lote / identificação')}{field('expiresAt','Validade, se aplicável',{type:'date'})}{field('storageAddress','Endereço físico / posição',{wide:true})}{field('destinationRecipient','Recebido no destino por',{wide:true})}{field('note','Observações e divergências',{type:'textarea',wide:true})}</div><p className="pm-hint">Informe divergência de quantidade ou avaria antes de encaminhar ao estoque. A localização física é obrigatória para armazenar.</p></div>}
           <div className="pm-section"><h4>Atestes do processo</h4><div className="pm-readonly">
@@ -212,8 +237,8 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
         </>}
       </div>
     </div>
-    {formOpen && <div className="pm-overlay" role="presentation"><form className="pm-modal" onSubmit={createRequest} aria-label="Nova solicitação de compra"><header><div><span>COMUNICA INTEGRA</span><h3>Nova solicitação</h3><p>Um item por solicitação. Preencha o destino para acompanhar até a entrega.</p></div><button type="button" aria-label="Fechar formulário" onClick={() => setFormOpen(false)}><X size={20}/></button></header><div className="pm-form-grid">
-      {[['item','Item / produto','text'],['specification','Especificação','textarea'],['quantity','Quantidade','number'],['unit','Unidade','text'],['department','Setor solicitante','select'],['destination','Destino / local de uso','text'],['neededBy','Data necessária','date'],['reason','Justificativa','textarea'],['priority','Prioridade','priority']].map(([name,label,type]) => <label key={name} className={type === 'textarea' ? 'pm-wide' : ''}><span>{label}</span>{type === 'textarea' ? <textarea required rows="3" maxLength="1000" value={form[name]} onChange={event => setField(setForm,name,event.target.value)} /> : type === 'select' ? <select required value={form[name]} onChange={event => setField(setForm,name,event.target.value)}><option value="">Selecione...</option>{departments.map(dept => <option key={dept.id} value={dept.name}>{dept.name}</option>)}<option value="Outro setor">Outro setor</option></select> : type === 'priority' ? <select value={form[name]} onChange={event => setField(setForm,name,event.target.value)}>{Object.entries(PRIORITIES).map(([value,text]) => <option key={value} value={value}>{text}</option>)}</select> : <input required type={type} min={type === 'number' ? '0.01' : undefined} step={type === 'number' ? 'any' : undefined} maxLength={type === 'text' ? 160 : undefined} value={form[name]} onChange={event => setField(setForm,name,event.target.value)} />}</label>)}
+    {formOpen && <div className="pm-overlay" role="presentation"><form className="pm-modal" onSubmit={createRequest} aria-label="Nova solicitação de compra"><header><div><span>COMUNICA INTEGRA</span><h3>Nova solicitação</h3><p>Um item por solicitação. Preencha o destino para acompanhar até a entrega.</p></div><button type="button" aria-label="Fechar formulário" disabled={busy} onClick={() => setFormOpen(false)}><X size={20}/></button></header><div className="pm-form-grid">
+      {[['category','Categoria','category'],['item','Item / produto','text'],['specification','Especificação','textarea'],['quantity','Quantidade','number'],['unit','Unidade','text'],['department','Setor solicitante','select'],['destination','Destino / local de uso','text'],['neededBy','Data necessária','date'],['reason','Justificativa','textarea'],['priority','Prioridade','priority']].map(([name,label,type]) => <label key={name} className={type === 'textarea' ? 'pm-wide' : ''}><span>{label}</span>{type === 'textarea' ? <textarea required rows="3" maxLength="1000" value={form[name]} onChange={event => setField(setForm,name,event.target.value)} /> : type === 'select' ? <select required value={form[name]} onChange={event => setField(setForm,name,event.target.value)}><option value="">Selecione...</option>{departments.map(dept => <option key={dept.id} value={dept.name}>{dept.name}</option>)}<option value="Outro setor">Outro setor</option></select> : type === 'category' ? <select value={form.category} onChange={event => setField(setForm,'category',event.target.value)}>{PURCHASE_CATEGORIES.map(value => <option key={value} value={value}>{value}</option>)}</select> : type === 'priority' ? <select value={form[name]} onChange={event => setField(setForm,name,event.target.value)}>{Object.entries(PRIORITIES).map(([value,text]) => <option key={value} value={value}>{text}</option>)}</select> : <input required type={type} min={type === 'number' ? '0.01' : undefined} step={type === 'number' ? 'any' : undefined} maxLength={type === 'text' ? 160 : undefined} value={form[name]} onChange={event => setField(setForm,name,event.target.value)} />}</label>)}
     </div>{error && <p className="pm-error" role="alert">{error}</p>}<footer><span><MapPin size={15}/> Destino e solicitante ficam vinculados ao pedido.</span><button type="submit" disabled={busy || !online}>{busy ? 'Salvando...' : 'Enviar solicitação'}</button></footer></form></div>}
   </section>;
 }

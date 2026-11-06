@@ -9,7 +9,8 @@
     "build:staging": "vite build --mode staging",
     "deploy:staging": "npm run build:staging && firebase deploy --project staging --config firebase.staging.json --only hosting,firestore",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:purchases:rules": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-comunica --config firebase.purchase-test.json \"node tests/firestore/purchaseRules.test.mjs\""
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.4.0",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
