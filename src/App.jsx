@@ -8048,7 +8048,6 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       label: 'Trabalho',
       items: [
         { id: 'services', label: 'Central de serviços', description: 'Solicitações, atividades e checklists', icon: CheckCircle2, badge: (serviceMetrics.active + serviceActivityMetrics.active) || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
-        { id: 'integra', label: 'Comunica Integra', description: 'Gestão de compras', icon: Package, activeClass: 'from-teal-900 to-cyan-700', accent: 'text-teal-700' },
         { id: 'documents', label: 'Documentos', description: 'Arquivos e políticas', icon: FileText, badge: pendingDocumentReads || null, activeClass: 'from-emerald-800 to-teal-700', accent: 'text-emerald-600' },
         { id: 'scale', label: 'Escalas e calendário', description: 'Agenda e disponibilidade', icon: Calendar, activeClass: 'from-orange-700 to-amber-600', accent: 'text-orange-600' },
         canAccessProductivity ? { id: 'productivity', label: 'Produtividade', description: 'Registros de produção', icon: TrendingUp, activeClass: 'from-indigo-800 to-violet-700', accent: 'text-indigo-600' } : null,
@@ -8066,7 +8065,14 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       ].filter(Boolean),
     },
   ];
-  const visibleNavigationSections = navigationSections
+  const isIntegraWorkspace = activeTab === 'integra';
+  const integraNavigationSections = [{
+    label: 'Operações',
+    items: [
+      { id: 'integra', label: 'Compras', description: 'Pedidos, entregas e armazenagem', icon: Package, activeClass: 'from-teal-900 to-cyan-700', accent: 'text-teal-700' },
+    ],
+  }];
+  const visibleNavigationSections = (isIntegraWorkspace ? integraNavigationSections : navigationSections)
     .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
     .filter(section => section.items.length);
   const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
@@ -8085,7 +8091,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   {/* Aqui continua o restante do seu conteúdo do header */}
 
         <div className="relative z-10 mx-auto flex h-[4.5rem] w-full max-w-7xl items-center justify-between gap-2 px-3 sm:px-4">
-          <button type="button" onClick={() => setActiveTab('dashboard')} className="group flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
+          <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
             <div className="flex h-14 w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
                <img
                  src="/assets/comunica-logo-transparent.png"
@@ -8093,7 +8099,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                  className="h-full w-full object-contain"
                />
             </div>
-            <div className="hidden min-w-0 sm:block"><div className="flex items-center gap-2"><h1 className="text-base font-black tracking-tight text-slate-900">Comunica</h1><span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-cyan-800">Plataforma</span></div><p className="mt-0.5 max-w-52 truncate text-[9px] font-semibold text-slate-500">{activeCompany?.name || 'Comunicação e gestão corporativa'}</p>
+            <div className="hidden min-w-0 sm:block"><div className="flex items-center gap-2"><h1 className="text-base font-black tracking-tight text-slate-900">{isIntegraWorkspace ? 'Comunica Integra' : 'Comunica Gestão'}</h1><span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-cyan-800">Plataforma</span></div><p className="mt-0.5 max-w-52 truncate text-[9px] font-semibold text-slate-500">{activeCompany?.name || 'Comunicação e gestão corporativa'}</p>
             </div>
           </button>
 
@@ -8282,6 +8288,17 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           </div>
       </header>
 
+      <nav aria-label="Produtos Comunica" className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-2 px-4 pt-4">
+        <button type="button" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`rounded-2xl border px-3 py-3 text-left transition sm:px-5 ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>
+          <span className="block text-xs font-extrabold sm:text-sm">Comunica Gestão</span>
+          <span className={`mt-0.5 block text-[10px] sm:text-xs ${!isIntegraWorkspace ? 'text-blue-100' : 'text-slate-500'}`}>Pessoas e comunicação</span>
+        </button>
+        {canOpenModule('integra') && <button type="button" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`rounded-2xl border px-3 py-3 text-left transition sm:px-5 ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>
+          <span className="block text-xs font-extrabold sm:text-sm">Comunica Integra</span>
+          <span className={`mt-0.5 block text-[10px] sm:text-xs ${isIntegraWorkspace ? 'text-teal-100' : 'text-slate-500'}`}>Operações e compras</span>
+        </button>}
+      </nav>
+
       {/* 1. CAIXA PRINCIPAL: Ela precisa abraçar o Menu e o Feed juntos */}
       <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:flex-row">
 
@@ -8307,7 +8324,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             <div className="space-y-3">{visibleNavigationSections.map(section => <section key={section.label}>{!sidebarCollapsed && <span className="mb-1 block px-3 text-[8px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{section.label}</span>}<div className="space-y-1">{section.items.map(item => { const Icon = item.icon; const active = activeTab === item.id; return <button key={item.id} type="button" title={sidebarCollapsed ? item.label : undefined} onClick={() => { if (item.action) item.action(); else setActiveTab(item.id); setMobileMenuOpen(false); }} className={`group relative flex w-full items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5 text-left'} ${active ? `bg-gradient-to-r ${item.activeClass} text-white shadow-md` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><span className={`grid shrink-0 place-items-center rounded-xl transition ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'} ${active ? 'bg-white/15 text-white' : `bg-slate-100 ${item.accent} group-hover:bg-white group-hover:shadow-sm`}`}><Icon className="h-4.5 w-4.5" /></span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-extrabold">{item.label}</strong><span className={`mt-0.5 block truncate text-[8px] font-medium ${active ? 'text-white/65' : 'text-slate-400'}`}>{item.description}</span></span>}{item.badge ? <span className={`${sidebarCollapsed ? 'absolute right-1 top-1' : ''} grid min-h-5 min-w-5 place-items-center rounded-full px-1 text-[8px] font-extrabold ${active ? 'bg-white text-slate-900' : 'bg-rose-100 text-rose-700'}`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}{active && !sidebarCollapsed && <ChevronRight className="h-3.5 w-3.5 text-white/70" />}</button>; })}</div></section>)}</div>
           </nav>
 
-          <div className={`relative mt-3 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}><div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-cyan-300/20 blur-xl" />{sidebarCollapsed ? <button type="button" onClick={handleGenerateWeeklySummary} title="Gerar boletim semanal" className="relative grid h-11 w-full place-items-center rounded-2xl bg-blue-900 text-white"><Sparkles className="h-4.5 w-4.5" /></button> : <div className="relative"><span className="flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wider text-blue-700"><Sparkles className="h-4 w-4" /> Inteligência do Comunica</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Boletim semanal</h4><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Compile os principais acontecimentos da empresa.</p><button onClick={handleGenerateWeeklySummary} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-900 px-3 py-2.5 text-[10px] font-extrabold text-white shadow transition hover:bg-blue-800" type="button"><Sparkles className="h-4 w-4" /> Gerar boletim</button></div>}</div>
+          {!isIntegraWorkspace && <div className={`relative mt-3 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}><div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-cyan-300/20 blur-xl" />{sidebarCollapsed ? <button type="button" onClick={handleGenerateWeeklySummary} title="Gerar boletim semanal" className="relative grid h-11 w-full place-items-center rounded-2xl bg-blue-900 text-white"><Sparkles className="h-4.5 w-4.5" /></button> : <div className="relative"><span className="flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wider text-blue-700"><Sparkles className="h-4 w-4" /> Inteligência do Comunica</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Boletim semanal</h4><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Compile os principais acontecimentos da empresa.</p><button onClick={handleGenerateWeeklySummary} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-900 px-3 py-2.5 text-[10px] font-extrabold text-white shadow transition hover:bg-blue-800" type="button"><Sparkles className="h-4 w-4" /> Gerar boletim</button></div>}</div>}
 
         </aside>
 
