@@ -11,8 +11,10 @@ const PRIORITIES = { normal: 'Normal', high: 'Alta', urgent: 'Urgente' };
 
 export default function PurchaseManagement({ db, appId, companyId, user, departments = [], online = true }) {
   const manager = Boolean(user?.isAdmin || user?.isDeveloper);
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const scope = JSON.stringify([appId, companyId, user?.id, manager]);
+  const [snapshotState, setSnapshotState] = useState({ scope: '', records: [] });
+  const records = snapshotState.scope === scope ? snapshotState.records : [];
+  const loading = Boolean(db && companyId && user?.id) && snapshotState.scope !== scope;
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -23,16 +25,17 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   const [stageFilter, setStageFilter] = useState('all');
 
   useEffect(() => {
-    if (!db || !companyId || !user?.id) { setLoading(false); return undefined; }
+    if (!db || !companyId || !user?.id) return undefined;
     const ref = collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests');
     const source = manager ? ref : query(ref, where('requesterId', '==', user.id));
-    setLoading(true);
     return onSnapshot(source, snapshot => {
-      setRecords(snapshot.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)));
-      setLoading(false);
+      setSnapshotState({ scope, records: snapshot.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)) });
       setError('');
-    }, () => { setLoading(false); setError('Não foi possível carregar as compras. Verifique sua conexão e permissões.'); });
-  }, [appId, companyId, db, manager, user?.id]);
+    }, () => {
+      setSnapshotState({ scope, records: [] });
+      setError('Não foi possível carregar as compras. Verifique sua conexão e permissões.');
+    });
+  }, [appId, companyId, db, manager, scope, user?.id]);
 
   const selected = records.find(item => item.id === selectedId);
   const visible = records.filter(item => (stageFilter === 'all' || item.status === stageFilter) &&

@@ -42,6 +42,7 @@ import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule,
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
+import { useIntegraAccess } from './useIntegraAccess.js';
 const IntegraAccessControl = lazy(() => import('./IntegraAccessControl.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityDependencyCreatesCycle, activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser, unresolvedActivityDependencies } from './messageFeatures';
@@ -1230,16 +1231,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [dbUser, setDbUser] = useState(null);
   const [dbLoading, setDbLoading] = useState(isFirebaseAvailable);
 
-  const [integraAccess, setIntegraAccess] = useState({ companyId: '', enabled: false });
-  const integraEnabled = integraAccess.companyId === activeCompany?.id && integraAccess.enabled;
-  useEffect(() => {
-    setIntegraAccess({ companyId: '', enabled: false });
-    if (!dbUser || !activeCompany?.id) return undefined;
-    const companyId = activeCompany.id;
-    const accessRef = doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'settings', 'integra-access');
-    return onSnapshot(accessRef, snapshot => setIntegraAccess({ companyId, enabled: snapshot.exists() && snapshot.data().enabled === true }),
-      () => setIntegraAccess({ companyId, enabled: false }));
-  }, [dbUser, activeCompany?.id]);
+  const integraEnabled = useIntegraAccess(db, appId, activeCompany?.id, Boolean(dbUser));
 
   useEffect(() => {
     if (dbLoading || !currentUser?.id || !activeCompany?.id || forcePinChange || activeTutorial) return undefined;
