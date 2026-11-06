@@ -42,6 +42,7 @@ import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule,
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
+const IntegraAccessControl = lazy(() => import('./IntegraAccessControl.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityDependencyCreatesCycle, activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser, unresolvedActivityDependencies } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
@@ -1228,6 +1229,17 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   const [dbUser, setDbUser] = useState(null);
   const [dbLoading, setDbLoading] = useState(isFirebaseAvailable);
+
+  const [integraAccess, setIntegraAccess] = useState({ companyId: '', enabled: false });
+  const integraEnabled = integraAccess.companyId === activeCompany?.id && integraAccess.enabled;
+  useEffect(() => {
+    setIntegraAccess({ companyId: '', enabled: false });
+    if (!dbUser || !activeCompany?.id) return undefined;
+    const companyId = activeCompany.id;
+    const accessRef = doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'settings', 'integra-access');
+    return onSnapshot(accessRef, snapshot => setIntegraAccess({ companyId, enabled: snapshot.exists() && snapshot.data().enabled === true }),
+      () => setIntegraAccess({ companyId, enabled: false }));
+  }, [dbUser, activeCompany?.id]);
 
   useEffect(() => {
     if (dbLoading || !currentUser?.id || !activeCompany?.id || forcePinChange || activeTutorial) return undefined;
@@ -6642,7 +6654,10 @@ const notificationsToShow = [...allNotifications]
   const canManageActivities = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageActivities !== false);
   const canManageActivityTemplates = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageActivityTemplates === true);
   const canViewActivityInsights = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canViewActivityInsights === true);
-  const canOpenModule = moduleId => moduleId === 'careers'
+  const integraSupport = Boolean(currentUser?.isDeveloper && dbUser?.uid === PLATFORM_SUPPORT.id);
+  const canOpenModule = moduleId => moduleId === 'integra'
+    ? (integraEnabled || integraSupport) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs.integra !== false)
+    : moduleId === 'careers'
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
     : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false;
 const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManagerUser(currentUser) && currentUser?.permissions?.tabs?.whistleblowing === true));
@@ -8331,7 +8346,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
-          {activeTab === 'integra' && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} online={navigator.onLine && Boolean(dbUser)} /></Suspense>}
+          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} online={navigator.onLine && Boolean(dbUser)} /></Suspense>}
           <div className={`${['inbox', 'integra'].includes(activeTab) ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
               <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -8396,6 +8411,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               </nav>
 
               {supportWorkspace === 'operation' ? <>
+              {integraSupport && <Suspense fallback={<p className="text-xs text-slate-500">Carregando liberações...</p>}><IntegraAccessControl db={db} appId={appId} companies={companies} supportUid={dbUser.uid} /></Suspense>}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                 {[
                   { label: 'Empresas atendidas', value: supportMetrics.companies, detail: 'ambientes cadastrados', icon: Building, tone: 'text-blue-700 bg-blue-50' },
