@@ -1,37 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { purchaseFields, purchaseTransition, validatePurchase } from '../src/purchaseFlow.js';
+import { expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from '../src/purchaseFlow.js';
 
-const actor = { id: 'gestor-1', name: 'Gestora' };
-const request = purchaseFields({
+const people = {
+  buyer: { id: 'buyer', name: 'Comprador' },
+  approver: { id: 'approver', name: 'Aprovadora' },
+  receiver: { id: 'receiver', name: 'Recebedora' },
+  recipient: { id: 'recipient', name: 'Destinatário' },
+  finance: { id: 'finance', name: 'Financeiro' },
+};
+const fields = purchaseFields({
   item: 'Luvas', specification: 'Nitrílica M', quantity: 10, unit: 'caixa',
-  department: 'Enfermagem', destination: 'Sala 1', neededBy: '2026-11-20',
-  reason: 'Reposição',
+  department: 'Enfermagem', destination: 'Sala 1', neededBy: '2026-11-20', reason: 'Reposição',
+  buyerId: 'buyer', approverId: 'approver', receiverId: 'receiver', recipientId: 'recipient', financeId: 'finance',
+});
+const step = (record, stage, actor, data = {}) => purchaseTransition(record, stage, { ...record, ...data }, actor, (record.updatedAt || 100) + 1);
+
+test('comprador, alçada, recebedor, destinatário e financeiro atestam em sequência', () => {
+  let record = { ...fields, status: 'requested', history: [], updatedAt: 100 };
+  record = step(record, 'quotation', people.buyer);
+  record = step(record, 'approved', people.approver, { supplier: 'Fornecedor A', quotedPrice: 35, expectedDate: '2026-11-18' });
+  assert.equal(record.approvedBy, 'approver');
+  assert.throws(() => step(record, 'ordered', people.approver, { orderNumber: 'OC-1' }), /responsável/);
+  record = step(record, 'ordered', people.buyer, { orderNumber: 'OC-1' });
+  assert.equal(record.buyerConfirmedBy, 'buyer');
+  assert.match(validatePurchase(record, 'received'), /NF/);
+  record = step(record, 'received', people.receiver, { invoiceNumber: 'NF-1', receivedQuantity: 10, condition: 'ok' });
+  assert.equal(record.invoiceReceivedBy, 'receiver');
+  assert.equal(record.receiverConfirmedBy, 'receiver');
+  assert.match(validatePurchase(record, 'stored'), /endereço/);
+  record = step(record, 'stored', people.receiver, { storageAddress: 'Almoxarifado A-2' });
+  record = step(record, 'delivered', people.recipient, { destinationRecipient: 'Destinatário' });
+  assert.equal(record.recipientConfirmedBy, 'recipient');
+  assert.throws(() => step(record, 'closed', people.buyer), /responsável/);
+  record = step(record, 'closed', people.finance);
+  assert.equal(record.financeConfirmedBy, 'finance');
+  assert.equal(record.status, 'closed');
 });
 
-test('compra passa pelas etapas até o destino somente com comprovação exigida', () => {
-  let current = { ...request, status: 'requested', history: [] };
-  for (const stage of ['approved', 'quotation']) current = purchaseTransition(current, stage, current, actor);
-  assert.match(validatePurchase(current, 'ordered'), /fornecedor/);
-  current = purchaseTransition(current, 'ordered', { ...current, supplier: 'Fornecedor A', quotedPrice: 35, orderNumber: 'OC-1', expectedDate: '2026-11-18' }, actor);
-  assert.match(validatePurchase(current, 'received'), /NF/);
-  current = purchaseTransition(current, 'received', { ...current, invoiceNumber: 'NF-1', receivedQuantity: 10, condition: 'ok' }, actor);
-  assert.match(validatePurchase(current, 'stored'), /endereço/);
-  current = purchaseTransition(current, 'stored', { ...current, storageAddress: 'Almoxarifado A-2' }, actor);
-  assert.match(validatePurchase(current, 'delivered'), /quem recebeu/);
-  current = purchaseTransition(current, 'delivered', { ...current, destinationRecipient: 'Maria' }, actor);
-  current = purchaseTransition(current, 'closed', current, actor);
-  assert.equal(current.status, 'closed');
-  assert.equal(current.history.at(-1).stage, 'closed');
+test('divergência parcial impede entrega até a conferência completa', () => {
+  const ordered = { ...fields, status: 'ordered', history: [], supplier: 'Fornecedor A', quotedPrice: 35,
+    orderNumber: 'OC-1', expectedDate: '2026-11-18', approvedAt: 1, buyerConfirmedAt: 2 };
+  const partial = { invoiceNumber: 'NF-1', receivedQuantity: 8, condition: 'ok' };
+  assert.throws(() => step(ordered, 'received', people.receiver, partial), /divergência/);
+  const exception = step(ordered, 'exception', people.receiver, partial);
+  assert.equal(exception.invoiceReceivedBy, 'receiver');
+  assert.throws(() => step(exception, 'stored', people.receiver), /etapa/);
+  const checked = step(exception, 'received', people.receiver, { receivedQuantity: 10 });
+  assert.equal(checked.status, 'received');
 });
 
-test('entrega parcial gera divergência e impede armazenagem antes da conferência completa', () => {
-  const current = { ...request, status: 'ordered', history: [], supplier: 'Fornecedor A', quotedPrice: 35, orderNumber: 'OC-1', expectedDate: '2026-11-18' };
-  const partial = { ...current, invoiceNumber: 'NF-1', receivedQuantity: 8, condition: 'ok' };
-  assert.throws(() => purchaseTransition(current, 'received', partial, actor), /divergência/);
-  const exception = purchaseTransition(current, 'exception', partial, actor);
-  assert.equal(exception.status, 'exception');
-  assert.throws(() => purchaseTransition(exception, 'stored', exception, actor), /etapa/);
-  const resolved = purchaseTransition(exception, 'received', { ...partial, receivedQuantity: 10 }, actor);
-  assert.equal(resolved.status, 'received');
+test('alçada usa valor total e exige configuração completa', () => {
+  const policy = { enabled: true, threshold: 1000, lowerApproverId: 'a', upperApproverId: 'b' };
+  assert.equal(expectedApprover(policy, 1000, 'admin'), 'a');
+  assert.equal(expectedApprover(policy, 1000.01, 'admin'), 'b');
+  assert.equal(expectedApprover({ enabled: false }, 5000, 'admin'), 'admin');
+  assert.equal(expectedApprover({ enabled: true, threshold: 0 }, 5000, 'admin'), '');
 });

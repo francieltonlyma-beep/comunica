@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { addDoc, collection, doc, onSnapshot, query, runTransaction, where } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, query, runTransaction, setDoc, where } from 'firebase/firestore';
 import { ArrowRight, Box, CheckCircle2, ClipboardList, MapPin, PackageCheck, Plus, Search, Truck, X } from 'lucide-react';
-import { PURCHASE_NEXT, PURCHASE_STAGES, purchaseFields, purchaseTransition, validatePurchase } from './purchaseFlow.js';
+import { PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from './purchaseFlow.js';
 import './PurchaseManagement.css';
 
 const INITIAL = { item: '', specification: '', quantity: 1, unit: 'un', department: '', destination: '', neededBy: '', reason: '', priority: 'normal' };
@@ -9,7 +9,7 @@ const dateBR = value => value ? new Date(`${value}T12:00:00`).toLocaleDateString
 const stageColor = status => status === 'exception' || status === 'rejected' ? 'pm-danger' : status === 'closed' ? 'pm-done' : ['received', 'stored', 'delivered'].includes(status) ? 'pm-success' : 'pm-neutral';
 const PRIORITIES = { normal: 'Normal', high: 'Alta', urgent: 'Urgente' };
 
-export default function PurchaseManagement({ db, appId, companyId, user, departments = [], online = true }) {
+export default function PurchaseManagement({ db, appId, companyId, user, departments = [], users = [], online = true }) {
   const manager = Boolean(user?.isAdmin || user?.isDeveloper);
   const scope = JSON.stringify([appId, companyId, user?.id, manager]);
   const [snapshotState, setSnapshotState] = useState({ scope: '', records: [] });
@@ -23,19 +23,37 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   const [draft, setDraft] = useState(null);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
+  const [policy, setPolicy] = useState(null);
+  const [policyDraft, setPolicyDraft] = useState({ enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '' });
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   useEffect(() => {
     if (!db || !companyId || !user?.id) return undefined;
     const ref = collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests');
-    const source = manager ? ref : query(ref, where('requesterId', '==', user.id));
-    return onSnapshot(source, snapshot => {
-      setSnapshotState({ scope, records: snapshot.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)) });
-      setError('');
-    }, () => {
-      setSnapshotState({ scope, records: [] });
-      setError('Não foi possível carregar as compras. Verifique sua conexão e permissões.');
-    });
+    const publish = (items) => setSnapshotState({ scope, records: items.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)) });
+    if (manager) return onSnapshot(ref, snapshot => { publish(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))); setError(''); },
+      () => { publish([]); setError('Não foi possível carregar as compras.'); });
+    const sources = { own: [], assigned: [] };
+    const refresh = () => publish([...new Map([...sources.own, ...sources.assigned].map(item => [item.id, item])).values()]);
+    const onError = () => { setSnapshotState({ scope, records: [] }); setError('Não foi possível carregar as compras. Verifique as permissões.'); };
+    const stopOwn = onSnapshot(query(ref, where('requesterId', '==', user.id)), snapshot => {
+      sources.own = snapshot.docs.map(item => ({ id: item.id, ...item.data() })); refresh(); setError('');
+    }, onError);
+    const stopAssigned = onSnapshot(query(ref, where('participantIds', 'array-contains', user.id)), snapshot => {
+      sources.assigned = snapshot.docs.map(item => ({ id: item.id, ...item.data() })); refresh(); setError('');
+    }, onError);
+    return () => { stopOwn(); stopAssigned(); };
   }, [appId, companyId, db, manager, scope, user?.id]);
+
+  useEffect(() => {
+    if (!db || !companyId || !user?.id) return undefined;
+    return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'settings', 'purchase-approval'), snapshot => {
+      const config = snapshot.exists() ? snapshot.data() : null;
+      setPolicy(config);
+      setPolicyDraft(config || { enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '' });
+    }, () => setError('Não foi possível consultar as alçadas de aprovação.'));
+  }, [appId, companyId, db, user?.id]);
 
   const selected = records.find(item => item.id === selectedId);
   const visible = records.filter(item => (stageFilter === 'all' || item.status === stageFilter) &&
@@ -45,7 +63,30 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
     exceptions: records.filter(item => item.status === 'exception').length,
     closed: records.filter(item => item.status === 'closed').length };
   const setField = (setter, name, value) => setter(previous => ({ ...previous, [name]: value }));
-  const beginDetail = item => { setSelectedId(item.id); setDraft(purchaseFields(item)); setError(''); };
+  const beginDetail = item => { setSelectedId(item.id); setDraft(purchaseFields(item)); setAcknowledged(false); setError(''); };
+  const displayUser = id => users.find(person => person.id === id)?.name || (id ? 'Usuário não encontrado' : 'Pendente');
+  const adminId = users.find(person => person.isAdmin)?.id || (user?.isAdmin ? user.id : '');
+  const expectedId = selected ? expectedApprover(policy, Number(draft?.quotedPrice || selected.quotedPrice) * Number(selected.quantity), adminId) : '';
+  const roleFor = item => item?.approverId === user?.id ? 'aprovador' : item?.buyerId === user?.id ? 'comprador' : item?.receiverId === user?.id ? 'recebedor' : item?.recipientId === user?.id ? 'destinatário' : item?.financeId === user?.id ? 'financeiro' : '';
+  const editBuyer = manager || selected?.buyerId === user?.id;
+  const editReceiver = manager || selected?.receiverId === user?.id;
+
+  async function savePolicy() {
+    if (!manager || !db || !companyId || busy) return;
+    if (policyDraft.enabled && (!Number.isFinite(Number(policyDraft.threshold)) || Number(policyDraft.threshold) <= 0 || !policyDraft.lowerApproverId || !policyDraft.upperApproverId)) {
+      return setError('Informe um limite válido e os dois aprovadores da alçada.');
+    }
+    setBusy(true); setError('');
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'settings', 'purchase-approval'), {
+        enabled: Boolean(policyDraft.enabled), threshold: Number(policyDraft.threshold) || 1000,
+        lowerApproverId: policyDraft.lowerApproverId, upperApproverId: policyDraft.upperApproverId,
+        updatedAt: Date.now(), updatedBy: user.id,
+      });
+      setPolicyOpen(false);
+    } catch { setError('Não foi possível salvar as alçadas.'); }
+    finally { setBusy(false); }
+  }
 
   async function createRequest(event) {
     event.preventDefault();
@@ -58,7 +99,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
       const now = Date.now();
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests'), {
         ...fields, status: 'requested', requesterId: user.id, requesterName: user.name || 'Solicitante',
-        createdAt: now, updatedAt: now, updatedBy: user.id,
+        createdAt: now, updatedAt: now, updatedBy: user.id, workflowVersion: 2, participantIds: [user.id],
         history: [{ stage: 'requested', by: user.id, byName: user.name || 'Solicitante', at: now }],
       });
       setForm(INITIAL); setFormOpen(false);
@@ -67,37 +108,71 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   }
 
   async function commit(next = '') {
-    if (!manager || !selected || !draft || busy) return;
+    if (!selected || !draft || busy) return;
+    if (!manager && ![selected.buyerId, selected.receiverId, selected.recipientId, selected.financeId, selected.approverId].includes(user?.id)) return;
+    if (['ordered', 'received', 'delivered', 'closed'].includes(next) && !acknowledged) return setError('Marque a confirmação desta etapa antes de continuar.');
+    if (next === 'approved' && policy?.enabled && expectedId !== draft.approverId) return setError('O aprovador designado não corresponde à alçada vigente. Revise a cotação e a configuração.');
     if (!online) return setError('Conecte-se para registrar esta etapa.');
     setBusy(true); setError('');
     try {
       const ref = doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', selected.id);
       const nextDraft = purchaseFields(draft);
+      if (next === 'delivered') nextDraft.destinationRecipient = user.name || 'Destinatário';
       await runTransaction(db, async transaction => {
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists()) throw new Error('Esta solicitação não existe mais.');
         const current = snapshot.data();
         if (current.status !== selected.status || current.updatedAt !== selected.updatedAt) throw new Error('A solicitação mudou. Reabra o registro para ver os dados atuais.');
+        const now = Math.max(Date.now(), Number(current.updatedAt || 0) + 1);
         const change = next
-          ? purchaseTransition(current, next, nextDraft, user)
-          : { ...nextDraft, updatedAt: Date.now(), updatedBy: user.id,
-            history: [...(current.history || []), { stage: current.status, by: user.id, byName: user.name || 'Gestor', at: Date.now(), detail: 'Dados atualizados' }].slice(-50) };
+          ? purchaseTransition(current, next, nextDraft, user, now)
+          : { ...nextDraft, ...(manager ? { participantIds: [...new Set([current.requesterId, nextDraft.buyerId, nextDraft.approverId, nextDraft.receiverId, nextDraft.recipientId, nextDraft.financeId].filter(Boolean))] } : {}),
+            updatedAt: now, updatedBy: user.id,
+            history: [...(current.history || []), { stage: current.status, by: user.id, byName: user.name || 'Responsável', at: now, detail: 'Dados e responsáveis atualizados' }].slice(-50) };
         transaction.update(ref, change);
       });
+      setSelectedId(''); setDraft(null); setAcknowledged(false);
     } catch (problem) { setError(problem.message || 'Não foi possível salvar. Tente novamente.'); }
+    finally { setBusy(false); }
+  }
+
+  async function migrateLegacy() {
+    if (!manager || !selected || selected.workflowVersion === 2 || busy) return;
+    setBusy(true); setError('');
+    try {
+      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', selected.id);
+      await runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists() || snapshot.data().updatedAt !== selected.updatedAt) throw new Error('Reabra a solicitação para ver as alterações.');
+        const current = snapshot.data();
+        if (['closed','rejected','cancelled'].includes(current.status)) throw new Error('Um registro encerrado permanece no histórico anterior.');
+        const now = Math.max(Date.now(), Number(current.updatedAt || 0) + 1);
+        transaction.update(ref, { workflowVersion: 2, status: 'requested', participantIds: [current.requesterId],
+          buyerId: '', approverId: '', receiverId: '', recipientId: '', financeId: '',
+          updatedAt: now, updatedBy: user.id,
+          history: [...(current.history || []), { stage: 'requested', by: user.id, byName: user.name || 'Administrador', at: now, detail: 'Fluxo anterior reaberto para definição dos responsáveis e novos atestes' }].slice(-50) });
+      });
+      setSelectedId(''); setDraft(null);
+    } catch (problem) { setError(problem.message || 'Não foi possível atualizar o fluxo anterior.'); }
     finally { setBusy(false); }
   }
 
   const field = (name, label, options = {}) => <label className={`pm-field ${options.wide ? 'pm-wide' : ''}`} key={name}>
     <span>{label}</span>
-    {options.type === 'select' ? <select value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)}>
+    {options.type === 'select' ? <select disabled={options.disabled} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)}>
       {options.options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-    </select> : options.type === 'textarea' ? <textarea rows="3" maxLength={options.maxLength || 1000} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />
-      : <input type={options.type || 'text'} min={options.min} step={options.step} maxLength={options.maxLength || 160} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />}
+    </select> : options.type === 'textarea' ? <textarea disabled={options.disabled} rows="3" maxLength={options.maxLength || 1000} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />
+      : <input disabled={options.disabled} type={options.type || 'text'} min={options.min} step={options.step} maxLength={options.maxLength || 160} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />}
   </label>;
 
   return <section className="pm" aria-label="Comunica Integra — gestão de compras">
-    <header className="pm-hero"><div><span>COMUNICA INTEGRA · PRIMEIRA ÁREA</span><h2>Gestão de compras</h2><p>Do pedido ao destino: acompanhe cada etapa, responsável, entrega e localização.</p></div><button type="button" onClick={() => { setFormOpen(true); setSelectedId(''); setError(''); }}><Plus size={18} /> Nova solicitação</button></header>
+    <header className="pm-hero"><div><span>COMUNICA INTEGRA · COMPRAS</span><h2>Gestão de compras</h2><p>Do pedido ao destino: acompanhe cada etapa, responsável, entrega e localização.</p></div><button type="button" onClick={() => { setFormOpen(true); setSelectedId(''); setError(''); }}><Plus size={18} /> Nova solicitação</button></header>
+    {manager && <div className="pm-setup"><button type="button" className="pm-secondary" onClick={() => setPolicyOpen(value => !value)}>{policy?.enabled ? 'Alçadas configuradas' : 'Alçada padrão: administrador'} · Configurar</button>
+      {policyOpen && <div className="pm-setup-fields"><p>Defina quem aprova compras até o limite e quem aprova acima dele. Sem configuração, a aprovação cabe a um administrador.</p>
+        <label><input type="checkbox" checked={Boolean(policyDraft.enabled)} onChange={event => setPolicyDraft(prev => ({ ...prev, enabled: event.target.checked }))} /> Usar alçada por valor</label>
+        {policyDraft.enabled && <div className="pm-fields"><label className="pm-field"><span>Limite em R$ (valor total)</span><input type="number" min="0.01" step="0.01" value={policyDraft.threshold} onChange={event => setPolicyDraft(prev => ({ ...prev, threshold: event.target.value }))} /></label>
+          {[['lowerApproverId','Aprovador até o limite'],['upperApproverId','Aprovador acima do limite']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><select value={policyDraft[key] || ''} onChange={event => setPolicyDraft(prev => ({ ...prev, [key]: event.target.value }))}><option value="">Selecione...</option>{users.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>)}</div>}
+        <button type="button" disabled={busy || !online} onClick={savePolicy}>Salvar alçadas</button></div>}</div>}
     <div className="pm-metrics" aria-label="Resumo de compras">
       {[[ClipboardList,'Em andamento',metrics.active], [Truck,'Em transporte',metrics.transit], [Box,'Divergências',metrics.exceptions], [CheckCircle2,'Concluídas',metrics.closed]].map(([Icon,label,value]) => <div key={label}><Icon size={18}/><span>{label}</span><strong>{value}</strong></div>)}
     </div>
@@ -108,13 +183,31 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
         {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visible.map(item => <button key={item.id} type="button" onClick={() => beginDetail(item)} className={`pm-card ${selectedId === item.id ? 'pm-selected' : ''}`}><div><strong>{item.item}</strong><span className={`pm-chip ${stageColor(item.status)}`}>{PURCHASE_STAGES[item.status] || item.status}</span></div><small>{item.requesterName} · {item.department} · {item.quantity} {item.unit}</small><p>{item.destination} · Necessário em {dateBR(item.neededBy)}</p>{item.status === 'exception' && <b>Conferir divergência</b>}</button>)}</div>}
       </div>
       <div className="pm-detail">
-        {!selected ? <div className="pm-prompt"><PackageCheck size={34}/><h3>Fluxo de ponta a ponta</h3><p>Selecione uma compra para acompanhar a linha do tempo, documentos de referência, recebimento e destino. Solicitantes acompanham seus pedidos; a gestão conduz as etapas.</p></div> : <>
-          <div className="pm-detail-head"><div><span className={`pm-chip ${stageColor(selected.status)}`}>{PURCHASE_STAGES[selected.status]}</span><h3>{selected.item}</h3><p>Solicitado por {selected.requesterName} · {selected.department}</p></div><button type="button" aria-label="Fechar detalhes" onClick={() => { setSelectedId(''); setDraft(null); setError(''); }}><X size={18}/></button></div>
+        {!selected ? <div className="pm-prompt"><PackageCheck size={34}/><h3>Fluxo de ponta a ponta</h3><p>Selecione uma compra para acompanhar responsáveis, aprovação, recebimento, nota fiscal e aceite no destino. Cada pessoa confirma sua etapa; o Financeiro encerra após conferir os atestes.</p></div> : <>
+          <div className="pm-detail-head"><div><span className={`pm-chip ${stageColor(selected.status)}`}>{PURCHASE_STAGES[selected.status]}</span><h3>{selected.item}</h3><p>Solicitado por {selected.requesterName} · {selected.department}</p>{roleFor(selected) && <p>Sua responsabilidade: {roleFor(selected)}</p>}</div><button type="button" aria-label="Fechar detalhes" onClick={() => { setSelectedId(''); setDraft(null); setError(''); }}><X size={18}/></button></div>
           <div className="pm-progress">{Object.entries(PURCHASE_STAGES).filter(([id]) => !['rejected','cancelled','exception'].includes(id)).map(([id,label]) => <span key={id} className={id === selected.status ? 'current' : (selected.history || []).some(entry => entry.stage === id) ? 'visited' : ''}>{label}</span>)}</div>
+          <div className="pm-section"><h4>Responsáveis e aprovações</h4><div className="pm-readonly">
+            {[['Solicitante',selected.requesterId,selected.requesterName],['Comprador',selected.buyerId],['Aprovador da alçada',selected.approverId],['Recebimento e NF',selected.receiverId],['Destinatário',selected.recipientId],['Financeiro',selected.financeId]].map(([label,id,name]) => <div key={label}><span>{label}</span><p>{name || displayUser(id)}</p></div>)}
+          </div>{manager && draft && <><div className="pm-fields pm-roles">
+            {[['buyerId','Comprador'],['approverId','Aprovador'],['receiverId','Responsável pelo recebimento'],['recipientId','Destinatário'],['financeId','Responsável Financeiro']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><select value={draft[key] || ''} onChange={event => setField(setDraft,key,event.target.value)}><option value="">Selecione...</option>{users.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>)}</div>
+            <p className="pm-hint">Aprovador previsto pela alçada: <strong>{policy?.enabled ? displayUser(expectedId) : 'qualquer administrador da empresa'}</strong>. Salve as atribuições antes de avançar a etapa. Os responsáveis confirmam usando suas próprias contas.</p>
+          </>}</div>
           <div className="pm-section"><h4>Solicitação e destino</h4><div className="pm-readonly"><div><span>Especificação</span><p>{selected.specification}</p></div><div><span>Justificativa</span><p>{selected.reason}</p></div><div><span>Quantidade e unidade</span><p>{selected.quantity} {selected.unit}</p></div><div><span>Destino solicitado</span><p>{selected.destination}</p></div><div><span>Data necessária</span><p>{dateBR(selected.neededBy)}</p></div><div><span>Prioridade</span><p>{PRIORITIES[selected.priority] || 'Normal'}</p></div></div></div>
-          {manager && draft && <><div className="pm-section"><h4>Compra e rastreamento</h4><div className="pm-fields">{field('supplier','Fornecedor')}{field('quotedPrice','Preço unitário (R$)',{type:'number',min:'0',step:'0.01'})}{field('orderNumber','Número do pedido')}{field('expectedDate','Previsão de entrega',{type:'date'})}{field('carrier','Transportadora ou retirada')}{field('trackingCode','Código ou referência de rastreamento')}</div></div>
-          <div className="pm-section"><h4>Recebimento e armazenagem</h4><div className="pm-fields">{field('invoiceNumber','Número da nota fiscal')}{field('receivedQuantity','Quantidade conferida',{type:'number',min:'0',step:'any'})}{field('condition','Condição',{type:'select',options:[['pending','Não conferida'],['ok','Conforme'],['damaged','Avaria ou não conforme']]})}{field('lot','Lote / identificação')}{field('expiresAt','Validade, se aplicável',{type:'date'})}{field('storageAddress','Endereço físico / posição',{wide:true})}{field('destinationRecipient','Recebido no destino por',{wide:true})}{field('note','Observações e divergências',{type:'textarea',wide:true})}</div><p className="pm-hint">Informe divergência de quantidade ou avaria antes de encaminhar ao estoque. A localização física é obrigatória para armazenar.</p></div>
-          <div className="pm-actions"><button type="button" disabled={busy || !online} onClick={() => commit()} className="pm-secondary">Salvar dados</button>{(PURCHASE_NEXT[selected.status] || []).map(stage => <button key={stage} type="button" disabled={busy || !online} onClick={() => commit(stage)} className={stage === 'rejected' || stage === 'cancelled' ? 'pm-secondary' : 'pm-primary'}>{PURCHASE_STAGES[stage]} <ArrowRight size={15}/></button>)}</div></>}
+          {editBuyer && draft && <div className="pm-section"><h4>Compra e rastreamento</h4><div className="pm-fields">{field('supplier','Fornecedor',{disabled:Boolean(selected.approvedAt)})}{field('quotedPrice','Preço unitário (R$)',{type:'number',min:'0',step:'0.01',disabled:Boolean(selected.approvedAt)})}{field('orderNumber','Número do pedido',{disabled:Boolean(selected.buyerConfirmedAt)})}{field('expectedDate','Previsão de entrega',{type:'date',disabled:Boolean(selected.approvedAt)})}{field('carrier','Transportadora ou retirada')}{field('trackingCode','Código ou referência de rastreamento')}</div></div>}
+          {editReceiver && draft && <div className="pm-section"><h4>Recebimento e armazenagem</h4><div className="pm-fields">{field('invoiceNumber','Número da nota fiscal',{disabled:Boolean(selected.invoiceReceivedAt)})}{field('receivedQuantity','Quantidade conferida',{type:'number',min:'0',step:'any'})}{field('condition','Condição',{type:'select',options:[['pending','Não conferida'],['ok','Conforme'],['damaged','Avaria ou não conforme']]})}{field('lot','Lote / identificação')}{field('expiresAt','Validade, se aplicável',{type:'date'})}{field('storageAddress','Endereço físico / posição',{wide:true})}{field('destinationRecipient','Recebido no destino por',{wide:true})}{field('note','Observações e divergências',{type:'textarea',wide:true})}</div><p className="pm-hint">Informe divergência de quantidade ou avaria antes de encaminhar ao estoque. A localização física é obrigatória para armazenar.</p></div>}
+          <div className="pm-section"><h4>Atestes do processo</h4><div className="pm-readonly">
+            {[['Aprovação da alçada','approvedBy','approvedAt'],['Comprador confirmou o pedido','buyerConfirmedBy','buyerConfirmedAt'],['Mercadoria conferida','receiverConfirmedBy','receiverConfirmedAt'],['Nota fiscal recebida','invoiceReceivedBy','invoiceReceivedAt'],['Destinatário deu o aceite','recipientConfirmedBy','recipientConfirmedAt'],['Financeiro conferiu','financeConfirmedBy','financeConfirmedAt']].map(([label,by,at]) => <div key={label}><span>{label}</span><p>{selected[at] ? `${displayUser(selected[by])} · ${new Date(selected[at]).toLocaleString('pt-BR')}` : 'Pendente'}</p></div>)}
+          </div></div>
+          {selected.workflowVersion !== 2 && <div className="pm-legacy">Registro feito antes dos atestes por responsável. {manager && !['closed','rejected','cancelled'].includes(selected.status) && <button type="button" disabled={busy || !online} onClick={migrateLegacy}>Reabrir no novo fluxo</button>}</div>}
+          {draft && selected.workflowVersion === 2 && <div className="pm-actions">
+            {(manager || editBuyer || editReceiver) && <button type="button" disabled={busy || !online} onClick={() => commit()} className="pm-secondary">Salvar dados</button>}
+            {(PURCHASE_NEXT[selected.status] || []).filter(stage => ['rejected','cancelled'].includes(stage) ? manager :
+              ({ quotation: selected.buyerId, approved: selected.approverId, ordered: selected.buyerId,
+                in_transit: selected.buyerId, received: selected.receiverId, exception: selected.receiverId,
+                stored: selected.receiverId, delivered: selected.recipientId, closed: selected.financeId })[stage] === user?.id
+            ).map(stage => <button key={stage} type="button" disabled={busy || !online} onClick={() => commit(stage)} className={stage === 'rejected' || stage === 'cancelled' ? 'pm-secondary' : 'pm-primary'}>{stage === 'closed' ? 'Conferir e concluir' : PURCHASE_STAGES[stage]} <ArrowRight size={15}/></button>)}
+            {(['approved','ordered','received','delivered','closed'].includes(selected.status) || (PURCHASE_NEXT[selected.status] || []).some(stage => ['ordered','received','delivered','closed'].includes(stage))) && <label className="pm-ack"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /> {(PURCHASE_NEXT[selected.status] || []).includes('closed') && selected.financeId === user?.id ? `Conferi a nota fiscal ${selected.invoiceNumber || 'pendente'}, a confirmação do comprador, o recebimento da mercadoria e o aceite do destinatário.` : 'Confirmo pessoalmente as informações e documentos desta etapa.'}</label>}
+          </div>}
           <div className="pm-section"><h4>Linha do tempo</h4><ol className="pm-history">{[...(selected.history || [])].reverse().map((entry,index) => <li key={`${entry.at}-${index}`}><span className={`pm-chip ${stageColor(entry.stage)}`}>{PURCHASE_STAGES[entry.stage] || entry.stage}</span><strong>{entry.byName || 'Responsável'}</strong><small>{new Date(entry.at).toLocaleString('pt-BR')}</small>{entry.detail && <p>{entry.detail}</p>}</li>)}</ol></div>
         </>}
       </div>

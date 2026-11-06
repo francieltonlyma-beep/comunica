@@ -8338,7 +8338,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
-          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} online={navigator.onLine && Boolean(dbUser)} /></Suspense>}
+          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} /></Suspense>}
           <div className={`${['inbox', 'integra'].includes(activeTab) ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
               <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
