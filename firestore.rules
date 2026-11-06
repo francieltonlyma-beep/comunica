@@ -77,10 +77,12 @@ service cloud.firestore {
       return (!(data.status in ['ordered','in_transit','received','exception','stored','delivered','closed'])
           || (data.get('supplier','') is string && data.supplier.size() > 0
             && data.get('orderNumber','') is string && data.orderNumber.size() > 0
-            && data.get('expectedDate','') is string && data.expectedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}'))
+            && data.get('expectedDate','') is string && data.expectedDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}') && data.quotedPrice > 0)
         && (!(data.status in ['received','exception','stored','delivered','closed'])
           || (data.get('invoiceNumber','') is string && data.invoiceNumber.size() > 0
             && data.receivedQuantity > 0 && data.condition != 'pending'))
+        && (data.status != 'received' || (data.receivedQuantity == data.quantity && data.condition == 'ok'))
+        && (data.status != 'exception' || (data.receivedQuantity < data.quantity || data.condition == 'damaged'))
         && (!(data.status in ['stored','delivered','closed'])
           || (data.receivedQuantity == data.quantity && data.condition == 'ok'
             && data.get('storageAddress','') is string && data.storageAddress.size() > 0))
