@@ -117,6 +117,33 @@ export function purchaseTransition(record, next, fields, actor, now = Date.now()
     history: [...(Array.isArray(record.history) ? record.history : []), event].slice(-50) };
 }
 
+const TRANSITION_FIELDS = {
+  quotation: ['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note'],
+  approved: ['approvedBy','approvedAt'],
+  ordered: ['orderNumber','carrier','trackingCode','note','buyerConfirmedBy','buyerConfirmedAt'],
+  in_transit: ['carrier','trackingCode','note'],
+  received: ['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
+    'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
+  exception: ['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
+    'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
+  stored: ['storageAddress','lot','expiresAt','note'],
+  delivered: ['destinationRecipient','recipientConfirmedBy','recipientConfirmedAt'],
+  closed: ['financeConfirmedBy','financeConfirmedAt'],
+  rejected: ['note'], cancelled: ['note'],
+};
+
+export function purchaseTransitionPatch(record, next, draft, actor, now = Date.now()) {
+  const allowed = TRANSITION_FIELDS[next] || [];
+  const before = purchaseFields(record);
+  const after = purchaseFields(draft);
+  const unsaved = EDITABLE_PURCHASE_FIELDS.filter(key => before[key] !== after[key] && !allowed.includes(key));
+  if (unsaved.length) throw new Error('Há alterações fora desta etapa. Use “Salvar dados” antes de avançar.');
+  const transition = purchaseTransition(record, next, draft, actor, now);
+  const keys = ['status','updatedAt','updatedBy','history',...allowed];
+  return Object.fromEntries(keys.filter(key => transition[key] !== record[key] && transition[key] !== undefined)
+    .map(key => [key,transition[key]]));
+}
+
 export function expectedApprover(policy, total, fallbackAdminId) {
   if (!policy?.enabled) return String(fallbackAdminId || '');
   if (!Number.isFinite(Number(policy.threshold)) || Number(policy.threshold) <= 0) return '';

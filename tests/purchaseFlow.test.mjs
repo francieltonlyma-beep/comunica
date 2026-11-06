@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { expectedApprover, purchaseFields, purchaseTransition, validatePurchase } from '../src/purchaseFlow.js';
+import { expectedApprover, purchaseFields, purchaseTransition, purchaseTransitionPatch, validatePurchase } from '../src/purchaseFlow.js';
 
 const people = {
   buyer: { id: 'buyer', name: 'Comprador' },
@@ -85,4 +85,15 @@ test('erro de envio informa código e mantém orientação para recuperar os dad
   assert.match(purchaseSaveError({code:'permission-denied'}), /permission-denied/);
   assert.match(purchaseSaveError({code:'unauthenticated'}), /sessão expirou/);
   assert.match(purchaseSaveError({code:'unavailable'}), /Confira a lista/);
+});
+
+test('aprovação envia somente os campos da etapa e orienta salvar cotação pendente', () => {
+  const record = { ...fields, item:' Luvas ',status:'quotation',updatedAt:100,history:[],
+    supplier:'Fornecedor',quotedPrice:1,expectedDate:'2026-11-18' };
+  const patch = purchaseTransitionPatch(record,'approved',purchaseFields(record),people.approver,101);
+  assert.equal(patch.approvedBy,'approver');
+  assert.equal(patch.status,'approved');
+  assert.equal(Object.hasOwn(patch,'item'),false);
+  assert.equal(Object.hasOwn(patch,'supplier'),false);
+  assert.throws(() => purchaseTransitionPatch(record,'approved',{...record,quotedPrice:2},people.approver,101),/Salvar dados/);
 });

@@ -1,7 +1,7 @@
 import {initializeTestEnvironment, assertSucceeds, assertFails} from '@firebase/rules-unit-testing';
 import {doc,setDoc, collection, addDoc} from 'firebase/firestore';
 import {readFileSync} from 'node:fs';
-import {purchaseFields, purchaseTransition, purchaseDataPatch} from '../../src/purchaseFlow.js';
+import {purchaseFields, purchaseTransition, purchaseTransitionPatch, purchaseDataPatch} from '../../src/purchaseFlow.js';
 const env = await initializeTestEnvironment({projectId:'demo-comunica',firestore:{host:'127.0.0.1',port:8088,rules:readFileSync(new URL('../../firestore.rules', import.meta.url),'utf8')}});
 const base='artifacts/comunica-salvador/public/data/companies/company-a';
 await env.withSecurityRulesDisabled(async ctx => {
@@ -84,8 +84,8 @@ async function uiCommit(database, actor, stage='', edits={}) {
   const before=(await transaction.get(target)).data();
   const draft=purchaseFields({...before,...edits});
   const updatedAt=before.updatedAt+1;
-  const patch=stage ? purchaseTransition(before,stage,draft,actor,updatedAt)
-   : {...draft,...(actor.isAdmin ? {participantIds:[...new Set([before.requesterId,draft.buyerId,draft.approverId,draft.receiverId,draft.recipientId,draft.financeId].filter(Boolean))]} : {}),updatedAt,updatedBy:actor.id,history:[...before.history,{stage:before.status,by:actor.id,byName:actor.name,at:updatedAt,detail:'Dados e responsáveis atualizados'}].slice(-50)};
+  const patch=stage ? purchaseTransitionPatch(before,stage,draft,actor,updatedAt)
+   : purchaseDataPatch(before,draft,Boolean(actor.isAdmin),actor,updatedAt);
   transaction.update(target,patch);
  });
 }
@@ -120,4 +120,24 @@ for (const [stage,id,edits] of [
  await assertSucceeds(uiCommit(actorDb,actor,stage,edits));
  console.log('PASS: transação da interface na etapa '+stage);
 }
+// The production screenshot has the requester, buyer, approver and every other
+// assigned role pointing to the same administrator.
+const selfRef=await assertSucceeds(addDoc(collection(managerDb,base+'/purchaseRequests'),adminData));
+const selfFields={...purchaseFields(adminData),buyerId:'admin',approverId:'admin',receiverId:'admin',recipientId:'admin',financeId:'admin'};
+await assertSucceeds(updateDoc(selfRef,{...selfFields,participantIds:['admin'],updatedAt:now+1,updatedBy:'admin',
+ history:[...adminData.history,{stage:'requested',by:'admin',at:now+1}]}));
+let self=(await getDoc(selfRef)).data();
+await assertSucceeds(updateDoc(selfRef,purchaseTransition(self,'quotation',self,actorAdmin,now+2)));
+self=(await getDoc(selfRef)).data();
+await assertSucceeds(updateDoc(selfRef,purchaseDataPatch(self,{...self,supplier:'Fornecedor',quotedPrice:1,expectedDate:'2026-11-10'},true,actorAdmin,now+3)));
+self=(await getDoc(selfRef)).data();
+await assertSucceeds(updateDoc(selfRef,purchaseTransitionPatch(self,'approved',self,actorAdmin,now+4)));
+console.log('PASS: administrador comprador e aprovador aprova sua própria cotação');
+const spaced={...self,item:' Teste ',status:'quotation',approvedBy:'',approvedAt:0,updatedAt:now+500,
+ history:[{stage:'quotation',by:'admin',byName:actorAdmin.name,at:now+500}]};
+await env.withSecurityRulesDisabled(async ctx=>setDoc(doc(ctx.firestore(),base+'/purchaseRequests/spaced'),spaced));
+const spacedRef=doc(managerDb,base+'/purchaseRequests/spaced');
+await assertFails(updateDoc(spacedRef,purchaseTransition(spaced,'approved',purchaseFields(spaced),actorAdmin,now+501)));
+await assertSucceeds(updateDoc(spacedRef,purchaseTransitionPatch(spaced,'approved',purchaseFields(spaced),actorAdmin,now+501)));
+console.log('PASS: aprovação mantém campos originais da solicitação intactos');
 await env.cleanup();
