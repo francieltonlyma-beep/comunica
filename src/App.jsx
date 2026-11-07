@@ -741,6 +741,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [supportTicketFilter, setSupportTicketFilter] = useState('all');
   const [supportWorkspace, setSupportWorkspace] = useState('operation');
   const [supportCompanySearch, setSupportCompanySearch] = useState('');
+  const [companyCodeBusyId, setCompanyCodeBusyId] = useState('');
   const [supportCompanyHealth, setSupportCompanyHealth] = useState({ generatedAt: 0, companies: [] });
   const [supportHealthLoading, setSupportHealthLoading] = useState(false);
   const [supportHealthError, setSupportHealthError] = useState('');
@@ -2560,6 +2561,25 @@ const getStatusEmTempoReal = (colaborador) => {
     }
   };
 
+  const changeCompanyCodeAccess = async (company) => {
+    if (!currentUser?.isDeveloper || !functionsClient || !dbUser || companyCodeBusyId) return;
+    const blocked = company.codeBlocked !== true;
+    const action = blocked ? 'bloquear' : 'restabelecer';
+    if (!window.confirm(`Deseja ${action} o código ${company.code || ''} da empresa ${company.name}? ${blocked ? 'Novas entradas pelo código serão impedidas; sessões já abertas continuarão ativas.' : 'Novas entradas pelo código serão permitidas novamente.'}`)) return;
+    setCompanyCodeBusyId(company.id);
+    try {
+      const response = await httpsCallable(functionsClient, 'setCompanyCodeBlocked')({appId, companyId: company.id, blocked});
+      if (response.data?.companyId !== company.id || response.data?.codeBlocked !== blocked) throw new Error('Resposta não confirmada.');
+      setCompanies(previous => previous.map(item => item.id === company.id ? {...item, codeBlocked: blocked} : item));
+      triggerNotification(`Código da empresa ${company.name} ${blocked ? 'bloqueado' : 'restabelecido'}.`, 'success');
+    } catch (error) {
+      console.error('Falha ao alterar o acesso pelo código da empresa', error);
+      triggerNotification('Não foi possível alterar o código. Confira sua sessão e tente novamente.', 'error');
+    } finally {
+      setCompanyCodeBusyId('');
+    }
+  };
+
   const handleCompanyRegistration = async (e) => {
     e.preventDefault();
     if (!currentUser?.isDeveloper) {
@@ -2664,10 +2684,11 @@ const getStatusEmTempoReal = (colaborador) => {
         if (requestId !== companyLookupRequestRef.current || !company) return;
         setActiveCompany(company);
       }
-    } catch {
+    } catch (error) {
       if (requestId !== companyLookupRequestRef.current) return;
       setActiveCompany(null);
       setUsersList([]);
+      if (error?.code === 'functions/failed-precondition') setLoginError(loginErrorMessage(error));
     }
   };
 
@@ -8453,7 +8474,17 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
                   <div className="border-b border-slate-100 p-5"><span className="text-[9px] font-black uppercase tracking-[.16em] text-cyan-700">Diretório de clientes</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Empresas</h3><label className="relative mt-4 block"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={supportCompanySearch} onChange={event => setSupportCompanySearch(event.target.value)} placeholder="Buscar nome ou código" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" /></label></div>
                   <div className="max-h-[38rem] space-y-2 overflow-y-auto p-3">
-                    {visibleSupportCompanies.map(company => { const companyTickets = supportTickets.filter(ticket => ticket.companyId === company.id); const companyUnread = companyTickets.filter(ticket => ticket.unread).length; return <button key={company.id} type="button" onClick={() => { setActiveCompany(company); setActiveTab('dashboard'); triggerNotification(`Ambiente de ${company.name} selecionado.`); }} className={`group flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition hover:border-cyan-300 hover:bg-cyan-50/40 ${activeCompany?.id === company.id ? 'border-cyan-400 bg-cyan-50' : 'border-slate-200 bg-white'}`}><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-900 text-sm font-black text-white">{String(company.name || 'E').slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-slate-900">{company.name}</strong><span className="mt-0.5 block text-[9px] text-slate-500">Código {company.code || 'não informado'}</span><span className="mt-1 block text-[9px] font-semibold text-blue-700">{companyTickets.length} chamado(s){companyUnread ? ` · ${companyUnread} não lido(s)` : ''}</span></span><ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5" /></button>; })}
+                    {visibleSupportCompanies.map(company => { const companyTickets = supportTickets.filter(ticket => ticket.companyId === company.id); const companyUnread = companyTickets.filter(ticket => ticket.unread).length; const blocked = company.codeBlocked === true; return <div key={company.id} className={`rounded-2xl border p-3 transition ${activeCompany?.id === company.id ? 'border-cyan-400 bg-cyan-50' : 'border-slate-200 bg-white'}`}>
+                      <button type="button" onClick={() => { setActiveCompany(company); setActiveTab('dashboard'); triggerNotification(`Ambiente de ${company.name} selecionado.`); }} className="group flex w-full items-center gap-3 text-left">
+                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-900 text-sm font-black text-white">{String(company.name || 'E').slice(0, 1).toUpperCase()}</span>
+                        <span className="min-w-0 flex-1"><strong className="block truncate text-xs text-slate-900">{company.name}</strong><span className="mt-0.5 block text-[9px] text-slate-500">Código {company.code || 'não informado'}</span><span className="mt-1 block text-[9px] font-semibold text-blue-700">{companyTickets.length} chamado(s){companyUnread ? ` · ${companyUnread} não lido(s)` : ''}</span></span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5" />
+                      </button>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${blocked ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>{blocked ? 'Código bloqueado' : 'Código ativo'}</span>
+                        <button type="button" disabled={Boolean(companyCodeBusyId) || !dbUser} onClick={() => changeCompanyCodeAccess(company)} className={`rounded-lg border px-3 py-1.5 text-[10px] font-bold transition disabled:opacity-50 ${blocked ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50' : 'border-rose-300 text-rose-800 hover:bg-rose-50'}`}>{companyCodeBusyId === company.id ? 'Aguarde...' : blocked ? 'Restabelecer código' : 'Bloquear código'}</button>
+                      </div>
+                    </div>; })}
                     {visibleSupportCompanies.length === 0 && <p className="p-6 text-center text-xs text-slate-400">Nenhuma empresa corresponde à busca.</p>}
                   </div>
                 </section>

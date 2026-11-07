@@ -2,6 +2,9 @@ export function loginErrorMessage(error, support = false) {
   if (error?.code === 'functions/resource-exhausted') {
     return 'Acesso temporariamente bloqueado após várias tentativas. Aguarde 30 segundos e tente novamente.';
   }
+  if (error?.code === 'functions/failed-precondition') {
+    return 'O código desta empresa está bloqueado pelo suporte da plataforma.';
+  }
   if (error?.code === 'functions/permission-denied') {
     return support ? 'PIN de suporte inválido ou acesso não autorizado.' : 'PIN inválido. Confira os números e tente novamente.';
   }

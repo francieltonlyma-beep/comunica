@@ -11,3 +11,7 @@ test('support login uses the same lockout guidance', () => {
   assert.match(loginErrorMessage({code: 'functions/resource-exhausted'}, true), /bloqueado.*30 segundos/);
   assert.match(loginErrorMessage({code: 'functions/permission-denied'}, true), /suporte inválido/);
 });
+
+test('blocked company code explains that support must restore access', () => {
+  assert.match(loginErrorMessage({code: 'functions/failed-precondition'}), /código.*bloqueado.*suporte/);
+});

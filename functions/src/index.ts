@@ -279,6 +279,9 @@ const getCompanyByCode = async (appId: string, rawCode: string) => {
   const snapshot = await getFirestore().collection(`artifacts/${appId}/public/data/companies`).where("code", "==", code).limit(1).get();
   if (snapshot.empty) throw new HttpsError("not-found", "Empresa não encontrada.");
   const item = snapshot.docs[0];
+  if (item.data().codeBlocked === true) {
+    throw new HttpsError("failed-precondition", "O código desta empresa está bloqueado pelo suporte da plataforma.");
+  }
   return {id: item.id, ...item.data()} as CompanyRecord;
 };
 
@@ -671,6 +674,37 @@ export const registerCompany = onCall({invoker: "public"}, async (request) => {
     transaction.create(secretRef, secret);
   });
   return {company, user: administrator};
+});
+
+export const setCompanyCodeBlocked = onCall({invoker: "public"}, async (request) => {
+  if (!request.auth || request.auth.uid !== SUPPORT_UID || request.auth.token.isDeveloper !== true) {
+    throw new HttpsError("permission-denied", "A alteração do código é exclusiva do suporte da plataforma.");
+  }
+  const appId = String(request.data?.appId || "");
+  const companyId = String(request.data?.companyId || "");
+  const blocked = request.data?.blocked;
+  if (appId !== 'comunica-salvador' || !/^[a-zA-Z0-9_-]+$/.test(companyId) || typeof blocked !== 'boolean') {
+    throw new HttpsError("invalid-argument", "Empresa ou estado do código inválido.");
+  }
+  const database = getFirestore();
+  const companyRef = database.doc(`artifacts/${appId}/public/data/companies/${companyId}`);
+  return database.runTransaction(async transaction => {
+    const [support, company] = await Promise.all([
+      transaction.get(database.doc(`_platformSupport/${SUPPORT_UID}`)), transaction.get(companyRef),
+    ]);
+    if (!support.exists || support.data()?.enabled !== true || support.data()?.appId !== appId) {
+      throw new HttpsError("permission-denied", "Acesso de suporte não autorizado.");
+    }
+    if (!company.exists) throw new HttpsError("not-found", "Empresa não encontrada.");
+    if (company.data()?.codeBlocked === blocked) return {companyId, codeBlocked: blocked};
+    const now = Date.now();
+    transaction.update(companyRef, {codeBlocked: blocked, codeAccessUpdatedAt: now, codeAccessUpdatedBy: SUPPORT_UID});
+    transaction.create(database.collection('_platformCompanyCodeAudit').doc(), {
+      appId, companyId, companyCode: String(company.data()?.code || ''), blocked,
+      actorId: SUPPORT_UID, timestamp: now,
+    });
+    return {companyId, codeBlocked: blocked};
+  });
 });
 
 export const generateAiText = onCall(
