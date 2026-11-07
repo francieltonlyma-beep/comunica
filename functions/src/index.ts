@@ -558,6 +558,20 @@ export const refreshUploadSession = onCall({invoker: 'public', maxInstances: 5},
   const database = getFirestore();
   const companyDocument = await database.doc(`artifacts/${appId}/public/data/companies/${companyId}`).get();
   if (!companyDocument.exists) throw new HttpsError('not-found', 'Empresa não encontrada.');
+  if (companyDocument.data()?.codeBlocked === true) throw new HttpsError('permission-denied', 'Acesso à empresa bloqueado.');
+
+  const purchaseId = String(request.data?.purchaseId || '');
+  let purchaseParticipants: unknown[] = [];
+  let purchaseRequesterId = '';
+  if (purchaseId) {
+    if (folder !== 'attachments' || !/^[a-zA-Z0-9_-]+$/.test(purchaseId)) {
+      throw new HttpsError('invalid-argument', 'Compra inválida para o anexo.');
+    }
+    const purchase = await database.doc(`artifacts/${appId}/public/data/companies/${companyId}/purchaseRequests/${purchaseId}`).get();
+    if (!purchase.exists) throw new HttpsError('not-found', 'Compra não encontrada.');
+    purchaseParticipants = Array.isArray(purchase.data()?.participantIds) ? purchase.data()!.participantIds : [];
+    purchaseRequesterId = String(purchase.data()?.requesterId || '');
+  }
 
   if (request.auth.uid === SUPPORT_UID) {
     const support = await database.doc(`_platformSupport/${SUPPORT_UID}`).get();
@@ -567,7 +581,7 @@ export const refreshUploadSession = onCall({invoker: 'public', maxInstances: 5},
     return {token: await getAuth().createCustomToken(SUPPORT_UID, {
       companyId, isAdmin: true, isDeveloper: true,
       uploadAuthorized: true, uploadCompanyId: companyId, uploadFolder: folder, uploadFileName: fileName,
-      uploadSize, uploadContentType,
+      uploadSize, uploadContentType, uploadPurchaseId: purchaseId,
     })};
   }
 
@@ -578,6 +592,9 @@ export const refreshUploadSession = onCall({invoker: 'public', maxInstances: 5},
   if (!profile.exists) throw new HttpsError('permission-denied', 'Colaborador não encontrado nesta empresa.');
   const profileData = profile.data() || {};
   const isAdmin = profileData.isAdmin === true;
+  if (purchaseId && !isAdmin && purchaseRequesterId !== request.auth.uid && !purchaseParticipants.includes(request.auth.uid)) {
+    throw new HttpsError('permission-denied','Você não participa desta compra.');
+  }
   if (!isAdmin && !['attachments', 'images'].includes(folder)) {
     throw new HttpsError('permission-denied', 'Seu perfil não possui permissão para este tipo de envio.');
   }
@@ -591,7 +608,49 @@ export const refreshUploadSession = onCall({invoker: 'public', maxInstances: 5},
     uploadFileName: fileName,
     uploadSize,
     uploadContentType,
+    uploadPurchaseId: purchaseId,
   })};
+});
+
+export const authorizePurchaseAttachmentRead = onCall({invoker:'public',maxInstances:5}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated','Entre novamente para acessar o documento.');
+  const appId = 'comunica-salvador';
+  const companyId = String(request.data?.companyId || '');
+  const purchaseId = String(request.data?.purchaseId || '');
+  const fileId = String(request.data?.fileId || '');
+  if (![companyId,purchaseId,fileId].every(value => /^[a-zA-Z0-9_-]+$/.test(value))) {
+    throw new HttpsError('invalid-argument','Documento da compra inválido.');
+  }
+  const database = getFirestore();
+  const base = `artifacts/${appId}/public/data/companies/${companyId}`;
+  const company = await database.doc(base).get();
+  if (!company.exists || company.data()?.codeBlocked === true) throw new HttpsError('permission-denied','Empresa indisponível.');
+  const supportProfile = request.auth.uid === SUPPORT_UID
+    ? (await database.doc(`_platformSupport/${SUPPORT_UID}`).get()).data() : null;
+  const support = supportProfile?.enabled === true && supportProfile.appId === appId;
+  if (request.auth.uid === SUPPORT_UID && !support) throw new HttpsError('permission-denied','Acesso de suporte não autorizado.');
+  if (!support) {
+    if (request.auth.token.isDeveloper === true || request.auth.token.companyId !== companyId) {
+      throw new HttpsError('permission-denied','Acesso à empresa não autorizado.');
+    }
+    const profile = await database.doc(`${base}/users/${request.auth.uid}`).get();
+    if (!profile.exists) throw new HttpsError('permission-denied','Colaborador não encontrado.');
+    const purchase = await database.doc(`${base}/purchaseRequests/${purchaseId}`).get();
+    if (!purchase.exists || !(profile.data()?.isAdmin === true || purchase.data()?.requesterId === request.auth.uid ||
+      (Array.isArray(purchase.data()?.participantIds) && purchase.data()?.participantIds.includes(request.auth.uid)))) {
+      throw new HttpsError('permission-denied','Você não participa desta compra.');
+    }
+  }
+  const attachment = await database.doc(`${base}/purchaseRequests/${purchaseId}/files/${fileId}`).get();
+  const storagePath = String(attachment.data()?.storagePath || '');
+  if (!attachment.exists || !storagePath.startsWith(`companies/${companyId}/users/`) ||
+      !/^companies\/[^/]+\/users\/[^/]+\/attachments\/[^/]+$/.test(storagePath)) {
+    throw new HttpsError('not-found','Documento da compra não encontrado.');
+  }
+  const token = await getAuth().createCustomToken(request.auth.uid,{
+    companyId,purchaseReadPath:storagePath,purchaseReadId:purchaseId,
+  });
+  return {token,storagePath,name:String(attachment.data()?.name || 'documento')};
 });
 
 export const getLoginDirectory = onCall({invoker: "public"}, async (request) => {

@@ -2333,7 +2333,7 @@ const getStatusEmTempoReal = (colaborador) => {
             if (typeof onProgress === 'function') onProgress(progress);
           }, reject, () => resolve(uploadTask.snapshot));
         });
-        return { url: await getDownloadURL(snapshot.ref), storagePath: snapshot.ref.fullPath };
+        return { url: accessMetadata.purchaseId ? '' : await getDownloadURL(snapshot.ref), storagePath: snapshot.ref.fullPath };
       };
 
       beginCloudActivity('Validando sua sessão para o envio...');
@@ -2352,6 +2352,7 @@ const getStatusEmTempoReal = (colaborador) => {
           fileName: uniqueName,
           size: file.size,
           contentType: uploadContentType,
+          purchaseId: accessMetadata.purchaseId || '',
         });
         const uploadToken = authorization.data?.token;
         if (!uploadToken) throw new Error('O servidor não liberou uma sessão segura para o arquivo.');
@@ -2373,6 +2374,26 @@ const getStatusEmTempoReal = (colaborador) => {
     } finally {
       endCloudActivity();
     }
+  };
+
+  const downloadPurchaseAttachment = async (file,purchaseId) => {
+    if (!functionsClient || !activeCompany?.id || !dbUser) throw new Error('Sessão indisponível para baixar o documento.');
+    const authorize = httpsCallable(functionsClient,'authorizePurchaseAttachmentRead');
+    const response = await authorize({companyId:activeCompany.id,purchaseId,fileId:file.id});
+    const {token,storagePath,name} = response.data || {};
+    if (!token || !storagePath) throw new Error('O documento não está disponível para download.');
+    const temporaryApp = initializeApp(firebaseConfig,`purchase-read-${Date.now()}-${Math.random().toString(36).slice(2,10)}`);
+    try {
+      const temporaryAuth = getAuth(temporaryApp);
+      await setPersistence(temporaryAuth,inMemoryPersistence);
+      await signInWithCustomToken(temporaryAuth,token);
+      const data = await getBlob(ref(getStorage(temporaryApp),storagePath));
+      const url = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url; link.download = name || file.name || 'documento';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url),60000);
+    } finally { await deleteApp(temporaryApp); }
   };
 
   const deleteStoredFile = async (file) => {
@@ -8428,7 +8449,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
-          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={async file => { try { const data = await getBlob(ref(storage,file.storagePath)); const url = URL.createObjectURL(data); const link = document.createElement('a'); link.href = url; link.download = file.name || 'documento'; link.click(); setTimeout(() => URL.revokeObjectURL(url),60000); } catch (problem) { console.error('Falha ao baixar anexo de compra',problem); } }} /></Suspense>}
+          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} /></Suspense>}
           <div className={`${['inbox', 'integra'].includes(activeTab) ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
               <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
