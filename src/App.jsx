@@ -1914,7 +1914,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       setLoginSearchText('');
       setActiveTab('dashboard');
       localStorage.removeItem('comunica_active_company');
-      setLoginError('O código desta empresa foi bloqueado pelo suporte. Sua sessão foi encerrada.');
+      setLoginError('Acesso não autorizado. Por favor, contate o suporte da plataforma.');
     });
   }, [dbUser, currentUser?.id, currentUser?.isDeveloper, activeCompany?.id]);
 

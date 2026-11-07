@@ -12,6 +12,6 @@ test('support login uses the same lockout guidance', () => {
   assert.match(loginErrorMessage({code: 'functions/permission-denied'}, true), /suporte inválido/);
 });
 
-test('blocked company code explains that support must restore access', () => {
-  assert.match(loginErrorMessage({code: 'functions/failed-precondition'}), /código.*bloqueado.*suporte/);
+test('blocked company code shows neutral contact guidance', () => {
+  assert.match(loginErrorMessage({code: 'functions/failed-precondition'}), /Acesso não autorizado.*contate o suporte/);
 });

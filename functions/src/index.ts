@@ -280,7 +280,7 @@ const getCompanyByCode = async (appId: string, rawCode: string) => {
   if (snapshot.empty) throw new HttpsError("not-found", "Empresa não encontrada.");
   const item = snapshot.docs[0];
   if (item.data().codeBlocked === true) {
-    throw new HttpsError("failed-precondition", "O código desta empresa está bloqueado pelo suporte da plataforma.");
+    throw new HttpsError("failed-precondition", "Acesso não autorizado. Por favor, contate o suporte da plataforma.");
   }
   return {id: item.id, ...item.data()} as CompanyRecord;
 };
