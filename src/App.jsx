@@ -824,6 +824,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [showLoginSuggestions, setShowLoginSuggestions] = useState(false);
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const loginSubmitInFlight = useRef(false);
 
   const [showChangePinModal, setShowChangePinModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -2684,6 +2687,7 @@ const getStatusEmTempoReal = (colaborador) => {
     setLoginError('');
     setActiveCompany(null);
     setUsersList([]);
+    setCompanyLookupLoading(normalizedCode.length >= 3);
 
     if (!normalizedCode || normalizedCode.length < 3) {
       return;
@@ -2707,11 +2711,14 @@ const getStatusEmTempoReal = (colaborador) => {
       setActiveCompany(null);
       setUsersList([]);
       if (error?.code === 'functions/failed-precondition') setLoginError(loginErrorMessage(error));
+    } finally {
+      if (requestId === companyLookupRequestRef.current) setCompanyLookupLoading(false);
     }
   };
 
   const handleUserLoginSubmit = async (e) => {
     e.preventDefault();
+    if (loginSubmitInFlight.current || companyLookupLoading) return;
 
     let company = activeCompany;
     let companyUsers = usersList;
@@ -2734,6 +2741,9 @@ const getStatusEmTempoReal = (colaborador) => {
       return;
     }
 
+    loginSubmitInFlight.current = true;
+    setLoginSubmitting(true);
+    setLoginError('');
     try {
       if (!isFirebaseAvailable || !functionsClient) throw new Error('Serviço de autenticação indisponível.');
       const authenticate = httpsCallable(functionsClient, 'authenticateWithPin');
@@ -2758,6 +2768,9 @@ const getStatusEmTempoReal = (colaborador) => {
     } catch (error) {
       console.error('Falha no login seguro', error);
       setLoginError(loginErrorMessage(error));
+    } finally {
+      loginSubmitInFlight.current = false;
+      setLoginSubmitting(false);
     }
   };
 
@@ -7352,8 +7365,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         placeholder="Ex.: MINHA-EMPRESA"
         value={companyCode}
         onChange={(e) => handleCompanyCodeChange(e.target.value)}
+        disabled={loginSubmitting}
         className="w-full rounded-xl border border-white/15 bg-white/[0.09] px-3 py-3 text-sm font-bold text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10"
       />
+      {companyLookupLoading && <p role="status" aria-live="polite" className="mt-2 flex items-center gap-2 text-xs font-semibold text-cyan-100"><LoaderCircle className="h-4 w-4 animate-spin" /> Carregando dados da empresa...</p>}
     </div>
     {loginCompanyIdentified && <div className="flex items-center gap-3 rounded-2xl border border-emerald-200/25 bg-emerald-300/10 p-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-300 text-[#07382f] shadow-lg shadow-emerald-950/20"><Building className="h-5 w-5" /></span><div className="min-w-0 flex-1"><span className="block text-[9px] font-extrabold uppercase tracking-wider text-emerald-200">Empresa identificada</span><strong className="mt-0.5 block truncate text-xs text-white">{activeCompany.name}</strong></div><CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" /></div>}
     <div className="relative">
@@ -7362,7 +7377,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         <input
           type="text"
           required
-          disabled={!loginCompanyIdentified}
+          disabled={!loginCompanyIdentified || loginSubmitting}
           placeholder="Digite para buscar seu nome..."
           value={loginSearchText}
           onChange={(e) => {
@@ -7415,7 +7430,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           type="password"
           maxLength="4"
           required
-          disabled={!loginCompanyIdentified}
+          disabled={!loginCompanyIdentified || loginSubmitting}
           placeholder="• • • •"
           value={loginPin}
           onChange={(e) => {
@@ -7427,6 +7442,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       </div>
     </div>
 
+    {loginSubmitting && <p role="status" aria-live="polite" className="flex items-center justify-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-300/10 p-3 text-xs font-semibold text-cyan-50"><LoaderCircle className="h-4 w-4 animate-spin" /> Verificando acesso e carregando dados...</p>}
+
     {loginError && (
       <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-center text-xs font-semibold text-rose-800">
         ⚠️ {loginError}
@@ -7435,10 +7452,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
     <button
       type="submit"
-      disabled={!loginCompanyIdentified || !loginSearchText.trim() || loginPin.length !== 4}
+      disabled={companyLookupLoading || loginSubmitting || !loginCompanyIdentified || !loginSearchText.trim() || loginPin.length !== 4}
       className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-300 to-emerald-300 px-4 py-3.5 text-sm font-extrabold text-[#082344] shadow-lg shadow-cyan-950/30 transition hover:-translate-y-0.5 hover:from-cyan-200 hover:to-emerald-200 focus:outline-none focus:ring-4 focus:ring-cyan-200/20 disabled:cursor-not-allowed disabled:from-white/15 disabled:to-white/15 disabled:text-white/35 disabled:shadow-none disabled:hover:translate-y-0"
     >
-      <Lock className="h-4.5 w-4.5" /> Acessar Painel
+      {loginSubmitting ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <Lock className="h-4.5 w-4.5" />} {loginSubmitting ? 'Carregando dados...' : 'Acessar Painel'}
     </button>
   </form>
 
