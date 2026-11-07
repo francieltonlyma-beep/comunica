@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'src/dataconnect-generated/**']),
+  globalIgnores(['dist', 'functions/lib/**', 'src/dataconnect-generated/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -31,5 +31,7 @@ export default defineConfig([
   {
     files: ['src/App.jsx'],
     languageOptions: { globals: { __initial_auth_token: 'readonly' } },
+    // This legacy screen resets related state in effects throughout the module.
+    rules: { 'react-hooks/set-state-in-effect': 'off' },
   },
 ])

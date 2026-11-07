@@ -924,6 +924,12 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     if (activityCompany && activityId) return {companyId: activityCompany, activityId};
     return companyId && threadId ? {companyId, threadId, messageId} : null;
   });
+  const [pendingPurchaseNavigation, setPendingPurchaseNavigation] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('purchaseCompany') && params.get('purchaseId')
+      ? {companyId:params.get('purchaseCompany'),purchaseId:params.get('purchaseId')} : null;
+  });
+  const [focusedPurchaseId, setFocusedPurchaseId] = useState('');
   const [pendingSalesLeadId, setPendingSalesLeadId] = useState(() => new URLSearchParams(window.location.search).get('supportLead') || '');
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [newParticipantId, setNewParticipantId] = useState('');
@@ -1766,6 +1772,34 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     openMessage();
     return () => { cancelled = true; };
   }, [pendingMessageNavigation, dbUser, currentUser?.id]);
+
+  useEffect(() => {
+    if (!pendingPurchaseNavigation || !dbUser || !currentUser) return;
+    const {companyId,purchaseId} = pendingPurchaseNavigation;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId) || !/^[a-zA-Z0-9_-]+$/.test(purchaseId)) {
+      setPendingPurchaseNavigation(null); return;
+    }
+    let cancelled = false;
+    const openPurchase = async () => {
+      try {
+        const companySnapshot = await getDoc(doc(db,'artifacts',appId,'public','data','companies',companyId));
+        if (!companySnapshot.exists() || cancelled) return;
+        setActiveCompany({id:companySnapshot.id,...companySnapshot.data()});
+        setFocusedPurchaseId(purchaseId);
+        setActiveTab('integra');
+      } catch (problem) { console.error('Não foi possível abrir a compra da notificação',problem); }
+      finally {
+        if (!cancelled) {
+          setPendingPurchaseNavigation(null);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('purchaseCompany'); url.searchParams.delete('purchaseId');
+          window.history.replaceState(window.history.state,'',url);
+        }
+      }
+    };
+    openPurchase();
+    return () => {cancelled = true;};
+  }, [pendingPurchaseNavigation,dbUser,currentUser?.id]);
 
   // Associa o dispositivo à conta autenticada sem recriar o suporte na equipe.
   const pushRegistrationInFlight = useRef(null);
@@ -8394,7 +8428,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
-          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} /></Suspense>}
+          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={async file => { try { const data = await getBlob(ref(storage,file.storagePath)); const url = URL.createObjectURL(data); const link = document.createElement('a'); link.href = url; link.download = file.name || 'documento'; link.click(); setTimeout(() => URL.revokeObjectURL(url),60000); } catch (problem) { console.error('Falha ao baixar anexo de compra',problem); } }} /></Suspense>}
           <div className={`${['inbox', 'integra'].includes(activeTab) ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
             <div className="relative w-full">
               <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />

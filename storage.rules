@@ -74,6 +74,15 @@ service firebase.storage {
     function activityPath(companyId, activityId) {
       return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/activities/$(activityId);
     }
+    function purchasePath(companyId, purchaseId) {
+      return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/purchaseRequests/$(purchaseId);
+    }
+    function purchaseAccess(companyId, purchaseId) {
+      return purchaseId.matches('[a-zA-Z0-9_-]+') && firestore.exists(purchasePath(companyId,purchaseId))
+        && (activePlatformSupport() || activeAdmin(companyId)
+          || (activeEmployee(companyId) && (firestore.get(purchasePath(companyId,purchaseId)).data.get('requesterId','') == request.auth.uid
+            || request.auth.uid in firestore.get(purchasePath(companyId,purchaseId)).data.get('participantIds',[]))));
+    }
 
     function documentAudience(companyId, data) {
       return activeAdmin(companyId) || activePlatformSupport() || (activeEmployee(companyId) && (
@@ -87,7 +96,7 @@ service firebase.storage {
     function canReadDocument(companyId) {
       let documentId = resource.metadata.get('documentId', '');
       return activePlatformSupport()
-        || (request.auth != null && resource.metadata.get('ownerUid', '') == request.auth.uid)
+        || (activeEmployee(companyId) && resource.metadata.get('ownerUid', '') == request.auth.uid)
         || (documentId != '' && firestore.exists(documentPath(companyId, documentId))
           && documentAudience(companyId, firestore.get(documentPath(companyId, documentId)).data));
     }
@@ -95,13 +104,15 @@ service firebase.storage {
     function canReadAttachment(companyId) {
       let messageId = resource.metadata.get('messageId', '');
       let activityId = resource.metadata.get('activityId', '');
+      let purchaseId = resource.metadata.get('purchaseId', '');
       return activePlatformSupport()
-        || (request.auth != null && resource.metadata.get('ownerUid', '') == request.auth.uid)
+        || (activeEmployee(companyId) && resource.metadata.get('ownerUid', '') == request.auth.uid)
         || (activeEmployee(companyId) && messageId != '' && firestore.exists(messagePath(companyId, messageId))
           && (request.auth.uid in firestore.get(messagePath(companyId, messageId)).data.get('participants', [])
             || firestore.get(messagePath(companyId, messageId)).data.get('senderId', '') == request.auth.uid
             || firestore.get(messagePath(companyId, messageId)).data.get('receiverId', '') == request.auth.uid))
-        || (activeEmployee(companyId) && activityId != '' && firestore.exists(activityPath(companyId, activityId)));
+        || (activeEmployee(companyId) && activityId != '' && firestore.exists(activityPath(companyId, activityId)))
+        || (purchaseId != '' && purchaseAccess(companyId,purchaseId));
     }
 
     function businessFileType() {
@@ -144,7 +155,9 @@ service firebase.storage {
             && request.resource.metadata.get('documentId', '').matches('document-.+'))
           || (folder == 'attachments'
             && (request.resource.metadata.get('messageId', '').matches('msg-.+')
-              || request.resource.metadata.get('activityId', '').matches('(activity|recurring)-.+')))
+              || request.resource.metadata.get('activityId', '').matches('(activity|recurring)-.+')
+              || (request.resource.metadata.get('purchaseId','') != ''
+                && purchaseAccess(companyId,request.resource.metadata.get('purchaseId','')))))
           || (folder == 'avatars' && request.auth.token.get('isAdmin', false) == true)
           || folder == 'images'
           || (folder == 'whistleblowing-poster' && request.auth.token.get('isAdmin', false) == true)
