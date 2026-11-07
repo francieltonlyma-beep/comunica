@@ -6,11 +6,16 @@ service firebase.storage {
       return /databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)/users/$(uid);
     }
 
+    function companyCodeActive(companyId) {
+      return firestore.get(/databases/(default)/documents/artifacts/comunica-salvador/public/data/companies/$(companyId)).data.get('codeBlocked', false) != true;
+    }
+
     function activeEmployee(companyId) {
       return request.auth != null
         && request.auth.uid != 'platform-support-francielton'
         && request.auth.token.get('isDeveloper', false) != true
         && request.auth.token.get('companyId', '') == companyId
+        && companyCodeActive(companyId)
         && firestore.exists(userPath(companyId, request.auth.uid));
     }
 
@@ -41,6 +46,7 @@ service firebase.storage {
 
     function authorizedEmployeeUpload(companyId, userId, folder, fileName) {
       return authorizedUpload(companyId, userId, folder, fileName)
+        && companyCodeActive(companyId)
         && request.auth.uid != 'platform-support-francielton'
         && request.auth.token.get('isDeveloper', false) != true
         && request.auth.token.get('companyId', '') == companyId;

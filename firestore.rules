@@ -5,6 +5,7 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid != 'platform-support-francielton'
         && request.auth.token.get('isDeveloper', false) != true
         && request.auth.token.get('companyId', '') == company
+        && get(/databases/$(database)/documents/artifacts/comunica-salvador/public/data/companies/$(company)).data.get('codeBlocked', false) != true
         && exists(/databases/$(database)/documents/artifacts/comunica-salvador/public/data/companies/$(company)/users/$(request.auth.uid));
     }
     function support() {
@@ -440,6 +441,12 @@ service cloud.firestore {
     }
     match /artifacts/{app}/public/data/companies/{company} {
       allow read: if access(company);
+      // The authenticated employee can observe a code block and end an open session.
+      allow get: if request.auth != null && app == 'comunica-salvador'
+        && request.auth.uid != 'platform-support-francielton'
+        && request.auth.token.get('isDeveloper', false) != true
+        && request.auth.token.get('companyId', '') == company
+        && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid));
       allow write: if false;
       match /settings/integra-access {
         allow get: if access(company);

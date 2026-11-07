@@ -1901,6 +1901,24 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [dbUser, currentUser?.isDeveloper]);
 
   useEffect(() => {
+    if (!dbUser || !currentUser?.id || currentUser.isDeveloper || !activeCompany?.id) return undefined;
+    const companyRef = doc(db, 'artifacts', appId, 'public', 'data', 'companies', activeCompany.id);
+    return onSnapshot(companyRef, snapshot => {
+      if (!snapshot.exists() || snapshot.data().codeBlocked !== true) return;
+      signOut(auth).catch(error => console.error('Falha ao encerrar sessão bloqueada', error));
+      setCurrentUser(null);
+      setActiveCompany(null);
+      setUsersList([]);
+      setCompanyCode('');
+      setLoginSelectedUserId('');
+      setLoginSearchText('');
+      setActiveTab('dashboard');
+      localStorage.removeItem('comunica_active_company');
+      setLoginError('O código desta empresa foi bloqueado pelo suporte. Sua sessão foi encerrada.');
+    });
+  }, [dbUser, currentUser?.id, currentUser?.isDeveloper, activeCompany?.id]);
+
+  useEffect(() => {
     setSupportRequests({});
     setSupportLoadError(false);
     if (!isFirebaseAvailable || !dbUser || !currentUser?.isDeveloper) return;
@@ -2561,25 +2579,6 @@ const getStatusEmTempoReal = (colaborador) => {
     }
   };
 
-  const changeCompanyCodeAccess = async (company) => {
-    if (!currentUser?.isDeveloper || !functionsClient || !dbUser || companyCodeBusyId) return;
-    const blocked = company.codeBlocked !== true;
-    const action = blocked ? 'bloquear' : 'restabelecer';
-    if (!window.confirm(`Deseja ${action} o código ${company.code || ''} da empresa ${company.name}? ${blocked ? 'Novas entradas pelo código serão impedidas; sessões já abertas continuarão ativas.' : 'Novas entradas pelo código serão permitidas novamente.'}`)) return;
-    setCompanyCodeBusyId(company.id);
-    try {
-      const response = await httpsCallable(functionsClient, 'setCompanyCodeBlocked')({appId, companyId: company.id, blocked});
-      if (response.data?.companyId !== company.id || response.data?.codeBlocked !== blocked) throw new Error('Resposta não confirmada.');
-      setCompanies(previous => previous.map(item => item.id === company.id ? {...item, codeBlocked: blocked} : item));
-      triggerNotification(`Código da empresa ${company.name} ${blocked ? 'bloqueado' : 'restabelecido'}.`, 'success');
-    } catch (error) {
-      console.error('Falha ao alterar o acesso pelo código da empresa', error);
-      triggerNotification('Não foi possível alterar o código. Confira sua sessão e tente novamente.', 'error');
-    } finally {
-      setCompanyCodeBusyId('');
-    }
-  };
-
   const handleCompanyRegistration = async (e) => {
     e.preventDefault();
     if (!currentUser?.isDeveloper) {
@@ -2606,6 +2605,25 @@ const getStatusEmTempoReal = (colaborador) => {
     } catch (error) {
       console.error('Erro ao cadastrar empresa', error);
       triggerNotification('Não foi possível cadastrar a empresa. Tente novamente.', 'error');
+    }
+  };
+
+  const changeCompanyCodeAccess = async (company) => {
+    if (!currentUser?.isDeveloper || !functionsClient || !dbUser || companyCodeBusyId) return;
+    const blocked = company.codeBlocked !== true;
+    const action = blocked ? 'bloquear' : 'restabelecer';
+    if (!window.confirm(`Deseja ${action} o código ${company.code || ''} da empresa ${company.name}? ${blocked ? 'Novas entradas pelo código serão impedidas; sessões já abertas continuarão ativas.' : 'Novas entradas pelo código serão permitidas novamente.'}`)) return;
+    setCompanyCodeBusyId(company.id);
+    try {
+      const response = await httpsCallable(functionsClient, 'setCompanyCodeBlocked')({appId, companyId: company.id, blocked});
+      if (response.data?.companyId !== company.id || response.data?.codeBlocked !== blocked) throw new Error('Resposta não confirmada.');
+      setCompanies(previous => previous.map(item => item.id === company.id ? {...item, codeBlocked: blocked} : item));
+      triggerNotification(`Código da empresa ${company.name} ${blocked ? 'bloqueado e sessões abertas encerradas' : 'restabelecido'}.`, 'success');
+    } catch (error) {
+      console.error('Falha ao alterar o acesso pelo código da empresa', error);
+      triggerNotification('Não foi possível alterar o código. Confira sua sessão e tente novamente.', 'error');
+    } finally {
+      setCompanyCodeBusyId('');
     }
   };
 

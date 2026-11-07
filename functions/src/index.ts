@@ -676,7 +676,7 @@ export const registerCompany = onCall({invoker: "public"}, async (request) => {
   return {company, user: administrator};
 });
 
-export const setCompanyCodeBlocked = onCall({invoker: "public"}, async (request) => {
+export const setCompanyCodeBlocked = onCall({invoker: "public", timeoutSeconds: 120}, async (request) => {
   if (!request.auth || request.auth.uid !== SUPPORT_UID || request.auth.token.isDeveloper !== true) {
     throw new HttpsError("permission-denied", "A alteração do código é exclusiva do suporte da plataforma.");
   }
@@ -688,7 +688,7 @@ export const setCompanyCodeBlocked = onCall({invoker: "public"}, async (request)
   }
   const database = getFirestore();
   const companyRef = database.doc(`artifacts/${appId}/public/data/companies/${companyId}`);
-  return database.runTransaction(async transaction => {
+  const result = await database.runTransaction(async transaction => {
     const [support, company] = await Promise.all([
       transaction.get(database.doc(`_platformSupport/${SUPPORT_UID}`)), transaction.get(companyRef),
     ]);
@@ -705,6 +705,18 @@ export const setCompanyCodeBlocked = onCall({invoker: "public"}, async (request)
     });
     return {companyId, codeBlocked: blocked};
   });
+  if (!blocked) return result;
+  // Invalidate renewal of every open employee session. The live rules deny access immediately.
+  const users = await companyRef.collection('users').get();
+  let revocationFailures = 0;
+  for (let index = 0; index < users.docs.length; index += 20) {
+    const batch = users.docs.slice(index, index + 20);
+    const outcomes = await Promise.allSettled(batch.map(user => getAuth().revokeRefreshTokens(user.id)));
+    revocationFailures += outcomes.filter(outcome => outcome.status === 'rejected' &&
+      (outcome.reason as {code?: string})?.code !== 'auth/user-not-found').length;
+  }
+  if (revocationFailures) console.error(`Não foi possível revogar ${revocationFailures} sessão(ões) da empresa ${companyId}.`);
+  return {...result, revocationFailures};
 });
 
 export const generateAiText = onCall(
