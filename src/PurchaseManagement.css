@@ -27,3 +27,60 @@
 .pm-review-panel{margin:14px 18px;padding:14px;border:1px solid #f0d8bd;border-radius:12px;background:#fff9f1;color:#684626;font-size:12px;line-height:1.5}.pm-review-panel strong{display:block;margin-bottom:6px;font-size:13px}.pm-review-panel p{margin:5px 0;overflow-wrap:anywhere}.pm-review-panel small{color:#765b43}.pm-finance-check{background:#f6fafb}.pm-finance-check>p{margin:0 0 12px;color:#58717a;font-size:12px;line-height:1.5}.pm-finance-check .pm-field{display:block;max-width:620px}
 .pm-insights{margin:12px 0;border:1px solid #d9e7e9;border-radius:14px;background:#fff}.pm-insights>button{width:100%;padding:12px 16px;border:0;background:none;color:#18576a;text-align:left;font-weight:800;cursor:pointer}.pm-insights-content{padding:0 16px 16px}.pm-insights-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.pm-insights-stats span{display:grid;gap:4px;padding:10px;border-radius:10px;background:#f3f8f9;color:#5e7780;font-size:10px}.pm-insights-stats strong{color:#173d4b;font-size:16px}.pm-insights-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.pm-insights-groups h4{margin:16px 0 8px;color:#244d5a;font-size:12px}.pm-insights-groups p{display:flex;justify-content:space-between;gap:8px;margin:5px 0;color:#5c7681;font-size:10px}.pm-insights-groups p span{overflow-wrap:anywhere}.pm-bundle{padding:12px 18px;border-bottom:1px solid #e2edef;background:#f6fbfb;font-size:11px}.pm-bundle>div{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.pm-bundle button{padding:6px 9px;border:1px solid #cbdfe3;border-radius:8px;background:#fff;color:#315969;cursor:pointer}.pm-bundle button.active{border-color:#176578;background:#e9f7f7}.pm-extra-items{padding:0 18px 18px}.pm-extra-items>strong{font-size:13px}.pm-extra-items>p{font-size:11px;color:#5d7480}.pm-extra-items>button{display:inline-flex;align-items:center;gap:5px;border:1px solid #bdd7dc;border-radius:9px;background:#fff;padding:8px;color:#176578;cursor:pointer}.pm-extra-item{margin:10px 0;border:1px solid #d7e5e8;border-radius:12px;overflow:hidden}.pm-extra-item>div:first-child{display:flex;justify-content:space-between;padding:10px 14px;background:#f2f8f9}.pm-extra-item>div:first-child button{border:0;background:none;color:#a03e29;cursor:pointer}.pm-extra-item .pm-form-grid{padding:12px}.pm-roles-alert{padding:9px 12px;border-radius:9px;background:#fff0e8;color:#a2472b;font-size:11px}.pm-match-ok{color:#24734f;font-size:11px}.pm-invoice-summary{padding:10px 18px;background:#f0f8f7;color:#255d64;font-size:11px}.pm-upload{display:inline-flex;align-items:center;gap:7px;margin:12px 0;padding:9px 12px;border:1px solid #bcd7db;border-radius:9px;color:#176578;font-size:11px;font-weight:800;cursor:pointer}.pm-upload input{position:absolute;width:1px;height:1px;opacity:0}.pm-file-list{display:grid;gap:7px}.pm-file-list>button{display:flex;align-items:center;gap:9px;text-align:left;padding:9px;border:1px solid #e0eaec;border-radius:9px;background:#fff;color:#23556a;cursor:pointer}.pm-file-list small{display:block;margin-top:3px;color:#6d8089}.pm-file-list>span{color:#70848c;font-size:11px}@media(max-width:700px){.pm-insights-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.pm-insights-groups{grid-template-columns:1fr}}
 @media(max-width:1100px){.pm-progress{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.pm-progress{grid-template-columns:repeat(2,minmax(0,1fr))}.pm-journey{padding:14px}.pm-card-bottom{display:grid!important}}
+
+/* O módulo usa superfícies próprias; as classes globais do tema não cobrem estes cartões. */
+html.comunica-dark .pm {
+  color-scheme: dark;
+  color: #e5edf5;
+  --pm-surface: #111c2e;
+  --pm-raised: #18283c;
+  --pm-subtle: #203349;
+  --pm-border: #344a60;
+  --pm-muted: #aebfd0;
+  --pm-accent: #8cdbe4;
+}
+html.comunica-dark .pm :is(.pm-metrics>div,.pm-list,.pm-detail,.pm-modal,.pm-insights,.pm-card,.pm-progress li,.pm-bundle button,.pm-extra-items>button,.pm-file-list>button,.pm-quick-views button,.pm-actions .pm-secondary,.pm-setup>button,.pm-filter-field select) {
+  background: var(--pm-surface);
+  border-color: var(--pm-border);
+  color: #e5edf5;
+}
+html.comunica-dark .pm :is(.pm-cards,.pm-journey,.pm-progress,.pm-finance-check,.pm-readonly>div,.pm-insights-stats span,.pm-card-meta span,.pm-extra-item>div:first-child,.pm-clear) {
+  background: var(--pm-raised);
+  color: #dae7f0;
+}
+html.comunica-dark .pm :is(.pm-filters label,.pm-filters select,.pm-field input,.pm-field select,.pm-field textarea,.pm-form-grid input,.pm-form-grid select,.pm-form-grid textarea,.pm-extra-item,.pm-upload) {
+  border-color: var(--pm-border);
+}
+html.comunica-dark .pm :is(.pm-list-header,.pm-detail-head,.pm-filters,.pm-section,.pm-actions,.pm-next-action,.pm-modal footer,.pm-bundle) {
+  border-color: var(--pm-border);
+}
+html.comunica-dark .pm :is(.pm-card:hover,.pm-card.pm-selected,.pm-bundle button.active,.pm-quick-views button:hover:not([aria-pressed=true])) {
+  background: #19394a;
+  border-color: #61b8c5;
+}
+html.comunica-dark .pm :is(.pm-card.pm-attention:not(.pm-selected),.pm-progress li.current) { border-color: #4f9daa; }
+html.comunica-dark .pm :is(.pm-card-title,.pm-prompt h3,.pm-insights-stats strong,.pm-insights-groups h4,.pm-next-step strong,.pm-next-action strong,.pm-journey-head,.pm-card strong,.pm-readonly p) { color: #edf7fa; }
+html.comunica-dark .pm :is(.pm-metrics span,.pm-list-header span,.pm-card-requester,.pm-card-bottom,.pm-card p,.pm-detail-head p,.pm-readonly span,.pm-field span,.pm-form-grid label span,.pm-filter-field span,.pm-hint,.pm-empty,.pm-prompt p,.pm-history small,.pm-history p,.pm-file-list small,.pm-file-list>span,.pm-extra-items>p,.pm-insights-groups p,.pm-insights-stats span,.pm-finance-check>p,.pm-journey-head span,.pm-next-step p,.pm-modal footer span) { color: var(--pm-muted); }
+html.comunica-dark .pm :is(.pm-metrics strong,.pm-metrics>div,.pm-attention-label,.pm-next-action strong,.pm-insights>button,.pm-upload,.pm-extra-items>button,.pm-quick-views button,.pm-bundle button,.pm-file-list>button) { color: var(--pm-accent); }
+html.comunica-dark .pm :is(.pm-filter-more summary,.pm-clear,.pm-setup-fields,.pm-setup>button,.pm-setup-fields>p) { color: #c5e7ee; }
+html.comunica-dark .pm :is(.pm-setup,.pm-ack,.pm-next-step,.pm-invoice-summary,.pm-bundle) {
+  background: #15343e;
+  border-color: #346a72;
+  color: #d4f1f0;
+}
+html.comunica-dark .pm :is(.pm-ack,.pm-next-step span,.pm-invoice-summary) { color: #bce5e4; }
+html.comunica-dark .pm :is(.pm-review-panel,.pm-legacy) { background: #392d1f; border-color: #745333; color: #f5dfb9; }
+html.comunica-dark .pm :is(.pm-review-panel small,.pm-journey-alert,.pm-flag,.pm-extra-item>div:first-child button) { color: #f3bd98; }
+html.comunica-dark .pm :is(.pm-error,.pm-roles-alert,.pm-flag) { background: #3a2428; border-color: #8b4c4a; color: #ffc7b9; }
+html.comunica-dark .pm .pm-notice { background: #17382f; border-color: #35765c; color: #b7efd3; }
+html.comunica-dark .pm .pm-match-ok { color: #a3ebc7; }
+html.comunica-dark .pm :is(.pm-neutral,.pm-progress li,.pm-progress .pm-step-index) { background: #263b4b; color: #d1e4eb; }
+html.comunica-dark .pm :is(.pm-success,.pm-done,.pm-progress li.visited,.pm-progress li.visited .pm-step-index) { background: #194438; border-color: #39735d; color: #b9efd4; }
+html.comunica-dark .pm :is(.pm-danger,.pm-progress li.current,.pm-progress li.current .pm-step-index) { background: #244d5c; color: #e5fbff; }
+html.comunica-dark .pm .pm-danger { background: #49302a; color: #ffd2b8; }
+html.comunica-dark .pm .pm-card-progress { background: #344a60; }
+html.comunica-dark .pm .pm-modal header { background: #123647; }
+html.comunica-dark .pm .pm-hero button { background: #e5f6f7; color: #124451; }
+html.comunica-dark .pm .pm-hero button:hover { background: #fff; }
+html.comunica-dark .pm :is(.pm-quick-views button[aria-pressed=true],.pm-actions .pm-primary,.pm-modal footer button,.pm-next-step button,.pm-setup-fields>button) { background: #176578; border-color: #49a7b5; color: #fff; }
+html.comunica-dark .pm :is(.pm-field input,.pm-field select,.pm-field textarea,.pm-form-grid input,.pm-form-grid select,.pm-form-grid textarea):focus { border-color: #6dd4e0; box-shadow: 0 0 0 3px #28758766; }
