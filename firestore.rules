@@ -55,13 +55,14 @@ service cloud.firestore {
     }
     function validPurchase(data) {
       return data.keys().hasOnly(['category','item','specification','quantity','unit','department','destination','neededBy','reason','priority',
-        'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','receivedQuantity',
+        'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','invoiceTotal','receivedQuantity',
         'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','requesterId','requesterName',
         'createdAt','updatedAt','updatedBy','history','workflowVersion','participantIds',
         'buyerId','approverId','receiverId','recipientId','financeId',
         'approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt',
         'invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt',
-        'financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'])
+        'financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt',
+        'bundleId','bundleSize','bundleIndex'])
         && data.get('category','') is string && data.get('category','').size() <= 80
         && data.item is string && data.item.size() > 0 && data.item.size() <= 160
         && data.specification is string && data.specification.size() > 0 && data.specification.size() <= 1000
@@ -90,6 +91,7 @@ service cloud.firestore {
       return data.updatedAt is int && data.updatedBy is string
         && data.history is list && data.history.size() > 0 && data.history.size() <= 50
         && data.quotedPrice is number && data.quotedPrice >= 0
+        && data.get('invoiceTotal',0) is number && data.get('invoiceTotal',0) >= 0
         && data.receivedQuantity is number && data.receivedQuantity >= 0 && data.receivedQuantity <= data.quantity
         && data.get('condition','pending') in ['pending','ok','damaged'];
     }
@@ -153,13 +155,16 @@ service cloud.firestore {
           && data.get('financeResolutionBy','') == data.receiverId));
     }
     function purchaseAuthority(app, company, data) {
-      return exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
+      return (!exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
+          || get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('preventSelfApproval',false) != true
+          || (data.approverId != data.requesterId && data.approverId != data.buyerId))
+        && (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('enabled', false) == true
         ? data.approverId == (data.quotedPrice * data.quantity <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.threshold
           ? get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.lowerApproverId
           : get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.upperApproverId)
         : (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId))
-          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId)).data.get('isAdmin', false) == true);
+          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId)).data.get('isAdmin', false) == true));
     }
     function purchaseAction(app, company, before, after) {
       let changed = after.diff(before).affectedKeys();
@@ -169,15 +174,15 @@ service cloud.firestore {
         ? ((manages(app, company) && (before.status != 'closed' || changed.hasOnly(['note','updatedAt','updatedBy','history']))
           && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','expectedDate']))
           && (before.get('buyerConfirmedAt',0) == 0 || !changed.hasAny(['orderNumber']))
-          && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber']))
+          && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber','invoiceTotal']))
           && !changed.hasAny(['financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'])
           && !changed.hasAny(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt']))
           || (actor == before.get('buyerId','') && actor != '' && before.status in ['requested','quotation','approved','ordered','in_transit']
             && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','orderNumber','expectedDate']))
             && changed.hasOnly(['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note','updatedAt','updatedBy','history']))
           || (actor == before.get('receiverId','') && actor != '' && before.status in ['ordered','in_transit','received','exception']
-            && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber']))
-            && changed.hasOnly(['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note','updatedAt','updatedBy','history'])))
+            && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber','invoiceTotal']))
+            && changed.hasOnly(['invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','note','updatedAt','updatedBy','history'])))
         : (!changed.hasAny(['buyerId','approverId','receiverId','recipientId','financeId','participantIds'])
           && ((nextStage == 'rejected' && manages(app, company) && changed.hasOnly(['status','note','updatedAt','updatedBy','history'])
               && changed.hasAny(['note']) && after.note is string && after.note.size() > 0)
@@ -196,7 +201,7 @@ service cloud.firestore {
             || (nextStage in ['received','exception'] && actor == before.get('receiverId','') && actor != ''
               && after.get('receiverConfirmedBy','') == actor && after.get('receiverConfirmedAt',0) == after.updatedAt
               && after.get('invoiceReceivedBy','') == actor && after.get('invoiceReceivedAt',0) == after.updatedAt
-              && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt']))
+              && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','note','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt']))
             || (nextStage == 'stored' && actor == before.get('receiverId','') && actor != ''
               && changed.hasOnly(['status','updatedAt','updatedBy','history','storageAddress','lot','expiresAt','note']))
             || (nextStage == 'delivered' && before.status == 'stored' && actor == before.get('recipientId','') && actor != ''
@@ -217,15 +222,35 @@ service cloud.firestore {
       return (support() || (member(company) && integraEnabled(app, company)))
         && before.get('workflowVersion',0) == 2 && before.status == 'delivered' && after.status == 'closed'
         && actor == before.get('financeId','') && actor != ''
-        && changed.hasOnly(['status','updatedAt','updatedBy','history','financeConfirmedBy','financeConfirmedAt'])
+        && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceTotal','financeConfirmedBy','financeConfirmedAt'])
         && before.get('buyerConfirmedAt',0) > 0 && before.get('receiverConfirmedAt',0) > 0
         && before.get('invoiceReceivedAt',0) > 0 && before.get('recipientConfirmedAt',0) > 0
         && (before.get('financeIssueAt',0) == 0 || (before.get('financeResolutionAt',0) > before.financeIssueAt
           && before.get('financeResolutionBy','') == before.receiverId))
+        && after.get('invoiceTotal',0) is number && after.invoiceTotal > 0
+        && after.invoiceTotal >= before.quotedPrice * before.quantity - 0.01
+        && after.invoiceTotal <= before.quotedPrice * before.quantity + 0.01
         && after.updatedAt is int && after.updatedAt > before.updatedAt && after.updatedBy == actor
         && after.financeConfirmedBy == actor && after.financeConfirmedAt == after.updatedAt
         && history is list && history.size() > 0 && history.size() <= 50
         && last.get('by','') == actor && last.get('stage','') == 'closed';
+    }
+    function validPurchaseDelivery(app, company, before, after) {
+      let actor = request.auth.uid;
+      let changed = after.diff(before).affectedKeys();
+      let history = after.history;
+      let last = history[history.size() - 1];
+      return member(company) && integraEnabled(app,company)
+        && before.get('workflowVersion',0) == 2 && before.status == 'stored' && after.status == 'delivered'
+        && actor == before.get('recipientId','') && actor != ''
+        && changed.hasOnly(['status','updatedAt','updatedBy','history','destinationRecipient','recipientConfirmedBy','recipientConfirmedAt'])
+        && after.get('destinationRecipient','') is string && after.destinationRecipient.size() > 0 && after.destinationRecipient.size() <= 160
+        && before.get('buyerConfirmedAt',0) > 0 && before.get('receiverConfirmedAt',0) > 0
+        && before.get('invoiceReceivedAt',0) > 0
+        && after.get('recipientConfirmedBy','') == actor && after.get('recipientConfirmedAt',0) == after.updatedAt
+        && after.updatedAt is int && after.updatedAt > before.updatedAt && after.updatedBy == actor
+        && history is list && history.size() > 0 && history.size() <= 50
+        && last.get('by','') == actor && last.get('stage','') == 'delivered';
     }
     function validFinanceReviewUpdate(app, company, before, after) {
       let actor = request.auth.uid;
@@ -239,16 +264,17 @@ service cloud.firestore {
         && last.get('by','') == actor && last.get('stage','') == after.status
         && (after.status == 'finance_dispute'
           ? (before.status == 'delivered' && actor == before.get('financeId','') && actor != ''
-            && changed.hasOnly(['status','updatedAt','updatedBy','history','financeIssue','financeIssueBy','financeIssueAt',
+            && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceTotal','financeIssue','financeIssueBy','financeIssueAt',
               'financeResolution','financeResolutionBy','financeResolutionAt'])
             && after.get('financeIssue','') is string && after.financeIssue.size() > 0 && after.financeIssue.size() <= 1000
             && after.get('financeIssueBy','') == actor && after.get('financeIssueAt',0) == after.updatedAt
             && after.get('financeResolution','') == '' && after.get('financeResolutionBy','') == '' && after.get('financeResolutionAt',0) == 0)
           : (before.status == 'finance_dispute' && after.status == 'delivered'
             && actor == before.get('receiverId','') && actor != '' && before.get('financeIssueAt',0) > 0
-            && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceNumber','financeResolution','financeResolutionBy','financeResolutionAt',
+            && changed.hasOnly(['status','updatedAt','updatedBy','history','invoiceNumber','invoiceTotal','financeResolution','financeResolutionBy','financeResolutionAt',
               'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'])
             && after.get('invoiceNumber','') is string && after.invoiceNumber.size() > 0 && after.invoiceNumber.size() <= 80
+            && after.get('invoiceTotal',0) is number && after.invoiceTotal >= 0
             && after.get('financeResolution','') is string && after.financeResolution.size() > 0 && after.financeResolution.size() <= 1000
             && after.get('financeResolutionBy','') == actor && after.get('financeResolutionAt',0) == after.updatedAt
             && after.get('receiverConfirmedBy','') == actor && after.get('receiverConfirmedAt',0) == after.updatedAt
@@ -262,11 +288,13 @@ service cloud.firestore {
         ? validFinanceReviewUpdate(app, company, before, after)
         : before.status == 'delivered' && after.status == 'closed'
         ? validPurchaseClose(app, company, before, after)
+        : before.status == 'stored' && after.status == 'delivered'
+        ? validPurchaseDelivery(app,company,before,after)
         : (support() || (member(company) && integraEnabled(app, company)))
           && after.get('workflowVersion',0) == 2
           && purchaseStageChange(before.get('status',''), after.status)
           && changed.hasOnly([
-            'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','receivedQuantity',
+            'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','invoiceTotal','receivedQuantity',
             'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','updatedAt','updatedBy','history',
             'buyerId','approverId','receiverId','recipientId','financeId','participantIds',
             'approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt',
@@ -463,10 +491,11 @@ service cloud.firestore {
         allow get: if access(company);
         allow list: if false;
         allow create, update: if manages(app, company)
-          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','updatedAt','updatedBy'])
+          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','updatedAt','updatedBy'])
           && request.resource.data.keys().hasAll(['enabled','threshold','lowerApproverId','upperApproverId','updatedAt','updatedBy'])
           && request.resource.data.enabled is bool
           && request.resource.data.threshold is number && request.resource.data.threshold > 0
+          && request.resource.data.get('preventSelfApproval',false) is bool
           && request.resource.data.lowerApproverId is string && request.resource.data.upperApproverId is string
           && (!request.resource.data.enabled || (request.resource.data.lowerApproverId.size() > 0 && request.resource.data.upperApproverId.size() > 0))
           && request.resource.data.updatedAt is int && request.resource.data.updatedBy == request.auth.uid;
@@ -482,6 +511,11 @@ service cloud.firestore {
           && request.resource.data.buyerId == '' && request.resource.data.approverId == '' && request.resource.data.receiverId == ''
           && request.resource.data.recipientId == '' && request.resource.data.financeId == ''
           && request.resource.data.get('financeIssue','') == '' && request.resource.data.get('financeResolution','') == ''
+          && (request.resource.data.get('bundleId','') == '' ||
+            (request.resource.data.get('bundleId','') is string && request.resource.data.bundleId.size() <= 128
+              && request.resource.data.get('bundleSize',0) is int && request.resource.data.bundleSize >= 2 && request.resource.data.bundleSize <= 10
+              && request.resource.data.get('bundleIndex',0) is int && request.resource.data.bundleIndex >= 1
+              && request.resource.data.bundleIndex <= request.resource.data.bundleSize))
           && !request.resource.data.keys().hasAny(['financeIssueBy','financeIssueAt','financeResolutionBy','financeResolutionAt'])
           && !request.resource.data.keys().hasAny(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt'])
           && request.resource.data.updatedBy == request.auth.uid
@@ -504,6 +538,20 @@ service cloud.firestore {
           && request.resource.data.history[request.resource.data.history.size() - 1].get('stage','') == 'requested';
         allow update: if validPurchaseUpdate(app, company, resource.data, request.resource.data);
         allow delete: if false;
+        match /files/{fileId} {
+          function parent() { return get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/purchaseRequests/$(id)).data; }
+          function participant() { return member(company) && (parent().get('requesterId','') == request.auth.uid || request.auth.uid in parent().get('participantIds',[])); }
+          allow read: if support() || (integraEnabled(app,company) && (admin(app,company) || participant()));
+          allow create: if integraEnabled(app,company) && (admin(app,company) || participant())
+            && request.resource.data.keys().hasOnly(['name','contentType','size','storagePath','stage','createdAt','createdBy'])
+            && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 255
+            && request.resource.data.contentType is string && request.resource.data.contentType.size() <= 120
+            && request.resource.data.size is int && request.resource.data.size > 0 && request.resource.data.size <= 50 * 1024 * 1024
+            && request.resource.data.storagePath is string && request.resource.data.storagePath.matches('companies/' + company + '/users/' + request.auth.uid + '/attachments/.+')
+            && request.resource.data.stage == parent().status && request.resource.data.createdAt is int
+            && request.resource.data.createdBy == request.auth.uid;
+          allow update, delete: if false;
+        }
       }
       match /users/{uid}/scheduleDrafts/{draftId} {
         function ownsDraft() { return request.auth != null && request.auth.uid == uid && scheduleManager(app, company) && canManageCalendar(app, company); }

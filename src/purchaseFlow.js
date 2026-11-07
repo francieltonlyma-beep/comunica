@@ -32,7 +32,7 @@ export function purchaseFields(value = {}) {
     supplier: text(value.supplier, 160), quotedPrice: number(value.quotedPrice || 0),
     orderNumber: text(value.orderNumber, 80), expectedDate: text(value.expectedDate, 10),
     carrier: text(value.carrier, 120), trackingCode: text(value.trackingCode, 120),
-    invoiceNumber: text(value.invoiceNumber, 80), receivedQuantity: number(value.receivedQuantity || 0),
+    invoiceNumber: text(value.invoiceNumber, 80), invoiceTotal: number(value.invoiceTotal || 0), receivedQuantity: number(value.receivedQuantity || 0),
     condition: ['pending', 'ok', 'damaged'].includes(value.condition) ? value.condition : 'pending',
     lot: text(value.lot, 100), expiresAt: text(value.expiresAt, 10),
     storageAddress: text(value.storageAddress, 160), destinationRecipient: text(value.destinationRecipient, 160),
@@ -43,7 +43,7 @@ export function purchaseFields(value = {}) {
 }
 
 const EDITABLE_PURCHASE_FIELDS = ['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode',
-  'invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','destinationRecipient','note',
+  'invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','destinationRecipient','note',
   'buyerId','approverId','receiverId','recipientId','financeId'];
 const PURCHASE_ROLES = ['buyerId','approverId','receiverId','recipientId','financeId'];
 
@@ -107,11 +107,12 @@ export function purchaseTransition(record, next, fields, actor, now = Date.now()
   if (next === 'finance_dispute' && !normalized.financeIssue) throw new Error('Descreva por que a nota fiscal não está conforme.');
   if (next === 'delivered' && record.status === 'finance_dispute' && !normalized.financeResolution) throw new Error('Descreva a correção da nota fiscal antes de devolver ao Financeiro.');
   if (next === 'closed' && record.financeIssueAt && !(record.financeResolutionAt > record.financeIssueAt)) throw new Error('A nota fiscal ainda tem uma divergência pendente.');
+  if (next === 'closed' && !(normalized.invoiceTotal > 0)) throw new Error('Informe o valor total da nota fiscal antes da conclusão.');
   if (next === 'closed' && (!record.buyerConfirmedAt || !record.receiverConfirmedAt || !record.recipientConfirmedAt || !record.invoiceReceivedAt)) {
     throw new Error('Faltam os atestes do comprador, recebimento, nota fiscal ou destinatário.');
   }
   const event = { stage: next, by: actorId, byName: text(actor?.name, 120), at: now,
-    ...(next === 'rejected' ? {detail:normalized.note} : next === 'finance_dispute' ? {detail:normalized.financeIssue}
+    ...(next === 'rejected' ? {detail:normalized.note,supplier:record.supplier || '',quotedPrice:Number(record.quotedPrice || 0),expectedDate:record.expectedDate || ''} : next === 'finance_dispute' ? {detail:normalized.financeIssue}
       : record.status === 'finance_dispute' && next === 'delivered' ? {detail:normalized.financeResolution} : {}) };
   const proof = {
     ...(next === 'approved' ? { approvedBy: actorId, approvedAt: now } : {}),
@@ -134,14 +135,14 @@ const TRANSITION_FIELDS = {
   approved: ['approvedBy','approvedAt'],
   ordered: ['orderNumber','carrier','trackingCode','note','buyerConfirmedBy','buyerConfirmedAt'],
   in_transit: ['carrier','trackingCode','note'],
-  received: ['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
+  received: ['invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
     'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
-  exception: ['invoiceNumber','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
+  exception: ['invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','note',
     'receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
   stored: ['storageAddress','lot','expiresAt','note'],
-  delivered: ['destinationRecipient','recipientConfirmedBy','recipientConfirmedAt','invoiceNumber','financeResolution','financeResolutionBy','financeResolutionAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
-  finance_dispute: ['financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'],
-  closed: ['financeConfirmedBy','financeConfirmedAt'],
+  delivered: ['destinationRecipient','recipientConfirmedBy','recipientConfirmedAt','invoiceNumber','invoiceTotal','financeResolution','financeResolutionBy','financeResolutionAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt'],
+  finance_dispute: ['invoiceTotal','financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'],
+  closed: ['invoiceTotal','financeConfirmedBy','financeConfirmedAt'],
   rejected: ['note'], cancelled: ['note'],
 };
 
@@ -161,6 +162,37 @@ export function expectedApprover(policy, total, fallbackAdminId) {
   if (!policy?.enabled) return String(fallbackAdminId || '');
   if (!Number.isFinite(Number(policy.threshold)) || Number(policy.threshold) <= 0) return '';
   return String(total <= Number(policy.threshold) ? policy.lowerApproverId || '' : policy.upperApproverId || '');
+}
+
+export function purchaseInvoiceMatch(record, tolerancePercent = 0) {
+  const expected = Number(record.quotedPrice || 0) * Number(record.quantity || 0);
+  const actual = Number(record.invoiceTotal || 0);
+  const tolerance = Math.min(10, Math.max(0, Number(tolerancePercent) || 0));
+  return {expected, actual, difference:actual - expected, tolerance,
+    matches: actual > 0 && expected > 0 && Math.abs(actual - expected) <= expected * tolerance / 100 + 0.005,
+    quantityMatches: Number(record.receivedQuantity || 0) === Number(record.quantity || 0)};
+}
+
+export function purchaseInsights(records, today = '') {
+  const active = records.filter(item => !['closed','cancelled','rejected'].includes(item.status));
+  const values = records.filter(item => Number(item.quotedPrice) > 0);
+  const sum = values.reduce((total,item) => total + Number(item.quotedPrice) * Number(item.quantity),0);
+  const groups = key => Object.entries(records.reduce((totals,item) => {
+    const label = String(item[key] || 'Não informado');
+    totals[label] = (totals[label] || 0) + Number(item.quotedPrice || 0) * Number(item.quantity || 0);
+    return totals;
+  },{})).sort((a,b) => b[1] - a[1]).slice(0,5);
+  const days = (start,end) => Math.max(0,(Number(end) - Number(start)) / 86400000);
+  const average = values => values.length ? values.reduce((total,value) => total + value,0) / values.length : 0;
+  return {total:sum, open:active.length, overdue:active.filter(item => purchaseOverdue(item,today)).length,
+    discrepancies:active.filter(item => ['exception','finance_dispute'].includes(item.status)).length,
+    approvalDays:average(records.filter(item => item.approvedAt && item.createdAt).map(item => days(item.createdAt,item.approvedAt))),
+    deliveryDays:average(records.filter(item => item.recipientConfirmedAt && item.createdAt).map(item => days(item.createdAt,item.recipientConfirmedAt))),
+    byCategory:groups('category'),byDepartment:groups('department'),bySupplier:groups('supplier')};
+}
+
+export function purchasePendingDays(record, now = Date.now()) {
+  return Math.max(0,Math.floor((now - Number(record.updatedAt || record.createdAt || now)) / 86400000));
 }
 
 export const PURCHASE_CATEGORIES = ['Alimentos e bebidas', 'Embalagens', 'Limpeza e higiene', 'Equipamentos', 'Manutenção', 'Material de escritório', 'Serviços', 'Outros'];

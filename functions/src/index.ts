@@ -952,7 +952,7 @@ const messageActivityData = (value: unknown): MessageActivityData | null => {
 };
 
 const sendActivityPush = async ({
-  database, appId, companyId, recipientIds, actorId, title, body, type, threadId, messageId, eventId,
+  database, appId, companyId, recipientIds, actorId, title, body, type, threadId, messageId, eventId, purchaseId = '',
 }: {
   database: ReturnType<typeof getFirestore>;
   appId: string;
@@ -961,10 +961,11 @@ const sendActivityPush = async ({
   actorId: string;
   title: string;
   body: string;
-  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message';
+  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message' | 'purchase';
   threadId: string;
   messageId: string;
   eventId: string;
+  purchaseId?: string;
 }) => {
   const usersPath = `artifacts/${appId}/public/data/companies/${companyId}/users`;
   const recipients = [...new Set(recipientIds)].filter((id) => id && id !== actorId);
@@ -988,11 +989,12 @@ const sendActivityPush = async ({
     const response = await getMessaging().sendEachForMulticast({
       tokens: batchTokens,
       notification: {title, body: body.slice(0, 220)},
-      data: {type, companyId, threadId, messageId, eventId},
+      data: {type, companyId, threadId, messageId, eventId, purchaseId},
       webpush: {
         headers: {Urgency: 'high', TTL: '3600'},
         notification: {icon: '/pwa/icon-192.png', tag: eventId, renotify: false},
-        fcmOptions: {link: threadId
+        fcmOptions: {link: purchaseId
+          ? `https://comunica-info.web.app/?purchaseCompany=${encodeURIComponent(companyId)}&purchaseId=${encodeURIComponent(purchaseId)}` : threadId
           ? `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(companyId)}&messageThread=${encodeURIComponent(threadId)}&messageId=${encodeURIComponent(messageId)}`
           : `https://comunica-info.web.app/?activityCompany=${encodeURIComponent(companyId)}&activityId=${encodeURIComponent(messageId)}`},
       },
@@ -1009,6 +1011,62 @@ const sendActivityPush = async ({
     database.doc(`${usersPath}/${userId}`).update({pushTokens: FieldValue.arrayRemove(token)}))));
   return {successCount, failureCount};
 };
+
+const purchaseNextRole = (purchase: Record<string, unknown>) => {
+  if (purchase.status === 'quotation' && (!purchase.supplier || !purchase.expectedDate || !(Number(purchase.quotedPrice) > 0))) return 'buyerId';
+  return ({requested:'buyerId',quotation:'approverId',approved:'buyerId',ordered:'buyerId',in_transit:'receiverId',
+    received:'receiverId',exception:'receiverId',stored:'recipientId',delivered:'financeId',finance_dispute:'receiverId'} as Record<string,string>)[String(purchase.status)] || '';
+};
+
+export const notifyPurchaseAssignment = onDocumentUpdated(
+  'artifacts/{appId}/public/data/companies/{companyId}/purchaseRequests/{purchaseId}', async event => {
+    const before = event.data?.before.data() || {};
+    const after = event.data?.after.data() || {};
+    const role = purchaseNextRole(after);
+    const responsible = String(after[role] || '');
+    if (!responsible || (before.status === after.status && before[role] === responsible)) return;
+    await sendActivityPush({database:getFirestore(),appId:event.params.appId,companyId:event.params.companyId,
+      recipientIds:[responsible],actorId:String(after.updatedBy || ''),title:'Compra aguardando sua ação',
+      body:`${String(after.item || 'Solicitação').slice(0,100)} · ${String(after.status || '')}`,
+      type:'purchase',threadId:'',messageId:'',eventId:`purchase-${event.params.purchaseId}-${after.updatedAt}`,purchaseId:event.params.purchaseId});
+  });
+
+export const notifyPendingPurchases = onSchedule({schedule:'15 9 * * *',timeZone:'America/Sao_Paulo',maxInstances:1},async () => {
+  const database = getFirestore();
+  const date = saoPauloCivilDate();
+  const now = Date.now();
+  const appId = 'comunica-salvador';
+  const companies = await database.collection(`artifacts/${appId}/public/data/companies`).get();
+  for (const company of companies.docs) {
+    const companyId = company.id;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) continue;
+    const snapshot = await company.ref.collection('purchaseRequests').get();
+    for (const purchase of snapshot.docs) {
+    const data = purchase.data();
+    if (data.workflowVersion !== 2) continue;
+    const role = purchaseNextRole(data);
+    const responsible = String(data[role] || '');
+    if (!responsible || !['requested','quotation','approved','ordered','in_transit','received','exception','stored','delivered','finance_dispute'].includes(data.status)) continue;
+    const overdue = typeof data.neededBy === 'string' && data.neededBy <= date;
+    const stalled = now - Number(data.updatedAt || now) >= 2 * 24 * 60 * 60 * 1000;
+    if (!overdue && !stalled) continue;
+    const receipt = company.ref.collection('notificationReceipts').doc(`purchase-${purchase.id}-${date}`);
+    const acquired = await database.runTransaction(async tx => {
+      if ((await tx.get(receipt)).exists) return false;
+      tx.create(receipt,{type:'purchase_pending',purchaseId:purchase.id,notificationDate:date,status:'processing',createdAt:now});
+      return true;
+    });
+    if (!acquired) continue;
+    try {
+      const result = await sendActivityPush({database,appId,companyId,recipientIds:[responsible],actorId:'',
+        title:overdue ? 'Compra com prazo vencido' : 'Compra aguardando sua ação',
+        body:String(data.item || 'Solicitação').slice(0,180),type:'purchase',threadId:'',messageId:'',
+        eventId:`purchase-${purchase.id}-${date}`,purchaseId:purchase.id});
+      await receipt.update({status:'sent',successCount:result.successCount,failureCount:result.failureCount});
+    } catch (problem) { await receipt.update({status:'failed'}); console.error('Falha no lembrete de compra',problem); }
+    }
+  }
+});
 
 export const notifyNewAnnouncement = onDocumentCreated(
   "artifacts/{appId}/public/data/companies/{companyId}/announcements/{announcementId}",

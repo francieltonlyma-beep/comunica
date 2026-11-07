@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { expectedApprover, purchaseFields, purchaseTransition, purchaseTransitionPatch, validatePurchase } from '../src/purchaseFlow.js';
+import { expectedApprover, purchaseFields, purchaseTransition, purchaseTransitionPatch, purchaseInvoiceMatch, purchaseInsights, purchasePendingDays, validatePurchase } from '../src/purchaseFlow.js';
 
 const people = {
   buyer: { id: 'buyer', name: 'Comprador' },
@@ -15,6 +15,22 @@ const fields = purchaseFields({
   buyerId: 'buyer', approverId: 'approver', receiverId: 'receiver', recipientId: 'recipient', financeId: 'finance',
 });
 const step = (record, stage, actor, data = {}) => purchaseTransition(record, stage, { ...record, ...data }, actor, (record.updatedAt || 100) + 1);
+
+test('conferência da NF respeita valor, quantidade e tolerância', () => {
+  const input={quotedPrice:10,quantity:3,receivedQuantity:3,invoiceTotal:30.3};
+  assert.equal(purchaseInvoiceMatch(input).matches,false);
+  assert.equal(purchaseInvoiceMatch(input,1).matches,true);
+  assert.equal(purchaseInvoiceMatch({...input,receivedQuantity:2},1).quantityMatches,false);
+});
+
+test('indicadores somam itens e identificam pendências', () => {
+  const rows=[{status:'exception',quotedPrice:10,quantity:2,neededBy:'2026-11-01',updatedAt:1,
+    category:'Limpeza',department:'Loja',supplier:'A'},{status:'closed',quotedPrice:5,quantity:1,category:'Limpeza',department:'Loja',supplier:'A'}];
+  const metrics=purchaseInsights(rows,'2026-11-07');
+  assert.equal(metrics.total,25); assert.equal(metrics.overdue,1); assert.equal(metrics.discrepancies,1);
+  assert.deepEqual(metrics.byCategory,[['Limpeza',25]]);
+  assert.equal(purchasePendingDays(rows[0],86400001),1);
+});
 
 test('comprador, alçada, recebedor, destinatário e financeiro atestam em sequência', () => {
   let record = { ...fields, status: 'requested', history: [], updatedAt: 100 };
@@ -33,7 +49,7 @@ test('comprador, alçada, recebedor, destinatário e financeiro atestam em sequ�
   record = step(record, 'delivered', people.recipient, { destinationRecipient: 'Destinatário' });
   assert.equal(record.recipientConfirmedBy, 'recipient');
   assert.throws(() => step(record, 'closed', people.buyer), /responsável/);
-  record = step(record, 'closed', people.finance);
+  record = step(record, 'closed', people.finance, {invoiceTotal:350});
   assert.equal(record.financeConfirmedBy, 'finance');
   assert.equal(record.status, 'closed');
 });
@@ -113,7 +129,7 @@ test('Financeiro devolve NF não conforme e recebimento corrige antes da conclus
   assert.equal(resolved.recipientConfirmedAt,3);
   assert.equal(resolved.invoiceReceivedBy,'receiver');
   assert.ok(resolved.financeResolutionAt > resolved.financeIssueAt);
-  const closed = step(resolved,'closed',people.finance);
+  const closed = step(resolved,'closed',people.finance,{invoiceTotal:100});
   assert.equal(closed.financeConfirmedBy,'finance');
 });
 
