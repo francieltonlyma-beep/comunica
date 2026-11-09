@@ -50,6 +50,16 @@
 .spc-selection{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#eff6f8;padding:12px;border-radius:10px;font-size:11px}
 .spc-selection strong{text-transform:capitalize}
 .spc-selection span{color:#526b75}
+.spc-issues{margin-top:10px;padding:12px;border:1px solid #f2c2c9;border-radius:10px;background:#fff7f7;color:#8f1d35;font-size:11px}
+.spc-issues>strong{display:block;margin-bottom:7px}
+.spc-issues ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.spc-issues li{display:flex;align-items:center;justify-content:space-between;gap:10px;line-height:1.45}
+.spc-issues li+li{border-top:1px solid #f4d8dc;padding-top:7px}
+.spc-issues button{flex-shrink:0;border:1px solid #d58e9d;border-radius:7px;padding:5px 8px;font-weight:700;color:#8f1d35;background:#fff}
+.spc-issues button:hover{background:#fbe8eb}
+.spc-issues-warning{border-color:#ebd49f;background:#fffaf0;color:#835712}
+.spc-issues-warning li+li{border-color:#f1e3c4}
+.spc-issues-warning button{border-color:#d9bf83;color:#835712}
 @media(max-width:640px){.spc{padding:12px}
 .spc-toolbar{align-items:stretch;flex-direction:column;gap:10px}
 .spc-filter{min-width:0}

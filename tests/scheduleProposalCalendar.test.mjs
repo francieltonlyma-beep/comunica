@@ -35,5 +35,7 @@ test('distingue cobertura atendida de dados incompletos e conta bloqueios por da
   const days = proposalCalendarDays(rows, coverage, issues);
   assert.equal(days[0].coverage, 'unknown'); assert.equal(days[1].coverage, 'covered');
   assert.equal(days[0].blocking, 0); assert.equal(days[1].blocking, 1);
+  assert.deepEqual(days[1].issues, issues);
+  assert.deepEqual(days[0].issues, []);
   assert.deepEqual(proposalCalendarDays([]), []);
 });

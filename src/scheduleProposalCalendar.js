@@ -16,12 +16,19 @@ export function proposalCalendarDays(rows, coverage = [], issues = [], employee 
     if (isFixedProposalRow(row)) day.fixed++;
   }
   const coverageByDate = new Map(coverage.map(day => [day.date, day]));
+  const issuesByDate = new Map();
+  for (const issue of issues) {
+    if (!issuesByDate.has(issue.date)) issuesByDate.set(issue.date, []);
+    issuesByDate.get(issue.date).push(issue);
+  }
   return [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map(day => {
     const rules = coverageByDate.get(day.date)?.rules || [];
+    const dayIssues = issuesByDate.get(day.date) || [];
     return { ...day,
       coverage: rules.some(rule => rule.segments?.some(segment => segment.missing > 0)) ? 'gap'
         : rules.some(rule => rule.unknown > 0) ? 'unknown' : rules.length ? 'covered' : 'none',
-      blocking: issues.filter(issue => issue.date === day.date && issue.blocking).length,
+      issues: dayIssues,
+      blocking: dayIssues.filter(issue => issue.blocking).length,
     };
   });
 }
