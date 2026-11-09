@@ -2,6 +2,7 @@ import { coverageForDay, coverageRequirementsForDate } from './scheduleCoverage.
 import { assertSchedulePublicationSize } from './schedulePublicationLimits.js';
 import { isWorking, scheduleRuleIssues, shiftDate } from './scheduleDayRules.js';
 import { findScheduleAbsence, isFullDayAbsence } from './scheduleAbsences.js';
+import { appendScheduleTrace } from './scheduleExplanation.js';
 
 const operational = ['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes', 'extraHours', 'shift'];
 const inRange = (row, date) => (row.startDate || row.date) <= date && (row.endDate || row.date || row.startDate) >= date;
@@ -25,21 +26,28 @@ export function prepareScheduleProposal(rows, { history = [], absences = [], rul
     const saved = history.filter(item => String(item.userId) === row.userId && inRange(item, row.date) && !isReplaceableSchedule(item));
     if (saved.length) {
       const item = saved.find(item => !isWorking(item)) || saved[0];
-      return { ...row, ...Object.fromEntries(operational.map(field => [field, item[field] ?? (field === 'extraHours' || field === 'breakMinutes' ? 0 : '')])),
+      const preserved = { ...row, ...Object.fromEntries(operational.map(field => [field, item[field] ?? (field === 'extraHours' || field === 'breakMinutes' ? 0 : '')])),
         shiftEnd: item.baseShiftEnd || item.shiftEnd || '', extraHours: item.baseShiftEnd ? Number(item.extraHours) || 0 : 0,
         locked: true, preservedExisting: true, sourceScheduleId: item.id, ruleConflicts: saved.length > 1 ? ['Marcações existentes sobrepostas; revise o calendário'] : [],
-        ruleReason: 'Marcação já publicada preservada', manuallyAdjusted: Boolean(item.manuallyAdjusted) };
+        ruleReason: 'Marcação já publicada preservada', manuallyAdjusted: Boolean(item.manuallyAdjusted),
+        ruleTrace: item.ruleTrace || { version: 1, complete: false, omitted: 0, entries: [] } };
+      return { ...preserved, ruleTrace: appendScheduleTrace(preserved, { source: 'preserved', label: preserved.ruleReason, detail: 'Este lançamento foi mantido a partir do calendário; as regras atuais não foram reaplicadas.' }) };
     }
     const sameDayAbsence = absences.find(item => String(item.userId) === row.userId && inRange(item, row.date));
     const absence = findScheduleAbsence(absences, row.userId, row.date, row.shiftStart, row.shiftEnd) || sameDayAbsence;
     if (absence) {
       const fullDay = isFullDayAbsence(absence, row.date);
-      if (fullDay) return { ...row, status: /f[eé]rias/i.test(absence.reason || '') ? 'Férias' : 'Ausência', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, locked: true, preservedAbsence: true, ruleReason: 'Ausência registrada preservada' };
+      if (fullDay) {
+        const absent = { ...row, status: /f[eé]rias/i.test(absence.reason || '') ? 'Férias' : 'Ausência', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, locked: true, preservedAbsence: true, ruleReason: 'Ausência registrada preservada' };
+        return { ...absent, ruleTrace: appendScheduleTrace(absent, { source: 'absence', label: absent.ruleReason, detail: 'A ausência de dia inteiro impede trabalho neste dia.' }) };
+      }
       row.constraintLocked = true;
       row.ruleReason = 'Dia com ausência parcial preservado';
+      row.ruleTrace = appendScheduleTrace(row, { source: 'absence', label: row.ruleReason, decision: 'constraint', detail: 'A ausência parcial é descontada da cobertura e impede reorganizar automaticamente este dia.' });
     }
     const pin = pins.get(keyOf(row));
     if (pin && !absence) Object.assign(row, Object.fromEntries(operational.map(field => [field, pin[field] ?? row[field]])), { locked: true, manuallyAdjusted: true, ruleReason: 'Dia fixado manualmente' });
+    if (pin && !absence) row.ruleTrace = appendScheduleTrace(row, { source: 'manual', label: 'Dia fixado manualmente', detail: 'Os horários e a situação fixados na prévia foram preservados nesta geração.' });
     const weekday = new Date(`${row.date}T12:00:00`).getDay();
     if (weekday === 6 && rules.employeeOverrides?.[row.userId]?.saturdayEnd) row.pinned = true;
     return row;
@@ -75,7 +83,7 @@ export function balancePreparedScheduleProposal(prepared, baseline, requirements
         if (Number.isFinite(score) && (!best || score < best.score)) best = { index, replacement, score };
       }
       if (!best) break;
-      rows[best.index] = best.replacement;
+      rows[best.index] = { ...best.replacement, ruleTrace: appendScheduleTrace(best.replacement, { source: 'balance', label: best.replacement.ruleReason }) };
     }
   }
   return rows;
@@ -233,6 +241,8 @@ export function optimizeScheduleCoverage(input, requirements, context = {}, opti
           const keepsMaximum = [newWorkDay, newOffDay].every(day => day.rules.every(rule => rule.segments.every(segment => !segment.excess || (days.get(day.date).rules.find(old => old.id === rule.id)?.segments || []).filter(old => time(old.start) < time(segment.end) && time(old.end) > time(segment.start)).some(old => old.excess > 0))));
           const valid = improves && keepsCovered && keepsMaximum && !personIssues(work.userId).some(issue => !baselineIssues.get(String(work.userId)).has(issueKey(issue)));
           if (valid) {
+            rows[workIndex].ruleTrace = appendScheduleTrace(rows[workIndex], { source: 'coverage', label: rows[workIndex].ruleReason, detail: `Trabalho transferido para ${off.date.split('-').reverse().join('/')} para melhorar a cobertura, mantendo as verificações de descanso.` });
+            rows[offIndex].ruleTrace = appendScheduleTrace(rows[offIndex], { source: 'coverage', label: rows[offIndex].ruleReason, detail: `Trabalho recebido de ${work.date.split('-').reverse().join('/')} para melhorar a cobertura.` });
             days.set(work.date, newWorkDay); days.set(off.date, newOffDay);
             swaps++; changed = true; applied = true;
             break;
@@ -295,5 +305,6 @@ export function planSchedulePublication(rows, history, segments, publicationId) 
   if (new Set(records.map(record => record.id)).size !== records.length) throw new Error('Há identificações repetidas na publicação.');
   return { records, replaced, schedules: published, deletedIds: replaced.map(item => item.id) };
 }
+
 
 
