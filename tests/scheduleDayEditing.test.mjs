@@ -4,14 +4,15 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { scheduleStatusChange } from '../src/scheduleStatusChange.js';
 import { isProtectedProposalRow } from '../src/scheduleOptimizer.js';
+import { appendScheduleTrace } from '../src/scheduleExplanation.js';
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const extract = (name, next, context) => vm.runInNewContext('(' + app.split('const ' + name + ' = ')[1].split('const ' + next + ' = ')[0].trim().replace(/;$/, '') + ')', context);
 
 function editorContext(rows) {
   const context = {
-    rows: structuredClone(rows), isProtectedProposalRow, scheduleStatusChange, workSchedules: [], bulkSchedule: { startDate: '2026-11-01' },
+    rows: structuredClone(rows), isProtectedProposalRow, scheduleStatusChange, appendScheduleTrace, workSchedules: [], bulkSchedule: { startDate: '2026-11-01' },
     automaticScheduleRules: { shiftStart: '08:00', shiftEnd: '17:00', breakStart: '12:00', breakEnd: '13:00', workDaysPerWeek: 5 },
-    automaticScheduleWeeklyHoursText: '40:00', triggerNotification() {},
+    automaticScheduleWeeklyHoursText: '40:00', currentUser: { name: 'Gestor' }, triggerNotification() {},
   };
   context.setAutomaticScheduleProposal = update => { context.rows = update(context.rows); };
   for (const [name, next] of [['scheduleTimeToMinutes','scheduleMinutesToTime'], ['scheduleMinutesToTime','scheduleDurationToText'], ['scheduleDurationToText','scheduleTextToHours'], ['scheduleTextToHours','scheduleIntervalMinutes'], ['scheduleIntervalMinutes','scheduleTimeWithinShift'], ['updateAutomaticScheduleRow','changeAutomaticScheduleStatus'], ['changeAutomaticScheduleStatus','repeatAutomaticScheduleOvertime'], ['toggleAutomaticScheduleDayLock','generateAutomaticSchedule']]) context[name] = extract(name, next, context);
@@ -52,4 +53,5 @@ test('perfil sem configuração de regras não cria regra recorrente por este at
   const context = { canConfigureScheduleRules: false };
   assert.doesNotThrow(() => extract('createRecurringRuleFromDay', 'renderAutomaticScheduleRow', context)({}));
 });
+
 

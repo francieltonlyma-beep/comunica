@@ -9,6 +9,7 @@ import ScheduleTeamMonth from './ScheduleTeamMonth.jsx';
 import ScheduleEmployeeManagement from './ScheduleEmployeeManagement.jsx';
 import ScheduleSwapRequestsPanel from './ScheduleSwapRequestsPanel.jsx';
 import './ScheduleCalendar.css';
+import ScheduleExplanation from './ScheduleExplanation.jsx';
 
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const shortDate = date => new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -18,7 +19,7 @@ const toneNames = { work: 'Presencial', remote: 'Home office', off: 'Folga', vac
 export default function ScheduleCalendar({
   companyName, today, selectedDate, onSelectDate, schedules, absences, events, employees, departments, getDepartments,
   currentUser, canManage, canWrite, deletingScheduleId, onDeleteSchedule, onEditSchedule, onSwapSchedule, onRequestSwap, swapRequests = [], swapRequestBusy = false, onSwapRequestAction, onReviewSwapRequest, onDeleteAbsence, onDeleteEvent,
-  onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration,
+  onPlan, onAbsence, onEvent, onPresence, presence = [], modalOpen, formatDuration, onReviewRule,
   coverageHistory = null, coverageRequirements = [], coverageReady = true, coverageError = '', canConfigureCoverage = false, onSaveCoverage,
 }) {
   const [anchor, setAnchor] = useState(selectedDate || today);
@@ -249,6 +250,7 @@ export default function ScheduleCalendar({
               {(item.breakStart && item.breakEnd) ? <p>Intervalo: {item.breakStart} – {item.breakEnd}</p> : Number(item.breakMinutes) > 0 && <p>Intervalo: {formatDuration(Number(item.breakMinutes) / 60)}h</p>}
               {item.startDate !== item.endDate && <p>Período: {shortDate(item.startDate)} – {shortDate(item.endDate)}</p>}
               {item.ruleReason && <p>{item.ruleGroupName ? `${item.ruleGroupName} · ` : ''}{item.ruleReason}</p>}
+              <ScheduleExplanation onReviewRules={canManage && canWrite && canConfigureCoverage && onReviewRule ? () => onReviewRule(item, '') : undefined} row={item} disabled={Boolean(deletingScheduleId)} onEditDay={canManage && canWrite && onEditSchedule && canEditPublishedSchedule(item) ? () => onEditSchedule(item, selectedDate) : undefined} onReviewRule={canManage && canWrite && canConfigureCoverage && onReviewRule ? ruleId => onReviewRule(item, ruleId) : undefined} onCoverage={() => setDayTab('coverage')} />
               {item.notes && <p>{item.notes}</p>}
               {item.adjustmentReason && <p>Motivo do ajuste: {item.adjustmentReason}</p>}
               {item.manuallyAdjusted && item.updatedBy && <p>Alterado por {item.updatedBy}{Number(item.updatedAt) > 0 ? ` · ${new Date(item.updatedAt).toLocaleString('pt-BR')}` : ''}</p>}
@@ -271,3 +273,4 @@ export default function ScheduleCalendar({
   );
   return fullscreen ? createPortal(calendar, document.body) : calendar;
 }
+

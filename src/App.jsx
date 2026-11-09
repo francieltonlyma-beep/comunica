@@ -29,6 +29,7 @@ const ScheduleDraftBar = lazy(() => import('./ScheduleDraftBar.jsx'));
 import { scheduleDraftHash, validateScheduleDraftScope } from './scheduleDrafts.js';
 import { scheduleStatusChange } from './scheduleStatusChange.js';
 import { scheduleIssueTarget, scheduleRowFieldIssues } from './scheduleValidation.js';
+import { appendScheduleTrace, initialScheduleTrace, canReviewScheduleOrigin } from './scheduleExplanation.js';
 import { schedulePublicationError } from './schedulePublicationErrors.js';
 const PublishedScheduleEditor = lazy(() => import('./PublishedScheduleEditor.jsx'));
 const PublishedScheduleSwap = lazy(() => import('./PublishedScheduleSwap.jsx'));
@@ -3947,14 +3948,19 @@ const submitPresence = async (e) => {
     return { regular, extra, total: regular + extra, actualEnd: scheduleMinutesToTime(end + extra * 60), breakMinutes };
   };
   const updateAutomaticScheduleRow = (key, changes) => {
-    setAutomaticScheduleProposal(previous => previous.map(row => row.key === key && !isProtectedProposalRow(row) ? { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true, locked: true } : row));
+    setAutomaticScheduleProposal(previous => previous.map(row => {
+      if (row.key !== key || isProtectedProposalRow(row)) return row;
+      const updated = { ...row, ...changes, ruleReason: 'Ajuste manual somente neste dia', ruleConflicts: [], manuallyAdjusted: true, locked: true };
+      return { ...updated, ruleTrace: appendScheduleTrace(updated, { source: 'manual', actorName: currentUser?.name, at: Date.now(), label: updated.ruleReason, detail: 'Edição na prévia. Este dia permanece fixo nas próximas reorganizações.' }) };
+    }));
   };
   const changeAutomaticScheduleStatus = (item, status) => updateAutomaticScheduleRow(item.key, scheduleStatusChange(item, status, automaticScheduleRules, workSchedules, bulkSchedule.startDate));
   const repeatAutomaticScheduleOvertime = source => {
     const extraHours = Math.max(0, Number(source.extraHours) || 0);
     setAutomaticScheduleProposal(previous => previous.map(row => (
       row.userId === source.userId && row.date >= source.date && !isProtectedProposalRow(row) && ['Presencial', 'Home Office'].includes(row.status)
-        ? { ...row, extraHours, locked: true, manuallyAdjusted: true }
+        ? { ...row, extraHours, locked: true, manuallyAdjusted: true, ruleReason: 'Hora extra repetida manualmente na prévia',
+          ruleTrace: appendScheduleTrace({ ...row, extraHours }, { source: 'manual', actorName: currentUser?.name, at: Date.now(), label: 'Hora extra repetida manualmente na prévia' }) }
         : row
     )));
     triggerNotification(`Horas extras repetidas para os próximos dias de trabalho de ${source.userName}.`);
@@ -4027,7 +4033,8 @@ const submitPresence = async (e) => {
   const schedulePlanningDataReady = () => scheduleCoverageReady && scheduleCoverageSources.companyId === activeCompany?.id && ['users', 'departments', 'schedules', 'absences'].every(source => scheduleCoverageSources[source] === 'ready');
   const finishAutomaticScheduleGeneration = (proposal, dates) => {
     setAutomaticScheduleProblem(null);
-    const preserved = prepareScheduleProposal(proposal, { history: workSchedules, absences, rules: automaticScheduleRules, draftPins: automaticScheduleProposal });
+    const traced = proposal.map(row => row.ruleTrace ? row : { ...row, ruleTrace: initialScheduleTrace(row, 'Distribuição gerada pela jornada padrão, disponibilidade individual e configuração de domingos e feriados do planejamento.') });
+    const preserved = prepareScheduleProposal(traced, { history: workSchedules, absences, rules: automaticScheduleRules, draftPins: automaticScheduleProposal });
     const prepared = balancePreparedScheduleProposal(preserved, proposal, scheduleScopedCoverageRequirements, schedulePlanningContext());
     if (!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically) {
       const groups = new Map();
@@ -4038,7 +4045,10 @@ const submitPresence = async (e) => {
         let remaining = Math.max(0, target - rows.reduce((sum, row) => sum + automaticScheduleRowHours(row).total, 0));
         rows.filter(row => ['Presencial', 'Home Office'].includes(row.status) && !isFixedProposalRow(row)).reverse().forEach(row => {
           const assigned = Math.min(Math.max(0, Number(row.maxExtraHoursPerDay ?? automaticScheduleRules.maxExtraHoursPerDay) - Number(row.extraHours || 0)), remaining);
-          if (assigned > 0) { row.extraHours = Number((Number(row.extraHours || 0) + assigned).toFixed(2)); row.autoExtra = true; remaining -= assigned; }
+          if (assigned > 0) {
+            row.extraHours = Number((Number(row.extraHours || 0) + assigned).toFixed(2)); row.autoExtra = true; remaining -= assigned;
+            row.ruleTrace = appendScheduleTrace(row, { source: 'overtime', label: 'Hora extra calculada na geração', detail: 'Distribuição da carga semanal conforme a configuração do planejamento.' });
+          }
         });
         rows.forEach(row => { row.unallocatedHours = Number(Math.max(0, remaining).toFixed(2)); });
       }
@@ -4245,13 +4255,13 @@ const submitPresence = async (e) => {
       const hours = automaticScheduleRowHours(item);
       const previous = segments[segments.length - 1];
       const nextDate = previous ? civilDateShift(previous.endDate, { days: 1 }) : '';
-      if (previous && previous.locked === Boolean(item.locked || item.manuallyAdjusted) && previous.manuallyAdjusted === Boolean(item.manuallyAdjusted) && previous.ruleApplied === Boolean(item.ruleApplied) && previous.ruleReason === (item.ruleReason || '') && previous.ruleGroupId === (item.groupId || '') && previous.rulesVersion === Number(item.rulesVersion || automaticScheduleRules.version || 1) && previous.profileName === (item.profileName || item.groupName || 'Padrão da empresa') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
+      if (previous && previous.locked === Boolean(item.locked || item.manuallyAdjusted) && previous.manuallyAdjusted === Boolean(item.manuallyAdjusted) && previous.ruleApplied === Boolean(item.ruleApplied) && previous.ruleReason === (item.ruleReason || '') && JSON.stringify(previous.ruleTrace) === JSON.stringify(item.ruleTrace || null) && previous.ruleGroupId === (item.groupId || '') && previous.rulesVersion === Number(item.rulesVersion || automaticScheduleRules.version || 1) && previous.profileName === (item.profileName || item.groupName || 'Padrão da empresa') && previous.userId === item.userId && previous.status === item.status && previous.shiftStart === item.shiftStart && previous.baseShiftEnd === item.shiftEnd && previous.breakStart === item.breakStart && previous.breakEnd === item.breakEnd && previous.extraHours === hours.extra && nextDate === item.date) {
         previous.endDate = item.date;
       } else {
         segments.push({
           id: `schedule-${item.userId}-${item.date}-${item.date}`,
           userId: item.userId, userName: item.userName, dept: item.dept,
-          ruleReason: item.ruleReason || '', ruleGroupId: item.groupId || '', ruleGroupName: item.groupName || '',
+          ruleReason: item.ruleReason || '', ruleGroupId: item.groupId || '', ruleGroupName: item.groupName || '', ruleTrace: item.ruleTrace || null,
           rulesVersion: Number(item.rulesVersion || automaticScheduleRules.version || 1), rulesName: item.rulesName || automaticScheduleRules.name, profileName: item.profileName || item.groupName || 'Padrão da empresa',
           restEveryDays: Number(item.restEveryDays || automaticScheduleRules.restEveryDays), workDaysPerWeek: Number(item.workDaysPerWeek || automaticScheduleRules.workDaysPerWeek),
           minRestHours: Number(item.minRestHours ?? automaticScheduleRules.minRestHours), maxDailyHours: Number(item.maxDailyHours || automaticScheduleRules.maxDailyHours),
@@ -5379,6 +5389,20 @@ try {
     ...scheduleRuleIssues(automaticScheduleProposal, workSchedules),
     ...(automaticScheduleProposal.length && automaticScheduleProposalInput !== automaticScheduleInput ? [{ key: 'stale', date: automaticScheduleProposal[0].date, blocking: true, message: 'As regras ou os dados do planejamento mudaram. Gere uma nova simulação.' }] : []),
   ];
+  const reviewScheduleRuleOrigin = (row, ruleId = '', published = false) => {
+    if (!canReviewScheduleOrigin(row, scheduleScope, Boolean(isManager && canConfigureScheduleRules && (currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))))) {
+      return triggerNotification('Seu perfil não pode revisar regras deste setor.', 'error');
+    }
+    const groupId = row.groupId || row.ruleGroupId || '';
+    const group = (automaticScheduleRules.ruleGroups || []).find(item => (groupId ? item.id === groupId : item.userIds.includes(String(row.userId))) && item.userIds.includes(String(row.userId)));
+    if ((groupId && !group) || (ruleId && !group?.dayRules.some(rule => rule.id === ruleId))) {
+      return triggerNotification('A regra registrada foi alterada ou removida. Revise a configuração atual antes de gerar uma nova prévia.', 'error');
+    }
+    if (published) { openBulkSchedule('day'); setBulkSchedule(previous => ({ ...previous, userIds: [row.userId] })); }
+    setAutomaticScheduleEditorFocus({ groupId: group?.id || '', ruleId });
+    setAutomaticScheduleRuleTab('rules');
+  };
+
   const createRecurringRuleFromDay = item => {
     if (!canConfigureScheduleRules || isSavingScheduleProposal || isProtectedProposalRow(item)) return;
     const groups = automaticScheduleRules.ruleGroups || [];
@@ -9596,6 +9620,7 @@ const handleDownload = async (fileUrl, fileName) => {
               currentUser={currentUser} canManage={Boolean(isManager || currentUser.isAdmin)}
               canWrite={Boolean(currentUser.isAdmin || currentUser.isDeveloper || (effectiveAccessProfile.canEdit !== false && effectiveAccessProfile.canManageCalendar !== false))}
               deletingScheduleId={deletingScheduleId} onDeleteSchedule={handleDeleteSchedule} onEditSchedule={openPublishedScheduleEdit}
+              onReviewRule={(row, ruleId) => reviewScheduleRuleOrigin(row, ruleId, true)}
               onSwapSchedule={openPublishedScheduleSwap}
               onRequestSwap={openPublishedScheduleSwapRequest} swapRequests={scheduleSwapRequests} swapRequestBusy={isSavingScheduleSwapRequest || isSavingPublishedSchedule} onSwapRequestAction={updateScheduleSwapRequest} onReviewSwapRequest={reviewScheduleSwapRequest}
               onDeleteAbsence={handleDeleteAbsence} onDeleteEvent={handleDeleteEvent}
@@ -10896,7 +10921,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 {automaticScheduleRuleTab === 'rules' && canConfigureScheduleRules ? <div className="space-y-4 p-4">
                   <ScheduleConfigurationAudit audit={automaticScheduleConfigurationAudit} onApplySuggestion={() => { const suggested = suggestCompatibleScheduleRules({ ...automaticScheduleRules, hoursPerWeek: scheduleTextToHours(automaticScheduleWeeklyHoursText) || automaticScheduleRules.hoursPerWeek }); setAutomaticScheduleRules(suggested); setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(suggested.hoursPerWeek)); setAutomaticScheduleProposal([]); triggerNotification('A base foi ajustada para compatibilizar carga, jornada, descanso e dias disponíveis. Revise e salve a nova versão.'); }} />
                   <ScheduleShiftEditor shifts={automaticScheduleRules.shifts || []} groups={automaticScheduleRules.ruleGroups || []} onChange={shifts => { setAutomaticScheduleRules(previous => ({ ...previous, shifts })); setAutomaticScheduleProposal([]); }} />
-                  <ScheduleRuleEditor baseRules={automaticScheduleRules} key={automaticScheduleEditorFocus?.ruleId || 'editor'} initialGroupId={automaticScheduleEditorFocus?.groupId} initialRuleId={automaticScheduleEditorFocus?.ruleId} shifts={automaticScheduleRules.shifts || []} groups={automaticScheduleRules.ruleGroups || []} employees={scheduleScope.employees} departments={scheduleScope.departments} onChange={ruleGroups => { setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups })); setAutomaticScheduleProposal([]); }} />
+                  <ScheduleRuleEditor baseRules={automaticScheduleRules} key={`${automaticScheduleEditorFocus?.groupId || ''}|${automaticScheduleEditorFocus?.ruleId || 'editor'}`} initialGroupId={automaticScheduleEditorFocus?.groupId} initialRuleId={automaticScheduleEditorFocus?.ruleId} shifts={automaticScheduleRules.shifts || []} groups={automaticScheduleRules.ruleGroups || []} employees={scheduleScope.employees} departments={scheduleScope.departments} onChange={ruleGroups => { setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups })); setAutomaticScheduleProposal([]); }} />
                   <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-bold text-slate-700">Exceções e vínculo individual</summary><div className="mt-3 space-y-3">
                   <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3"><h5 className="text-xs font-bold text-cyan-950">Conjunto de cada colaborador</h5><p className="mt-1 text-[11px] text-cyan-800">Escolha o conjunto que define os dias, folgas e jornadas especiais de cada pessoa.</p><div className="mt-3 grid max-h-64 gap-3 overflow-auto sm:grid-cols-2">{scheduleScope.employees.map(user => <label key={user.id} className="text-xs font-bold text-slate-700">{user.name}<select className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-xs" value={(automaticScheduleRules.ruleGroups || []).find(group => group.userIds.includes(String(user.id)))?.id || ''} onChange={event => { const targetGroup = event.target.value; setAutomaticScheduleRules(previous => ({ ...previous, ruleGroups: (previous.ruleGroups || []).map(group => ({ ...group, userIds: group.id === targetGroup ? [...new Set([...group.userIds, String(user.id)])] : group.userIds.filter(id => id !== String(user.id)) })) })); setAutomaticScheduleProposal([]); }}><option value="">Padrão da empresa</option>{(automaticScheduleRules.ruleGroups || []).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>)}</div></div>
                   <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><strong className="text-[11px] text-emerald-950">Ajustes individuais da jornada base</strong><p className="mt-1 text-[9px] leading-4 text-emerald-800">Estes horários ajustam a jornada base da pessoa. Para folgas, revezamentos ou mudanças em qualquer dia, use as regras individuais dentro do conjunto.</p></div>
@@ -10954,7 +10979,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 <ScheduleProposalCalendar rows={automaticScheduleProposal} analysis={automaticScheduleCoverage} issues={automaticScheduleIssues} selectedDate={automaticScheduleVisibleDate} onSelectDate={setAutomaticSchedulePreviewDate} onOpenDay={() => { automaticScheduleDayEditorRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); automaticScheduleDayEditorRef.current?.focus({ preventScroll: true }); }} disabled={isSavingScheduleProposal} />
                 {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => openAutomaticScheduleProblem(issue)}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
                 <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4"><div className="rounded-xl border border-blue-100 bg-blue-50 p-3"><span className="text-[8px] font-black uppercase text-blue-700">Equipe no quadro</span><strong className="mt-1 block text-xl text-blue-950">{automaticScheduleVisibleRows.length}</strong></div><div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><span className="text-[8px] font-black uppercase text-emerald-700">Em trabalho</span><strong className="mt-1 block text-xl text-emerald-950">{automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-amber-100 bg-amber-50 p-3"><span className="text-[8px] font-black uppercase text-amber-700">Folgas / ausências</span><strong className="mt-1 block text-xl text-amber-950">{automaticScheduleVisibleRows.length - automaticScheduleWorkingRows.length}</strong></div><div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><span className="text-[8px] font-black uppercase text-violet-700">Carga da equipe</span><strong className="mt-1 block text-xl text-violet-950">{scheduleDurationToText(automaticScheduleDayHours)}</strong></div></div>
-                <ScheduleDayEditor problem={automaticScheduleProblem} issues={automaticScheduleIssues} onClearProblem={() => setAutomaticScheduleProblem(null)} onOptimize={reorganizeAutomaticSchedule} sectionRef={automaticScheduleDayEditorRef} key={automaticScheduleProposalInput} rows={automaticScheduleVisibleRows} date={automaticScheduleVisibleDate} departments={scheduleScope.departments} disabled={isSavingScheduleProposal} canConfigureRules={canConfigureScheduleRules} onChange={updateAutomaticScheduleRow} onStatusChange={changeAutomaticScheduleStatus} onToggleLock={toggleAutomaticScheduleDayLock} onRepeatOvertime={repeatAutomaticScheduleOvertime} onCreateRule={createRecurringRuleFromDay} getHours={automaticScheduleRowHours} formatDuration={scheduleDurationToText} parseHours={scheduleTextToHours} intervalMinutes={scheduleIntervalMinutes} renderTable={() => (<div className="max-h-[430px] overflow-auto border-y border-emerald-100 bg-white"><table className="w-full min-w-[1320px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-3 py-2.5">Regra aplicada / motivo</th><th className="px-2 py-2.5">Status</th><th className="px-2 py-2.5">Entrada</th><th className="px-2 py-2.5">Saída prevista<br/><span className="font-medium text-slate-400">sem hora extra</span></th><th className="px-2 py-2.5">Início intervalo</th><th className="px-2 py-2.5">Fim intervalo</th><th className="px-2 py-2.5">Hora extra<br/><span className="font-medium text-slate-400">hh:mm</span></th><th className="px-2 py-2.5">Saída final</th><th className="px-3 py-2.5 text-right">Carga do dia</th></tr></thead><tbody>{automaticScheduleVisibleRows.map(renderAutomaticScheduleRow)}</tbody></table></div>)} />
+                <ScheduleDayEditor onCorrect={openAutomaticScheduleProblem} onReviewRule={reviewScheduleRuleOrigin} problem={automaticScheduleProblem} issues={automaticScheduleIssues} onClearProblem={() => setAutomaticScheduleProblem(null)} onOptimize={reorganizeAutomaticSchedule} sectionRef={automaticScheduleDayEditorRef} key={automaticScheduleProposalInput} rows={automaticScheduleVisibleRows} date={automaticScheduleVisibleDate} departments={scheduleScope.departments} disabled={isSavingScheduleProposal} canConfigureRules={canConfigureScheduleRules} onChange={updateAutomaticScheduleRow} onStatusChange={changeAutomaticScheduleStatus} onToggleLock={toggleAutomaticScheduleDayLock} onRepeatOvertime={repeatAutomaticScheduleOvertime} onCreateRule={createRecurringRuleFromDay} getHours={automaticScheduleRowHours} formatDuration={scheduleDurationToText} parseHours={scheduleTextToHours} intervalMinutes={scheduleIntervalMinutes} renderTable={() => (<div className="max-h-[430px] overflow-auto border-y border-emerald-100 bg-white"><table className="w-full min-w-[1320px] text-left text-[10px]"><thead className="sticky top-0 z-10 bg-slate-100 text-slate-600"><tr><th className="px-3 py-2.5">Colaborador</th><th className="px-3 py-2.5">Regra aplicada / motivo</th><th className="px-2 py-2.5">Status</th><th className="px-2 py-2.5">Entrada</th><th className="px-2 py-2.5">Saída prevista<br/><span className="font-medium text-slate-400">sem hora extra</span></th><th className="px-2 py-2.5">Início intervalo</th><th className="px-2 py-2.5">Fim intervalo</th><th className="px-2 py-2.5">Hora extra<br/><span className="font-medium text-slate-400">hh:mm</span></th><th className="px-2 py-2.5">Saída final</th><th className="px-3 py-2.5 text-right">Carga do dia</th></tr></thead><tbody>{automaticScheduleVisibleRows.map(renderAutomaticScheduleRow)}</tbody></table></div>)} />
                 <div className="p-3"><h5 className="text-[9px] font-black uppercase tracking-wide text-slate-500">Carga total no período por colaborador</h5><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{automaticScheduleEmployeeTotals.map(item => <div key={item.userId} className={`rounded-xl border bg-white p-3 ${Math.abs(item.balance) < 0.02 ? 'border-emerald-200' : item.balance < 0 ? 'border-rose-200' : 'border-violet-200'}`}><strong className="block truncate text-[10px] text-slate-800">{item.userName}</strong><div className="mt-1 flex items-end justify-between gap-2"><span className="text-sm font-black text-slate-950">{scheduleDurationToText(item.total)}</span><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${Math.abs(item.balance) < 0.02 ? 'bg-emerald-100 text-emerald-800' : item.balance < 0 ? 'bg-rose-100 text-rose-800' : 'bg-violet-100 text-violet-800'}`}>{Math.abs(item.balance) < 0.02 ? 'CARGA OK' : item.balance > 0 ? `EXTRA ${scheduleDurationToText(item.projectedOvertime)}` : `FALTA ${scheduleDurationToText(item.missingHours)}`}</span></div><small className="mt-1 block text-[8px] text-slate-500">Meta {scheduleDurationToText(item.target)} · jornada base {scheduleDurationToText(item.regular)} · complemento sugerido {scheduleDurationToText(item.extra)}</small></div>)}</div></div>
                 {automaticScheduleEmployeeTotals.some(item => item.missingHours > 0.02) && <p className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-semibold text-amber-800">Há colaboradores com carga abaixo da meta. Confira as folgas e jornadas especiais antes de publicar. Com conjuntos de regras, horários reduzidos são preservados e não recebem complemento automático.</p>}
                 {automaticScheduleProposal.some(isProtectedProposalRow) && <p className="m-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-[10px] font-semibold text-cyan-900">Marcações manuais e ausências existentes serão preservadas. Apenas os blocos automáticos liberados dentro do período serão substituídos.</p>}
@@ -11865,5 +11890,6 @@ const handleDownload = async (fileUrl, fileName) => {
     </div>
   );
 }
+
 
 

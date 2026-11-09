@@ -3,13 +3,14 @@ import { CalendarDays, LockKeyhole, Search } from 'lucide-react';
 import { isFixedProposalRow, isProtectedProposalRow } from './scheduleOptimizer.js';
 import { isWorking } from './scheduleDayRules.js';
 import './ScheduleDayEditor.css';
+import ScheduleExplanation from './ScheduleExplanation.jsx';
 
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
 const statuses = ['Presencial', 'Home Office', 'Folga', 'Feriado'];
 
 export default function ScheduleDayEditor({
   problem, issues = [], onClearProblem, onOptimize, sectionRef, rows, date, departments = [], disabled, canConfigureRules, onChange, onStatusChange,
-  onToggleLock, onRepeatOvertime, onCreateRule, getHours, formatDuration, parseHours,
+  onToggleLock, onRepeatOvertime, onCreateRule, onCorrect, onReviewRule, getHours, formatDuration, parseHours,
   intervalMinutes, renderTable,
 }) {
   const [view, setView] = useState('cards');
@@ -55,6 +56,7 @@ export default function ScheduleDayEditor({
         return <article className={`sde-card ${preserved ? 'sde-preserved' : ''}`} key={row.key} data-schedule-row={row.key} tabIndex={-1} aria-label={`Escala de ${row.userName}`}>
           <header className="sde-person"><div><h5>{row.userName}</h5><p>{departmentName(row)}{row.holiday ? ' · feriado' : ''}</p></div><span className={`sde-badge ${fixed ? 'sde-fixed' : ''}`}>{fixed && <LockKeyhole size={12} />}{preserved ? 'Preservado' : hardFixed ? 'Regra fixa' : fixed ? 'Dia fixado' : 'Dia livre'}</span></header>
           <p className="sde-reason"><strong>{row.groupName || 'Padrão da empresa'}</strong> · {row.ruleReason || 'Jornada padrão e distribuição de folgas'}</p>
+          <ScheduleExplanation onReviewRules={canConfigureRules && onReviewRule ? () => onReviewRule(row, '') : undefined} row={row} issues={issues} disabled={disabled} onCorrect={onCorrect} onReviewRule={canConfigureRules && onReviewRule ? ruleId => onReviewRule(row, ruleId) : undefined} onEditDay={!preserved && onCorrect ? () => onCorrect({ rowKey: row.key, date: row.date, field: 'status', blocking: false, message: 'Revise a situação e os horários deste dia.', hint: 'A edição fica na prévia até publicar.' }) : undefined} />
           {row.ruleConflicts?.length > 0 && <p className="sde-conflict">Conflito: {row.ruleConflicts.join(' / ')}. Corrija a regra ou ajuste este dia.</p>}
           {activeProblem?.rowKey === row.key && <div className="sde-problem-popup" role="alert"><strong>{activeProblem.message}</strong>{activeProblem.blocking === false && <p>Este aviso não impede a publicação.</p>}<p><b>Como resolver:</b> {preserved ? 'Este lançamento é preservado. Corrija a marcação ou a ausência diretamente no calendário e gere uma nova prévia.' : activeProblem.hint}</p><div>{activeProblem.code === 'coverage' && onOptimize && <button type="button" disabled={disabled} onClick={() => { onClearProblem?.(); onOptimize(); }}>Corrigir cobertura automaticamente</button>}<button type="button" onClick={() => onClearProblem?.()}>Fechar orientação</button></div></div>}
           <fieldset disabled={disabled || preserved} className="sde-fields"><legend className="sde-sr">Horários e situação de {row.userName}</legend>
@@ -72,4 +74,5 @@ export default function ScheduleDayEditor({
     </>}
   </section>;
 }
+
 
