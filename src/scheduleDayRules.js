@@ -138,7 +138,8 @@ export function resolveDayRules(group, date, holiday, userId, base) {
       preserveApplied: true });
   }
   return { ...result, groupId: group?.id || '', groupName: group?.name || 'Padrão da empresa', ruleReason: reason,
-    ruleConflicts: conflicts, ruleApplied: candidates.length > 0, ruleTrace: trace };
+    ruleConflicts: conflicts, ruleApplied: candidates.length > 0,
+    appliedRuleIds: candidates.filter(item => item.rank === finalRank).map(item => item.rule.id), ruleTrace: trace };
 }
 
 export function previousScheduleForDate(userId, date, history = [], firstDate = date) {
@@ -231,7 +232,8 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
           else { resolved = { ...resolved, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, ruleReason: 'Setor fechado conforme necessidade de pessoas', ruleApplied: true }; pinned = true; }
         }
         if (operation.some(rule => rule.closed)) resolved.ruleTrace = appendScheduleTrace(resolved, { source: 'operation', label: 'Funcionamento do setor', decision: resolved.ruleConflicts?.length ? 'conflict' : 'applied', detail: resolved.ruleConflicts?.length ? 'Há trabalho fixo em um setor fechado. Resolva o conflito antes de publicar.' : 'Setor fechado: dia mantido como folga.' });
-        return { ...resolved, workTemplate: isWorking(resolved) && !resolved.ruleConflicts?.length ? Object.fromEntries(['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes'].map(key => [key, resolved[key]])) : null, date, holiday, holidayWorkingDay: holiday && (rules.holidaysCountAsRest === false || operation.some(rule => !rule.closed && rule.minimum > 0)), pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)) || operation.some(rule => !rule.closed && rule.minimum > 0), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
+        const alternatingSunday = weekday(date) === 0 && !assignment && !operation.some(rule => rule.closed) && (group?.dayRules || []).some(rule => rule.kind === 'alternating' && rule.weekdays?.includes(0) && resolved.appliedRuleIds?.includes(rule.id));
+        return { ...resolved, alternateSundayExpected: alternatingSunday ? isWorking(resolved) : null, workTemplate: isWorking(resolved) && !resolved.ruleConflicts?.length ? Object.fromEntries(['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes'].map(key => [key, resolved[key]])) : null, date, holiday, holidayWorkingDay: holiday && (rules.holidaysCountAsRest === false || operation.some(rule => !rule.closed && rule.minimum > 0)), pinned, allowed: allowed || Boolean(assignment && isWorking(assignment)) || operation.some(rule => !rule.closed && rule.minimum > 0), userId: String(user.id), userName: user.name, dept: getDepartment(user), key: `${user.id}-${date}`, weekKey, extraHours: 0, reusedPattern: Boolean(previous), sourceScheduleId: previous?.id || '' };
       });
       const pinnedWork = rows.filter(row => row.pinned && isWorking(row)).length;
       const flexible = rows.filter(row => !row.pinned && isWorking(row));
@@ -266,19 +268,20 @@ export function buildRuleSchedule({ dates, users, rules, holidays, history = [],
       });
       const visible = rows.filter(row => dates.includes(row.date));
       const target = Number(policy.hoursPerWeek) * Math.min(1, visible.length / 7);
-      visible.forEach(row => proposals.push({ ...row, restEveryDays: restEvery, workDaysPerWeek: workDays, weekHoursTarget: Number(target.toFixed(2)), plannedWorkDays: rows.filter(isWorking).length, shift: isWorking(row) ? `${row.shiftStart}-${row.shiftEnd}` : row.status,
+      visible.forEach(row => proposals.push({ ...row, restEveryDays: restEvery, workDaysPerWeek: workDays, maxConsecutiveRestDays: Math.max(2, 7 - workDays), weekHoursTarget: Number(target.toFixed(2)), plannedWorkDays: rows.filter(isWorking).length, shift: isWorking(row) ? `${row.shiftStart}-${row.shiftEnd}` : row.status,
         minRestHours: Number(policy.minRestHours) || 0, maxDailyHours: Number(policy.maxDailyHours) || 24, maxWeeklyHours: Number(policy.maxWeeklyHours) || 84,
         maxExtraHoursPerDay: Number.isFinite(Number(policy.maxExtraHoursPerDay)) ? Number(policy.maxExtraHoursPerDay) : 12, limitSeverity: policy.limitSeverity || 'blocking',
         rulesVersion: Number(rules.version) || 1, rulesName: rules.name || 'Regra padrão da empresa', profileName: group?.name || 'Padrão da empresa' }));
     }
   }
-  return proposals;
+  return rebalanceConsecutiveRest(proposals, history);
 }
 
 export function scheduleRuleIssues(rows, history = []) {
   const issues = [];
   for (const row of rows) {
     if (row.ruleConflicts?.length) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: 'status', code: 'rule-conflict', hint: 'Revise as regras indicadas ou escolha manualmente a situação e os horários somente deste dia.', date: row.date, blocking: true, message: `${row.userName}: conflito entre ${row.ruleConflicts.join(' e ')}.` });
+    if (row.alternateSundayExpected != null && isWorking(row) !== row.alternateSundayExpected) issues.push({ key: row.key, rowKey: row.key, userId: String(row.userId), field: 'status', code: 'alternating-sunday', hint: 'Mantenha o domingo conforme a alternância configurada ou altere a regra da turma e gere a prévia novamente.', date: row.date, blocking: true, message: `${row.userName}: domingo em desacordo com a regra de domingos alternados.` });
     if (row.preservedExisting || !isWorking(row)) continue;
     const total = duration(row.shiftStart, row.shiftEnd);
     const interval = row.breakStart || row.breakEnd ? duration(row.breakStart, row.breakEnd) : 0;
@@ -290,6 +293,16 @@ export function scheduleRuleIssues(rows, history = []) {
   }
   for (const userId of new Set(rows.map(row => String(row.userId)))) {
     const personRows = rows.filter(row => String(row.userId) === userId).sort((a, b) => a.date.localeCompare(b.date));
+    const plannedByDate = new Map(personRows.map(row => [row.date, row]));
+    const at = date => plannedByDate.get(date) || history.find(row => String(row.userId) === userId && (row.startDate || row.date) <= date && (row.endDate || row.date || row.startDate) >= date);
+    const maxRest = Number(personRows.find(row => Number(row.maxConsecutiveRestDays) > 0)?.maxConsecutiveRestDays) || 0;
+    let consecutiveRest = 0;
+    for (let date = shiftDate(personRows[0].date, -maxRest); maxRest && date <= shiftDate(personRows.at(-1).date, maxRest); date = shiftDate(date, 1)) {
+      consecutiveRest = at(date)?.status === 'Folga' ? consecutiveRest + 1 : 0;
+      if (consecutiveRest <= maxRest) continue;
+      const target = plannedByDate.get(date) || Array.from({ length: maxRest }, (_, index) => plannedByDate.get(shiftDate(date, -index - 1))).find(Boolean);
+      if (target) issues.push({ key: `${userId}-${date}`, rowKey: target.key, userId, field: 'status', code: 'consecutive-rest', hint: 'Redistribua uma folga ajustável para outro dia da mesma semana ou revise as marcações fixas.', date: target.date, blocking: true, message: `${personRows[0].userName}: ${consecutiveRest} folgas consecutivas (máximo: ${maxRest}) até ${date.split('-').reverse().join('/')}.` });
+    }
     const limit = personRows[0]?.restEveryDays;
     if (!limit) continue;
     const first = shiftDate(personRows[0].date, -limit);
@@ -312,8 +325,6 @@ export function scheduleRuleIssues(rows, history = []) {
       if (hours > maxWeekly + 0.02) issues.push({ key: `${userId}-${weekKey}`, rowKey: (week.find(row => Number(row.extraHours) > 0) || week.filter(isWorking).at(-1) || week[0]).key, userId, field: week.some(row => Number(row.extraHours) > 0) ? 'extraHours' : 'shiftEnd', code: 'weekly-limit', hint: 'Revise as horas extras e as saídas desta pessoa ao longo da semana para respeitar o limite semanal.', date: weekKey, blocking: week[0].limitSeverity !== 'warning', message: `${personRows[0].userName}: semana com ${hours.toFixed(2).replace('.', ',')}h supera o limite de ${maxWeekly.toFixed(2).replace('.', ',')}h.` });
       if (count !== week[0].workDaysPerWeek || Math.abs(hours - target) > 0.02) issues.push({ key: `${userId}-${weekKey}`, rowKey: week[0].key, userId, field: 'status', code: 'weekly-target', hint: 'Confira os dias e horários previstos nesta semana. A meta é um aviso e não altera os horários automaticamente.', date: weekKey, blocking: false, message: `${week[0].userName}: semana de ${weekKey.split('-').reverse().join('/')} com ${count} dia(s) de trabalho e ${hours.toFixed(2).replace('.', ',')}h; confira a meta e as jornadas especiais.` });
     }
-    const plannedByDate = new Map(personRows.map(row => [row.date, row]));
-    const at = date => plannedByDate.get(date) || history.find(row => String(row.userId) === userId && (row.startDate || row.date) <= date && (row.endDate || row.date || row.startDate) >= date);
     for (let date = shiftDate(personRows[0].date, -1); date <= personRows.at(-1).date; date = shiftDate(date, 1)) {
       const nextDate = shiftDate(date, 1), previous = at(date), next = at(nextDate);
       if (!isWorking(previous) || !isWorking(next) || (!plannedByDate.has(date) && !plannedByDate.has(nextDate))) continue;
@@ -326,6 +337,45 @@ export function scheduleRuleIssues(rows, history = []) {
     }
   }
   return issues;
+}
+
+// Move one flexible rest day within its week when weekly rotations meet at the
+// boundary and produce a third consecutive day off. Fixed rules stay intact.
+export function rebalanceConsecutiveRest(input, history = []) {
+  const rows = input.map(row => ({ ...row }));
+  const fixed = row => row.pinned || row.ruleApplied || row.locked || row.manuallyAdjusted || row.preservedExisting || row.preservedAbsence || row.constraintLocked || (row.holiday && !row.holidayWorkingDay);
+  for (const userId of new Set(rows.map(row => String(row.userId)))) {
+    const indexes = rows.map((row, index) => String(row.userId) === userId ? index : -1).filter(index => index >= 0);
+    const person = () => indexes.map(index => rows[index]);
+    for (let pass = 0; pass < indexes.length; pass++) {
+      const before = scheduleRuleIssues(person(), history).filter(issue => issue.blocking);
+      const restIssues = before.filter(issue => issue.code === 'consecutive-rest');
+      if (!restIssues.length) break;
+      const other = new Set(before.filter(issue => issue.code !== 'consecutive-rest').map(issue => `${issue.code}|${issue.date}|${issue.rowKey}`));
+      let best = null;
+      for (const offIndex of indexes) {
+        const off = rows[offIndex];
+        if (off.status !== 'Folga' || fixed(off) || off.allowed === false || !restIssues.some(issue => Math.abs((stamp(off.date) - stamp(issue.date)) / DAY) <= 2)) continue;
+        for (const workIndex of indexes) {
+          const work = rows[workIndex];
+          if (work.weekKey !== off.weekKey || !isWorking(work) || fixed(work)) continue;
+          rows[offIndex] = { ...off, status: work.status, shiftStart: work.shiftStart, shiftEnd: work.shiftEnd, breakStart: work.breakStart, breakEnd: work.breakEnd, breakMinutes: work.breakMinutes, extraHours: work.extraHours, shift: work.shift };
+          rows[workIndex] = { ...work, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, shift: 'Folga' };
+          const after = scheduleRuleIssues(person(), history).filter(issue => issue.blocking);
+          const rest = after.filter(issue => issue.code === 'consecutive-rest').length;
+          const safe = rest < restIssues.length && after.filter(issue => issue.code !== 'consecutive-rest').every(issue => other.has(`${issue.code}|${issue.date}|${issue.rowKey}`));
+          rows[offIndex] = off; rows[workIndex] = work;
+          if (safe && (!best || rest < best.rest)) best = { offIndex, workIndex, rest };
+        }
+      }
+      if (!best) break;
+      const off = rows[best.offIndex], work = rows[best.workIndex];
+      rows[best.offIndex] = { ...off, status: work.status, shiftStart: work.shiftStart, shiftEnd: work.shiftEnd, breakStart: work.breakStart, breakEnd: work.breakEnd, breakMinutes: work.breakMinutes, extraHours: work.extraHours, shift: work.shift, ruleReason: 'Trabalho redistribuído para limitar folgas consecutivas' };
+      rows[best.workIndex] = { ...work, status: 'Folga', shiftStart: '', shiftEnd: '', breakStart: '', breakEnd: '', breakMinutes: 0, extraHours: 0, shift: 'Folga', ruleReason: 'Folga redistribuída para evitar três dias consecutivos' };
+      for (const index of [best.offIndex, best.workIndex]) rows[index].ruleTrace = appendScheduleTrace(rows[index], { source: 'balance', label: rows[index].ruleReason });
+    }
+  }
+  return rows;
 }
 
 

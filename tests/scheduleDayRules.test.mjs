@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesDayRule, resolveDayRules, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, shiftDate } from '../src/scheduleDayRules.js';
+import { matchesDayRule, resolveDayRules, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, shiftDate } from '../src/scheduleDayRules.js';
 
 const base = { status: 'Presencial', shiftStart: '08:00', shiftEnd: '17:00', breakStart: '12:00', breakEnd: '13:00', breakMinutes: 60 };
 const rule = changes => ({ id: 'r1', name: 'Regra', kind: 'weekday', weekdays: [0], action: 'work', shiftStart: '08:00', shiftEnd: '12:00', breakStart: '', breakEnd: '', userIds: [], priority: 0, enabled: true, ...changes });
@@ -117,6 +117,48 @@ test('folga de domingo não é substituída para atingir carga ou dias de trabal
   const rows = generate([rule({ kind: 'alternating', referenceDate: '2026-11-01', referenceWorks: false })]);
   assert.equal(rows.find(row => row.date === '2026-11-01').status, 'Folga');
   assert.ok(rows.every(row => row.extraHours === 0));
+});
+
+test('mês 5x2 limita folgas consecutivas entre semanas e mantém domingos alternados', () => {
+  const month = dates('2026-12-01', 31);
+  const people = Array.from({ length: 10 }, (_, index) => ({ id: String(index), name: `Pessoa ${index}` }));
+  const alternating = rule({ kind: 'alternating', referenceDate: '2026-11-29', referenceWorks: false });
+  const policy = { ...rules([]), ruleGroups: [{ ...group([alternating]), userIds: ['0'] }] };
+  const rows = buildRuleSchedule({ dates: month, users: people, rules: policy, holidays: [] });
+  for (const person of people) {
+    const own = rows.filter(row => row.userId === person.id);
+    assert.equal(scheduleRuleIssues(own).filter(issue => issue.code === 'consecutive-rest').length, 0, person.name);
+  }
+  const sundays = rows.filter(row => row.userId === '0' && [0].includes(new Date(`${row.date}T12:00:00`).getDay()));
+  assert.deepEqual(sundays.map(row => row.status), ['Presencial', 'Folga', 'Presencial', 'Folga']);
+  assert.deepEqual(sundays.map(row => row.alternateSundayExpected), [true, false, true, false]);
+});
+
+test('marcação preservada que contraria domingo alternado ou cria terceira folga bloqueia publicação', () => {
+  const month = dates('2026-12-01', 31);
+  const alternating = rule({ kind: 'alternating', referenceDate: '2026-11-29', referenceWorks: false });
+  const rows = buildRuleSchedule({ dates: month, users: [{ id: '1', name: 'Ana' }], rules: rules([alternating]), holidays: [] });
+  const sunday = rows.find(row => row.date === '2026-12-13');
+  assert.ok(scheduleRuleIssues([{ ...sunday, status: 'Presencial' }]).some(issue => issue.code === 'alternating-sunday' && issue.blocking));
+  const fixed = ['2026-12-17', '2026-12-18', '2026-12-19'].map(date => ({ ...rows.find(row => row.date === date), status: 'Folga', locked: true }));
+  assert.ok(scheduleRuleIssues(fixed).some(issue => issue.code === 'consecutive-rest' && issue.blocking));
+});
+
+test('folga fixa extra desloca somente outra folga ajustável da mesma semana', () => {
+  const month = dates('2026-12-01', 31);
+  const generated = buildRuleSchedule({ dates: month, users: [{ id: '1', name: 'Ana' }], rules: rules([]), holidays: [] });
+  const fixedDate = '2026-12-08';
+  const withFixedRest = generated.map(row => row.date === fixedDate ? { ...row, status: 'Folga', locked: true } : row);
+  assert.ok(scheduleRuleIssues(withFixedRest).some(issue => issue.code === 'consecutive-rest'));
+  const repaired = rebalanceConsecutiveRest(withFixedRest);
+  assert.equal(repaired.find(row => row.date === fixedDate).status, 'Folga');
+  assert.equal(repaired.find(row => row.date === fixedDate).locked, true);
+  assert.equal(scheduleRuleIssues(repaired).filter(issue => issue.code === 'consecutive-rest').length, 0);
+  for (const weekKey of new Set(generated.map(row => row.weekKey))) {
+    const before = withFixedRest.filter(row => row.weekKey === weekKey && row.status === 'Presencial').length;
+    const after = repaired.filter(row => row.weekKey === weekKey && row.status === 'Presencial').length;
+    assert.equal(after, before, weekKey);
+  }
 });
 
 test('conflitos e excesso de dias consecutivos bloqueiam a publicação', () => {
