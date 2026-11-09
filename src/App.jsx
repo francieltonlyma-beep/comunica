@@ -39,7 +39,7 @@ import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch 
 import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
 import { coverageRequirementsForDate, normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
-import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
+import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
 const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
@@ -4030,7 +4030,7 @@ const submitPresence = async (e) => {
     setAutomaticScheduleProblem(null);
     const traced = proposal.map(row => row.ruleTrace ? row : { ...row, ruleTrace: initialScheduleTrace(row, 'Distribuição gerada pela jornada padrão, disponibilidade individual e configuração de domingos e feriados do planejamento.') });
     const preserved = prepareScheduleProposal(traced, { history: workSchedules, absences, rules: automaticScheduleRules, draftPins: automaticScheduleProposal });
-    const prepared = balancePreparedScheduleProposal(preserved, proposal, scheduleScopedCoverageRequirements, schedulePlanningContext());
+    const prepared = rebalanceConsecutiveRest(balancePreparedScheduleProposal(preserved, proposal, scheduleScopedCoverageRequirements, schedulePlanningContext()), scheduleScopedSchedules);
     if (!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically) {
       const groups = new Map();
       prepared.forEach(row => { const key = row.userId + '|' + row.weekKey; groups.set(key, [...(groups.get(key) || []), row]); });
@@ -4179,7 +4179,7 @@ const submitPresence = async (e) => {
             workTemplate: template, reusedPattern: Boolean(latestWorkSchedule),
             sourceScheduleId: latestWorkSchedule?.id || '',
             holiday, holidayDaysInWeek: holidayDays.length,
-            weekKey, weekHoursTarget: Number(targetWeekHours.toFixed(2)), plannedWorkDays,
+            weekKey, weekHoursTarget: Number(targetWeekHours.toFixed(2)), plannedWorkDays, maxConsecutiveRestDays: Math.max(2, 7 - workDays),
             minRestHours: automaticScheduleRules.minRestHours, maxDailyHours: automaticScheduleRules.maxDailyHours, maxWeeklyHours: automaticScheduleRules.maxWeeklyHours,
             maxExtraHoursPerDay: automaticScheduleRules.maxExtraHoursPerDay, limitSeverity: automaticScheduleRules.limitSeverity,
             rulesVersion: automaticScheduleRules.version, rulesName: automaticScheduleRules.name, profileName: 'Padrão da empresa',
