@@ -72,5 +72,6 @@ test('aprovação grava as duas escalas e o pedido na mesma transação', async 
 test('calendário mantém solicitação, aceite e aprovação dentro da mesma interface', () => {
   const calendar = readFileSync(new URL('../src/ScheduleCalendar.jsx', import.meta.url), 'utf8');
   assert.match(calendar, /Solicitar troca deste dia/); assert.match(calendar, /<ScheduleSwapRequestsPanel/);
-  assert.match(app, /setupSync\('scheduleSwapRequests'/); assert.match(app, /mode="request"/); assert.match(app, /mode=\{publishedScheduleSwap\.requestId \? 'approval'/);
+  assert.match(app, /activeTab !== 'scale'/); assert.match(app, /getTenantCollection\('scheduleSwapRequests'\)/);
+  assert.match(app, /mode="request"/); assert.match(app, /mode=\{publishedScheduleSwap\.requestId \? 'approval'/);
 });

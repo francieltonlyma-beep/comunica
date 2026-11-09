@@ -18,6 +18,8 @@ jobs:
     name: Lint e build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - name: Obter codigo
         uses: actions/checkout@v4
@@ -28,9 +30,24 @@ jobs:
           cache: npm
       - name: Instalar dependencias
         run: npm ci
+      - name: Preparar Java para regras locais
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Verificar codigo
         run: npm run lint
       - name: Executar testes
         run: node --test tests/*.test.mjs
+      - name: Validar permissões reais nos emuladores
+        run: |
+          npm run test:purchases:rules
+          npm run test:purchases:storage
+      - name: Validar migração e cadastro de colaboradores
+        run: |
+          npm --prefix functions ci
+          npm --prefix functions run build
+          npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-comunica-directory --config firebase.json "node --test functions/tests/userDirectoryBackfill.test.cjs"
+          npx --yes firebase-tools@15.35.0 emulators:exec --only auth,firestore --project demo-comunica-security --config firebase.json "node --test --test-name-pattern='employee registration' functions/tests/privateCredentials.test.cjs"
       - name: Compilar aplicativo
         run: npm run build

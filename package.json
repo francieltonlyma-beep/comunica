@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:purchases:storage": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore,storage --project demo-comunica --config firebase.purchase-storage-test.json \"node tests/storage/purchaseStorageRules.test.mjs\"",
-    "test:purchases:rules": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-comunica --config firebase.purchase-test.json \"node tests/firestore/purchaseRules.test.mjs\""
+    "test:purchases:rules": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-comunica --config firebase.purchase-test.json \"node tests/firestore/purchaseRules.test.mjs && node tests/firestore/directoryRules.test.mjs\""
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.4.0",

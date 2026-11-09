@@ -1,5 +1,6 @@
 import {Firestore} from 'firebase-admin/firestore';
 import {credentialKey, hashPin} from './privateCredentials';
+import {publicDirectoryProfile} from './userDirectory';
 
 // Identity arguments are derived from verified authentication by the callable.
 export async function registerEmployee(database: Firestore, appId: string, companyId: string,
@@ -27,6 +28,7 @@ export async function registerEmployee(database: Firestore, appId: string, compa
     const actor = await tx.get(company.collection('users').doc(actorId));
     if (!actor.exists || actor.data()!.isAdmin !== true) throw new Error('Not authorized');
     tx.create(company.collection('users').doc(userId), user);
+    tx.create(company.collection('userDirectory').doc(userId), publicDirectoryProfile(user));
     tx.create(company.collection('presence').doc(presence.id), presence);
     tx.create(database.collection('_privateCredentials').doc(credentialKey({appId, companyId, userId})), secret);
   });

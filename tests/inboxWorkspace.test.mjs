@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const navigation = readFileSync(new URL('../src/managementNavigation.js', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
 
 test('caixa de entrada é um módulo próprio da navegação e das permissões', () => {
   assert.match(app, /\{ id: 'inbox', label: 'Caixa de entrada' \}/);
-  assert.match(app, /id: 'inbox', label: 'Caixa de entrada', description: 'Conversas, demandas e prazos'/);
-  assert.match(app, /badge: unreadMessages\.length \|\| null/);
+  assert.match(navigation, /id:'inbox',label:'Caixa de entrada',description:'Conversas, demandas e prazos'/);
+  assert.match(navigation, /badge:unreadCount \|\| null/);
+  assert.match(app, /unreadCount: unreadMessages\.length/);
   assert.match(app, /activeTab === 'inbox' && inboxSurface/);
 });
 

@@ -71,6 +71,10 @@ import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteO
 import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { appHistoryState, appNavigationKey, readAppNavigation } from './appNavigationHistory.js';
+import { clearLegacyCompanyCache, readSessionIdentity, sessionIdentity } from './sessionPrivacy.js';
+import { publicDirectoryProfile, directoryFields } from './userDirectory.js';
+import { sortCollectionRecords } from './companyCollections.js';
+import { buildManagementNavigation, integraNavigationSections } from './managementNavigation.js';
 import {
   getAppleMobileVersion,
   getPushActivationDiagnosticCode,
@@ -515,13 +519,11 @@ const getLocalStorageItem = (key, defaultValue) => {
   }
 };
 
-const setLocalStorageSafe = (key, value) => {
-  try {
-    localStorage.setItem(key, value);
-  } catch (e) {
-    console.warn(`Quota excedida ao tentar salvar no LocalStorage: ${key}`);
-  }
-};
+try {
+  clearLegacyCompanyCache(localStorage);
+  const savedIdentity = readSessionIdentity(localStorage);
+  if (savedIdentity) localStorage.setItem('comunica_current_user', JSON.stringify(savedIdentity));
+} catch { /* Armazenamento indisponível. */ }
 
 const getUserDepts = (user) => {
   if (!user) return [];
@@ -732,8 +734,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     triggerNotification(errorMessage, 'error');
   }
 };
-  const [departmentsList, setDepartmentsList] = useState(() => getLocalStorageItem('comunica_departments', INITIAL_DEPARTMENTS));
-  const [usersList, setUsersList] = useState(() => getLocalStorageItem('comunica_users', INITIAL_USERS));
+  const [departmentsList, setDepartmentsList] = useState(INITIAL_DEPARTMENTS);
+  const [usersList, setUsersList] = useState(INITIAL_USERS);
   const employeesList = usersList.filter(isCompanyEmployee);
   const messageContacts = withPlatformSupport(usersList);
   const [supportRequests, setSupportRequests] = useState({});
@@ -748,22 +750,22 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [supportHealthError, setSupportHealthError] = useState('');
   const [salesLeads, setSalesLeads] = useState([]);
   const [salesLeadError, setSalesLeadError] = useState(false);
-  const [rolesList, setRolesList] = useState(() => getLocalStorageItem('comunica_roles', INITIAL_ROLES));
-  const [announcements, setAnnouncements] = useState(() => getLocalStorageItem('comunica_announcements', INITIAL_ANNOUNCEMENTS));
-  const [sectorPosts, setSectorPosts] = useState(() => getLocalStorageItem('comunica_sector_posts', INITIAL_SECTOR_POSTS));
-  const [productivityLogs, setProductivityLogs] = useState(() => getLocalStorageItem('comunica_productivity', INITIAL_PRODUCTIVITY));
-  const [privateMessages, setPrivateMessages] = useState(() => getLocalStorageItem('comunica_messages', INITIAL_MESSAGES));
+  const [rolesList, setRolesList] = useState(INITIAL_ROLES);
+  const [announcements, setAnnouncements] = useState(INITIAL_ANNOUNCEMENTS);
+  const [sectorPosts, setSectorPosts] = useState(INITIAL_SECTOR_POSTS);
+  const [productivityLogs, setProductivityLogs] = useState(INITIAL_PRODUCTIVITY);
+  const [privateMessages, setPrivateMessages] = useState(INITIAL_MESSAGES);
   const [serviceManagementMessages, setServiceManagementMessages] = useState([]);
   const [standaloneActivities, setStandaloneActivities] = useState([]);
   const [activityTemplates, setActivityTemplates] = useState([]);
-  const [presenceList, setPresenceList] = useState(() => getLocalStorageItem('comunica_presence', INITIAL_PRESENCE));
-  const [calendarEvents, setCalendarEvents] = useState(() => getLocalStorageItem('comunica_calendar_events', INITIAL_CALENDAR_EVENTS));
-  const [absences, setAbsences] = useState(() => getLocalStorageItem('comunica_absences', INITIAL_ABSENCES));
-  const [workSchedules, setWorkSchedules] = useState(() => getLocalStorageItem('comunica_work_schedules', []));
-  const [scheduleSwapRequests, setScheduleSwapRequests] = useState(() => getLocalStorageItem('comunica_schedule_swap_requests', []));
+  const [presenceList, setPresenceList] = useState(INITIAL_PRESENCE);
+  const [calendarEvents, setCalendarEvents] = useState(INITIAL_CALENDAR_EVENTS);
+  const [absences, setAbsences] = useState(INITIAL_ABSENCES);
+  const [workSchedules, setWorkSchedules] = useState([]);
+  const [scheduleSwapRequests, setScheduleSwapRequests] = useState([]);
   const [deletingScheduleId, setDeletingScheduleId] = useState('');
-  const [documentsList, setDocumentsList] = useState(() => getLocalStorageItem('comunica_documents', []));
-  const [pollsList, setPollsList] = useState(() => getLocalStorageItem('comunica_polls', []));
+  const [documentsList, setDocumentsList] = useState([]);
+  const [pollsList, setPollsList] = useState([]);
   const [vacanciesList, setVacanciesList] = useState([]);
   const [careerApplications, setCareerApplications] = useState([]);
   const [careerVacancyFilter, setCareerVacancyFilter] = useState('all');
@@ -796,10 +798,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [conversationAuditPerson, setConversationAuditPerson] = useState('all');
 
   // Sessão de usuário com persistência local
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('comunica_current_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [currentUser, setCurrentUser] = useState(() => readSessionIdentity(localStorage));
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
@@ -1916,10 +1915,16 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           setCurrentUser(null);
           setActiveCompany(null);
         }
+        if (!scope.isDeveloper && scope.companyId) {
+          const profile = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', scope.companyId, 'users', usr.uid));
+          if (profile.exists()) setCurrentUser({ id: usr.uid, ...profile.data() });
+          else setCurrentUser(null);
+        }
         setAuthScope(scope);
         setDbUser(usr);
       } catch (error) {
         console.error('Não foi possível validar a sessão do Firebase', error);
+        setCurrentUser(null);
         setDbUser(null);
         setAuthScope({ companyId: '', isDeveloper: false });
       } finally {
@@ -1989,7 +1994,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [dbUser, currentUser?.isDeveloper]);
 
   useEffect(() => {
-    if (currentUser) localStorage.setItem('comunica_current_user', JSON.stringify(currentUser));
+    if (currentUser) localStorage.setItem('comunica_current_user', JSON.stringify(sessionIdentity(currentUser)));
     else localStorage.removeItem('comunica_current_user');
   }, [currentUser]);
 
@@ -2001,34 +2006,31 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   useEffect(() => {
     const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
     if (!isFirebaseAvailable || !authReady || !isMatchingSession) {
+      setDepartmentsList([]); setUsersList([]); setRolesList([]); setAnnouncements([]);
+      setSectorPosts([]); setProductivityLogs([]); setPrivateMessages([]);
+      setStandaloneActivities([]); setActivityTemplates([]); setPresenceList([]);
+      setCalendarEvents([]); setAbsences([]); setWorkSchedules([]);
+      setScheduleSwapRequests([]); setPollsList([]);
       setDbLoading(false);
       return;
     }
 
     const getCollectionPath = (name) => getTenantCollection(name);
 
-    const setupSync = (collectionName, initialData, setState, localKey) => {
-      if (collectionName === 'productivity' && !currentUser?.isAdmin && !currentUser?.prodGroup && !/encarregado.*produ|produ.*encarregado/i.test(currentUser?.role || '')) {
-        setState([]);
-        setLocalStorageSafe(localKey, JSON.stringify([]));
-        return () => {};
-      }
-      const colRef = getCollectionPath(collectionName);
+    const setupSync = (collectionName, setState) => {
+      const publicDirectory = collectionName === 'users' && !currentUser?.isAdmin && !currentUser?.isDeveloper;
+      const colRef = publicDirectory ? getCollectionPath('userDirectory') : getCollectionPath(collectionName);
       const canSeeAllSchedules = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper);
       const ownScheduleDepartments = [...new Set(getUserDepts(currentUser).filter(Boolean).map(String))].slice(0, 30);
       if (collectionName === 'schedules' && !canSeeAllSchedules && !ownScheduleDepartments.length) {
         setState([]);
-        setLocalStorageSafe(localKey, JSON.stringify([]));
         setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, schedules: 'ready' }));
         return () => {};
       }
-      const canSeeAllSwapRequests = currentUser?.isAdmin || currentUser?.isDeveloper || /(coordenador|encarregado|supervis|diretor|gestor|gestao|rh)/i.test(currentUser?.role || '');
       const source = collectionName === 'messages' && dbUser.uid !== 'platform-support-francielton'
         ? query(colRef, or(where('participants', 'array-contains', dbUser.uid), where('senderId', '==', dbUser.uid), where('receiverId', '==', dbUser.uid)))
         : collectionName === 'schedules' && !canSeeAllSchedules
           ? query(colRef, where('dept', 'in', ownScheduleDepartments))
-        : collectionName === 'scheduleSwapRequests' && !canSeeAllSwapRequests
-          ? query(colRef, or(where('requesterId', '==', dbUser.uid), where('targetUserId', '==', dbUser.uid)))
         : colRef;
       const affectsCoverage = ['users', 'departments', 'schedules', 'absences'].includes(collectionName);
       return onSnapshot(source, { includeMetadataChanges: affectsCoverage }, (snapshot) => {
@@ -2036,57 +2038,22 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         if (!snapshot.empty) {
           const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-          list.sort((a, b) => {
-            const getTime = (item) => {
-              if (!item) return 0;
-              const d = item.createdAt || item.timestamp || item.date;
-
-              if (d) {
-                if (typeof d.toDate === 'function') return d.toDate().getTime();
-                if (d.seconds) return d.seconds * 1000;
-                if (typeof d === 'number') return d;
-
-                if (typeof d === 'string') {
-                  if (d.includes('/')) {
-                    const [dataPart, horaPart = '00:00:00'] = d.split(' ');
-                    const [dia, mes, ano] = dataPart.split('/');
-                    const parsedBR = new Date(`${ano}-${mes}-${dia}T${horaPart}`).getTime();
-                    if (!isNaN(parsedBR)) return parsedBR;
-                  }
-                  const parsedISO = new Date(d).getTime();
-                  if (!isNaN(parsedISO)) return parsedISO;
-                }
-              }
-
-              if (item.id && item.id.includes('-')) {
-                const num = parseInt(item.id.split('-')[1] || '0', 10);
-                if (!isNaN(num) && num > 1600000000000) return num;
-              }
-
-              return 0;
-            };
-
-            return getTime(b) - getTime(a);
-          });
+          const sorted = sortCollectionRecords(list);
 
           if (collectionName === 'users') {
-            const publicProfiles = list.map(({pin: ignoredPin, ...profile}) => profile);
+            const publicProfiles = sorted.map(({pin: ignoredPin, ...profile}) => profile);
             setState(publicProfiles);
-            setLocalStorageSafe(localKey, JSON.stringify(publicProfiles));
           } else {
-            setState(list);
-            setLocalStorageSafe(localKey, JSON.stringify(list));
+            setState(sorted);
           }
         } else {
           // Usuários nunca são repovoados automaticamente por dados de demonstração
           // ou migrações antigas. A empresa começa vazia somente quando isso é real.
           setState([]);
-          setLocalStorageSafe(localKey, JSON.stringify([]));
         }
       }, () => {
         if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, [collectionName]: 'error' }));
         setState([]);
-        setLocalStorageSafe(localKey, JSON.stringify([]));
         setDbLoading(false);
         triggerNotification('Não foi possível carregar ' + collectionName + '. Confira sua conexão e permissão.', 'error');
       });
@@ -2094,22 +2061,19 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     }; // 3. Faltava fechar a função setupSync principal
 
     // A partir daqui, você continua com as chamadas normais (dentro do seu useEffect):
-    const unsubDepts = setupSync('departments', INITIAL_DEPARTMENTS, setDepartmentsList, 'comunica_departments');
-    const unsubUsers = setupSync('users', INITIAL_USERS, setUsersList, 'comunica_users');
-    const unsubRoles = setupSync('roles', INITIAL_ROLES, setRolesList, 'comunica_roles');
-    const unsubAnn = setupSync('announcements', INITIAL_ANNOUNCEMENTS, setAnnouncements, 'comunica_announcements');
-    const unsubPosts = setupSync('posts', INITIAL_SECTOR_POSTS, setSectorPosts, 'comunica_sector_posts');
-    const unsubProd = setupSync('productivity', INITIAL_PRODUCTIVITY, setProductivityLogs, 'comunica_productivity');
-    const unsubMessages = setupSync('messages', INITIAL_MESSAGES, setPrivateMessages, 'comunica_messages');
-    const unsubActivities = setupSync('activities', [], setStandaloneActivities, 'comunica_activities');
-    const unsubActivityTemplates = setupSync('activityTemplates', [], setActivityTemplates, 'comunica_activity_templates');
-    const unsubEvents = setupSync('events', INITIAL_CALENDAR_EVENTS, setCalendarEvents, 'comunica_calendar_events');
-    const unsubAbsences = setupSync('absences', INITIAL_ABSENCES, setAbsences, 'comunica_absences');
-    const unsubSchedules = setupSync('schedules', [], setWorkSchedules, 'comunica_work_schedules');
-    const unsubScheduleSwapRequests = setupSync('scheduleSwapRequests', [], setScheduleSwapRequests, 'comunica_schedule_swap_requests');
-    const unsubPresence = setupSync('presence', INITIAL_PRESENCE, setPresenceList, 'comunica_presence');
+    const unsubDepts = setupSync('departments', setDepartmentsList);
+    const unsubUsers = setupSync('users', setUsersList);
+    const unsubRoles = setupSync('roles', setRolesList);
+    const unsubAnn = setupSync('announcements', setAnnouncements);
+    const unsubPosts = setupSync('posts', setSectorPosts);
+    const unsubMessages = setupSync('messages', setPrivateMessages);
+    const unsubActivities = setupSync('activities', setStandaloneActivities);
+    const unsubEvents = setupSync('events', setCalendarEvents);
+    const unsubAbsences = setupSync('absences', setAbsences);
+    const unsubSchedules = setupSync('schedules', setWorkSchedules);
+    const unsubPresence = setupSync('presence', setPresenceList);
     const unsubDocuments = () => {};
-    const unsubPolls = setupSync('polls', [], setPollsList, 'comunica_polls');
+    const unsubPolls = setupSync('polls', setPollsList);
 
 setDbLoading(false);
 
@@ -2119,29 +2083,49 @@ setDbLoading(false);
       unsubRoles();
       unsubAnn();
       unsubPosts();
-      unsubProd();
       unsubMessages();
       unsubActivities();
-      unsubActivityTemplates();
       unsubEvents();
       unsubAbsences();
       unsubSchedules();
-      unsubScheduleSwapRequests();
-      unsubPresence();
-      unsubDocuments();
-      unsubPolls();
-      unsubPosts();
-      unsubProd();
-      unsubMessages();
-      unsubEvents();
-      unsubAbsences();
-      unsubSchedules();
-      unsubScheduleSwapRequests();
       unsubPresence();
       unsubDocuments();
       unsubPolls();
     };
   }, [authReady, authScope.companyId, authScope.isDeveloper, dbUser, activeCompany, currentUser?.id, currentUser?.isAdmin, currentUser?.prodGroup, currentUser?.role]);
+
+  useEffect(() => {
+    setProductivityLogs([]);
+    if (!authReady || !dbUser || !activeCompany?.id || !['productivity','support'].includes(activeTab) ||
+        currentUser?.id !== dbUser.uid || (!authScope.isDeveloper && authScope.companyId !== activeCompany.id) ||
+        (!currentUser?.isAdmin && !currentUser?.isDeveloper && !currentUser?.prodGroup &&
+          !/encarregado.*produ|produ.*encarregado/i.test(currentUser?.role || ''))) return;
+    return onSnapshot(getTenantCollection('productivity'), snapshot =>
+      setProductivityLogs(sortCollectionRecords(snapshot.docs.map(item => ({id:item.id,...item.data()})))),
+    () => triggerNotification('Não foi possível carregar a produtividade.', 'error'));
+  }, [authReady, authScope.companyId, authScope.isDeveloper, dbUser, activeCompany?.id, activeTab,
+    currentUser?.id, currentUser?.isAdmin, currentUser?.isDeveloper, currentUser?.prodGroup, currentUser?.role]);
+
+  useEffect(() => {
+    setScheduleSwapRequests([]);
+    if (!authReady || !dbUser || !activeCompany?.id || activeTab !== 'scale' ||
+        currentUser?.id !== dbUser.uid || (!authScope.isDeveloper && authScope.companyId !== activeCompany.id)) return;
+    const canSeeAll = currentUser?.isAdmin || currentUser?.isDeveloper ||
+      /(coordenador|encarregado|supervis|diretor|gestor|gestao|rh)/i.test(currentUser?.role || '');
+    const source = canSeeAll ? getTenantCollection('scheduleSwapRequests') : query(
+      getTenantCollection('scheduleSwapRequests'), or(where('requesterId','==',dbUser.uid),where('targetUserId','==',dbUser.uid)));
+    return onSnapshot(source, snapshot => setScheduleSwapRequests(sortCollectionRecords(snapshot.docs.map(item => ({id:item.id,...item.data()})))),
+      () => triggerNotification('Não foi possível carregar as solicitações de troca.', 'error'));
+  }, [authReady, authScope.companyId, authScope.isDeveloper, dbUser, activeCompany?.id, activeTab, currentUser?.id, currentUser?.isAdmin, currentUser?.isDeveloper, currentUser?.role]);
+
+  useEffect(() => {
+    setActivityTemplates([]);
+    if (!authReady || !dbUser || !activeCompany?.id || activeTab !== 'services' ||
+        currentUser?.id !== dbUser.uid || (!authScope.isDeveloper && authScope.companyId !== activeCompany.id)) return;
+    return onSnapshot(getTenantCollection('activityTemplates'), snapshot =>
+      setActivityTemplates(sortCollectionRecords(snapshot.docs.map(item => ({id:item.id,...item.data()})))),
+    () => triggerNotification('Não foi possível carregar os modelos de atividade.', 'error'));
+  }, [authReady, authScope.companyId, authScope.isDeveloper, dbUser, activeCompany?.id, activeTab, currentUser?.id]);
 
   useEffect(() => {
     setAccessControl({ sectorPermissions: {} });
@@ -2495,7 +2479,12 @@ const getStatusEmTempoReal = (colaborador) => {
       if (!tenantCollection) throw new Error('Nenhuma empresa selecionada.');
       const payload = {...data};
       if (colName === 'users') delete payload.pin;
-      await setDoc(doc(tenantCollection, docId), payload, { merge: true });
+      if (colName === 'users' && currentUser?.isAdmin) {
+        const batch = writeBatch(db);
+        batch.set(doc(tenantCollection, docId), payload, {merge:true});
+        batch.set(doc(getTenantCollection('userDirectory'), docId), publicDirectoryProfile({id:docId, ...payload}), {merge:true});
+        await batch.commit();
+      } else await setDoc(doc(tenantCollection, docId), payload, { merge: true });
       if (typeof recordAuditEvent === 'function') await recordAuditEvent({ action: 'record.saved', collectionName: colName, documentId: docId, fields: Object.keys(payload) });
       return true;
     } catch (err) {
@@ -2583,7 +2572,13 @@ const getStatusEmTempoReal = (colaborador) => {
       if (!isFirebaseAvailable || !dbUser) throw new Error('Sessão indisponível.');
       const tenantCollection = getTenantCollection(colName);
       if (!tenantCollection) throw new Error('Nenhuma empresa selecionada.');
-      await updateDoc(doc(tenantCollection, docId), data);
+      const publicChanges = colName === 'users' && currentUser?.isAdmin && Object.keys(data).some(key => directoryFields.includes(key) || key === 'birthDate');
+      if (publicChanges) {
+        const batch = writeBatch(db);
+        batch.update(doc(tenantCollection, docId), data);
+        batch.set(doc(getTenantCollection('userDirectory'), docId), publicDirectoryProfile({id:docId,...data}), {merge:true});
+        await batch.commit();
+      } else await updateDoc(doc(tenantCollection, docId), data);
       if (typeof recordAuditEvent === 'function') await recordAuditEvent({ action: 'record.updated', collectionName: colName, documentId: docId, fields: Object.keys(data || {}) });
       return true;
     } catch (error) {
@@ -5304,7 +5299,7 @@ try {
   const dashboardDetailMembers = dashboardDetail === 'active' ? activeMembers : dashboardDetail === 'offDuty' ? offDutyMembers : vacationMembers;
   const dashboardDetailTitle = dashboardDetail === 'active' ? 'Membros ativos' : dashboardDetail === 'offDuty' ? 'Colaboradores de folga hoje' : 'Colaboradores em férias';
   const todayMonthDay = `${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
-  const birthdayMembers = employeesList.filter(user => user.birthDate?.slice(5) === todayMonthDay);
+  const birthdayMembers = employeesList.filter(user => (user.birthMonthDay || user.birthDate?.slice(5)) === todayMonthDay);
   const newMembers = employeesList.filter(user => {
     if (!user.hireDate) return false;
     const joinedAt = new Date(`${user.hireDate}T00:00:00`).getTime();
@@ -8174,46 +8169,21 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         </div>
   );
 
-  const navigationSections = [
-    {
-      label: 'Comunicação',
-      items: [
-        { id: 'dashboard', label: 'Central de gestão', description: 'Prioridades e indicadores', icon: Layers, activeClass: 'from-slate-950 to-blue-900', accent: 'text-blue-600' },
-        { id: 'inbox', label: 'Caixa de entrada', description: 'Conversas, demandas e prazos', icon: MessageSquare, badge: unreadMessages.length || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
-        { id: 'updates', label: 'Novidades do Comunica', description: 'Ferramentas e melhorias', icon: Sparkles, badge: platformUpdates.filter(item => !platformUpdateReadIds.has(item.id)).length || null, activeClass: 'from-cyan-700 to-blue-700', accent: 'text-cyan-700' },
-        { id: 'announcements', label: 'Avisos e políticas', description: 'Comunicados oficiais', icon: Megaphone, activeClass: 'from-blue-800 to-cyan-700', accent: 'text-blue-600' },
-        { id: 'sectors', label: 'Canais de setores', description: 'Publicações da equipe', icon: Building, activeClass: 'from-cyan-800 to-teal-700', accent: 'text-cyan-700' },
-        { id: 'polls', label: 'Enquetes e clima', description: 'Escuta e participação', icon: Activity, badge: pendingPollResponses || null, activeClass: 'from-violet-800 to-blue-700', accent: 'text-violet-600' },
-      ],
-    },
-    {
-      label: 'Trabalho',
-      items: [
-        { id: 'services', label: 'Central de serviços', description: 'Solicitações, atividades e checklists', icon: CheckCircle2, badge: (serviceMetrics.active + serviceActivityMetrics.active) || null, activeClass: 'from-blue-900 to-cyan-700', accent: 'text-blue-600' },
-        { id: 'documents', label: 'Documentos', description: 'Arquivos e políticas', icon: FileText, badge: pendingDocumentReads || null, activeClass: 'from-emerald-800 to-teal-700', accent: 'text-emerald-600' },
-        { id: 'scale', label: 'Escalas e calendário', description: 'Agenda e disponibilidade', icon: Calendar, activeClass: 'from-orange-700 to-amber-600', accent: 'text-orange-600' },
-        canAccessProductivity ? { id: 'productivity', label: 'Produtividade', description: 'Registros de produção', icon: TrendingUp, activeClass: 'from-indigo-800 to-violet-700', accent: 'text-indigo-600' } : null,
-      ].filter(Boolean),
-    },
-    {
-      label: 'Gestão e suporte',
-      items: [
-        isCareerManagerUser(currentUser) ? { id: 'careers', label: 'Banco de talentos', description: 'Vagas e candidaturas', icon: Briefcase, badge: careerPendingCandidateUpdates || null, activeClass: 'from-fuchsia-800 to-violet-700', accent: 'text-fuchsia-600' } : null,
-        canManageWhistleblowing ? { id: 'whistleblowing', label: 'Central de Denúncias', description: 'Relatos confidenciais', icon: Lock, activeClass: 'from-rose-900 to-red-700', accent: 'text-rose-600' } : null,
-        currentUser.isAdmin ? { id: 'management', label: 'Gestão da equipe', description: 'Pessoas e permissões', icon: Users, activeClass: 'from-rose-800 to-orange-700', accent: 'text-rose-600' } : null,
-        currentUser.isDeveloper
-          ? { id: 'support', label: 'Central de suporte', description: 'Demandas da plataforma', icon: KeyRound, activeClass: 'from-slate-900 to-slate-700', accent: 'text-slate-600' }
-          : { id: 'platform-support', label: 'Suporte da plataforma', description: 'Solicitar atendimento', icon: MessageSquare, action: openPlatformSupport, activeClass: 'from-slate-900 to-blue-900', accent: 'text-blue-600' },
-      ].filter(Boolean),
-    },
-  ];
+  const navigationSections = buildManagementNavigation({
+    unreadCount: unreadMessages.length,
+    unreadUpdates: platformUpdates.filter(item => !platformUpdateReadIds.has(item.id)).length,
+    pendingPollResponses,
+    activeServices: serviceMetrics.active + serviceActivityMetrics.active,
+    pendingDocumentReads,
+    canAccessProductivity,
+    canManageCareers: isCareerManagerUser(currentUser),
+    careerPendingCandidateUpdates,
+    canManageWhistleblowing,
+    isAdmin: currentUser.isAdmin,
+    isDeveloper: currentUser.isDeveloper,
+    openPlatformSupport,
+  });
   const isIntegraWorkspace = activeTab === 'integra';
-  const integraNavigationSections = [{
-    label: 'Operações',
-    items: [
-      { id: 'integra', label: 'Compras', description: 'Pedidos, entregas e armazenagem', icon: Package, activeClass: 'from-teal-900 to-cyan-700', accent: 'text-teal-700' },
-    ],
-  }];
   const visibleNavigationSections = (isIntegraWorkspace ? integraNavigationSections : navigationSections)
     .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
     .filter(section => section.items.length);

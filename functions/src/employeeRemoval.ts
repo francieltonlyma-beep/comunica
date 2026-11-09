@@ -51,6 +51,7 @@ export async function removeEmployeeAccess(database: Firestore, appId: string, c
     if (linkedPresence.length > 448) throw new Error('Too many presence records');
 
     transaction.delete(target.ref);
+    transaction.delete(company.collection('userDirectory').doc(targetId));
     transaction.delete(credential);
     linkedPresence.forEach(document => transaction.delete(document.ref));
     return {presenceRemoved: linkedPresence.length};

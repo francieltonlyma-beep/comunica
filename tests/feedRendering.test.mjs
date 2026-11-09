@@ -18,7 +18,10 @@ test('feed text and photos are not cropped', () => {
 });
 
 test('tenant realtime listeners are all removed when the company changes', () => {
-  for (const listener of ['Posts', 'Prod', 'Messages', 'Events', 'Absences', 'Presence', 'Documents', 'Polls']) {
+  for (const listener of ['Posts', 'Messages', 'Events', 'Absences', 'Presence', 'Documents', 'Polls']) {
     assert.match(app, new RegExp(`unsub${listener}\\(\\);`));
   }
+  assert.match(app, /return onSnapshot\(getTenantCollection\('productivity'\)/);
+  assert.match(app, /activeTab !== 'scale'[\s\S]*?return onSnapshot\(source/);
+  assert.match(app, /activeTab !== 'services'[\s\S]*?return onSnapshot\(getTenantCollection\('activityTemplates'\)/);
 });
