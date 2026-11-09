@@ -21,7 +21,7 @@ service cloud.firestore {
       return data.get('isDeveloper', false) == true || id == 'platform-support-francielton';
     }
     match /artifacts/{app}/public/data/companies/{company}/users/{uid} {
-      allow read: if member(company) || support();
+      allow read: if support() || admin(app, company) || (member(company) && request.auth.uid == uid);
       // Profiles and private credentials must be created atomically by the server.
       allow create: if false;
       // Employee offboarding is a server transaction that also removes private credentials.
@@ -37,6 +37,14 @@ service cloud.firestore {
             && request.resource.data.get('id', uid) == uid)
         )
       ));
+    }
+
+    match /artifacts/{app}/public/data/companies/{company}/userDirectory/{uid} {
+      allow read: if member(company) || support();
+      allow create, update: if admin(app, company) && request.resource.data.id == uid
+        && request.resource.data.keys().hasOnly(['id','name','role','avatar','depts','dept','department',
+          'prodGroup','managerId','isAdmin','isEmployee','birthMonthDay']);
+      allow delete: if false;
     }
 
     function purchaseStageChange(before, after) {

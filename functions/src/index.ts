@@ -18,6 +18,7 @@ import {getAuth} from "firebase-admin/auth";
 import {getMessaging} from "firebase-admin/messaging";
 import {getStorage} from "firebase-admin/storage";
 import {privateCredentials, credentialKey, hashPin} from "./privateCredentials";
+import {publicDirectoryProfile} from './userDirectory';
 import {registerEmployee} from './employeeRegistration';
 import {removeEmployeeAccess} from './employeeRemoval';
 import {SUPPORT_UID, verifyPlatformSupport} from './platformSupport';
@@ -458,6 +459,7 @@ export const bulkImportEmployees = onCall({invoker: 'public', maxInstances: 1}, 
     const presence = {id: `pres-${userId}`, userId, name: employee.name, dept: departmentId, status: 'Presencial', notes: ''};
     const credential = {...hashPin(defaultPin), failures: 0, windowStart: now, lockedUntil: 0, revision: 1};
     docs.push({ref: companyRef.collection('users').doc(userId), data: user});
+    docs.push({ref: companyRef.collection('userDirectory').doc(userId), data: publicDirectoryProfile(user)});
     docs.push({ref: companyRef.collection('presence').doc(presence.id), data: presence});
     docs.push({ref: database.collection('_privateCredentials').doc(credentialKey({appId, companyId, userId})), data: credential});
     importedUsers.push(userId);
@@ -729,6 +731,7 @@ export const registerCompany = onCall({invoker: "public"}, async (request) => {
     if (!exists.empty) throw new HttpsError('already-exists', 'Este codigo de empresa ja esta em uso.');
     transaction.set(companyCollection.doc(company.id), {...company, createdAt: now});
     transaction.set(companyCollection.doc(company.id).collection("users").doc(administrator.id), administrator);
+    transaction.set(companyCollection.doc(company.id).collection('userDirectory').doc(administrator.id), publicDirectoryProfile(administrator));
     transaction.create(companyCollection.doc(company.id).collection('departments').doc('rh'), {id:'rh', name:'Administrativo', color:'slate'});
     transaction.create(secretRef, secret);
   });

@@ -28,6 +28,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: npm ci
       - run: node --test tests/*.test.mjs
       - run: npm run build
@@ -53,6 +57,15 @@ jobs:
           npm --prefix functions ci
           npm --prefix functions run build
           node --test functions/tests/scheduleCoverage.test.cjs
+      - name: Validate access rules before publishing
+        run: npm run test:purchases:rules
+      - name: Publish compatible employee endpoints
+        run: npx --yes firebase-tools deploy --only functions:createEmployee,functions:bulkImportEmployees,functions:registerCompany,functions:removeEmployee --project comunica-salvador --non-interactive
+      - name: Prepare public employee directory
+        working-directory: functions
+        env:
+          GCLOUD_PROJECT: comunica-salvador
+        run: node scripts/backfill-user-directory.cjs
       - name: Deploy Firestore rules
         run: npx --yes firebase-tools deploy --only firestore:rules --project comunica-salvador --non-interactive
       - name: Deploy Firebase Storage rules
@@ -89,6 +102,4 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_COMUNICA_SALVADOR }}
           projectId: comunica-salvador
           channelId: live
-      - name: Deploy active Firebase Functions
-        run: npx --yes firebase-tools deploy --only functions --project comunica-salvador --non-interactive
 

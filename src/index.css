@@ -51,11 +51,31 @@
 }
 
 /* Tema escuro persistente do Comunica. Mantém as cores semânticas de estado. */
+:root {
+  --comunica-page: #f1f5f9;
+  --comunica-surface: #ffffff;
+  --comunica-surface-soft: #f8fafc;
+  --comunica-input: #ffffff;
+  --comunica-text: #0f172a;
+  --comunica-muted: #64748b;
+  --comunica-border: #e2e8f0;
+  --comunica-focus: #0e7490;
+}
+html.comunica-dark {
+  --comunica-page: #0b1220;
+  --comunica-surface: #111c2e;
+  --comunica-surface-soft: #152238;
+  --comunica-input: #152238;
+  --comunica-text: #f1f5f9;
+  --comunica-muted: #bdc9d8;
+  --comunica-border: #34465f;
+  --comunica-focus: #67e8f9;
+}
 html.comunica-dark,
 html.comunica-dark body {
   color-scheme: dark;
-  background: #0b1220;
-  color: #e2e8f0;
+  background: var(--comunica-page);
+  color: var(--comunica-text);
 }
 html.comunica-dark .bg-white,
 html.comunica-dark [class~="bg-white/60"],
@@ -63,10 +83,10 @@ html.comunica-dark [class~="bg-white/65"],
 html.comunica-dark [class~="bg-white/70"],
 html.comunica-dark [class~="bg-white/80"],
 html.comunica-dark [class~="bg-white/90"],
-html.comunica-dark [class~="bg-white/95"] { background-color: #111c2e !important; }
+html.comunica-dark [class~="bg-white/95"] { background-color: var(--comunica-surface) !important; }
 html.comunica-dark .bg-slate-50,
 html.comunica-dark [class~="bg-slate-50/50"],
-html.comunica-dark [class~="bg-slate-50/90"] { background-color: #152238 !important; }
+html.comunica-dark [class~="bg-slate-50/90"] { background-color: var(--comunica-surface-soft) !important; }
 html.comunica-dark .bg-slate-100,
 html.comunica-dark [class~="bg-slate-100/70"] { background-color: #0b1220 !important; }
 html.comunica-dark .bg-slate-200,
@@ -95,10 +115,22 @@ html.comunica-dark [class~="hover:bg-white/70"]:hover,
 html.comunica-dark [class~="hover:bg-white/10"]:hover { background-color: #26364d !important; }
 html.comunica-dark input:not([type="checkbox"]):not([type="radio"]),
 html.comunica-dark textarea,
-html.comunica-dark select { background-color: #111c2e; color: #e2e8f0; border-color: #34465f; }
+html.comunica-dark select { background-color: var(--comunica-input); color: var(--comunica-text); border-color: var(--comunica-border); }
 html.comunica-dark input::placeholder,
 html.comunica-dark textarea::placeholder { color: #8292a9; }
 html.comunica-dark option { background-color: #111c2e; color: #e2e8f0; }
+html.comunica-dark :is(input, select, textarea, button, a):focus-visible {
+  outline: 2px solid var(--comunica-focus);
+  outline-offset: 2px;
+}
+html.comunica-dark input[type="search"]::-webkit-search-cancel-button { filter: invert(1); }
+html.comunica-dark ::selection { background: #155e75; color: #ffffff; }
+html.comunica-dark .comunica-emoji-panel .epr-main {
+  --epr-bg-color: var(--comunica-surface);
+  --epr-search-input-bg-color: var(--comunica-input);
+  --epr-text-color: var(--comunica-text);
+  --epr-picker-border-color: var(--comunica-border);
+}
 html.comunica-dark .bg-blue-50,
 html.comunica-dark [class~="bg-blue-50/20"],
 html.comunica-dark [class~="bg-blue-50/40"],

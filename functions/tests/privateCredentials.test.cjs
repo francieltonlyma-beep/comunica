@@ -39,6 +39,10 @@ test('employee registration is atomic, private and restricted to current company
   assert.equal(result.user.pin,undefined);
   assert.equal(result.user.isDeveloper,false);
   assert.equal(result.user.pushTokens,undefined);
+  const directory=(await company.collection('userDirectory').doc('employee').get()).data();
+  assert.equal(directory.name,'Fixture');
+  assert.equal(directory.pushTokens,undefined);
+  assert.equal(directory.pin,undefined);
   assert.equal(result.presence.status,'Presencial');
   assert.equal((await company.collection('presence').doc('pres-employee').get()).exists,true);
   const service=privateCredentials(db);
@@ -48,6 +52,7 @@ test('employee registration is atomic, private and restricted to current company
   await company.collection('presence').doc('pres-conflict').set({fixture:true});
   await assert.rejects(()=>create('admin','conflict'));
   assert.equal((await company.collection('users').doc('conflict').get()).exists,false);
+  assert.equal((await company.collection('userDirectory').doc('conflict').get()).exists,false);
   assert.equal(await service.verify({appId:'test',companyId,userId:'conflict'},'5273'),'invalid');
   await assert.rejects(()=>create('admin','platform-support-francielton'));
   await company.collection('users').doc('admin').update({isAdmin:false});
