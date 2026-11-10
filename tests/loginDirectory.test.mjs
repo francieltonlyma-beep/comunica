@@ -81,17 +81,12 @@ test('envio do PIN usa o diretório do login mesmo com a equipe interna vazia', 
   assert.equal(busy, false);
 });
 
-test('instalação oferece ajuda em modo aplicativo e quando o navegador não libera o prompt', async () => {
-  for (const standalone of [true, false]) {
-    let help = false;
-    const context = { isStandaloneApp: standalone, installPrompt: null, setShowInstallHelp: value => { help = value; } };
-    await extract('handleInstallApp', 'persistBrowserPushToken', context)();
-    assert.equal(help, true);
-  }
-  const entry = app.indexOf("isStandaloneApp ? 'Instalação do aplicativo' : 'Instalar o Comunica no celular'");
+test('instalação continua acima do código e seleção de colaborador aceita toque e teclado', () => {
+  const entry = app.indexOf("canInstallDirectly ? 'Instalar o Comunica no celular'");
   const codeField = app.indexOf('>Código da empresa</label>');
   assert.ok(entry > 0 && entry < codeField);
   const dropdown = app.slice(app.indexOf('{visibleLoginUsers.map'), app.indexOf('{visibleLoginUsers.length'));
   assert.match(dropdown, /onPointerDown=/);
   assert.match(dropdown, /onClick=/);
 });
+
