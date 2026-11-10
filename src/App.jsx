@@ -13,6 +13,7 @@ const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAud
 import { isCompanyEmployee } from './teamMembership';
 import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
+import { loginDirectoryUsers, filterLoginEmployees, normalizeLoginName } from './loginDirectory.js';
 import { commitAtomicRecords } from './atomicRecords';
 import { eventAnnouncementTitle, eventAnnouncementContent, linkedEventAnnouncementIds } from './calendarEventLinks';
 import { PLATFORM_SUPPORT, withPlatformSupport } from './platformSupportContact';
@@ -280,7 +281,7 @@ const EnvironmentBadge = () => IS_STAGING ? (
     Ambiente de homologação
   </div>
 ) : null;
-const InstallAppDialog = ({ open, onClose }) => {
+const InstallAppDialog = ({ open, onClose, standalone = false }) => {
   if (!open) return null;
   const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
   return (
@@ -290,6 +291,8 @@ const InstallAppDialog = ({ open, onClose }) => {
           <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><img src="/pwa/icon-192.png" alt="" className="h-12 w-12 rounded-2xl border border-white/15 shadow-lg" /><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-200">Aplicativo</span><h2 id="install-app-title" className="mt-0.5 text-lg font-black">Instalar o Comunica</h2></div></div><button type="button" onClick={onClose} className="rounded-xl p-2 text-blue-100 hover:bg-white/10 hover:text-white" aria-label="Fechar instruções"><X className="h-5 w-5" /></button></div>
         </div>
         <div className="p-6 text-sm leading-6 text-slate-600">
+          {standalone && <p className="mb-4 rounded-xl bg-cyan-50 p-3 font-semibold text-cyan-900">O Comunica já está aberto como aplicativo neste aparelho. Para instalar em outro celular ou reinstalar, abra comunica-info.web.app no navegador do aparelho e siga os passos abaixo.</p>}
+          <p className="mb-3 text-xs">Se você abriu este link dentro de outro aplicativo, use o menu dele para abrir no Chrome ou no Safari.</p>
           {isIos ? <><p>No Safari, toque no botão <strong className="text-slate-900">Compartilhar</strong> e escolha <strong className="text-slate-900">Adicionar à Tela de Início</strong>.</p><div className="mt-4 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-blue-900"><Share2 className="h-5 w-5 shrink-0" /><span className="text-xs font-semibold">Depois confirme em “Adicionar”. O Comunica abrirá como um aplicativo.</span></div></> : <><p>Abra o menu do navegador e escolha <strong className="text-slate-900">Instalar aplicativo</strong> ou <strong className="text-slate-900">Adicionar à tela inicial</strong>.</p><div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-900"><Download className="h-5 w-5 shrink-0" /><span className="text-xs font-semibold">No Chrome, essa opção fica no menu de três pontos.</span></div></>}
           <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-bold text-white">Entendi</button>
         </div>
@@ -810,6 +813,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     return saved ? JSON.parse(saved) : null;
   });
   const [companyCode, setCompanyCode] = useState('');
+  const [loginDirectory, setLoginDirectory] = useState(null);
   // Impede que uma consulta antiga (por exemplo, "082") apague o resultado
   // correto de uma digitação posterior ("082026").
   const companyLookupRequestRef = useRef(0);
@@ -824,6 +828,14 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [showLoginSuggestions, setShowLoginSuggestions] = useState(false);
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState('');
+  const loginUsers = loginDirectoryUsers(loginDirectory, activeCompany, companyCode);
+  const visibleLoginUsers = filterLoginEmployees(loginUsers, loginSearchText);
+  const selectLoginEmployee = person => {
+    setLoginSearchText(person.name);
+    setLoginSelectedUserId(person.id);
+    setShowLoginSuggestions(false);
+    setLoginError('');
+  };
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const loginSubmitInFlight = useRef(false);
@@ -1486,7 +1498,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     };
     const confirmInstallation = () => {
       setInstallPrompt(null);
-      setIsStandaloneApp(true);
+      updateStandalone();
       setShowInstallHelp(false);
       triggerNotification('Comunica instalado com sucesso!');
     };
@@ -1503,7 +1515,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   const handleInstallApp = async () => {
     if (isStandaloneApp) {
-      triggerNotification('O Comunica já está instalado neste dispositivo.');
+      setShowInstallHelp(true);
       return;
     }
     if (!installPrompt) {
@@ -2737,7 +2749,7 @@ const getStatusEmTempoReal = (colaborador) => {
     setLoginSearchText('');
     setLoginError('');
     setActiveCompany(null);
-    setUsersList([]);
+    setLoginDirectory(null);
     setCompanyLookupLoading(normalizedCode.length >= 3);
 
     if (!normalizedCode || normalizedCode.length < 3) {
@@ -2750,7 +2762,7 @@ const getStatusEmTempoReal = (colaborador) => {
         if (requestId !== companyLookupRequestRef.current) return;
         const { company, users } = response.data;
         setActiveCompany(company);
-        setUsersList(users);
+        setLoginDirectory({ code: normalizedCode, companyId: company.id, users: Array.isArray(users) ? users : [] });
         setCompanies(previous => [...previous.filter(item => item.id !== company.id), company]);
       } else {
         const company = companies.find(item => item.code === normalizedCode);
@@ -2760,7 +2772,7 @@ const getStatusEmTempoReal = (colaborador) => {
     } catch (error) {
       if (requestId !== companyLookupRequestRef.current) return;
       setActiveCompany(null);
-      setUsersList([]);
+      setLoginDirectory(null);
       if (error?.code === 'functions/failed-precondition') setLoginError(loginErrorMessage(error));
     } finally {
       if (requestId === companyLookupRequestRef.current) setCompanyLookupLoading(false);
@@ -2772,7 +2784,7 @@ const getStatusEmTempoReal = (colaborador) => {
     if (loginSubmitInFlight.current || companyLookupLoading) return;
 
     let company = activeCompany;
-    let companyUsers = usersList;
+    let companyUsers = loginUsers;
 
     if (!company) {
       setLoginError('Empresa não encontrada. Confira o código informado.');
@@ -2784,7 +2796,7 @@ const getStatusEmTempoReal = (colaborador) => {
       selectedEmployee = companyUsers.find(u => u.id === loginSelectedUserId);
     } else if (loginSearchText.trim()) {
       // Tenta achar pelo nome digitado de forma idêntica
-      selectedEmployee = companyUsers.find(u => u.name.toLowerCase() === loginSearchText.trim().toLowerCase());
+      selectedEmployee = companyUsers.find(u => normalizeLoginName(u.name) === normalizeLoginName(loginSearchText));
     }
 
     if (!selectedEmployee) {
@@ -7429,6 +7441,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             <div className="relative mb-5 flex items-start justify-between gap-3"><div><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200">Acesso corporativo</span><h2 className="mt-1 text-2xl font-extrabold text-white">Entre no Comunica</h2><p className="mt-2 text-xs leading-relaxed text-blue-100/70">Identifique sua empresa e acesse o ambiente da equipe.</p></div><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-cyan-100/20 bg-white/10 text-cyan-100 shadow-lg shadow-cyan-950/30"><Lock className="h-4.5 w-4.5" /></div></div>
             <div className="relative mb-5 grid grid-cols-3 gap-2">{['Empresa', 'Colaborador', 'PIN'].map((step, index) => <div key={step} className="flex items-center gap-1.5"><span className={`grid h-5 w-5 place-items-center rounded-full text-[8px] font-extrabold ${index === 0 || loginCompanyIdentified ? 'bg-cyan-300 text-[#082344] shadow-[0_0_14px_rgba(103,232,249,0.28)]' : 'bg-white/10 text-blue-100/45'}`}>{index + 1}</span><span className={`text-[8px] font-bold uppercase tracking-wide ${index === 0 || loginCompanyIdentified ? 'text-blue-50' : 'text-blue-100/40'}`}>{step}</span></div>)}</div>
 
+  <button type="button" onClick={handleInstallApp} className="relative mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-3 text-xs font-extrabold text-cyan-100 transition hover:border-cyan-100/40 hover:bg-cyan-300/15 hover:text-white">
+    <Download className="h-4 w-4" /> {isStandaloneApp ? 'Instalação do aplicativo' : 'Instalar o Comunica no celular'}
+  </button>
+
   {/* CAMPO DE BUSCA DE NOME E PIN */}
   <form onSubmit={handleUserLoginSubmit} className="relative z-10 flex flex-col gap-4">
     <div>
@@ -7469,27 +7485,22 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
         />
 
         {/* LISTAGEM DE SUGESTÕES DINÂMICAS */}
-        {showLoginSuggestions && loginCompanyIdentified && loginSearchText.trim() !== '' && (
+        {showLoginSuggestions && loginCompanyIdentified && !companyLookupLoading && (
           <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-            {usersList
-              .filter(u => isCompanyEmployee(u) && u.name.toLowerCase().includes(loginSearchText.toLowerCase()))
-              .map((u) => (
+            {visibleLoginUsers.map((u) => (
                 <button
                   key={u.id}
                   type="button"
-                  onMouseDown={() => {
-                    setLoginSearchText(u.name);
-                    setLoginSelectedUserId(u.id);
-                    setShowLoginSuggestions(false);
-                  }}
+                  onPointerDown={event => { event.preventDefault(); selectLoginEmployee(u); }}
+                  onClick={() => selectLoginEmployee(u)}
                   className="w-full border-b border-slate-100 px-4 py-2.5 text-left text-xs text-slate-600 transition-colors last:border-0 hover:bg-blue-50"
                 >
                   <span className="block leading-tight font-extrabold text-slate-800">{u.name}</span>
                   <span className="mt-0.5 block text-[10px] text-slate-400">{u.role}</span>
                 </button>
               ))}
-            {usersList.filter(u => isCompanyEmployee(u) && u.name.toLowerCase().includes(loginSearchText.toLowerCase())).length === 0 && (
-              <div className="p-3 text-xs text-slate-500 italic text-center">Nenhum colaborador encontrado</div>
+            {visibleLoginUsers.length === 0 && (
+              <div className="p-3 text-xs text-slate-500 italic text-center">{loginUsers.length ? 'Nenhum colaborador encontrado. Confira o nome digitado.' : 'Nenhum colaborador disponível para esta empresa. Contate o suporte.'}</div>
             )}
           </div>
         )}
@@ -7537,9 +7548,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     Sou do suporte da plataforma
   </button>
 
-  {!isStandaloneApp && <button type="button" onClick={handleInstallApp} className="relative mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-3 text-xs font-extrabold text-cyan-100 transition hover:border-cyan-100/40 hover:bg-cyan-300/15 hover:text-white">
-    <Download className="h-4 w-4" /> Instalar o Comunica no celular
-  </button>}
+
 
   {showDeveloperLogin && (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 p-4">
@@ -7553,7 +7562,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
     </div>
   )}
 
-  <InstallAppDialog open={showInstallHelp} onClose={() => setShowInstallHelp(false)} />
+  <InstallAppDialog open={showInstallHelp} standalone={isStandaloneApp} onClose={() => setShowInstallHelp(false)} />
 
           </section>
           </div>
@@ -8195,7 +8204,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
       <NotificationToast notification={customNotification} />
       <CloudActivityIndicator activity={cloudActivity} />
-      <InstallAppDialog open={showInstallHelp} onClose={() => setShowInstallHelp(false)} />
+      <InstallAppDialog open={showInstallHelp} standalone={isStandaloneApp} onClose={() => setShowInstallHelp(false)} />
 
 
 <header className="sticky top-0 z-40 border-b border-blue-100 bg-gradient-to-r from-white via-white to-cyan-50/80 pt-[env(safe-area-inset-top)] text-slate-800 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur">
@@ -11860,6 +11869,7 @@ const handleDownload = async (fileUrl, fileName) => {
     </div>
   );
 }
+
 
 
 
