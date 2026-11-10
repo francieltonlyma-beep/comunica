@@ -2,6 +2,7 @@
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './installPrompt.js'
 import { AppErrorBoundary, AppLoadingScreen, RuntimeNotices } from './AppRuntime.jsx'
 
 try {
@@ -32,3 +33,4 @@ createRoot(document.getElementById('root')).render(
     </AppErrorBoundary>
   </StrictMode>,
 )
+

@@ -14,6 +14,8 @@ import { isCompanyEmployee } from './teamMembership';
 import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
 import { loginDirectoryUsers, filterLoginEmployees, normalizeLoginName } from './loginDirectory.js';
+import { getPendingInstallPrompt, takeInstallPrompt, subscribeInstallPrompt } from './installPrompt.js';
+import ScheduleAiPanel from './ScheduleAiPanel.jsx';
 import { commitAtomicRecords } from './atomicRecords';
 import { eventAnnouncementTitle, eventAnnouncementContent, linkedEventAnnouncementIds } from './calendarEventLinks';
 import { PLATFORM_SUPPORT, withPlatformSupport } from './platformSupportContact';
@@ -851,7 +853,12 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [forcePinChange, setForcePinChange] = useState(false);
   const [isChangingPin, setIsChangingPin] = useState(false);
   const pinChangeInFlight = useRef(null);
-  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installPrompt, setInstallPrompt] = useState(getPendingInstallPrompt);
+  const [isInstallingApp, setIsInstallingApp] = useState(false);
+  const [installCompleted, setInstallCompleted] = useState(false);
+  const [installStatus, setInstallStatus] = useState('');
+  const installInFlight = useRef(false);
+  const canInstallDirectly = Boolean(installPrompt || typeof navigator.install === 'function');
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [isStandaloneApp, setIsStandaloneApp] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const [browserPushGranted, setBrowserPushGranted] = useState(() => 'Notification' in window && Notification.permission === 'granted');
@@ -1492,44 +1499,49 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   useEffect(() => {
     const standaloneQuery = window.matchMedia?.('(display-mode: standalone)');
     const updateStandalone = () => setIsStandaloneApp(Boolean(standaloneQuery?.matches || window.navigator.standalone === true));
-    const captureInstallPrompt = event => {
-      event.preventDefault();
-      setInstallPrompt(event);
-    };
+    const stopInstallPrompt = subscribeInstallPrompt(setInstallPrompt);
     const confirmInstallation = () => {
       setInstallPrompt(null);
+      setInstallCompleted(true);
+      setInstallStatus('Comunica instalado com sucesso.');
       updateStandalone();
       setShowInstallHelp(false);
       triggerNotification('Comunica instalado com sucesso!');
     };
-    window.addEventListener('beforeinstallprompt', captureInstallPrompt);
     window.addEventListener('appinstalled', confirmInstallation);
     standaloneQuery?.addEventListener?.('change', updateStandalone);
     updateStandalone();
     return () => {
-      window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
+      stopInstallPrompt();
       window.removeEventListener('appinstalled', confirmInstallation);
       standaloneQuery?.removeEventListener?.('change', updateStandalone);
     };
   }, []);
 
   const handleInstallApp = async () => {
-    if (isStandaloneApp) {
-      setShowInstallHelp(true);
+    if (installInFlight.current) return;
+    if (isStandaloneApp || installCompleted) { setInstallStatus('O Comunica já está instalado neste aparelho.'); return; }
+    const event = takeInstallPrompt() || installPrompt;
+    if (!event && typeof navigator.install !== 'function') {
+      setInstallStatus('Este navegador ainda não liberou a instalação direta. Use uma das outras formas de instalar.');
       return;
     }
-    if (!installPrompt) {
-      setShowInstallHelp(true);
-      return;
-    }
+    installInFlight.current = true; setIsInstallingApp(true); setInstallStatus(''); setShowInstallHelp(false);
     try {
-      await installPrompt.prompt();
-      const choice = await installPrompt.userChoice;
-      setInstallPrompt(null);
-      if (choice?.outcome !== 'accepted') setShowInstallHelp(true);
+      if (typeof navigator.install === 'function') {
+        await navigator.install();
+        setInstallCompleted(true);
+        setInstallStatus('Instalação ou abertura confirmada pelo navegador.');
+      } else {
+        await event.prompt();
+        const choice = await event.userChoice;
+        setInstallStatus(choice?.outcome === 'accepted' ? 'Instalação solicitada ao navegador. Aguarde a conclusão.' : 'Instalação cancelada. Você pode continuar usando o Comunica pelo navegador.');
+      }
     } catch (error) {
       console.error('Não foi possível abrir a instalação do aplicativo.', error);
-      setShowInstallHelp(true);
+      setInstallStatus(error?.name === 'AbortError' ? 'Instalação cancelada ou não concluída pelo navegador.' : 'O navegador não conseguiu iniciar a instalação. Confira as outras formas disponíveis.');
+    } finally {
+      setInstallPrompt(null); installInFlight.current = false; setIsInstallingApp(false);
     }
   };
 
@@ -7441,10 +7453,12 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             <div className="relative mb-5 flex items-start justify-between gap-3"><div><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200">Acesso corporativo</span><h2 className="mt-1 text-2xl font-extrabold text-white">Entre no Comunica</h2><p className="mt-2 text-xs leading-relaxed text-blue-100/70">Identifique sua empresa e acesse o ambiente da equipe.</p></div><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-cyan-100/20 bg-white/10 text-cyan-100 shadow-lg shadow-cyan-950/30"><Lock className="h-4.5 w-4.5" /></div></div>
             <div className="relative mb-5 grid grid-cols-3 gap-2">{['Empresa', 'Colaborador', 'PIN'].map((step, index) => <div key={step} className="flex items-center gap-1.5"><span className={`grid h-5 w-5 place-items-center rounded-full text-[8px] font-extrabold ${index === 0 || loginCompanyIdentified ? 'bg-cyan-300 text-[#082344] shadow-[0_0_14px_rgba(103,232,249,0.28)]' : 'bg-white/10 text-blue-100/45'}`}>{index + 1}</span><span className={`text-[8px] font-bold uppercase tracking-wide ${index === 0 || loginCompanyIdentified ? 'text-blue-50' : 'text-blue-100/40'}`}>{step}</span></div>)}</div>
 
-  <button type="button" onClick={handleInstallApp} className="relative mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-3 text-xs font-extrabold text-cyan-100 transition hover:border-cyan-100/40 hover:bg-cyan-300/15 hover:text-white">
-    <Download className="h-4 w-4" /> {isStandaloneApp ? 'Instalação do aplicativo' : 'Instalar o Comunica no celular'}
+  <button type="button" onClick={handleInstallApp} disabled={!canInstallDirectly || isInstallingApp || isStandaloneApp || installCompleted} className="relative mb-2 disabled:opacity-50 disabled:cursor-not-allowed flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-300/10 px-4 py-3 text-xs font-extrabold text-cyan-100 transition hover:border-cyan-100/40 hover:bg-cyan-300/15 hover:text-white">
+    <Download className="h-4 w-4" /> {isStandaloneApp || installCompleted ? 'Aplicativo instalado' : isInstallingApp ? 'Abrindo instalação...' : canInstallDirectly ? 'Instalar o Comunica no celular' : 'Instalação direta não liberada pelo navegador'}
   </button>
 
+  {!isStandaloneApp && !installCompleted && !canInstallDirectly && <button type="button" onClick={() => setShowInstallHelp(true)} className="mb-3 w-full text-xs font-bold text-cyan-100 underline">Ver outras formas de instalar</button>}
+  {installStatus && <p role="status" className="mb-3 text-xs text-cyan-100">{installStatus}</p>}
   {/* CAMPO DE BUSCA DE NOME E PIN */}
   <form onSubmit={handleUserLoginSubmit} className="relative z-10 flex flex-col gap-4">
     <div>
@@ -8255,7 +8269,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
               {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
-              {!isStandaloneApp && <button type="button" onClick={handleInstallApp} className="p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
+              {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
               <button type="button" onClick={() => { setActiveTab('updates'); setShowNotificationsDropdown(false); }} className="relative rounded-lg p-2 text-cyan-700 transition hover:bg-cyan-50" title="Novidades do Comunica" aria-label="Novidades do Comunica">
                 <Sparkles className="h-4 w-4" />
                 {platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
@@ -10954,6 +10968,13 @@ const handleDownload = async (fileUrl, fileName) => {
               {automaticScheduleProposal.length > 0 && <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70">
                 <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Ajuste os dias livres da prévia. Lançamentos manuais, ausências e dias fixos são preservados.</p></div><button type="button" disabled={isSavingScheduleProposal} onClick={() => saveAutomaticScheduleProposal()} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />{isSavingScheduleProposal ? 'Publicando...' : 'Salvar e publicar no calendário'}</button></div>
                 <ScheduleCoverageApproval key={JSON.stringify({ input: automaticScheduleInput, rows: automaticScheduleProposal })} analysis={automaticScheduleCoverage} binding={JSON.stringify({ input: automaticScheduleInput, rows: automaticScheduleProposal })} canApprove={Boolean(currentUser.isAdmin || currentUser.isDeveloper)} disabled={isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleIssues.some(issue => issue.blocking)} departments={scheduleScope.departments} onAuthorize={saveAutomaticScheduleProposal} />
+                <ScheduleAiPanel rows={automaticScheduleProposal} requirements={scheduleScopedCoverageRequirements} context={schedulePlanningContext()} inputBinding={automaticScheduleInput} disabled={isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleInput !== automaticScheduleProposalInput || !isManager || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))} onAnalyze={callGemini} onApply={result => {
+                  if (!isManager || isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleInput !== automaticScheduleProposalInput || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) return;
+                  setAutomaticScheduleProposal(result.rows);
+                  setAutomaticScheduleOptimization({ before: result.before, swaps: result.swaps.length, limited: false });
+                  setAutomaticSchedulePreviewDate(result.week);
+                  triggerNotification('Sugestões da IA aplicadas e fixadas na prévia. Revise o mês antes de publicar.');
+                }} />
                 <ScheduleOptimizationSummary before={automaticScheduleOptimization?.before} analysis={automaticScheduleCoverage} swaps={automaticScheduleOptimization?.swaps || 0} limited={automaticScheduleOptimization?.limited} requirements={scheduleScopedCoverageRequirements} fixedDays={automaticScheduleProposal.filter(isFixedProposalRow).length} selectedDate={automaticScheduleVisibleDate} departments={scheduleScope.departments} rows={automaticScheduleProposal} onSelectDate={reviewAutomaticScheduleDay} onReviewRules={canConfigureScheduleRules ? () => { setAutomaticScheduleRuleTab('rules'); automaticScheduleDayEditorRef.current?.closest('form')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); } : undefined} onOptimize={reorganizeAutomaticSchedule} disabled={isSavingScheduleProposal || automaticScheduleInput !== automaticScheduleProposalInput} />
                 <ScheduleProposalCalendar rows={automaticScheduleProposal} analysis={automaticScheduleCoverage} issues={automaticScheduleIssues} selectedDate={automaticScheduleVisibleDate} onSelectDate={setAutomaticSchedulePreviewDate} onReviewIssue={openAutomaticScheduleProblem} onOpenDay={() => { automaticScheduleDayEditorRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); automaticScheduleDayEditorRef.current?.focus({ preventScroll: true }); }} disabled={isSavingScheduleProposal} />
                 {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => openAutomaticScheduleProblem(issue)}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
@@ -11869,6 +11890,7 @@ const handleDownload = async (fileUrl, fileName) => {
     </div>
   );
 }
+
 
 
 
