@@ -23,6 +23,7 @@ import { DEFAULT_DOCUMENT_FOLDER, normalizeDocumentFolder, documentFileType, doc
 import { pollVoteCount, pollParticipation, pollOptionResults, pollFormCompletion, normalizePollQuestions, pollTimelineItems } from './pollInsights';
 const FeatureTutorial = lazy(() => import('./FeatureTutorial.jsx'));
 const ScheduleRuleEditor = lazy(() => import('./ScheduleRuleEditor.jsx'));
+const ScheduleRuleImpactPreview = lazy(() => import('./ScheduleRuleImpactPreview.jsx'));
 const ScheduleCalendar = lazy(() => import('./ScheduleCalendar.jsx'));
 const ScheduleOptimizationSummary = lazy(() => import('./ScheduleOptimizationSummary.jsx'));
 const ScheduleProposalCalendar = lazy(() => import('./ScheduleProposalCalendar.jsx'));
@@ -1058,6 +1059,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [scheduleCoverageReady, setScheduleCoverageReady] = useState(false);
   const [scheduleCoverageError, setScheduleCoverageError] = useState('');
   const [automaticScheduleRules, setAutomaticScheduleRules] = useState(() => sanitizeAutomaticScheduleRules({}));
+  const [savedScheduleRules, setSavedScheduleRules] = useState(null);
   const [automaticScheduleWeeklyHoursText, setAutomaticScheduleWeeklyHoursText] = useState('40:00');
   const [automaticScheduleHolidayDraft, setAutomaticScheduleHolidayDraft] = useState({ companyId: '', assignments: {} });
   const automaticScheduleHolidayAssignments = automaticScheduleHolidayDraft.companyId === activeCompany?.id ? automaticScheduleHolidayDraft.assignments : {};
@@ -2218,6 +2220,7 @@ setDbLoading(false);
   }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper]);
 
   useEffect(() => {
+    setSavedScheduleRules(null);
     setAutomaticScheduleRules(sanitizeAutomaticScheduleRules({}));
     setAutomaticScheduleWeeklyHoursText('40:00');
     setScheduleCoverageReady(false);
@@ -2225,6 +2228,7 @@ setDbLoading(false);
     if (!isFirebaseAvailable || !dbUser || !activeCompany?.id) { setScheduleCoverageError('Conecte-se à empresa para consultar e configurar a cobertura.'); return; }
     return onSnapshot(doc(getTenantCollection('settings'), 'schedule-rules'), snapshot => {
       const rules = sanitizeAutomaticScheduleRules(snapshot.exists() ? snapshot.data() : {});
+      setSavedScheduleRules(rules);
       setAutomaticScheduleRules(rules);
       setScheduleCoverageReady(true);
       setScheduleCoverageError('');
@@ -4055,6 +4059,7 @@ const submitPresence = async (e) => {
     });
     setIsSavingScheduleRules(false);
     if (!saved) return;
+    setSavedScheduleRules(persisted);
     setAutomaticScheduleRules(persisted);
     setAutomaticScheduleWeeklyHoursText(scheduleDurationToText(persisted.hoursPerWeek));
     setAutomaticScheduleProposal([]);
@@ -10977,6 +10982,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${automaticScheduleRules.calculateExtraAutomatically ? 'border-violet-200 bg-violet-50' : 'border-slate-200 bg-white'}`}><input type="checkbox" disabled={Boolean(automaticScheduleRules.ruleGroups?.length)} checked={!automaticScheduleRules.ruleGroups?.length && automaticScheduleRules.calculateExtraAutomatically} onChange={event => setAutomaticScheduleRules(previous => ({ ...previous, calculateExtraAutomatically: event.target.checked }))} className="mt-0.5 accent-violet-700" /><span><strong className="block text-[10px] text-slate-800">Calcular complemento automaticamente</strong><small className="mt-0.5 block text-[9px] leading-4 text-slate-500">Se a jornada prevista ficar abaixo da carga semanal, o saldo é sugerido como hora extra para revisão.</small></span></label>
                   </div>
                   </details>
+                  <ScheduleRuleImpactPreview savedRules={savedScheduleRules} draftRules={automaticScheduleRules} dates={bulkScheduleConsecutiveDays > 0 && bulkScheduleConsecutiveDays <= 31 ? Array.from({ length: bulkScheduleConsecutiveDays }, (_, index) => civilDateShift(bulkSchedule.startDate, { days: index })) : []} users={scheduleScope.employees.filter(user => bulkSchedule.userIds.some(id => String(id) === String(user.id)))} holidays={automaticScheduleDetectedHolidays.map(item => item.date)} history={scheduleScopedSchedules} getDepartment={user => scheduleDepartmentForEmployee(user, scheduleScope, getUserDepts)} disabled={!schedulePlanningDataReady() || automaticScheduleConfigurationAudit.errors.length > 0} />
                   <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/80 p-3 sm:flex-row sm:items-center sm:justify-between"><div><strong className="text-[10px] text-slate-800">Regra persistente da empresa · versão {automaticScheduleRules.version || 1}</strong><p className="mt-0.5 text-[9px] leading-4 text-slate-500">Ao salvar, uma nova versão será registrada e vinculada às escalas publicadas.</p>{automaticScheduleRules.versionHistory?.length > 0 && <details className="mt-2"><summary className="cursor-pointer text-[9px] font-bold text-cyan-800">Ver histórico de versões</summary><div className="mt-2 space-y-1">{automaticScheduleRules.versionHistory.slice().reverse().map(item => <p key={`${item.version}-${item.savedAt}`} className="text-[9px] text-slate-500">v{item.version} · {new Date(item.savedAt).toLocaleString('pt-BR')} · {item.savedBy || 'Responsável não informado'} · {item.summary}</p>)}</div></details>}</div><button type="button" disabled={isSavingScheduleRules} onClick={saveAutomaticScheduleRules} className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-60">{isSavingScheduleRules ? <LoaderCircle className="mr-1.5 inline h-4 w-4 animate-spin" /> : <Check className="mr-1.5 inline h-4 w-4" />}{isSavingScheduleRules ? 'Salvando...' : 'Salvar nova versão'}</button></div>
                 </div> : automaticScheduleRuleTab === 'team' && canConfigureScheduleRules ? <div className="space-y-4 p-4">
                   <CoverageRequirementEditor embedded requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} canConfigure={canConfigureScheduleRules} onSave={saveScheduleCoverageRequirements} defaultDepartment={scheduleScope.departmentIds[0] || 'all'} ready={scheduleCoverageReady} error="" />
