@@ -7,28 +7,48 @@ export const scheduleAiSystemInstruction = SYSTEM;
 const minute = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || '') ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3)) : NaN;
 const sameWeek = (a, b) => a.weekKey && a.weekKey === b.weekKey;
 const movable = row => !isFixedProposalRow(row) && (!row.holiday || row.holidayWorkingDay) && ['Presencial', 'Home Office', 'Folga'].includes(row.status);
+const issueKey = issue => JSON.stringify([issue.userId, issue.date, issue.rowKey, issue.code, issue.message]);
+const displayDate = date => date.split('-').reverse().join('/');
+
+function coverageBlockMessage(analysis, context) {
+  const pending = analysis.days.flatMap(day => day.rules.filter(rule => rule.unknown).map(rule => {
+    const sector = context.departments?.find(item => item.id === rule.department)?.name || rule.department;
+    const reason = rule.configurationMissing
+      ? 'defina aberto ou fechado em Necessidade de pessoas (domingos e feriados exigem configuração própria)'
+      : rule.closedConflict ? 'há trabalho marcado em um setor fechado; revise o funcionamento ou a marcação'
+        : 'confira entrada, saída e início/fim do intervalo nas marcações da prévia e do calendário';
+    return `${displayDate(day.date)} · ${sector}: ${reason}.`;
+  }));
+  return 'Confira os horários e o funcionamento dos setores na semana analisada:\n' + pending.slice(0, 6).join('\n')
+    + (pending.length > 6 ? `\nMais ${pending.length - 6} pendência(s) nesta semana.` : '');
+}
 const operationFields = ['status', 'shiftStart', 'shiftEnd', 'breakStart', 'breakEnd', 'breakMinutes', 'extraHours', 'shift'];
 
 export function buildScheduleAiRequest(rows, requirements, context = {}) {
   if (!rows.length || !requirements.length) throw new Error('Gere a prévia e cadastre a necessidade de pessoas antes de analisar com IA.');
   const analysis = analyzeProposalCoverage(rows, requirements, context);
-  if (analysis.unknown) throw new Error('Confira os horários e o funcionamento dos setores antes de analisar com IA.');
   const issues = scheduleRuleIssues(rows, context.history || []).filter(issue => issue.blocking);
-  if (issues.some(issue => ['missing-time', 'zero-shift', 'incomplete-break', 'invalid-break', 'unlocated-break', 'invalid-overtime', 'long-shift'].includes(issue.code))) throw new Error('Confira os horários e intervalos da prévia antes de analisar com IA.');
-  if (!analysis.missingMinutes && !issues.length) throw new Error('A prévia já atende à cobertura e às regras verificadas. Não é necessário consumir uma análise de IA.');
+  if (!analysis.missingMinutes && !issues.length && !analysis.unknown) throw new Error('A prévia já atende à cobertura e às regras verificadas. Não é necessário consumir uma análise de IA.');
   const weeks = [...new Set(rows.map(row => row.weekKey).filter(Boolean))];
   const score = week => analysis.days.filter(day => rows.some(row => row.weekKey === week && row.date === day.date))
     .reduce((sum, day) => sum + day.rules.reduce((total, rule) => total + rule.segments.reduce((minutes, slot) => minutes + (minute(slot.end) - minute(slot.start)) * slot.missing, 0), 0), 0)
-    + issues.filter(issue => rows.some(row => row.weekKey === week && row.date === issue.date)).length;
+    + issues.filter(issue => rows.some(row => row.weekKey === week && row.date === issue.date)).length
+    + analysis.days.filter(day => rows.some(row => row.weekKey === week && row.date === day.date)).reduce((sum, day) => sum + day.rules.reduce((total, rule) => total + rule.unknown, 0), 0);
   const week = weeks.sort((a, b) => score(b) - score(a) || a.localeCompare(b))[0];
   const weekRows = rows.filter(row => row.weekKey === week);
   if (!week || weekRows.some(row => !row.dept)) throw new Error('Confira a semana e os setores da prévia antes de analisar com IA.');
+  const dates = new Set(weekRows.map(row => row.date));
+  const weekAnalysis = analyzeProposalCoverage(rows, requirements, context, dates);
+  if (weekAnalysis.unknown) throw new Error(coverageBlockMessage(weekAnalysis, context));
+  const weekIssues = issues.filter(issue => dates.has(issue.date));
+  const timeIssues = weekIssues.filter(issue => ['missing-time', 'zero-shift', 'incomplete-break', 'invalid-break', 'unlocated-break', 'invalid-overtime', 'long-shift'].includes(issue.code));
+  if (timeIssues.length) throw new Error('Confira os horários e intervalos da prévia na semana analisada:\n' + timeIssues.slice(0, 6).map(issue => `${displayDate(issue.date)}: ${issue.message}`).join('\n'));
+
   const people = [...new Set(weekRows.map(row => String(row.userId)))].sort();
   if (people.length > 40) throw new Error('Para esta análise, selecione até 40 colaboradores. A cobertura continuará considerando toda a equipe do setor.');
   const tokens = new Map(people.map((id, index) => [id, 'P' + (index + 1)]));
   const departments = [...new Set(weekRows.map(row => row.dept))];
   const departmentTokens = new Map(departments.map((id, index) => [id, 'S' + (index + 1)]));
-  const dates = new Set(weekRows.map(row => row.date));
   const payload = {
     week,
     people: people.map(id => ({ person: tokens.get(id),
@@ -43,7 +63,7 @@ export function buildScheduleAiRequest(rows, requirements, context = {}) {
       date: day.date, sector: departmentTokens.get(rule.department), closed: Boolean(rule.closed), min: rule.minimum, max: rule.maximum ?? null,
       slots: rule.segments.map(slot => ({ start: slot.start, end: slot.end, available: slot.available, missing: slot.missing, excess: slot.excess || 0 })),
     }))),
-    issues: issues.filter(issue => dates.has(issue.date)).map(issue => ({ person: tokens.get(String(issue.userId)) || '', date: issue.date, code: issue.code })),
+    issues: weekIssues.map(issue => ({ person: tokens.get(String(issue.userId)) || '', date: issue.date, code: issue.code })),
   };
   const prompt = JSON.stringify(payload);
   if (prompt.length > 45000) throw new Error('A semana tem muitos detalhes. Reduza a quantidade de pessoas selecionadas para analisar.');
@@ -93,12 +113,17 @@ export function validateScheduleAiResponse(text, request, rows, requirements, co
       row.ruleTrace = appendScheduleTrace(row, { source: 'ai', label: row.ruleReason, detail: 'Trabalho e folga reorganizados na mesma semana. Aplicação depende da revisão do gestor.' });
     }
   }
-  const blocking = scheduleRuleIssues(proposed, context.history || []).filter(issue => issue.blocking);
+  const dates = new Set(rows.filter(row => row.weekKey === request.week).map(row => row.date));
+  const originalIssues = scheduleRuleIssues(rows, context.history || []).filter(issue => issue.blocking);
+  const originalIssueKeys = new Set(originalIssues.map(issueKey));
+  const blocking = scheduleRuleIssues(proposed, context.history || []).filter(issue => issue.blocking
+    && (dates.has(issue.date) || !originalIssueKeys.has(issueKey(issue))));
   if (blocking.length) throw new Error('A sugestão não passou na validação: ' + blocking[0].message);
   const after = analyzeProposalCoverage(proposed, requirements, context);
   const before = request.analysis;
-  const fixedIssues = scheduleRuleIssues(rows, context.history || []).some(issue => issue.blocking);
-  if (after.unknown || !preservesCoverage(before, after) || after.missingMinutes > before.missingMinutes
+  const fixedIssues = originalIssues.some(issue => dates.has(issue.date));
+  const weekAfter = analyzeProposalCoverage(proposed, requirements, context, dates);
+  if (weekAfter.unknown || after.unknown > before.unknown || !preservesCoverage(before, after) || after.missingMinutes > before.missingMinutes
     || !(after.missingMinutes < before.missingMinutes || after.excessMinutes < before.excessMinutes || fixedIssues)) {
     throw new Error('A sugestão não melhora a cobertura com segurança. Nenhum dia foi alterado.');
   }

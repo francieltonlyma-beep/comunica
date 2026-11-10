@@ -103,3 +103,65 @@ test('não consome análise para período já correto, nem para horários sem co
   assert.throws(() => buildScheduleAiRequest(incomplete, requirements, context), /Confira os horários/);
 });
 
+
+test('pendência de funcionamento em outra semana não bloqueia revisão nem aplicação segura', () => {
+  const { rows, requirements, context } = fixture();
+  rows.push({ ...rows[6], key: 'other-sunday', date: '2026-11-15', weekKey: '2026-11-09' });
+  const request = buildScheduleAiRequest(rows, requirements, context);
+  assert.equal(request.week, start);
+  assert.ok(request.analysis.unknown > 0);
+  const result = validateScheduleAiResponse(response([swap]), request, rows, requirements, context);
+  assert.equal(result.rows.at(-1).date, '2026-11-15');
+  assert.deepEqual(result.rows.at(-1), rows.at(-1));
+  assert.equal(result.after.unknown, result.before.unknown);
+  assert.equal(result.after.missingMinutes, 0);
+});
+
+test('bloqueio de domingo ou feriado informa data, nome do setor e campo correto', () => {
+  for (const holiday of [false, true]) {
+    const { rows, requirements, context } = fixture();
+    context.departments = [{ id: 'private-sector', name: 'Vila A' }];
+    if (holiday) context.holidays = ['2026-11-03'];
+    else requirements.pop();
+    assert.throws(() => buildScheduleAiRequest(rows, requirements, context), error => {
+      assert.match(error.message, new RegExp((holiday ? '03' : '08') + '/11/2026 · Vila A'));
+      assert.match(error.message, /defina aberto ou fechado em Necessidade de pessoas/);
+      return true;
+    });
+  }
+});
+
+test('configuração válida de domingo e feriado permite análise sem alterar necessidades', () => {
+  const { rows, requirements, context } = fixture();
+  context.holidays = ['2026-11-03'];
+  requirements.push({ ...requirements[0], id: 'holiday', date: '2026-11-03' });
+  const original = JSON.stringify(requirements);
+  assert.equal(buildScheduleAiRequest(rows, requirements, context).week, start);
+  assert.equal(JSON.stringify(requirements), original);
+});
+
+test('marcação incompleta na semana continua bloqueando IA com data e setor', () => {
+  const { rows, requirements, context } = fixture();
+  requirements[0].weekdays = [1, 2];
+  rows[0].breakEnd = '';
+  context.departments = [{ id: 'private-sector', name: 'Vila A' }];
+  assert.throws(() => buildScheduleAiRequest(rows, requirements, context), /02\/11\/2026 · Vila A: confira entrada, saída e início\/fim do intervalo/);
+});
+
+test('pendência antiga de outra semana é preservada sem impedir melhoria da semana válida', () => {
+  const { rows, requirements, context } = fixture();
+  rows.push({ ...rows[0], key: 'other-monday', date: '2026-11-09', weekKey: '2026-11-09', shiftStart: '' });
+  const request = buildScheduleAiRequest(rows, requirements, context);
+  const result = validateScheduleAiResponse(response([swap]), request, rows, requirements, context);
+  assert.deepEqual(result.rows.at(-1), rows.at(-1));
+  assert.equal(result.after.missingMinutes, 0);
+});
+
+test('troca que cria violação na fronteira da próxima semana continua bloqueada', () => {
+  const { rows, requirements, context } = fixture();
+  rows.forEach(row => { row.restEveryDays = 6; });
+  rows.push({ ...rows[0], key: 'other-monday', date: '2026-11-09', weekKey: '2026-11-09' });
+  requirements[1] = { ...requirements[0], id: 'sunday', date: '2026-11-08', weekdays: [0] };
+  const request = buildScheduleAiRequest(rows, requirements, context);
+  assert.throws(() => validateScheduleAiResponse(response([{ ...swap, to: '2026-11-08' }]), request, rows, requirements, context), /validação/);
+});
