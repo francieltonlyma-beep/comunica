@@ -76,6 +76,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { appHistoryState, appNavigationKey, readAppNavigation } from './appNavigationHistory.js';
 import { clearLegacyCompanyCache, readSessionIdentity, sessionIdentity } from './sessionPrivacy.js';
 import { publicDirectoryProfile, directoryFields } from './userDirectory.js';
+import { employeeAccessLabel, employeeAccessMillis } from './employeeAccess.js';
 import { sortCollectionRecords } from './companyCollections.js';
 import { buildManagementNavigation, integraNavigationSections } from './managementNavigation.js';
 import {
@@ -1966,6 +1967,32 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       setCompanies(snapshot.docs.map(company => ({ id: company.id, ...company.data() })));
     });
   }, [dbUser, currentUser?.isDeveloper]);
+
+  useEffect(() => {
+    if (!authReady || !dbUser || !currentUser?.id || currentUser.id !== dbUser.uid ||
+        currentUser.isDeveloper || !activeCompany?.id || authScope.companyId !== activeCompany.id || !functionsClient) return;
+    let lastAttempt = 0;
+    let inFlight = false;
+    const recordAccess = async () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || inFlight || Date.now() - lastAttempt < 15 * 60 * 1000) return;
+      inFlight = true;
+      try {
+        await httpsCallable(functionsClient, 'recordEmployeeAccess')();
+        lastAttempt = Date.now();
+      } catch (error) {
+        console.warn('Não foi possível atualizar o último acesso', error);
+      } finally {
+        inFlight = false;
+      }
+    };
+    recordAccess();
+    document.addEventListener('visibilitychange', recordAccess);
+    window.addEventListener('online', recordAccess);
+    return () => {
+      document.removeEventListener('visibilitychange', recordAccess);
+      window.removeEventListener('online', recordAccess);
+    };
+  }, [authReady, dbUser, currentUser?.id, currentUser?.isDeveloper, activeCompany?.id, authScope.companyId, functionsClient]);
 
   useEffect(() => {
     if (!dbUser || !currentUser?.id || currentUser.isDeveloper || !activeCompany?.id) return undefined;
@@ -6779,11 +6806,11 @@ const notificationsToShow = [...allNotifications]
   }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
   const peopleOverview = {
     active: employeesList.length,
-    recentlyActive: employeesList.filter(user => Number(user.lastLoginAt || 0) >= Date.now() - (7 * 24 * 60 * 60 * 1000)).length,
-    pendingAccess: employeesList.filter(user => !user.lastLoginAt).length,
+    recentlyActive: employeesList.filter(user => employeeAccessMillis(user.lastLoginAt) >= Date.now() - (7 * 24 * 60 * 60 * 1000)).length,
+    pendingAccess: employeesList.filter(user => !employeeAccessMillis(user.lastLoginAt)).length,
     incompleteProfile: employeesList.filter(user => !user.role || !getUserDepts(user).length).length,
   };
-  const peopleAttentionList = employeesList.filter(user => !user.lastLoginAt || !user.role || !getUserDepts(user).length)
+  const peopleAttentionList = employeesList.filter(user => !employeeAccessMillis(user.lastLoginAt) || !user.role || !getUserDepts(user).length)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
   const accessProfileForUser = (user) => {
     if (!user || user.isAdmin || user.isDeveloper) return fullAccessProfile();
@@ -9707,7 +9734,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-800">Cadastros que precisam de atenção</h4><p className="mt-1 text-xs text-slate-500">Ajuste vínculo, cargo ou acompanhe quem ainda não fez o primeiro acesso.</p></div><button type="button" onClick={() => setMgmtSubTab('employees')} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Abrir equipe</button></div>
-                      <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!user.lastLoginAt ? 'Ainda não acessou' : ''}{!user.lastLoginAt && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { setEmpSearchText(user.name || ''); setMgmtSubTab('employees'); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
+                      <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!employeeAccessLabel(user.lastLoginAt) ? 'Ainda não acessou' : ''}{!employeeAccessLabel(user.lastLoginAt) && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { setEmpSearchText(user.name || ''); setMgmtSubTab('employees'); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-800">Distribuição da equipe</h4><div className="mt-4 space-y-3">{sectorCounts.slice().sort((a,b) => b.count - a.count).slice(0, 5).map(sector => <div key={sector.id}><div className="flex justify-between text-[10px] font-semibold text-slate-600"><span>{sector.name}</span><span>{sector.count}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${peopleOverview.active ? Math.round((sector.count / peopleOverview.active) * 100) : 0}%` }} /></div></div>)}{sectorCounts.length === 0 && <p className="mt-4 text-xs text-slate-500">Cadastre setores para acompanhar a distribuição.</p>}</div></div>
                   </div>
@@ -9808,10 +9835,10 @@ const handleDownload = async (fileUrl, fileName) => {
                               <span className="block text-[10px] font-bold text-slate-700">{employeesList.find(manager => manager.id === user.managerId)?.name || 'Não definido'}</span>
                             </td>
                             <td className="p-4 text-[10px] font-medium text-slate-500 whitespace-nowrap">
-                              {user.lastLoginAt ? <><strong className="block text-slate-700">{new Date(user.lastLoginAt).toLocaleDateString('pt-BR')}</strong><span>{new Date(user.lastLoginAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></> : <span className="font-bold text-amber-700">Ainda não acessou</span>}
+                              {employeeAccessLabel(user.lastLoginAt) ? <><strong className="block text-slate-700">{employeeAccessLabel(user.lastLoginAt).date}</strong><span>{employeeAccessLabel(user.lastLoginAt).time}</span></> : <span className="font-bold text-amber-700">Ainda não acessou</span>}
                             </td>
                             <td className="p-4">
-                              {(!user.role || !getUserDepts(user).length) ? <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-black text-amber-700">Cadastro incompleto</span> : user.lastLoginAt ? <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black text-emerald-700">Ativo</span> : <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-black text-blue-700">Aguardando acesso</span>}
+                              {(!user.role || !getUserDepts(user).length) ? <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-black text-amber-700">Cadastro incompleto</span> : employeeAccessLabel(user.lastLoginAt) ? <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black text-emerald-700">Ativo</span> : <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-black text-blue-700">Aguardando acesso</span>}
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-2">
