@@ -8082,9 +8082,22 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                         if (overdueOrder !== 0) return overdueOrder;
                         if (a.unread !== b.unread) return b.unread - a.unread;
                       }
-                      return getMessageTimestamp(
-... 1149 bytes omitted ...
-               return `${thread.subject || ''} ${names} ${content}`.toLocaleLowerCase('pt-BR').includes(searchText);
+                      return getMessageTimestamp(b.latest) - getMessageTimestamp(a.latest);
+                    });
+
+                    const visibleThreadList = threadList.filter(thread => {
+                      if (showArchivedThreads !== isThreadArchived(thread.id)) return false;
+                      const matchesStatus = inboxStatusFilter === 'all'
+                        || (inboxStatusFilter === 'unread' && thread.unread > 0)
+                        || (inboxStatusFilter === 'mine' && thread.mine)
+                        || (inboxStatusFilter === 'open' && !thread.metadata.completedAt)
+                        || (inboxStatusFilter === 'overdue' && !thread.metadata.completedAt && /atras/i.test(thread.deadline.label || ''))
+                        || (inboxStatusFilter === 'completed' && Boolean(thread.metadata.completedAt));
+                      if (!matchesStatus) return false;
+                      if (!searchText) return true;
+                      const names = thread.participants.map(id => messageContacts.find(user => user.id === id)?.name || '').join(' ');
+                      const content = thread.messages.map(message => message.content || '').join(' ');
+                      return `${thread.subject || ''} ${names} ${content}`.toLocaleLowerCase('pt-BR').includes(searchText);
                     });
 
                     const inboxTotals = threadList.reduce((totals, thread) => {
