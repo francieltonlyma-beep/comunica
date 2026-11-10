@@ -681,6 +681,35 @@ export const authenticateWithPin = onCall({invoker: "public"}, async (request) =
   return {...await createSession(company, user), requiresPinChange};
 });
 
+// A sessão do Firebase permanece aberta entre visitas; o login por PIN sozinho
+// não representa o último uso do aplicativo.
+export const recordEmployeeAccess = onCall({invoker: 'public', maxInstances: 5}, async request => {
+  const uid = request.auth?.uid;
+  const companyId = String(request.auth?.token.companyId || '');
+  if (!uid || uid === SUPPORT_UID || request.auth?.token.isDeveloper === true ||
+      !/^[a-zA-Z0-9_-]+$/.test(companyId)) {
+    throw new HttpsError('permission-denied', 'Sessão de colaborador inválida.');
+  }
+  const database = getFirestore();
+  const base = `artifacts/comunica-salvador/public/data/companies/${companyId}`;
+  const company = await database.doc(base).get();
+  if (!company.exists || company.data()?.codeBlocked === true) {
+    throw new HttpsError('permission-denied', 'Empresa indisponível.');
+  }
+  const profile = database.doc(`${base}/users/${uid}`);
+  await database.runTransaction(async transaction => {
+    const snapshot = await transaction.get(profile);
+    if (!snapshot.exists || snapshot.data()?.isDeveloper === true) {
+      throw new HttpsError('permission-denied', 'Colaborador não encontrado.');
+    }
+    const now = Date.now();
+    if (now - Number(snapshot.data()?.lastLoginAt || 0) >= 15 * 60 * 1000) {
+      transaction.update(profile, {lastLoginAt: now});
+    }
+  });
+  return {recorded: true};
+});
+
 export const authenticateDeveloper = onCall({invoker: "public"}, async (request) => {
   const appId = String(request.data?.appId || "");
   const database = getFirestore();
