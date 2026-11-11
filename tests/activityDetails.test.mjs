@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const storageRules = fs.readFileSync(new URL('../storage.rules', import.meta.url), 'utf8');
+const firestoreRules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
 const functionsSource = fs.readFileSync(new URL('../functions/src/index.ts', import.meta.url), 'utf8');
 
 test('activity details expose comments, files and history for both activity sources', () => {
@@ -30,4 +31,12 @@ test('a recurring occurrence starts with clean collaboration data and its own hi
 test('deleting a standalone activity also removes its stored attachments', () => {
   assert.match(functionsSource, /export const cleanupDeletedActivityFiles = onDocumentDeleted/);
   assert.match(functionsSource, /filePath\.includes\('\/attachments\/'\)/);
+});
+
+test('standalone invitations alert the invitee and require their own response', () => {
+  assert.match(app, /Convites para participar/);
+  assert.match(app, /handleRespondActivityInvitation/);
+  assert.match(functionsSource, /Convite para participar de uma atividade/);
+  assert.match(firestoreRules, /function respondsToActivityInvitation/);
+  assert.match(firestoreRules, /after\.diff\(before\)\.affectedKeys\(\)\.hasOnly\(\[uid\]\)/);
 });
