@@ -1265,6 +1265,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   const [dbUser, setDbUser] = useState(null);
   const [dbLoading, setDbLoading] = useState(isFirebaseAvailable);
+  const [liveDataStatus, setLiveDataStatus] = useState({ companyId: '', users: 'loading', messages: 'loading', activities: 'loading' });
 
   const integraEnabled = useIntegraAccess(db, appId, activeCompany?.id, Boolean(dbUser));
 
@@ -2067,10 +2068,22 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       setStandaloneActivities([]); setActivityTemplates([]); setPresenceList([]);
       setCalendarEvents([]); setAbsences([]); setWorkSchedules([]);
       setScheduleSwapRequests([]); setPollsList([]);
-      setDbLoading(false);
+      setLiveDataStatus({ companyId: activeCompany?.id || '', users: 'loading', messages: 'loading', activities: 'loading' });
+      if (authReady) setDbLoading(false);
       return;
     }
 
+    setDbLoading(true);
+    setLiveDataStatus({ companyId: activeCompany.id, users: 'loading', messages: 'loading', activities: 'loading' });
+    const requiredSources = new Set(['users', 'messages', 'activities']);
+    const readySources = new Set();
+    const markSource = (name, status) => {
+      if (!requiredSources.has(name)) return;
+      setLiveDataStatus(previous => ({ ...previous, companyId: activeCompany.id, [name]: status }));
+      if (status === 'ready' || status === 'error') readySources.add(name);
+      if (readySources.size === requiredSources.size) setDbLoading(false);
+    };
+    const connectionTimer = window.setTimeout(() => setDbLoading(false), 12000);
     const getCollectionPath = (name) => getTenantCollection(name);
 
     const setupSync = (collectionName, setState) => {
@@ -2089,7 +2102,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           ? query(colRef, where('dept', 'in', ownScheduleDepartments))
         : colRef;
       const affectsCoverage = ['users', 'departments', 'schedules', 'absences'].includes(collectionName);
-      return onSnapshot(source, { includeMetadataChanges: affectsCoverage }, (snapshot) => {
+      return onSnapshot(source, { includeMetadataChanges: affectsCoverage || requiredSources.has(collectionName) }, (snapshot) => {
+        markSource(collectionName, snapshot.metadata.fromCache ? 'cache' : 'ready');
         if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, [collectionName]: snapshot.metadata.fromCache ? 'loading' : 'ready' }));
         if (!snapshot.empty) {
           const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -2107,7 +2121,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           // ou migrações antigas. A empresa começa vazia somente quando isso é real.
           setState([]);
         }
-      }, () => {
+      }, (error) => {
+        console.error(`Falha ao sincronizar ${collectionName}`, error);
+        markSource(collectionName, 'error');
         if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, [collectionName]: 'error' }));
         setState([]);
         setDbLoading(false);
@@ -2131,9 +2147,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     const unsubDocuments = () => {};
     const unsubPolls = setupSync('polls', setPollsList);
 
-setDbLoading(false);
-
     return () => {
+      window.clearTimeout(connectionTimer);
       unsubDepts();
       unsubUsers();
       unsubRoles();
@@ -8285,6 +8300,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       <NotificationToast notification={customNotification} />
       <CloudActivityIndicator activity={cloudActivity} />
       <InstallAppDialog open={showInstallHelp} standalone={isStandaloneApp} onClose={() => setShowInstallHelp(false)} />
+      {authReady && currentUser && activeCompany && (!dbUser || liveDataStatus.companyId !== activeCompany.id || ['users', 'messages', 'activities'].some(name => liveDataStatus[name] !== 'ready')) && <div role="status" className="sticky top-0 z-[10079] flex flex-wrap items-center justify-center gap-3 bg-amber-100 px-4 py-3 text-xs font-semibold text-amber-950"><span>{Object.values(liveDataStatus).includes('error') ? 'Não foi possível sincronizar os dados da empresa. Os números exibidos podem estar desatualizados.' : 'Aguardando dados atualizados da empresa. Os números exibidos podem estar desatualizados.'}</span><button type="button" onClick={async () => { try { if (!auth.currentUser) { await signOut(auth); return; } await auth.currentUser.getIdToken(true); window.location.reload(); } catch { await signOut(auth); } }} className="rounded-lg bg-amber-900 px-3 py-1.5 font-bold text-white">Tentar reconectar</button></div>}
 
 
 <header className="sticky top-0 z-40 border-b border-blue-100 bg-gradient-to-r from-white via-white to-cyan-50/80 pt-[env(safe-area-inset-top)] text-slate-800 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur">
