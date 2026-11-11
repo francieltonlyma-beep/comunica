@@ -35,18 +35,6 @@ test('activity details normalize comments, attachments and audit history', () =>
   assert.equal(activityUpdateDescription(activity, { assigneeIds: ['u2'] }, [{ id: 'u2', name: 'Bruno' }]), 'Responsável definido: Bruno');
 });
 
-test('activity preserves comment edit metadata and collaborator decisions', () => {
-  const activity = normalizeMessageActivity({
-    ...createMessageActivity({ id: 'u1', name: 'Ana' }),
-    comments: [{ id: 'c1', text: 'Texto revisado', authorId: 'u1', authorName: 'Ana', createdAt: 10, editedAt: 20, editedBy: 'u1' }],
-    collaborators: { u2: { name: 'Bruno', status: 'accepted', invitedAt: 12, invitedBy: 'u1', respondedAt: 18 } },
-  });
-  assert.equal(activity.comments[0].editedAt, 20);
-  assert.equal(activity.comments[0].editedBy, 'u1');
-  assert.equal(activity.collaborators.u2.status, 'accepted');
-  assert.equal(activity.collaborators.u2.respondedAt, 18);
-});
-
 test('activity dependencies block completion and reject circular chains', () => {
   const base = createMessageActivity({ id: 'u1', name: 'Ana' });
   const rows = [

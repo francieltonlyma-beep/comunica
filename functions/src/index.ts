@@ -1016,7 +1016,7 @@ const recurringActivityPayload = (activityValue: unknown, nextDueDate: string, s
   }).filter((item) => item.text).slice(0, 30) : [];
   return {
     ...activity,
-    status: 'pending', dueDate: nextDueDate, checklist, comments: [], attachments: [], collaborators: {},
+    status: 'pending', dueDate: nextDueDate, checklist, comments: [], attachments: [],
     history: [{
       id: `history-${now}-recurrence`, type: 'created',
       text: 'Próxima ocorrência criada automaticamente', actorId: '', actorName: 'Comunica', timestamp: now,
@@ -1310,40 +1310,27 @@ export const notifyStandaloneActivityChange = onDocumentUpdated(
       }
     }
 
-    const beforeCollaborators = before.collaborators && typeof before.collaborators === 'object' ? before.collaborators as Record<string, {status?: string}> : {};
-    const afterCollaborators = after.collaborators && typeof after.collaborators === 'object' ? after.collaborators as Record<string, {status?: string}> : {};
-    const newInvitees = Object.keys(afterCollaborators).filter((id) => afterCollaborators[id]?.status === 'invited' && beforeCollaborators[id]?.status !== 'invited');
-    const respondedInvitees = Object.keys(afterCollaborators).filter((id) => beforeCollaborators[id]?.status === 'invited' && ['accepted', 'declined'].includes(afterCollaborators[id]?.status || ''));
-    const acceptedCollaborators = Object.keys(afterCollaborators).filter((id) => afterCollaborators[id]?.status === 'accepted');
     const newAssignees = activity.assigneeIds.filter((id) => !previous?.assigneeIds.includes(id));
     let recipientIds: string[] = [];
     let title = '';
     let body = String(after.title || 'Atividade na Central de Serviços');
     let type: 'activity_assignment' | 'activity_update' = 'activity_update';
-    if (newInvitees.length > 0) {
-      recipientIds = newInvitees;
-      title = '🤝 Convite para participar de uma atividade';
-      body = `Aceite ou recuse o convite: ${body}`;
-    } else if (respondedInvitees.length > 0) {
-      recipientIds = [activity.createdBy, ...activity.assigneeIds];
-      title = afterCollaborators[respondedInvitees[0]]?.status === 'accepted' ? '✅ Convite para atividade aceito' : '↩️ Convite para atividade recusado';
-      body = `${String(afterCollaborators[respondedInvitees[0]]?.status === 'accepted' ? 'Participação confirmada' : 'Participação recusada')}: ${body}`;
-    } else if (newAssignees.length > 0) {
+    if (newAssignees.length > 0) {
       recipientIds = newAssignees;
       title = '📋 Nova atividade avulsa atribuída a você';
       type = 'activity_assignment';
     } else if (previous && previous.status !== activity.status) {
-      recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
       title = activity.status === 'resolved' ? '✅ Atividade avulsa concluída' : '🔄 Situação da atividade atualizada';
     } else if (previous && previous.dueDate !== activity.dueDate) {
-      recipientIds = [...activity.assigneeIds, ...acceptedCollaborators];
+      recipientIds = activity.assigneeIds;
       title = activity.dueDate ? '📅 Prazo da atividade atualizado' : '📅 Prazo removido da atividade';
       if (activity.dueDate) body = `${body} · ${activity.dueDate.split('-').reverse().join('/')}`;
     } else if (previous && previous.commentCount < activity.commentCount) {
-      recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
       title = '💬 Novo comentário na atividade avulsa';
     } else if (previous && previous.attachmentCount < activity.attachmentCount) {
-      recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
       title = '📎 Novo anexo na atividade avulsa';
     } else return;
     await sendActivityPush({
