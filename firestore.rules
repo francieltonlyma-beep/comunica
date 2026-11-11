@@ -356,6 +356,27 @@ service cloud.firestore {
         && canEdit(app, company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageActivities', true) == true);
     }
+    function respondsToActivityInvitation(company) {
+      let before = resource.data.get('collaborators', {});
+      let after = request.resource.data.get('collaborators', {});
+      let uid = request.auth.uid;
+      return member(company)
+        && resource.data.get('source', '') == 'standalone'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collaborators', 'history', 'updatedAt', 'updatedBy', 'updatedByName'])
+        && before.get(uid, {}).get('status', '') == 'invited'
+        && after.diff(before).affectedKeys().hasOnly([uid])
+        && after.get(uid, {}).diff(before.get(uid, {})).affectedKeys().hasOnly(['status', 'respondedAt'])
+        && after.get(uid, {}).get('status', '') in ['accepted', 'declined']
+        && after.get(uid, {}).get('respondedAt', 0) is int
+        && after.get(uid, {}).get('respondedAt', 0) >= before.get(uid, {}).get('invitedAt', 0)
+        && request.resource.data.get('updatedBy', '') == uid
+        && request.resource.data.get('updatedAt', 0) is int
+        && request.resource.data.get('history', []) is list
+        && request.resource.data.history.size() > 0
+        && request.resource.data.history.size() <= 100
+        && request.resource.data.history == resource.data.get('history', []) + [request.resource.data.history[request.resource.data.history.size() - 1]]
+        && request.resource.data.history[request.resource.data.history.size() - 1].get('actorId', '') == uid;
+    }
     function canManageActivityTemplates(app, company) {
       return manages(app, company) || (member(company)
         && canManageActivities(app, company)
@@ -631,7 +652,8 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'reviewedAt', 'reviewedById', 'reviewedByName', 'decisionNote']))
         );
         allow delete: if kind == 'scheduleSwapRequests' && false;
-        allow create, update, delete: if kind == 'activities' && canManageActivities(app, company);
+        allow create, delete: if kind == 'activities' && canManageActivities(app, company);
+        allow update: if kind == 'activities' && (canManageActivities(app, company) || respondsToActivityInvitation(company));
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
         allow update: if kind == 'applications' && (support() || careerManager(app, company))

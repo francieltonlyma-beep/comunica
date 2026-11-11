@@ -60,7 +60,7 @@ jobs:
       - name: Validate access rules before publishing
         run: npm run test:purchases:rules
       - name: Publish compatible employee endpoints
-        run: npx --yes firebase-tools deploy --only functions:createEmployee,functions:bulkImportEmployees,functions:registerCompany,functions:removeEmployee,functions:recordEmployeeAccess --project comunica-salvador --non-interactive
+        run: npx --yes firebase-tools deploy --only functions:createEmployee,functions:bulkImportEmployees,functions:registerCompany,functions:removeEmployee,functions:recordEmployeeAccess,functions:notifyStandaloneActivityChange --project comunica-salvador --non-interactive
       - name: Prepare public employee directory
         working-directory: functions
         env:
