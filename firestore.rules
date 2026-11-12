@@ -594,7 +594,9 @@ service cloud.firestore {
           && manages(app, company) && (support() || integraEnabled(app, company))
           && resource.data.status in ['requested','approved','quotation','ordered','in_transit','received','exception','stored','delivered']
           && request.resource.data.get('workflowVersion',0) == 2 && request.resource.data.status == 'requested'
-          && validPurchase(request.resource.data, true) && validPurchaseStage(request.resource.data)
+          && request.resource.data.history is list && request.resource.data.history.size() > 0
+          && request.resource.data.history.size() <= 50
+          && request.resource.data.history == resource.data.history.concat([request.resource.data.history[request.resource.data.history.size() - 1]])
           && request.resource.data.participantIds == [resource.data.requesterId]
           && request.resource.data.buyerId == '' && request.resource.data.approverId == ''
           && request.resource.data.receiverId == '' && request.resource.data.recipientId == '' && request.resource.data.financeId == ''
