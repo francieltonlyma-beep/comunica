@@ -21,10 +21,10 @@
       "count": 3
     },
     "react-hooks/purity": {
-      "count": 83
+      "count": 86
     },
     "react-hooks/refs": {
-      "count": 4
+      "count": 5
     }
   },
   "src/Careers.jsx": {
