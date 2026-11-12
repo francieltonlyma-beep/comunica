@@ -1,7 +1,7 @@
 importScripts('https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/12.14.0/firebase-messaging-compat.js');
 
-const COMUNICA_CACHE = 'comunica-shell-v3';
+const COMUNICA_CACHE = 'comunica-shell-v4';
 const COMUNICA_SHELL = ['/', '/manifest.json', '/pwa/icon-192.png', '/pwa/icon-512.png'];
 
 self.addEventListener('install', (event) => {
