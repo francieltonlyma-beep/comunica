@@ -17,6 +17,11 @@ service cloud.firestore {
       return member(company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
     }
+    function purchaseRoleAllowed(app, company, field, uid) {
+      return !exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
+        || get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get(field, []).size() == 0
+        || uid in get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get(field, []);
+    }
     function protectedUser(data, id) {
       return data.get('isDeveloper', false) == true || id == 'platform-support-francielton';
     }
@@ -70,7 +75,7 @@ service cloud.firestore {
         'approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt',
         'invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt',
         'financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt',
-        'bundleId','bundleSize','bundleIndex'])
+        'bundleId','bundleSize','bundleIndex','quoteNumber','quoteTotal'])
         && data.get('category','') is string && data.get('category','').size() <= 80
         && data.item is string && data.item.size() > 0 && data.item.size() <= 160
         && data.specification is string && data.specification.size() > 0 && data.specification.size() <= 1000
@@ -99,6 +104,9 @@ service cloud.firestore {
       return data.updatedAt is int && data.updatedBy is string
         && data.history is list && data.history.size() > 0 && data.history.size() <= 50
         && data.quotedPrice is number && data.quotedPrice >= 0
+        && data.get('quoteTotal',0) is number && data.get('quoteTotal',0) >= 0
+        && (data.get('quoteNumber','') == '' || data.quotedPrice == 0 || data.get('quoteTotal',0) >= data.quotedPrice * data.quantity)
+        && data.get('quoteNumber','') is string && data.get('quoteNumber','').size() <= 40
         && data.get('invoiceTotal',0) is number && data.get('invoiceTotal',0) >= 0
         && data.receivedQuantity is number && data.receivedQuantity >= 0 && data.receivedQuantity <= data.quantity
         && data.get('condition','pending') in ['pending','ok','damaged'];
@@ -168,7 +176,7 @@ service cloud.firestore {
           || (data.approverId != data.requesterId && data.approverId != data.buyerId))
         && (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('enabled', false) == true
-        ? data.approverId == (data.quotedPrice * data.quantity <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.threshold
+        ? data.approverId == ((data.get('quoteTotal',0) > 0 ? data.quoteTotal : data.quotedPrice * data.quantity) <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.threshold
           ? get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.lowerApproverId
           : get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.upperApproverId)
         : (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId))
@@ -178,16 +186,18 @@ service cloud.firestore {
       let changed = after.diff(before).affectedKeys();
       let actor = request.auth.uid;
       let nextStage = after.status;
-      return before.status == nextStage
+      return (!changed.hasAny(['buyerId']) || after.buyerId == '' || purchaseRoleAllowed(app, company, 'buyerIds', after.buyerId))
+        && (!changed.hasAny(['supplier','quotedPrice','quoteTotal','expectedDate']) || purchaseRoleAllowed(app, company, 'buyerIds', actor))
+        && (before.status == nextStage
         ? ((manages(app, company) && (before.status != 'closed' || changed.hasOnly(['note','updatedAt','updatedBy','history']))
-          && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','expectedDate']))
+          && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','quoteTotal','expectedDate']))
           && (before.get('buyerConfirmedAt',0) == 0 || !changed.hasAny(['orderNumber']))
           && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber','invoiceTotal']))
           && !changed.hasAny(['financeIssue','financeIssueBy','financeIssueAt','financeResolution','financeResolutionBy','financeResolutionAt'])
           && !changed.hasAny(['approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt','invoiceReceivedBy','invoiceReceivedAt','recipientConfirmedBy','recipientConfirmedAt','financeConfirmedBy','financeConfirmedAt']))
           || (actor == before.get('buyerId','') && actor != '' && before.status in ['requested','quotation','approved','ordered','in_transit']
-            && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','orderNumber','expectedDate']))
-            && changed.hasOnly(['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note','updatedAt','updatedBy','history']))
+            && (before.get('approvedAt',0) == 0 || !changed.hasAny(['supplier','quotedPrice','quoteTotal','orderNumber','expectedDate']))
+            && changed.hasOnly(['supplier','quotedPrice','quoteTotal','orderNumber','expectedDate','carrier','trackingCode','note','updatedAt','updatedBy','history']))
           || (actor == before.get('receiverId','') && actor != '' && before.status in ['ordered','in_transit','received','exception']
             && (before.get('invoiceReceivedAt',0) == 0 || !changed.hasAny(['invoiceNumber','invoiceTotal']))
             && changed.hasOnly(['invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','note','updatedAt','updatedBy','history'])))
@@ -197,8 +207,8 @@ service cloud.firestore {
             || (nextStage == 'cancelled' && manages(app, company) && changed.hasOnly(['status','note','updatedAt','updatedBy','history']))
             || (nextStage == 'requested' && before.status == 'rejected' && manages(app, company)
               && changed.hasOnly(['status','updatedAt','updatedBy','history']))
-            || (nextStage == 'quotation' && actor == before.get('buyerId','') && actor != '' && changed.hasOnly(['status','updatedAt','updatedBy','history','supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note']))
-            || (nextStage == 'approved' && actor == before.get('approverId','') && actor != '' && purchaseAuthority(app, company, after)
+            || (nextStage == 'quotation' && actor == before.get('buyerId','') && actor != '' && purchaseRoleAllowed(app, company, 'buyerIds', actor) && changed.hasOnly(['status','updatedAt','updatedBy','history','supplier','quotedPrice','quoteTotal','orderNumber','expectedDate','carrier','trackingCode','note']))
+            || (nextStage == 'approved' && before.get('bundleId','') == '' && actor == before.get('approverId','') && actor != '' && purchaseAuthority(app, company, after)
               && after.get('approvedBy','') == actor && after.get('approvedAt',0) == after.updatedAt
               && changed.hasOnly(['status','updatedAt','updatedBy','history','approvedBy','approvedAt']))
             || (nextStage == 'ordered' && actor == before.get('buyerId','') && actor != '' && before.get('approvedAt',0) > 0
@@ -217,7 +227,7 @@ service cloud.firestore {
               && changed.hasOnly(['status','updatedAt','updatedBy','history','destinationRecipient','recipientConfirmedBy','recipientConfirmedAt']))
             || (nextStage == 'closed' && actor == before.get('financeId','') && actor != ''
               && after.get('financeConfirmedBy','') == actor && after.get('financeConfirmedAt',0) == after.updatedAt
-              && changed.hasOnly(['status','updatedAt','updatedBy','history','financeConfirmedBy','financeConfirmedAt']))));
+              && changed.hasOnly(['status','updatedAt','updatedBy','history','financeConfirmedBy','financeConfirmedAt'])))));
     }
     // Closing changes only the Financeiro's proof. The delivered document has
     // already passed every preceding stage, so avoid re-evaluating that entire
@@ -302,7 +312,7 @@ service cloud.firestore {
           && after.get('workflowVersion',0) == 2
           && purchaseStageChange(before.get('status',''), after.status)
           && changed.hasOnly([
-            'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','invoiceTotal','receivedQuantity',
+            'supplier','quotedPrice','quoteTotal','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','invoiceTotal','receivedQuantity',
             'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','updatedAt','updatedBy','history',
             'buyerId','approverId','receiverId','recipientId','financeId','participantIds',
             'approvedBy','approvedAt','buyerConfirmedBy','buyerConfirmedAt','receiverConfirmedBy','receiverConfirmedAt',
@@ -520,21 +530,53 @@ service cloud.firestore {
         allow get: if access(company);
         allow list: if false;
         allow create, update: if manages(app, company)
-          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','updatedAt','updatedBy'])
+          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','requesterIds','buyerIds','updatedAt','updatedBy'])
           && request.resource.data.keys().hasAll(['enabled','threshold','lowerApproverId','upperApproverId','updatedAt','updatedBy'])
           && request.resource.data.enabled is bool
           && request.resource.data.threshold is number && request.resource.data.threshold > 0
           && request.resource.data.get('preventSelfApproval',false) is bool
           && request.resource.data.lowerApproverId is string && request.resource.data.upperApproverId is string
+          && request.resource.data.get('requesterIds',[]) is list && request.resource.data.get('requesterIds',[]).size() <= 100
+          && request.resource.data.get('buyerIds',[]) is list && request.resource.data.get('buyerIds',[]).size() <= 100
           && (!request.resource.data.enabled || (request.resource.data.lowerApproverId.size() > 0 && request.resource.data.upperApproverId.size() > 0))
           && request.resource.data.updatedAt is int && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if false;
+      }
+      match /purchaseSuppliers/{id} {
+        allow get, list: if access(company) && integraEnabled(app, company);
+        allow create, update: if manages(app, company) && integraEnabled(app, company)
+          && request.resource.data.keys().hasOnly([
+            'name','legalName','taxId','stateRegistration','activity','phone','email',
+            'address','number','complement','district','postalCode','city','state',
+            'createdAt','updatedAt','updatedBy'])
+          && request.resource.data.keys().hasAll([
+            'name','legalName','taxId','stateRegistration','activity','phone','email',
+            'address','number','complement','district','postalCode','city','state',
+            'createdAt','updatedAt','updatedBy'])
+          && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 160
+          && request.resource.data.legalName is string && request.resource.data.legalName.size() <= 240
+          && request.resource.data.taxId is string && request.resource.data.taxId.size() <= 160
+          && request.resource.data.stateRegistration is string && request.resource.data.stateRegistration.size() <= 160
+          && request.resource.data.activity is string && request.resource.data.activity.size() <= 160
+          && request.resource.data.phone is string && request.resource.data.phone.size() <= 160
+          && request.resource.data.email is string && request.resource.data.email.size() <= 160
+          && request.resource.data.address is string && request.resource.data.address.size() <= 240
+          && request.resource.data.number is string && request.resource.data.number.size() <= 160
+          && request.resource.data.complement is string && request.resource.data.complement.size() <= 160
+          && request.resource.data.district is string && request.resource.data.district.size() <= 160
+          && request.resource.data.postalCode is string && request.resource.data.postalCode.size() <= 160
+          && request.resource.data.city is string && request.resource.data.city.size() <= 160
+          && request.resource.data.state is string && request.resource.data.state.size() <= 160
+          && request.resource.data.createdAt is int && request.resource.data.updatedAt is int
+          && request.resource.data.updatedBy == request.auth.uid
+          && (resource == null || request.resource.data.createdAt == resource.data.createdAt);
         allow delete: if false;
       }
       match /purchaseRequests/{id} {
         allow get, list: if support() || (integraEnabled(app, company) && (admin(app, company) || (member(company) && (resource.data.get('requesterId','') == request.auth.uid || request.auth.uid in resource.data.get('participantIds',[])))));
         // The initial requested stage has no stage-specific requirements. Avoid evaluating
         // the full downstream workflow here: it exceeds Firestore's expression budget.
-        allow create: if member(company) && integraEnabled(app, company) && validPurchase(request.resource.data)
+        allow create: if member(company) && integraEnabled(app, company) && purchaseRoleAllowed(app, company, 'requesterIds', request.auth.uid) && validPurchase(request.resource.data)
           && request.resource.data.status == 'requested' && request.resource.data.requesterId == request.auth.uid
           && request.resource.data.workflowVersion == 2 && request.resource.data.participantIds == [request.auth.uid]
           && request.resource.data.buyerId == '' && request.resource.data.approverId == '' && request.resource.data.receiverId == ''

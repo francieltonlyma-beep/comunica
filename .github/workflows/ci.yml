@@ -47,6 +47,7 @@ jobs:
         run: |
           npm --prefix functions ci
           npm --prefix functions run build
+          node --test functions/tests/purchaseQuoteApproval.test.cjs
           npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-comunica-directory --config firebase.json "node --test functions/tests/userDirectoryBackfill.test.cjs"
           npx --yes firebase-tools@15.35.0 emulators:exec --only auth,firestore --project demo-comunica-security --config firebase.json "node --test --test-name-pattern='employee registration' functions/tests/privateCredentials.test.cjs"
       - name: Compilar aplicativo

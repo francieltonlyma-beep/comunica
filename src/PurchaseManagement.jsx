@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, query, runTransaction, setDoc, where, writeBatch } from 'firebase/firestore';
 import { ArrowRight, Box, CheckCircle2, ClipboardList, Download, FileText, MapPin, PackageCheck, Plus, Search, Truck, X } from 'lucide-react';
-import { PURCHASE_CATEGORIES, PURCHASE_FILTERS, filterPurchases, pendingPurchaseRole, purchaseOverdue, purchaseSaveError, purchaseDataPatch, purchaseTransitionPatch, purchaseInvoiceMatch, purchaseInsights, purchasePendingDays, PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, validatePurchase } from './purchaseFlow.js';
+import { PURCHASE_CATEGORIES, PURCHASE_FILTERS, filterPurchases, pendingPurchaseRole, purchaseOverdue, purchaseSaveError, purchaseDataPatch, purchaseTransitionPatch, purchaseInvoiceMatch, purchaseInsights, purchasePendingDays, PURCHASE_NEXT, PURCHASE_STAGES, expectedApprover, purchaseFields, purchaseQuoteNumber, purchaseQuoteTotal, validatePurchase } from './purchaseFlow.js';
 import './PurchaseManagement.css';
 import PurchaseSelect from './PurchaseSelect.jsx';
+import SupplierRegistry from './SupplierRegistry.jsx';
 
 const INITIAL = { category: 'Outros', item: '', specification: '', quantity: 1, unit: 'un', department: '', destination: '', neededBy: '', reason: '', priority: 'normal' };
 const dateBR = value => value ? new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR') : '—';
@@ -13,7 +14,7 @@ const TRACK_STAGES = ['requested','quotation','approved','ordered','in_transit',
 const stagePosition = status => status === 'exception' ? TRACK_STAGES.indexOf('received') : status === 'finance_dispute' ? TRACK_STAGES.indexOf('delivered') : TRACK_STAGES.indexOf(status);
 const currentTimestamp = () => Date.now();
 
-export default function PurchaseManagement({ db, appId, companyId, user, departments = [], users = [], online = true, initialPurchaseId, uploadAttachment, downloadAttachment }) {
+export default function PurchaseManagement({ db, appId, companyId, companyCode, companyName, user, departments = [], users = [], online = true, initialPurchaseId, uploadAttachment, downloadAttachment, approveQuote }) {
   const manager = Boolean(user?.isAdmin || user?.isDeveloper);
   const scope = JSON.stringify([appId, companyId, user?.id, manager]);
   const [snapshotState, setSnapshotState] = useState({ scope: '', records: [] });
@@ -26,18 +27,21 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   const [extraItems, setExtraItems] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState(null);
+  const [quoteDraft, setQuoteDraft] = useState(null);
   const sending = useRef(false);
   const [notice, setNotice] = useState('');
   const [filters, setFilters] = useState(PURCHASE_FILTERS);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
   const [policy, setPolicy] = useState(null);
-  const [policyDraft, setPolicyDraft] = useState({ enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '', preventSelfApproval: false });
+  const [policyDraft, setPolicyDraft] = useState({ enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '', preventSelfApproval: false, requesterIds: [], buyerIds: [] });
   const [policyOpen, setPolicyOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
   const navigationHandled = useRef('');
 
   useEffect(() => {
@@ -69,7 +73,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
     return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'settings', 'purchase-approval'), snapshot => {
       const config = snapshot.exists() ? snapshot.data() : null;
       setPolicy(config);
-      setPolicyDraft(config || { enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '', preventSelfApproval: false });
+      setPolicyDraft(config || { enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '', preventSelfApproval: false, requesterIds: [], buyerIds: [] });
     }, () => setError('Não foi possível consultar as alçadas de aprovação.'));
   }, [appId, companyId, db, user?.id]);
 
@@ -81,9 +85,15 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   }, [appId,companyId,db,selectedId]);
 
   const selected = records.find(item => item.id === selectedId);
+  const quoteItems = selected?.bundleId ? records.filter(item => item.bundleId === selected.bundleId).sort((a,b) => a.bundleIndex - b.bundleIndex) : [];
+  const quoteValues = quoteDraft || Object.fromEntries(quoteItems.map(item => [item.id, { included: item.quotedPrice > 0, supplier: item.supplier || '', quotedPrice: item.quotedPrice || '', expectedDate: item.expectedDate || '' }]));
+  const groupQuoteTotal = purchaseQuoteTotal(quoteItems.filter(item => quoteValues[item.id]?.included).map(item => ({ ...item, quotedPrice: quoteValues[item.id]?.quotedPrice })));
   const latestRejection = (selected?.history || []).filter(entry => entry.stage === 'rejected').at(-1);
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const visible = filterPurchases(records, filters, search, stageFilter, users, user?.id, today);
+  const visibleGroupMap = new Map();
+  for (const item of visible) if (!visibleGroupMap.has(item.bundleId || item.id)) visibleGroupMap.set(item.bundleId || item.id, item);
+  const visibleGroups = [...visibleGroupMap.values()];
   const categories = [...new Set([...PURCHASE_CATEGORIES, ...records.map(item => item.category || 'Sem categoria')])].sort();
   const requesters = [...new Map(records.map(item => [item.requesterId, item.requesterName])).entries()];
   const responsibleIds = new Set(records.flatMap(item => [item.buyerId, item.approverId, item.receiverId, item.recipientId, item.financeId]).filter(Boolean));
@@ -94,12 +104,16 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
     closed: records.filter(item => item.status === 'closed').length };
   const insights = purchaseInsights(visible,today);
   const setField = (setter, name, value) => setter(previous => ({ ...previous, [name]: value }));
-  const beginDetail = item => { setSelectedId(item.id); setDraft(purchaseFields(item)); setAcknowledged(false); setError(''); };
+  const setQuoteLine = (id, field, value) => setQuoteDraft(previous => ({ ...(previous || quoteValues), [id]: { ...((previous || quoteValues)[id] || {}), [field]: value } }));
+  const beginDetail = item => { setSelectedId(item.id); setDraft(purchaseFields(item)); setQuoteDraft(null); setAcknowledged(false); setError(''); };
   const displayUser = id => users.find(person => person.id === id)?.name || (id ? 'Usuário não encontrado' : 'Pendente');
   const adminId = users.find(person => person.isAdmin)?.id || (user?.isAdmin ? user.id : '');
   const expectedId = selected ? expectedApprover(policy, Number(draft?.quotedPrice || selected.quotedPrice) * Number(selected.quantity), adminId) : '';
   const roleFor = item => { const role = pendingPurchaseRole(item); return item?.[role] === user?.id ? ({buyerId:'comprador',approverId:'aprovador',receiverId:'recebimento e NF',recipientId:'destinatário',financeId:'financeiro'}[role] || '') : ''; };
   const editBuyer = manager || selected?.buyerId === user?.id;
+  const canQuote = !policy?.buyerIds?.length || policy.buyerIds.includes(user?.id);
+  const canRequest = !policy?.requesterIds?.length || policy.requesterIds.includes(user?.id);
+  const buyerOptions = users.filter(person => !policy?.buyerIds?.length || policy.buyerIds.includes(person.id));
   const editReceiver = manager || selected?.receiverId === user?.id;
 
   async function attachFile(event) {
@@ -130,6 +144,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
         enabled: Boolean(policyDraft.enabled), threshold: Number(policyDraft.threshold) || 1000,
         lowerApproverId: policyDraft.lowerApproverId, upperApproverId: policyDraft.upperApproverId,
         preventSelfApproval:Boolean(policyDraft.preventSelfApproval),
+        requesterIds: policyDraft.requesterIds || [], buyerIds: policyDraft.buyerIds || [],
         updatedAt: Date.now(), updatedBy: user.id,
       });
       setPolicyOpen(false);
@@ -145,6 +160,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
       const issue = validatePurchase(fields);
       if (issue) return setError(`Item ${index + 1}: ${issue}`);
     }
+    if (policy?.requesterIds?.length && !policy.requesterIds.includes(user?.id)) return setError('Você não está autorizado a solicitar compras nesta empresa.');
     if (!online || !db || !companyId || !user?.id) return setError('Conecte-se à empresa para enviar a solicitação.');
     sending.current = true;
     setBusy(true); setError(''); setNotice('');
@@ -152,9 +168,10 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
       const now = Date.now();
       const requests = collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests');
       const references = items.map(() => doc(requests));
+      const quoteNumber = purchaseQuoteNumber(now, references[0].id);
       const batch = writeBatch(db);
       items.forEach((fields,index) => batch.set(references[index],{
-        ...fields,...(items.length > 1 ? {bundleId:references[0].id,bundleSize:items.length,bundleIndex:index + 1} : {}),
+        ...fields,quoteNumber,...(items.length > 1 ? {bundleId:references[0].id,bundleSize:items.length,bundleIndex:index + 1} : {}),
         status:'requested',requesterId:user.id,requesterName:user.name || 'Solicitante',
         createdAt:now,updatedAt:now,updatedBy:user.id,workflowVersion:2,participantIds:[user.id],
         history:[{stage:'requested',by:user.id,byName:user.name || 'Solicitante',at:now}],
@@ -165,6 +182,80 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
       setForm(INITIAL); setExtraItems([]); setFormOpen(false);
     } catch (problem) { setError(purchaseSaveError(problem)); }
     finally { sending.current = false; setBusy(false); }
+  }
+
+  async function saveGroupQuote() {
+    if (!selected?.bundleId || !quoteItems.length || !canQuote || busy || !online) return;
+    if (quoteItems.some(item => item.approvedAt || !['requested','quotation'].includes(item.status))) return setError('Esta cotação já avançou de etapa. Revise os itens individualmente.');
+    const included = quoteItems.filter(item => quoteValues[item.id]?.included);
+    if (!included.length) return setError('Selecione pelo menos um item cotado.');
+    if (included.some(item => item.buyerId !== user?.id)) return setError('O comprador responsável deve ser você em todos os itens cotados.');
+    if (included.some(item => !quoteValues[item.id].supplier.trim() || !(Number(quoteValues[item.id].quotedPrice) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(quoteValues[item.id].expectedDate))) return setError('Informe fornecedor, preço unitário e previsão para cada item cotado.');
+    setBusy(true); setError('');
+    try {
+      await runTransaction(db, async transaction => {
+        const refs = quoteItems.map(item => doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', item.id));
+        const snapshots = await Promise.all(refs.map(ref => transaction.get(ref)));
+        snapshots.forEach((snapshot, index) => {
+          if (!snapshot.exists() || snapshot.data().updatedAt !== quoteItems[index].updatedAt) throw new Error('Os itens mudaram. Reabra a cotação e confira os valores.');
+        });
+        snapshots.forEach((snapshot, index) => {
+          const current = snapshot.data();
+          const value = quoteValues[quoteItems[index].id];
+          const fields = purchaseFields({ ...current,
+            supplier: value?.included ? value.supplier : '', quotedPrice: value?.included ? value.quotedPrice : 0,
+            expectedDate: value?.included ? value.expectedDate : '', quoteTotal: value?.included ? groupQuoteTotal : 0,
+          });
+          const now = Math.max(Date.now(), current.updatedAt + 1);
+          const patch = value?.included && current.status === 'requested'
+            ? purchaseTransitionPatch(current, 'quotation', fields, user, now)
+            : purchaseDataPatch(current, fields, manager, user, now);
+          if (patch) transaction.update(refs[index], patch);
+        });
+      });
+      setQuoteDraft(null);
+      setNotice(`Cotação ${selected.quoteNumber || purchaseQuoteNumber(selected.createdAt, selected.bundleId)} salva. Total: ${groupQuoteTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}.`);
+    } catch (problem) { setError(problem?.message || 'Não foi possível salvar a cotação conjunta.'); }
+    finally { setBusy(false); }
+  }
+
+  async function approveGroupQuote() {
+    if (!selected?.bundleId || busy || !online || !approveQuote) return;
+    const quoted = quoteItems.filter(item => Number(item.quotedPrice) > 0);
+    const total = purchaseQuoteTotal(quoted);
+    if (!quoted.length || quoted.some(item => item.status !== 'quotation' || item.approverId !== user?.id || Number(item.quoteTotal) !== total)) return setError('Confira os valores e o aprovador de todos os itens cotados antes de aprovar.');
+    if (policy?.enabled && expectedApprover(policy, total, adminId) !== user?.id) return setError('O total desta cotação exige outro aprovador pela alçada cadastrada.');
+    if (policy?.preventSelfApproval && quoted.some(item => [item.requesterId, item.buyerId].includes(user?.id))) return setError('A política exige aprovador diferente do solicitante e comprador.');
+    setBusy(true); setError('');
+    try {
+      await approveQuote(selected.bundleId);
+      setNotice(`Cotação ${selected.quoteNumber || purchaseQuoteNumber(selected.createdAt, selected.bundleId)} aprovada integralmente.`);
+    } catch (problem) { setError(problem?.message || 'Não foi possível aprovar a cotação conjunta.'); }
+    finally { setBusy(false); }
+  }
+
+  async function applyRolesToGroup() {
+    if (!manager || !selected?.bundleId || !draft || busy || !online) return;
+    if (draft.buyerId && policy?.buyerIds?.length && !policy.buyerIds.includes(draft.buyerId)) return setError('O comprador escolhido não está autorizado nas configurações de compras.');
+    setBusy(true); setError('');
+    try {
+      await runTransaction(db, async transaction => {
+        const refs = quoteItems.map(item => doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', item.id));
+        const snapshots = await Promise.all(refs.map(ref => transaction.get(ref)));
+        snapshots.forEach((snapshot, index) => {
+          if (!snapshot.exists() || snapshot.data().updatedAt !== quoteItems[index].updatedAt) throw new Error('A solicitação mudou. Reabra os itens para conferir.');
+        });
+        snapshots.forEach((snapshot, index) => {
+          const current = snapshot.data();
+          const fields = purchaseFields({ ...current, buyerId: draft.buyerId, approverId: draft.approverId,
+            receiverId: draft.receiverId, recipientId: draft.recipientId, financeId: draft.financeId });
+          const patch = purchaseDataPatch(current, fields, true, user, Math.max(Date.now(), current.updatedAt + 1));
+          if (patch) transaction.update(refs[index], patch);
+        });
+      });
+      setNotice('Responsáveis aplicados a todos os itens desta cotação.');
+    } catch (problem) { setError(problem?.message || 'Não foi possível aplicar os responsáveis.'); }
+    finally { setBusy(false); }
   }
 
   async function commit(next = '') {
@@ -183,6 +274,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
     try {
       const ref = doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', selected.id);
       const nextDraft = purchaseFields(draft);
+      if (nextDraft.quotedPrice > 0 && !selected.bundleId) nextDraft.quoteTotal = nextDraft.quotedPrice * nextDraft.quantity;
       if (next === 'delivered' && selected.status !== 'finance_dispute') nextDraft.destinationRecipient = user.name || 'Destinatário';
       const saved = await runTransaction(db, async transaction => {
         const snapshot = await transaction.get(ref);
@@ -227,18 +319,21 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
   const field = (name, label, options = {}) => <label className={`pm-field ${options.wide ? 'pm-wide' : ''}`} key={name}>
     <span>{label}</span>
     {options.type === 'select' ? <PurchaseSelect label={label} disabled={options.disabled} value={draft?.[name] ?? ''} options={options.options} sort={false} onChange={value => setField(setDraft, name, value)} /> : options.type === 'textarea' ? <textarea disabled={options.disabled} rows="3" maxLength={options.maxLength || 1000} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />
-      : <input disabled={options.disabled} type={options.type || 'text'} min={options.min} step={options.step} maxLength={options.maxLength || 160} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />}
+      : <><input disabled={options.disabled} type={options.type || 'text'} list={name === 'supplier' ? 'pm-supplier-options' : undefined} min={options.min} step={options.step} maxLength={options.maxLength || 160} value={draft?.[name] ?? ''} onChange={event => setField(setDraft, name, event.target.value)} />{name === 'supplier' && <datalist id="pm-supplier-options">{suppliers.map(item => <option key={item.id} value={item.name} />)}</datalist>}</>}
   </label>;
 
   return <section className="pm" aria-label="Comunica Integra — gestão de compras">
-    <header className="pm-hero"><div><span>COMUNICA INTEGRA · COMPRAS</span><h2>Gestão de compras</h2><p>Do pedido ao destino: acompanhe cada etapa, responsável, entrega e localização.</p></div><button type="button" onClick={() => { setFormOpen(true); setSelectedId(''); setError(''); }}><Plus size={18} /> Nova solicitação</button></header>
-    {manager && <div className="pm-setup"><button type="button" className="pm-secondary" onClick={() => setPolicyOpen(value => !value)}>{policy?.enabled ? 'Alçadas configuradas' : 'Alçada padrão: administrador'} · Configurar</button>
-      {policyOpen && <div className="pm-setup-fields"><p>Defina quem aprova compras até o limite e quem aprova acima dele. Sem configuração, a aprovação cabe a um administrador.</p>
+    <header className="pm-hero"><div><span>COMUNICA INTEGRA · COMPRAS</span><h2>Gestão de compras</h2><p>Do pedido ao destino: acompanhe cada etapa, responsável, entrega e localização.</p></div><button type="button" disabled={!canRequest} onClick={() => { setFormOpen(true); setSelectedId(''); setError(''); }}><Plus size={18} /> Nova solicitação</button></header>
+    {manager && <div className="pm-setup"><button type="button" className="pm-secondary" onClick={() => setPolicyOpen(value => !value)}>Configurações de compras · {policy?.enabled ? 'alçadas ativas' : 'alçada padrão'}</button>
+      {policyOpen && <div className="pm-setup-fields"><p>Defina quem pode solicitar, cotar e aprovar compras. Sem seleção de solicitantes ou compradores, todos os colaboradores podem exercer o papel quando designados.</p>
+        {[['requesterIds','Quem pode solicitar compras'],['buyerIds','Quem pode cotar compras']].map(([key,label]) => <fieldset className="pm-policy-people" key={key}><legend>{label}</legend><p>Ninguém selecionado: todos os colaboradores autorizados da empresa.</p><div>{users.map(person => <label key={person.id}><input type="checkbox" checked={(policyDraft[key] || []).includes(person.id)} onChange={event => setPolicyDraft(previous => ({ ...previous, [key]: event.target.checked ? [...(previous[key] || []), person.id] : (previous[key] || []).filter(id => id !== person.id) }))} /> {person.name}</label>)}</div></fieldset>)}
         <label><input type="checkbox" checked={Boolean(policyDraft.enabled)} onChange={event => setPolicyDraft(prev => ({ ...prev, enabled: event.target.checked }))} /> Usar alçada por valor</label>
         {policyDraft.enabled && <div className="pm-fields"><label className="pm-field"><span>Limite em R$ (valor total)</span><input type="number" min="0.01" step="0.01" value={policyDraft.threshold} onChange={event => setPolicyDraft(prev => ({ ...prev, threshold: event.target.value }))} /></label>
           {[['lowerApproverId','Aprovador até o limite'],['upperApproverId','Aprovador acima do limite']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><PurchaseSelect label={label} value={policyDraft[key] || ''} options={users.map(person => [person.id, person.name])} onChange={value => setPolicyDraft(prev => ({ ...prev, [key]: value }))} /></label>)}</div>}
         <label><input type="checkbox" checked={Boolean(policyDraft.preventSelfApproval)} onChange={event => setPolicyDraft(prev => ({...prev,preventSelfApproval:event.target.checked}))} /> Exigir aprovador diferente do solicitante e comprador</label>
         <button type="button" disabled={busy || !online} onClick={savePolicy}>Salvar alçadas</button></div>}</div>}
+    <div className="pm-supplier-toggle"><button type="button" onClick={() => setSuppliersOpen(value => !value)} aria-expanded={suppliersOpen}>{suppliersOpen ? 'Fechar fornecedores' : 'Abrir cadastro de fornecedores'}</button></div>
+    {suppliersOpen && <SupplierRegistry key={companyId} db={db} appId={appId} companyId={companyId} companyCode={companyCode} companyName={companyName} user={user} online={online} onSuppliers={setSuppliers} />}
     <div className="pm-metrics" aria-label="Resumo de compras">
       {[[ClipboardList,'Em andamento',metrics.active], [Truck,'Em transporte',metrics.transit], [Box,'Divergências',metrics.exceptions], [CheckCircle2,'Concluídas',metrics.closed]].map(([Icon,label,value]) => <div key={label}><Icon size={18}/><span>{label}</span><strong>{value}</strong></div>)}
     </div>
@@ -246,7 +341,7 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
     {notice && <p className="pm-notice" role="status">{notice}</p>}
     {error && <p className="pm-error" role="alert">{error}</p>}
     <div className="pm-workspace">
-      <div className="pm-list"><div className="pm-list-header"><h3>{manager ? 'Todas as solicitações' : 'Minhas solicitações'}</h3><span>{visible.length} registros</span></div>
+      <div className="pm-list"><div className="pm-list-header"><h3>{manager ? 'Todas as solicitações' : 'Minhas solicitações'}</h3><span>{visibleGroups.length} cotações</span></div>
         <div className="pm-filters"><label><Search size={16}/><input aria-label="Pesquisar compras" placeholder="Item, pessoa, pedido ou fornecedor" value={search} onChange={event => setSearch(event.target.value)} /></label><PurchaseSelect label="Etapa" value={stageFilter === 'all' ? '' : stageFilter} options={Object.entries(PURCHASE_STAGES)} placeholder="Todas as etapas" sort={false} onChange={value => setStageFilter(value || 'all')} />
           <div className="pm-quick-views" aria-label="Visualizar solicitações">{[['','Todas'],['mine','Minha ação'],['overdue','Atrasadas']].map(([value,label]) => <button key={value} type="button" aria-pressed={filters.view === value} onClick={() => setFilters(previous => ({...previous,view:value}))}>{label}</button>)}</div>
           <details className="pm-filter-more"><summary>Filtros avançados</summary><div className="pm-filter-grid">{[
@@ -261,24 +356,29 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
           {['from','to'].map(key => <label className="pm-filter-field" key={key}><span>{key === 'from' ? 'Necessário de' : 'Necessário até'}</span><input aria-label={key === 'from' ? 'Necessário de' : 'Necessário até'} type="date" value={filters[key]} onChange={event => setField(setFilters,key,event.target.value)} /></label>)}
           <button type="button" className="pm-clear" onClick={resetFilters}>Limpar filtros</button></div></details>
         </div>
-        <p className="pm-hint pm-list-summary">{visible.length} de {records.length} solicitações · Total cotado: {visible.reduce((sum,item) => sum + Number(item.quotedPrice || 0) * Number(item.quantity || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visible.map(item => { const responsible = pendingPurchaseRole(item) ? item[pendingPurchaseRole(item)] : ''; const progress = Math.max(0,stagePosition(item.status)); const attention = responsible === user?.id && !['closed','cancelled','rejected'].includes(item.status); return <button key={item.id} type="button" onClick={() => beginDetail(item)} aria-current={selectedId === item.id ? 'true' : undefined} className={`pm-card ${selectedId === item.id ? 'pm-selected' : ''} ${attention ? 'pm-attention' : ''}`}><div className="pm-card-top"><span className={`pm-chip ${stageColor(item.status)}`}>{PURCHASE_STAGES[item.status] || item.status}</span>{attention && <span className="pm-attention-label">Aguardando você</span>}</div><strong className="pm-card-title">{item.item}</strong><span className="pm-card-requester">{item.requesterName} · {item.department}</span><div className="pm-card-meta"><span>{item.category || 'Sem categoria'}</span><span>{item.quantity} {item.unit}</span><span>{PRIORITIES[item.priority] || 'Normal'}</span>{item.bundleId && <span>Lote · item {item.bundleIndex}/{item.bundleSize}</span>}</div><div className="pm-card-progress" aria-label={`Progresso: ${progress + 1} de ${TRACK_STAGES.length} etapas`}><span style={{width:`${((progress + 1) / TRACK_STAGES.length) * 100}%`}} /></div><div className="pm-card-bottom"><span>Necessário em <strong>{dateBR(item.neededBy)}</strong></span>{Number(item.quotedPrice) > 0 && <span>{(Number(item.quotedPrice) * Number(item.quantity)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>}</div>{responsible && <p className="pm-next-action">Próxima ação <strong>{displayUser(responsible)}</strong></p>}{purchaseOverdue(item, today) && <b className="pm-flag">Prazo vencido</b>}{attention && purchasePendingDays(item) >= 2 && <b className="pm-flag">Parado há {purchasePendingDays(item)} dias</b>}{item.status === 'exception' && <b className="pm-flag">Conferir divergência</b>}{item.status === 'finance_dispute' && <b className="pm-flag">NF devolvida pelo Financeiro</b>}{item.status === 'rejected' && <b className="pm-flag">Pode ser reaberta para revisão</b>}</button>; })}</div>}
+        <p className="pm-hint pm-list-summary">{visibleGroups.length} cotações · {visible.length} itens de {records.length} · Total cotado: {visible.reduce((sum,item) => sum + Number(item.quotedPrice || 0) * Number(item.quantity || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visibleGroups.map(item => { const group = item.bundleId ? records.filter(entry => entry.bundleId === item.bundleId) : [item]; const cardStatus = group.find(entry => entry.status === 'quotation')?.status || item.status; const groupTotal = purchaseQuoteTotal(group); const responsible = pendingPurchaseRole(item) ? item[pendingPurchaseRole(item)] : ''; const progress = Math.max(0,stagePosition(item.status)); const attention = responsible === user?.id && !['closed','cancelled','rejected'].includes(item.status); return <button key={item.id} type="button" onClick={() => beginDetail(item)} aria-current={(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'true' : undefined} className={`pm-card ${(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'pm-selected' : ''} ${attention ? 'pm-attention' : ''}`}><div className="pm-card-top"><span className={`pm-chip ${stageColor(cardStatus)}`}>{PURCHASE_STAGES[cardStatus] || cardStatus}</span>{attention && <span className="pm-attention-label">Aguardando você</span>}</div><strong className="pm-card-title">{item.bundleId ? `Cotação ${item.quoteNumber || purchaseQuoteNumber(item.createdAt, item.bundleId)} · ${records.filter(entry => entry.bundleId === item.bundleId).length} itens` : item.item}</strong><span className="pm-card-requester">{item.requesterName} · {item.department}</span><div className="pm-card-meta"><span>{item.category || 'Sem categoria'}</span><span>{item.quantity} {item.unit}</span><span>{PRIORITIES[item.priority] || 'Normal'}</span>{item.bundleId && <span>{records.filter(entry => entry.bundleId === item.bundleId).map(entry => entry.item).join(', ')}</span>}</div><div className="pm-card-progress" aria-label={`Progresso: ${progress + 1} de ${TRACK_STAGES.length} etapas`}><span style={{width:`${((progress + 1) / TRACK_STAGES.length) * 100}%`}} /></div><div className="pm-card-bottom"><span>Necessário em <strong>{dateBR(item.neededBy)}</strong></span>{groupTotal > 0 && <span>{groupTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>}</div>{responsible && <p className="pm-next-action">Próxima ação <strong>{displayUser(responsible)}</strong></p>}{purchaseOverdue(item, today) && <b className="pm-flag">Prazo vencido</b>}{attention && purchasePendingDays(item) >= 2 && <b className="pm-flag">Parado há {purchasePendingDays(item)} dias</b>}{item.status === 'exception' && <b className="pm-flag">Conferir divergência</b>}{item.status === 'finance_dispute' && <b className="pm-flag">NF devolvida pelo Financeiro</b>}{item.status === 'rejected' && <b className="pm-flag">Pode ser reaberta para revisão</b>}</button>; })}</div>}
       </div>
       <div className="pm-detail">
         {!selected ? <div className="pm-prompt"><PackageCheck size={34}/><h3>Fluxo de ponta a ponta</h3><p>Selecione uma compra para acompanhar responsáveis, aprovação, recebimento, nota fiscal e aceite no destino. Cada pessoa confirma sua etapa; o Financeiro encerra após conferir os atestes.</p></div> : <>
           <div className="pm-detail-head"><div><span className={`pm-chip ${stageColor(selected.status)}`}>{PURCHASE_STAGES[selected.status]}</span><h3>{selected.item}</h3><p>Solicitado por {selected.requesterName} · {selected.department}</p>{selected.bundleId && <p>Solicitação conjunta · item {selected.bundleIndex} de {selected.bundleSize}</p>}{roleFor(selected) && <p>Sua responsabilidade: {roleFor(selected)}</p>}</div><button type="button" aria-label="Fechar detalhes" onClick={() => { setSelectedId(''); setDraft(null); setError(''); }}><X size={18}/></button></div>
           {selected.bundleId && <div className="pm-bundle"><strong>Itens desta solicitação</strong><div>{records.filter(item => item.bundleId === selected.bundleId).sort((a,b) => a.bundleIndex - b.bundleIndex).map(item => <button key={item.id} type="button" className={item.id === selected.id ? 'active' : ''} onClick={() => beginDetail(item)}>{item.bundleIndex}. {item.item} · {PURCHASE_STAGES[item.status]}</button>)}</div></div>}
+          {selected.bundleId && <div className="pm-quote"><div className="pm-quote-head"><div><h4>Cotação {selected.quoteNumber || purchaseQuoteNumber(selected.createdAt, selected.bundleId)}</h4><p>Uma cotação para os itens da solicitação. O comprador informa os itens cotados, fornecedor, valor unitário e previsão.</p></div><strong>{groupQuoteTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</strong></div>
+            <div className="pm-quote-lines">{quoteItems.map(item => { const value = quoteValues[item.id] || {}; const editable = canQuote && item.buyerId === user?.id && ['requested','quotation'].includes(item.status) && !item.approvedAt; return <div key={item.id} className="pm-quote-line"><label><input type="checkbox" checked={Boolean(value.included)} disabled={!editable} onChange={event => setQuoteLine(item.id, 'included', event.target.checked)} /> <strong>{item.bundleIndex}. {item.item}</strong> · {item.quantity} {item.unit}</label><span>{PURCHASE_STAGES[item.status]}</span><div className="pm-quote-fields"><label>Fornecedor<input value={value.supplier || ''} disabled={!editable || !value.included} onChange={event => setQuoteLine(item.id, 'supplier', event.target.value)} /></label><label>Valor unitário (R$)<input type="number" min="0.01" step="0.01" value={value.quotedPrice || ''} disabled={!editable || !value.included} onChange={event => setQuoteLine(item.id, 'quotedPrice', event.target.value)} /></label><label>Previsão<input type="date" value={value.expectedDate || ''} disabled={!editable || !value.included} onChange={event => setQuoteLine(item.id, 'expectedDate', event.target.value)} /></label></div></div>; })}</div>
+            <div className="pm-quote-actions">{quoteItems.some(item => item.buyerId === user?.id && ['requested','quotation'].includes(item.status)) && canQuote && <button type="button" disabled={busy || !online} onClick={saveGroupQuote}>Salvar cotação conjunta</button>}{quoteItems.some(item => item.approverId === user?.id && item.status === 'quotation') && <button type="button" disabled={busy || !online} onClick={approveGroupQuote}>Aprovar cotação conjunta</button>}</div>
+          </div>}
           <div className="pm-journey"><div className="pm-journey-head"><strong>Andamento da compra</strong><span>{['rejected','cancelled'].includes(selected.status) ? PURCHASE_STAGES[selected.status] : `Etapa ${Math.max(0,stagePosition(selected.status)) + 1} de ${TRACK_STAGES.length}`}</span></div><ol className="pm-progress">{TRACK_STAGES.map((id,index) => { const completed = (selected.history || []).some(entry => entry.stage === id) && id !== selected.status; const active = id === selected.status || (selected.status === 'exception' && id === 'received'); return <li key={id} className={active ? 'current' : completed ? 'visited' : ''}><span className="pm-step-index">{completed ? '✓' : index + 1}</span><span>{PURCHASE_STAGES[id]}</span></li>; })}</ol>{selected.status === 'exception' && <p className="pm-journey-alert">Divergência aberta: confira a mercadoria e a nota fiscal antes de seguir.</p>}{selected.status === 'finance_dispute' && <p className="pm-journey-alert">Nota fiscal devolvida para correção. O Financeiro fará uma nova conferência após a resposta do recebimento.</p>}</div>
           {pendingPurchaseRole(selected) && <div className="pm-next-step"><div><span>PRÓXIMA AÇÃO</span><strong>{displayUser(selected[pendingPurchaseRole(selected)])}</strong><p>{purchaseOverdue(selected,today) ? 'Prazo da solicitação vencido' : `Necessário em ${dateBR(selected.neededBy)}`}</p></div>{selected[pendingPurchaseRole(selected)] === user?.id && <button type="button" onClick={() => document.querySelector('.pm-actions')?.scrollIntoView({behavior:'smooth',block:'center'})}>Ir para minhas ações <ArrowRight size={15}/></button>}</div>}
           <div className="pm-section"><h4>Responsáveis e aprovações</h4><div className="pm-readonly">
             {[['Solicitante',selected.requesterId,selected.requesterName],['Comprador',selected.buyerId],['Aprovador da alçada',selected.approverId],['Recebimento e NF',selected.receiverId],['Destinatário',selected.recipientId],['Financeiro',selected.financeId]].map(([label,id,name]) => <div key={label}><span>{label}</span><p>{name || displayUser(id)}</p></div>)}
           </div>{manager && draft && selected.status !== 'finance_dispute' && <><div className="pm-fields pm-roles">
-            {[['buyerId','Comprador'],['approverId','Aprovador'],['receiverId','Responsável pelo recebimento'],['recipientId','Destinatário'],['financeId','Responsável Financeiro']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><PurchaseSelect label={label} value={draft[key] || ''} options={users.map(person => [person.id, person.name])} onChange={value => setField(setDraft,key,value)} /></label>)}</div>
-            <p className="pm-hint">Aprovador previsto pela alçada: <strong>{policy?.enabled ? displayUser(expectedId) : 'qualquer administrador da empresa'}</strong>. Salve as atribuições antes de avançar a etapa. Os responsáveis confirmam usando suas próprias contas.</p>
+            {[['buyerId','Comprador'],['approverId','Aprovador'],['receiverId','Responsável pelo recebimento'],['recipientId','Destinatário'],['financeId','Responsável Financeiro']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><PurchaseSelect label={label} value={draft[key] || ''} options={(key === 'buyerId' ? buyerOptions : users).map(person => [person.id, person.name])} onChange={value => setField(setDraft,key,value)} /></label>)}</div>
+            <p className="pm-hint">Aprovador previsto pela alçada: <strong>{policy?.enabled ? displayUser(selected.bundleId ? expectedApprover(policy, groupQuoteTotal, adminId) : expectedId) : 'qualquer administrador da empresa'}</strong>. Salve as atribuições antes de avançar a etapa. Os responsáveis confirmam usando suas próprias contas.</p>
+            {selected.bundleId && <button type="button" className="pm-secondary" disabled={busy || !online} onClick={applyRolesToGroup}>Aplicar responsáveis a todos os itens</button>}
             {draft.approverId && [selected.requesterId,draft.buyerId].includes(draft.approverId) && <p className="pm-roles-alert">Solicitante ou comprador também aprova este item. {policy?.preventSelfApproval ? 'A política exige outra pessoa para a aprovação.' : 'Revise a separação de responsabilidades antes de continuar.'}</p>}
           </>}</div>
           <div className="pm-section"><h4>Solicitação e destino</h4><div className="pm-readonly"><div><span>Categoria</span><p>{selected.category || 'Sem categoria'}</p></div><div><span>Especificação</span><p>{selected.specification}</p></div><div><span>Justificativa</span><p>{selected.reason}</p></div><div><span>Quantidade e unidade</span><p>{selected.quantity} {selected.unit}</p></div><div><span>Destino solicitado</span><p>{selected.destination}</p></div><div><span>Data necessária</span><p>{dateBR(selected.neededBy)}</p></div><div><span>Prioridade</span><p>{PRIORITIES[selected.priority] || 'Normal'}</p></div></div></div>
-          {editBuyer && draft && selected.status !== 'finance_dispute' && <div className="pm-section"><h4>Compra e rastreamento</h4><div className="pm-fields">{field('supplier','Fornecedor',{disabled:Boolean(selected.approvedAt)})}{field('quotedPrice','Preço unitário (R$)',{type:'number',min:'0',step:'0.01',disabled:Boolean(selected.approvedAt)})}{field('orderNumber','Número do pedido',{disabled:Boolean(selected.buyerConfirmedAt)})}{field('expectedDate','Previsão de entrega',{type:'date',disabled:Boolean(selected.approvedAt)})}{field('carrier','Transportadora ou retirada')}{field('trackingCode','Código ou referência de rastreamento')}</div></div>}
+          {editBuyer && draft && selected.status !== 'finance_dispute' && <div className="pm-section"><h4>Compra e rastreamento</h4><div className="pm-fields">{!selected.bundleId && <>{field('supplier','Fornecedor',{disabled:Boolean(selected.approvedAt) || !canQuote})}{field('quotedPrice','Preço unitário (R$)',{type:'number',min:'0',step:'0.01',disabled:Boolean(selected.approvedAt) || !canQuote})}{field('expectedDate','Previsão de entrega',{type:'date',disabled:Boolean(selected.approvedAt) || !canQuote})}</>}{field('orderNumber','Número do pedido',{disabled:Boolean(selected.buyerConfirmedAt)})}{field('carrier','Transportadora ou retirada')}{field('trackingCode','Código ou referência de rastreamento')}</div></div>}
           {editReceiver && draft && selected.status !== 'finance_dispute' && <div className="pm-section"><h4>Recebimento e armazenagem</h4><div className="pm-fields">{field('invoiceNumber','Número da nota fiscal',{disabled:Boolean(selected.invoiceReceivedAt)})}{field('invoiceTotal','Valor total da NF (R$)',{type:'number',min:'0',step:'0.01',disabled:Boolean(selected.invoiceReceivedAt)})}{field('receivedQuantity','Quantidade conferida',{type:'number',min:'0',step:'any'})}{field('condition','Condição',{type:'select',options:[['pending','Não conferida'],['ok','Conforme'],['damaged','Avaria ou não conforme']]})}{field('lot','Lote / identificação')}{field('expiresAt','Validade, se aplicável',{type:'date'})}{field('storageAddress','Endereço físico / posição',{wide:true})}{field('destinationRecipient','Recebido no destino por',{wide:true})}{field('note','Observações e divergências',{type:'textarea',wide:true})}</div><p className="pm-hint">Informe divergência de quantidade ou avaria antes de encaminhar ao estoque. A localização física é obrigatória para armazenar.</p></div>}
           {selected.status === 'rejected' && <div className="pm-review-panel"><strong>Solicitação recusada</strong><p>{(selected.history || []).filter(entry => entry.stage === 'rejected').at(-1)?.detail || selected.note || 'Consulte o aprovador para revisar a solicitação.'}</p><small>{selected.buyerId ? 'O comprador pode rever a cotação e reenviar para aprovação.' : 'A administração pode reabrir a solicitação e designar um comprador.'}</small></div>}
           {latestRejection && selected.status === 'quotation' && <div className="pm-review-panel"><strong>Revisão para nova aprovação</strong><p>Motivo: {latestRejection.detail || 'Não informado'}</p><small>{[['Fornecedor','supplier'],['Preço unitário','quotedPrice'],['Previsão','expectedDate']].filter(([,key]) => latestRejection[key] !== undefined && String(latestRejection[key]) !== String(selected[key] || '')).map(([label]) => label).join(', ') || 'Nenhum dado da cotação alterado'} desde a recusa.</small></div>}
@@ -293,11 +393,11 @@ export default function PurchaseManagement({ db, appId, companyId, user, departm
           {selected.workflowVersion !== 2 && <div className="pm-legacy">Registro feito antes dos atestes por responsável. {manager && !['closed','rejected','cancelled'].includes(selected.status) && <button type="button" disabled={busy || !online} onClick={migrateLegacy}>Reabrir no novo fluxo</button>}</div>}
           {draft && selected.workflowVersion === 2 && <div className="pm-actions">
             {(manager || editBuyer || editReceiver) && selected.status !== 'finance_dispute' && <button type="button" disabled={busy || !online} onClick={() => commit()} className="pm-secondary">Salvar dados</button>}
-            {(PURCHASE_NEXT[selected.status] || []).filter(stage => ['rejected','cancelled'].includes(stage) ? manager :
+            {(PURCHASE_NEXT[selected.status] || []).filter(stage => (stage !== 'quotation' || canQuote) && !(selected.bundleId && (stage === 'approved' || (stage === 'quotation' && selected.status === 'requested'))) && (['rejected','cancelled'].includes(stage) ? manager :
               ({ requested: manager ? user?.id : '', quotation: selected.buyerId, approved: selected.approverId, ordered: selected.buyerId,
                 in_transit: selected.buyerId, received: selected.receiverId, exception: selected.receiverId,
                 stored: selected.receiverId, delivered: selected.status === 'finance_dispute' ? selected.receiverId : selected.recipientId,
-                finance_dispute: selected.financeId, closed: selected.financeId })[stage] === user?.id
+                finance_dispute: selected.financeId, closed: selected.financeId })[stage] === user?.id)
             ).map(stage => <button key={stage} type="button" disabled={busy || !online} onClick={() => commit(stage)} className={['rejected','cancelled','finance_dispute'].includes(stage) ? 'pm-secondary' : 'pm-primary'}>{stage === 'closed' ? 'NF conforme · concluir' : stage === 'rejected' ? 'Recusar com motivo' : stage === 'finance_dispute' ? 'NF não conforme · devolver' : stage === 'delivered' && selected.status === 'finance_dispute' ? 'Reenviar ao Financeiro' : stage === 'quotation' && selected.status === 'rejected' ? 'Rever cotação' : stage === 'requested' ? 'Reabrir solicitação' : PURCHASE_STAGES[stage]} <ArrowRight size={15}/></button>)}
             {(['approved','ordered','received','delivered','closed'].includes(selected.status) || (PURCHASE_NEXT[selected.status] || []).some(stage => ['ordered','received','delivered','closed'].includes(stage))) && <label className="pm-ack"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /> {(PURCHASE_NEXT[selected.status] || []).includes('closed') && selected.financeId === user?.id ? `Conferi a nota fiscal ${selected.invoiceNumber || 'pendente'}, a confirmação do comprador, o recebimento da mercadoria e o aceite do destinatário.` : 'Confirmo pessoalmente as informações e documentos desta etapa.'}</label>}
           </div>}

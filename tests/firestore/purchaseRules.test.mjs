@@ -216,4 +216,19 @@ const reopenRef=doc(managerDb,base+'/purchaseRequests/reopen');
 await assertFails(updateDoc(doc(db,reopenRef.path),purchaseTransitionPatch(rejectedUnassigned,'requested',rejectedUnassigned,{id:'employee',name:'Colaborador',isAdmin:true},now+1101)));
 await assertSucceeds(updateDoc(reopenRef,purchaseTransitionPatch(rejectedUnassigned,'requested',rejectedUnassigned,actorAdmin,now+1101)));
 console.log('PASS: administração reabre recusa sem comprador para novas atribuições');
+const bundledQuotation={...quotationForReview,supplier:'Fornecedor',quotedPrice:10,quoteTotal:10,expectedDate:'2026-11-10',
+ quoteNumber:'COT-20261112-TESTE',bundleId:'bundle-security',bundleSize:2,bundleIndex:1};
+await env.withSecurityRulesDisabled(async ctx=>setDoc(doc(ctx.firestore(),base+'/purchaseRequests/bundle-security-item'),bundledQuotation));
+const bundledRef=doc(approverDb,base+'/purchaseRequests/bundle-security-item');
+await assertFails(updateDoc(bundledRef,purchaseTransitionPatch(bundledQuotation,'approved',bundledQuotation,{id:'approver',name:'Aprovador'},now+1200)));
+console.log('PASS: aprovação direta de item de cotação conjunta é bloqueada');
+await assertSucceeds(setDoc(doc(managerDb,base+'/settings/purchase-approval'),{
+ enabled:false,threshold:1000,lowerApproverId:'admin',upperApproverId:'admin',preventSelfApproval:false,
+ requesterIds:['admin'],buyerIds:['admin'],updatedAt:now+1201,updatedBy:'admin',
+}));
+await assertFails(addDoc(collection(db,base+'/purchaseRequests'),data));
+const restrictedRef=await assertSucceeds(addDoc(collection(managerDb,base+'/purchaseRequests'),adminData));
+const restricted=(await getDoc(restrictedRef)).data();
+await assertFails(updateDoc(restrictedRef,purchaseDataPatch(restricted,{...restricted,buyerId:'employee'},true,actorAdmin,now+1202)));
+console.log('PASS: configurações restringem solicitantes e compradores no servidor');
 await env.cleanup();

@@ -21,6 +21,12 @@ export const PURCHASE_NEXT = {
 
 const text = (value, limit = 160) => String(value || '').trim().slice(0, limit);
 const number = value => Number(value);
+export const purchaseQuoteNumber = (createdAt, firstId) => {
+  const date = new Date(createdAt);
+  const prefix = Number.isFinite(date.getTime()) ? `${new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(date).replaceAll('-', '')}-` : '';
+  return `COT-${prefix}${String(firstId).slice(0, 8).toUpperCase()}`;
+};
+export const purchaseQuoteTotal = items => items.reduce((total, item) => total + (Number(item.quotedPrice) || 0) * (Number(item.quantity) || 0), 0);
 
 export function purchaseFields(value = {}) {
   return {
@@ -29,7 +35,7 @@ export function purchaseFields(value = {}) {
     department: text(value.department, 120), destination: text(value.destination, 160),
     neededBy: text(value.neededBy, 10), reason: text(value.reason, 1000),
     priority: ['normal', 'high', 'urgent'].includes(value.priority) ? value.priority : 'normal',
-    supplier: text(value.supplier, 160), quotedPrice: number(value.quotedPrice || 0),
+    supplier: text(value.supplier, 160), quotedPrice: number(value.quotedPrice || 0), quoteTotal: number(value.quoteTotal || 0),
     orderNumber: text(value.orderNumber, 80), expectedDate: text(value.expectedDate, 10),
     carrier: text(value.carrier, 120), trackingCode: text(value.trackingCode, 120),
     invoiceNumber: text(value.invoiceNumber, 80), invoiceTotal: number(value.invoiceTotal || 0), receivedQuantity: number(value.receivedQuantity || 0),
@@ -42,7 +48,7 @@ export function purchaseFields(value = {}) {
   };
 }
 
-const EDITABLE_PURCHASE_FIELDS = ['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode',
+const EDITABLE_PURCHASE_FIELDS = ['supplier','quotedPrice','quoteTotal','orderNumber','expectedDate','carrier','trackingCode',
   'invoiceNumber','invoiceTotal','receivedQuantity','condition','lot','expiresAt','storageAddress','destinationRecipient','note',
   'buyerId','approverId','receiverId','recipientId','financeId'];
 const PURCHASE_ROLES = ['buyerId','approverId','receiverId','recipientId','financeId'];
@@ -65,6 +71,7 @@ export function validatePurchase(fields, stage = 'requested') {
   const data = purchaseFields(fields);
   if (!data.item || !data.specification || !data.unit || !data.department || !data.destination || !data.reason) return 'Preencha item, especificação, unidade, setor, destino e justificativa.';
   if (!Number.isFinite(data.quantity) || data.quantity <= 0 || data.quantity > 1000000) return 'Informe uma quantidade válida.';
+  if (!Number.isFinite(data.quoteTotal) || data.quoteTotal < 0) return 'Informe um total válido para a cotação.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.neededBy)) return 'Informe a data em que o item é necessário.';
   if (['approved', 'ordered', 'in_transit', 'received', 'exception', 'stored', 'delivered', 'finance_dispute', 'closed'].includes(stage)) {
     if (!data.supplier || !Number.isFinite(data.quotedPrice) || data.quotedPrice <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(data.expectedDate)) return 'Informe fornecedor, preço unitário e previsão antes da aprovação.';
@@ -131,7 +138,7 @@ export function purchaseTransition(record, next, fields, actor, now = Date.now()
 
 const TRANSITION_FIELDS = {
   requested: [],
-  quotation: ['supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','note'],
+  quotation: ['supplier','quotedPrice','quoteTotal','orderNumber','expectedDate','carrier','trackingCode','note'],
   approved: ['approvedBy','approvedAt'],
   ordered: ['orderNumber','carrier','trackingCode','note','buyerConfirmedBy','buyerConfirmedAt'],
   in_transit: ['carrier','trackingCode','note'],
@@ -221,7 +228,7 @@ export function filterPurchases(records, filters, search = '', stage = 'all', us
       && (!filters.view || (filters.view === 'overdue' ? purchaseOverdue(item, today)
         : filters.view === 'mine' ? pending && item[pending] === actorId
           : filters.view === 'unassigned' ? pending && !item[pending] : true))
-      && normalizedText([item.id, item.item, item.specification, item.requesterName, item.department, item.category,
+      && normalizedText([item.id, item.quoteNumber, item.bundleId ? purchaseQuoteNumber(item.createdAt, item.bundleId) : '', item.item, item.specification, item.requesterName, item.department, item.category,
         item.orderNumber, item.supplier, item.destination, ...roles.map(role => names.get(item[role]) || '')].join(' ')).includes(query);
   }).sort((a, b) => filters.sort === 'deadline' ? String(a.neededBy || '9999').localeCompare(String(b.neededBy || '9999'))
     : filters.sort === 'value' ? Number(b.quotedPrice || 0) * Number(b.quantity) - Number(a.quotedPrice || 0) * Number(a.quantity)
