@@ -1456,8 +1456,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   // Refs para controle de Notificações em Segundo Plano
   const sessionStartTime = useRef(Date.now());
-  const knownAnnIds = useRef(new Set());
-  const knownPostIds = useRef(new Set());
   const isFirstRunNotif = useRef(true);
   const seenPushEventIds = useRef(new Set());
 
@@ -1863,43 +1861,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     register();
   }, [pushToken, currentUser, activeCompany, dbUser, functionsClient]);
 
-// 2. Monitora as coleções para disparar notificações apenas de itens NOVOS
-  useEffect(() => {
-    const canListenForNotifications = authReady && dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
-    if (!canListenForNotifications) {
-      knownAnnIds.current.clear();
-      knownPostIds.current.clear();
-      return;
-    }
-
-    const unsubscribeAnn = onSnapshot(getTenantCollection('announcements'), (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const docId = change.doc.id;
-
-          // A Firebase Function é a única responsável pelo push. Não exibimos
-          // outro aviso pelo snapshot para evitar notificações em duplicidade.
-          knownAnnIds.current.add(docId);
-        }
-      });
-    });
-
-    const unsubscribePosts = onSnapshot(getTenantCollection('posts'), (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const docId = change.doc.id;
-
-          // O push chega pela Firebase Function e pelo listener de mensagens.
-          knownPostIds.current.add(docId);
-        }
-      });
-    });
-
-    return () => {
-      unsubscribeAnn();
-      unsubscribePosts();
-    };
-  }, [authReady, authScope.companyId, authScope.isDeveloper, currentUser?.id, activeCompany, dbUser]);
   useEffect(() => {
     if (!isFirebaseAvailable) return;
 
@@ -2200,7 +2161,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   useEffect(() => {
     setServiceManagementMessages([]);
-    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return undefined;
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || activeTab !== 'services' || serviceWorkspace !== 'management' || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return undefined;
     const snapshots = { requests: [], activities: [] };
     const publish = () => setServiceManagementMessages(
       [...new Map([...snapshots.requests, ...snapshots.activities].filter(Boolean).map(item => [item.id, item])).values()]
@@ -2217,7 +2178,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       error => console.error('Falha ao carregar atividades gerenciais', error),
     );
     return () => { stopRequests(); stopActivities(); };
-  }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper]);
+  }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper, activeTab, serviceWorkspace]);
 
   useEffect(() => {
     setSavedScheduleRules(null);
@@ -2239,13 +2200,13 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   useEffect(() => {
     setAuditLogs([]);
-    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return;
+    if (!isFirebaseAvailable || !dbUser || !activeCompany?.id || !showControlCenter || controlCenterTab !== 'audit' || (!currentUser?.isAdmin && !currentUser?.isDeveloper)) return;
     return onSnapshot(getTenantCollection('auditLogs'), snapshot => {
       const entries = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
       entries.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
       setAuditLogs(entries.slice(0, 500));
     }, error => console.error('Falha ao carregar auditoria', error));
-  }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper]);
+  }, [dbUser, activeCompany?.id, currentUser?.isAdmin, currentUser?.isDeveloper, showControlCenter, controlCenterTab]);
 
   useEffect(() => {
     if (!isFirebaseAvailable || !authReady || !functionsClient || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany?.id || (!authScope.isDeveloper && authScope.companyId !== activeCompany.id)) return;
