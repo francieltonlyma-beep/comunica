@@ -31,6 +31,7 @@ import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
 import {saveCoverageSettings} from './scheduleCoverage';
 import {buildPendingReminders} from './pendingReminders.mjs';
+import {approvePurchaseQuoteGroup} from './purchaseQuoteApproval';
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
@@ -1615,6 +1616,15 @@ export const saveScheduleCoverage = onCall({region: 'us-central1', maxInstances:
   return saveCoverageSettings(getFirestore(), String(request.data?.companyId || ''), {
     uid: request.auth.uid, companyId: String(request.auth.token.companyId || ''), isDeveloper: request.auth.token.isDeveloper === true,
   }, request.data?.requirements, Number(request.data?.expectedVersion));
+});
+
+export const approvePurchaseQuote = onCall({region: 'us-central1', maxInstances: 3}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente no Comunica.');
+  const companyId = String(request.data?.companyId || '');
+  if (request.auth.token.companyId !== companyId || request.auth.token.isDeveloper === true) {
+    throw new HttpsError('permission-denied', 'Sem acesso à empresa selecionada.');
+  }
+  return approvePurchaseQuoteGroup(getFirestore(), companyId, String(request.data?.bundleId || ''), request.auth.uid);
 });
 
 /** Independent of deadlines: remind about unread messages and 24-hour inactivity. */
