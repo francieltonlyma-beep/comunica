@@ -9,6 +9,51 @@ export const SUPPLIER_FIELDS = [
   'email', 'address', 'number', 'complement', 'district', 'postalCode', 'city', 'state',
 ];
 
+const XLSX_HEADERS = {
+  name: ['Nome Do Fornecedor'],
+  legalName: ['Razão Social Fornecedor', 'Razão social'],
+  taxId: ['CNPJ/CPF'],
+  stateRegistration: ['Inscr. Estadual', 'Inscrição estadual'],
+  activity: ['Ramo Atividade', 'Ramo de atividade'],
+  phone: ['Fone', 'Telefone'],
+  email: ['E-Mail', 'E-mail'],
+  address: ['Endereco', 'Endereço'],
+  number: ['Número Endereço', 'Número'],
+  complement: ['Compl. Endereço', 'Complemento'],
+  district: ['Bairro'],
+  postalCode: ['CEP'],
+  city: ['Nome Município', 'Cidade'],
+  state: ['UF'],
+};
+
+const normalizedHeader = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const cellText = value => String(value ?? '').trim();
+
+function validateSupplierRecord(record, rowNumber) {
+  if (!record.name) throw new Error(`Linha ${rowNumber}: informe o nome do fornecedor.`);
+  for (const field of SUPPLIER_FIELDS) {
+    const limit = field === 'legalName' || field === 'address' ? 240 : 160;
+    if (record[field].length > limit) throw new Error(`Linha ${rowNumber}: ${SUPPLIER_COLUMNS[SUPPLIER_FIELDS.indexOf(field)]} excede ${limit} caracteres.`);
+  }
+  return record;
+}
+
+export function parseSupplierSpreadsheetRows(rows) {
+  const headerIndex = rows.findIndex(row => {
+    const headings = row.map(normalizedHeader);
+    return ['name', 'legalName', 'taxId'].every(field => XLSX_HEADERS[field].some(label => headings.includes(normalizedHeader(label))));
+  });
+  if (headerIndex < 0) throw new Error('Não encontrei o cabeçalho de fornecedores na planilha. Confira as colunas Nome Do Fornecedor, Razão Social Fornecedor e CNPJ/CPF.');
+  const headings = rows[headerIndex].map(normalizedHeader);
+  const columns = Object.fromEntries(SUPPLIER_FIELDS.map(field => [field,
+    XLSX_HEADERS[field].map(normalizedHeader).map(label => headings.indexOf(label)).find(index => index >= 0) ?? -1]));
+  return rows.slice(headerIndex + 1).flatMap((row, index) => {
+    if (!row.some(value => cellText(value))) return [];
+    const record = Object.fromEntries(SUPPLIER_FIELDS.map(field => [field, cellText(row[columns[field]])]));
+    return [validateSupplierRecord(record, headerIndex + index + 2)];
+  });
+}
+
 export function parseSupplierCsv(content) {
   const source = content.replace(/^\uFEFF/, '');
   const rows = [];
@@ -36,8 +81,7 @@ export function parseSupplierCsv(content) {
   return rows.slice(1).map((cells, index) => {
     if (cells.length !== SUPPLIER_FIELDS.length) throw new Error(`Linha ${index + 2}: quantidade de colunas inválida.`);
     const record = Object.fromEntries(SUPPLIER_FIELDS.map((field, position) => [field, cells[position].trim()]));
-    if (!record.name) throw new Error(`Linha ${index + 2}: informe o nome do fornecedor.`);
-    return record;
+    return validateSupplierRecord(record, index + 2);
   });
 }
 

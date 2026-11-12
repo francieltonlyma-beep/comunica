@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
-import { parseSupplierCsv, SUPPLIER_COLUMNS, SUPPLIER_FIELDS, supplierDocumentId } from './supplierImport.js';
+import { parseSupplierCsv, parseSupplierSpreadsheetRows, SUPPLIER_COLUMNS, SUPPLIER_FIELDS, supplierDocumentId } from './supplierImport.js';
 
 const EMPTY = Object.fromEntries(SUPPLIER_FIELDS.map(field => [field, '']));
 const supplierPath = (db, appId, companyId) => collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseSuppliers');
@@ -12,6 +12,7 @@ export default function SupplierRegistry({ db, appId, companyId, companyCode, co
   const [selectedId, setSelectedId] = useState('');
   const [search, setSearch] = useState('');
   const [preview, setPreview] = useState(null);
+  const [fileName, setFileName] = useState('');
   const [confirmCode, setConfirmCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -43,10 +44,19 @@ export default function SupplierRegistry({ db, appId, companyId, companyCode, co
   async function selectFile(event) {
     const file = event.target.files?.[0]; event.target.value = '';
     if (!file) return;
-    setPreview(null); setError(''); setNotice('');
-    if (!file.name.toLowerCase().endsWith('.csv')) return setError('Selecione o arquivo CSV preparado para importação.');
-    try { setPreview(parseSupplierCsv(await file.text())); }
+    setPreview(null); setFileName(''); setConfirmCode(''); setError(''); setNotice('');
+    const extension = file.name.toLowerCase().split('.').pop();
+    if (!['csv', 'xlsx'].includes(extension)) return setError('Selecione uma planilha .xlsx ou um arquivo .csv de fornecedores.');
+    setBusy(true);
+    try {
+      const records = extension === 'xlsx'
+        ? parseSupplierSpreadsheetRows(await (await import('read-excel-file/browser')).readSheet(file))
+        : parseSupplierCsv(await file.text());
+      if (!records.length) throw new Error('O arquivo não contém fornecedores para importar.');
+      setFileName(file.name); setPreview(records);
+    }
     catch (problem) { setError(problem.message || 'Não foi possível ler o arquivo.'); }
+    finally { setBusy(false); }
   }
 
   async function importRecords() {
@@ -93,9 +103,10 @@ export default function SupplierRegistry({ db, appId, companyId, companyCode, co
     {error && <p className="pm-error" role="alert">{error}</p>}
     {notice && <p className="pm-notice" role="status">{notice}</p>}
     {manager && <div className="pm-supplier-import">
-      <h4>Importar fornecedores</h4><p>Use o CSV com as colunas: {SUPPLIER_COLUMNS.join(', ')}. A importação ignora documentos já cadastrados e documentos repetidos no arquivo.</p>
-      <input aria-label="Arquivo CSV de fornecedores" type="file" accept=".csv,text/csv" disabled={busy || !online} onChange={selectFile} />
-      {pending && <p>Arquivo: {preview.length} linhas · {pending.add.length} novos cadastros · {pending.repeated.length} repetidos ou existentes.</p>}
+      <h4>Importar fornecedores</h4><p>Selecione a planilha Excel (.xlsx) de fornecedores ou o CSV com as colunas: {SUPPLIER_COLUMNS.join(', ')}. Serão aproveitados apenas os dados do cadastro. Documentos repetidos ou já cadastrados serão ignorados.</p>
+      <input aria-label="Planilha Excel ou CSV de fornecedores" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv" disabled={busy || !online} onChange={selectFile} />
+      {busy && !pending && <p role="status">Lendo arquivo...</p>}
+      {pending && <><p>Arquivo: {fileName} · {preview.length} fornecedores · {pending.add.length} novos cadastros · {pending.repeated.length} repetidos ou existentes.</p><ul>{pending.add.slice(0, 5).map(item => <li key={item.id}>{item.name} · {item.taxId || 'Sem CNPJ/CPF'}</li>)}</ul></>}
       {pending && <label>Confirme o código da empresa<input value={confirmCode} onChange={event => setConfirmCode(event.target.value)} placeholder={companyCode || 'Código da empresa'} /></label>}
       {pending && <button type="button" disabled={!pending.add.length || busy || !loaded || !online || !companyCode || confirmCode.trim() !== companyCode} onClick={importRecords}>{busy ? 'Importando...' : `Cadastrar ${pending.add.length} fornecedores`}</button>}
     </div>}
