@@ -1265,7 +1265,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [summaryContent, setSummaryContent] = useState('');
 
   const [dbUser, setDbUser] = useState(null);
-  const [dbLoading, setDbLoading] = useState(isFirebaseAvailable);
+  const [authReady, setAuthReady] = useState(!isFirebaseAvailable);
+  const [sessionStartupError, setSessionStartupError] = useState(false);
+  const dbLoading = isFirebaseAvailable && !authReady && !sessionStartupError;
   const [liveDataStatus, setLiveDataStatus] = useState({ companyId: '', users: 'loading', messages: 'loading', activities: 'loading' });
 
   const integraEnabled = useIntegraAccess(db, appId, activeCompany?.id, Boolean(dbUser));
@@ -1298,8 +1300,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     return () => window.clearTimeout(timer);
   }, [activeTab, activeTutorial, dbLoading, forcePinChange, servicesTourReleaseKey]);
 
-  const [authReady, setAuthReady] = useState(!isFirebaseAvailable);
-  const [sessionStartupError, setSessionStartupError] = useState(false);
   const [authScope, setAuthScope] = useState({ companyId: '', isDeveloper: false });
   const [pushToken, setPushToken] = useState('');
   const cloudActivityCountRef = useRef(0);
@@ -1942,7 +1942,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         setDbUser(usr);
         setSessionStartupError(false);
         setAuthReady(true);
-        setDbLoading(false);
         if (anonymous) signOut(auth).catch(error => console.error('Falha ao encerrar sessão anônima', error));
       },
       onError: error => {
@@ -1952,7 +1951,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         setAuthScope({ companyId: '', isDeveloper: false });
         setSessionStartupError(true);
         setAuthReady(false);
-        setDbLoading(false);
       },
     });
 
@@ -2061,21 +2059,15 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       setCalendarEvents([]); setAbsences([]); setWorkSchedules([]);
       setScheduleSwapRequests([]); setPollsList([]);
       setLiveDataStatus({ companyId: activeCompany?.id || '', users: 'loading', messages: 'loading', activities: 'loading' });
-      if (authReady) setDbLoading(false);
       return;
     }
 
-    setDbLoading(true);
     setLiveDataStatus({ companyId: activeCompany.id, users: 'loading', messages: 'loading', activities: 'loading' });
     const requiredSources = new Set(['users', 'messages', 'activities']);
-    const readySources = new Set();
     const markSource = (name, status) => {
       if (!requiredSources.has(name)) return;
       setLiveDataStatus(previous => ({ ...previous, companyId: activeCompany.id, [name]: status }));
-      if (status === 'ready' || status === 'error') readySources.add(name);
-      if (readySources.size === requiredSources.size) setDbLoading(false);
     };
-    const connectionTimer = window.setTimeout(() => setDbLoading(false), 12000);
     const getCollectionPath = (name) => getTenantCollection(name);
 
     const setupSync = (collectionName, setState) => {
@@ -2118,7 +2110,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         markSource(collectionName, 'error');
         if (affectsCoverage) setScheduleCoverageSources(previous => ({ ...(previous.companyId === activeCompany.id ? previous : {}), companyId: activeCompany.id, [collectionName]: 'error' }));
         setState([]);
-        setDbLoading(false);
         triggerNotification('Não foi possível carregar ' + collectionName + '. Confira sua conexão e permissão.', 'error');
       });
 
@@ -2140,7 +2131,6 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     const unsubPolls = setupSync('polls', setPollsList);
 
     return () => {
-      window.clearTimeout(connectionTimer);
       unsubDepts();
       unsubUsers();
       unsubRoles();
@@ -7490,7 +7480,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       setCurrentUser(null);
       setActiveCompany(null);
       signOut(auth).then(() => window.location.reload()).catch(() => setLoginError('Não foi possível encerrar a sessão. Confira a conexão e tente novamente.'));
-    }} className="mt-3 w-full rounded-xl border border-slate-500 px-4 py-3 text-sm font-bold">Entrar novamente</button>{loginError && <p className="mt-3 text-xs text-rose-300">{loginError}</p>}</div></div>;
+    }} className="mt-3 w-full rounded-xl border border-slate-500 px-4 py-3 text-sm font-bold">Entrar novamente</button>{loginError && <p className="mt-3 text-xs text-rose-300">{loginError}</p>}<a href="/recuperar.html" className="mt-5 block text-xs font-bold text-blue-300 underline">Recuperar versão do aplicativo</a></div></div>;
   }
 
   if (dbLoading) {
@@ -7501,6 +7491,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           <div className="w-12 h-12 border-4 border-slate-300 border-t-slate-900 rounded-full animate-spin"></div>
           <h2 className="text-lg font-black tracking-tight">Comunica</h2>
           <p className="text-xs text-slate-400">Conectando ao banco de dados em nuvem em tempo real de forma segura. Aguarde um instante...</p>
+          <a href="/recuperar.html" className="text-xs font-bold text-blue-300 underline">Problemas para abrir? Recuperar acesso</a>
         </div>
       </div>
     );
