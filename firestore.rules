@@ -66,7 +66,7 @@ service cloud.firestore {
         || (before == 'finance_dispute' && after == 'delivered')
         || (before == 'rejected' && after in ['requested','quotation']);
     }
-    function validPurchase(data) {
+    function validPurchase(data, checkProofs) {
       return data.keys().hasOnly(['category','item','specification','quantity','unit','department','destination','neededBy','reason','priority',
         'supplier','quotedPrice','orderNumber','expectedDate','carrier','trackingCode','invoiceNumber','invoiceTotal','receivedQuantity',
         'condition','lot','expiresAt','storageAddress','destinationRecipient','note','status','requesterId','requesterName',
@@ -89,24 +89,20 @@ service cloud.firestore {
         && data.requesterName is string && data.requesterName.size() > 0
         && data.status in ['requested','approved','quotation','ordered','in_transit','received','exception','stored','delivered','finance_dispute','closed','rejected','cancelled']
         && data.get('createdAt',0) is int
-        && validPurchaseWorkflow(data)
-        && data.get('approvedBy','') is string && data.get('approvedAt',0) is int
+        && validPurchaseWorkflowFields(data)
+        && (!checkProofs || validPurchaseParticipants(data))
+        && (!checkProofs || (
+          data.get('approvedBy','') is string && data.get('approvedAt',0) is int
         && data.get('buyerConfirmedBy','') is string && data.get('buyerConfirmedAt',0) is int
         && data.get('receiverConfirmedBy','') is string && data.get('receiverConfirmedAt',0) is int
         && data.get('invoiceReceivedBy','') is string && data.get('invoiceReceivedAt',0) is int
         && data.get('recipientConfirmedBy','') is string && data.get('recipientConfirmedAt',0) is int
-        && data.get('financeConfirmedBy','') is string && data.get('financeConfirmedAt',0) is int;
-    }
-    function validPurchaseWorkflow(data) {
-      return validPurchaseWorkflowFields(data) && validPurchaseParticipants(data);
+        && data.get('financeConfirmedBy','') is string && data.get('financeConfirmedAt',0) is int));
     }
     function validPurchaseWorkflowFields(data) {
       return data.updatedAt is int && data.updatedBy is string
         && data.history is list && data.history.size() > 0 && data.history.size() <= 50
         && data.quotedPrice is number && data.quotedPrice >= 0
-        && data.get('quoteTotal',0) is number && data.get('quoteTotal',0) >= 0
-        && (data.get('quoteNumber','') == '' || data.quotedPrice == 0 || data.get('quoteTotal',0) >= data.quotedPrice * data.quantity)
-        && data.get('quoteNumber','') is string && data.get('quoteNumber','').size() <= 40
         && data.get('invoiceTotal',0) is number && data.get('invoiceTotal',0) >= 0
         && data.receivedQuantity is number && data.receivedQuantity >= 0 && data.receivedQuantity <= data.quantity
         && data.get('condition','pending') in ['pending','ok','damaged'];
@@ -176,7 +172,7 @@ service cloud.firestore {
           || (data.approverId != data.requesterId && data.approverId != data.buyerId))
         && (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('enabled', false) == true
-        ? data.approverId == ((data.get('quoteTotal',0) > 0 ? data.quoteTotal : data.quotedPrice * data.quantity) <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.threshold
+        ? data.approverId == (data.quotedPrice * data.quantity <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.threshold
           ? get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.lowerApproverId
           : get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.upperApproverId)
         : (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId))
@@ -576,7 +572,7 @@ service cloud.firestore {
         allow get, list: if support() || (integraEnabled(app, company) && (admin(app, company) || (member(company) && (resource.data.get('requesterId','') == request.auth.uid || request.auth.uid in resource.data.get('participantIds',[])))));
         // The initial requested stage has no stage-specific requirements. Avoid evaluating
         // the full downstream workflow here: it exceeds Firestore's expression budget.
-        allow create: if member(company) && integraEnabled(app, company) && purchaseRoleAllowed(app, company, 'requesterIds', request.auth.uid) && validPurchase(request.resource.data)
+        allow create: if member(company) && integraEnabled(app, company) && purchaseRoleAllowed(app, company, 'requesterIds', request.auth.uid) && validPurchase(request.resource.data, false)
           && request.resource.data.status == 'requested' && request.resource.data.requesterId == request.auth.uid
           && request.resource.data.workflowVersion == 2 && request.resource.data.participantIds == [request.auth.uid]
           && request.resource.data.buyerId == '' && request.resource.data.approverId == '' && request.resource.data.receiverId == ''
@@ -598,7 +594,7 @@ service cloud.firestore {
           && manages(app, company) && (support() || integraEnabled(app, company))
           && resource.data.status in ['requested','approved','quotation','ordered','in_transit','received','exception','stored','delivered']
           && request.resource.data.get('workflowVersion',0) == 2 && request.resource.data.status == 'requested'
-          && validPurchase(request.resource.data) && validPurchaseStage(request.resource.data)
+          && validPurchase(request.resource.data, true) && validPurchaseStage(request.resource.data)
           && request.resource.data.participantIds == [resource.data.requesterId]
           && request.resource.data.buyerId == '' && request.resource.data.approverId == ''
           && request.resource.data.receiverId == '' && request.resource.data.recipientId == '' && request.resource.data.financeId == ''
