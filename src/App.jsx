@@ -75,6 +75,7 @@ import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteO
 import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { appHistoryState, appNavigationKey, readAppNavigation } from './appNavigationHistory.js';
+import { observeSessionStartup } from './sessionStartup.js';
 import { clearLegacyCompanyCache, readSessionIdentity, sessionIdentity } from './sessionPrivacy.js';
 import { publicDirectoryProfile, directoryFields } from './userDirectory.js';
 import { employeeAccessLabel, employeeAccessMillis } from './employeeAccess.js';
@@ -1298,6 +1299,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [activeTab, activeTutorial, dbLoading, forcePinChange, servicesTourReleaseKey]);
 
   const [authReady, setAuthReady] = useState(!isFirebaseAvailable);
+  const [sessionStartupError, setSessionStartupError] = useState(false);
   const [authScope, setAuthScope] = useState({ companyId: '', isDeveloper: false });
   const [pushToken, setPushToken] = useState('');
   const cloudActivityCountRef = useRef(0);
@@ -1912,56 +1914,46 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     };
 
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, async (usr) => {
-      if (usr?.isAnonymous) {
-        localStorage.removeItem('comunica_current_user');
-        setCurrentUser(null);
-        setDbUser(null);
-        setAuthScope({ companyId: '', isDeveloper: false });
-        setAuthReady(true);
-        setDbLoading(false);
-        await signOut(auth);
-        return;
-      }
-      if (!usr) {
-        // Não mantenha um perfil local quando a sessão do Firebase já expirou.
-        localStorage.removeItem('comunica_current_user');
-        localStorage.removeItem('comunica_active_company');
-        setCurrentUser(null);
-        setActiveCompany(null);
-        setDbUser(null);
-        setAuthScope({ companyId: '', isDeveloper: false });
-        setAuthReady(true);
-        setDbLoading(false);
-        return;
-      }
-      try {
+    const unsubscribe = observeSessionStartup({
+      subscribe: (next, error) => onAuthStateChanged(auth, next, error),
+      validate: async usr => {
+        if (!usr || usr.isAnonymous) return { usr: null, clearIdentity: true, anonymous: Boolean(usr?.isAnonymous) };
         const token = await usr.getIdTokenResult();
         const scope = { companyId: String(token.claims.companyId || ''), isDeveloper: token.claims.isDeveloper === true };
         const savedUser = getLocalStorageItem('comunica_current_user', null);
         const savedCompany = getLocalStorageItem('comunica_active_company', null);
-        if (savedUser?.id && savedUser.id !== usr.uid || (!scope.isDeveloper && savedCompany?.id && scope.companyId !== savedCompany.id)) {
+        const clearIdentity = Boolean(savedUser?.id && savedUser.id !== usr.uid || (!scope.isDeveloper && savedCompany?.id && scope.companyId !== savedCompany.id));
+        let profile;
+        if (!scope.isDeveloper && scope.companyId) {
+          const snapshot = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', scope.companyId, 'users', usr.uid));
+          profile = snapshot.exists() ? { ...snapshot.data(), id: usr.uid } : null;
+        }
+        return { usr, scope, profile, clearIdentity };
+      },
+      onReady: ({ usr, scope, profile, clearIdentity, anonymous }) => {
+        if (clearIdentity) {
           localStorage.removeItem('comunica_current_user');
           localStorage.removeItem('comunica_active_company');
           setCurrentUser(null);
           setActiveCompany(null);
         }
-        if (!scope.isDeveloper && scope.companyId) {
-          const profile = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', scope.companyId, 'users', usr.uid));
-          if (profile.exists()) setCurrentUser({ id: usr.uid, ...profile.data() });
-          else setCurrentUser(null);
-        }
-        setAuthScope(scope);
+        if (profile !== undefined) setCurrentUser(profile);
+        setAuthScope(scope || { companyId: '', isDeveloper: false });
         setDbUser(usr);
-      } catch (error) {
+        setSessionStartupError(false);
+        setAuthReady(true);
+        setDbLoading(false);
+        if (anonymous) signOut(auth).catch(error => console.error('Falha ao encerrar sessão anônima', error));
+      },
+      onError: error => {
         console.error('Não foi possível validar a sessão do Firebase', error);
         setCurrentUser(null);
         setDbUser(null);
         setAuthScope({ companyId: '', isDeveloper: false });
-      } finally {
-        setAuthReady(true);
+        setSessionStartupError(true);
+        setAuthReady(false);
         setDbLoading(false);
-      }
+      },
     });
 
     return () => unsubscribe();
@@ -7489,6 +7481,16 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
   if (firebaseEnvironmentError) {
     return <div className="grid min-h-screen place-items-center bg-slate-950 p-6 text-white"><EnvironmentBadge /><div className="max-w-md rounded-3xl border border-rose-300/30 bg-white/10 p-7 text-center shadow-2xl"><Lock className="mx-auto h-8 w-8 text-rose-300" /><h1 className="mt-4 text-lg font-black">Configuração de ambiente bloqueada</h1><p className="mt-2 text-sm leading-6 text-slate-300">{firebaseEnvironmentError}</p></div></div>;
+  }
+
+  if (sessionStartupError) {
+    return <div className="grid min-h-screen place-items-center bg-slate-900 p-6 text-white"><EnvironmentBadge /><div role="alert" className="max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-8 text-center shadow-2xl"><h1 className="text-lg font-black">Não foi possível conectar</h1><p className="mt-4 text-sm leading-6 text-slate-300">A recuperação da sua sessão demorou mais que o esperado. Confira sua conexão e tente novamente.</p><button type="button" onClick={() => window.location.reload()} className="mt-6 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold">Tentar novamente</button><button type="button" onClick={() => {
+      localStorage.removeItem('comunica_current_user');
+      localStorage.removeItem('comunica_active_company');
+      setCurrentUser(null);
+      setActiveCompany(null);
+      signOut(auth).then(() => window.location.reload()).catch(() => setLoginError('Não foi possível encerrar a sessão. Confira a conexão e tente novamente.'));
+    }} className="mt-3 w-full rounded-xl border border-slate-500 px-4 py-3 text-sm font-bold">Entrar novamente</button>{loginError && <p className="mt-3 text-xs text-rose-300">{loginError}</p>}</div></div>;
   }
 
   if (dbLoading) {
