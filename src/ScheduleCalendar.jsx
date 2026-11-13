@@ -96,12 +96,12 @@ export default function ScheduleCalendar({
     counts[tone] = (counts[tone] || 0) + 1;
     return counts;
   }, {});
-  const chooseDate = (date, person = '') => {
+  const chooseDate = (date, person = '', { keyboard = false } = {}) => {
     setDetailEmployee(person);
     onSelectDate(date);
     setDetailsOpen(true);
     if (date.slice(0, 7) !== month) setAnchor(date);
-    if (window.innerWidth <= 1100) requestAnimationFrame(() => shellRef.current?.querySelector('.sc-day-panel')?.scrollIntoView({ block: 'start', behavior: 'instant' }));
+    if (!keyboard && window.innerWidth <= 1100) requestAnimationFrame(() => shellRef.current?.querySelector('.sc-day-panel')?.scrollIntoView({ block: 'start', behavior: 'instant' }));
   };
   const navigate = direction => {
     const next = shiftCalendarPeriod(anchor, direction, view);
@@ -122,7 +122,7 @@ export default function ScheduleCalendar({
   };
 
   const calendar = (
-    <section ref={shellRef} data-tour="scale" className={`sc-calendar ${fullscreen ? 'sc-fullscreen' : ''}`}
+    <section ref={shellRef} data-tour="scale" className={`sc-calendar ${fullscreen ? 'sc-fullscreen' : ''} ${view === 'team' ? 'sc-team-mode' : ''}`}
       role={fullscreen ? 'dialog' : undefined} aria-modal={fullscreen && !modalOpen ? true : undefined} aria-label="Calendário de escalas">
       <header className="sc-header">
         <div className="sc-heading">
@@ -192,7 +192,7 @@ export default function ScheduleCalendar({
 
       <div className={`sc-workspace ${detailsOpen ? 'sc-with-details' : ''}`}>
         <div className="sc-grid-area">
-          {view === 'employee' ? <ScheduleEmployeeManagement days={dates.filter(date => date.startsWith(month)).map(date => calendarRecordsForDay(date, data, { ...filters, status: 'all' }))} employees={employees} filters={{ ...filters, status: 'all' }} getDepartments={getDepartments} onSelectDay={(date, person) => { setDayTab('schedules'); chooseDate(date, person); }} /> : view === 'team' ? <ScheduleTeamMonth companyName={companyName} days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category) => { setDayTab(category); chooseDate(date, person); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
+          {view === 'employee' ? <ScheduleEmployeeManagement days={dates.filter(date => date.startsWith(month)).map(date => calendarRecordsForDay(date, data, { ...filters, status: 'all' }))} employees={employees} filters={{ ...filters, status: 'all' }} getDepartments={getDepartments} onSelectDay={(date, person) => { setDayTab('schedules'); chooseDate(date, person); }} /> : view === 'team' ? <ScheduleTeamMonth companyName={companyName} days={days.filter(day => day.date.startsWith(month))} employees={employees} departments={departments} filters={filters} getDepartments={getDepartments} today={today} selectedDate={selectedDate} selectedPerson={detailEmployee} onSelectCell={(date, person, category, options) => { setDayTab(category); chooseDate(date, person, options); }} onSelectCoverage={date => { chooseDate(date); setDayTab('coverage'); }} showAbsences={showAbsences} showEvents={showEvents} showCoverage={showCoverage} coverageReady={coverageReady} coverageError={coverageError} /> : <>
           <div className="sc-grid-scroll" tabIndex={0} aria-label="Grade do calendário; role horizontalmente em telas pequenas">
             <div className={`sc-grid sc-${view}-view`}>
               {weekdays.map(day => <div key={day} className="sc-weekday">{day}</div>)}

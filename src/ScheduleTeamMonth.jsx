@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { teamMonthKeyboardTarget } from './scheduleKeyboardNavigation.js';
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Printer } from 'lucide-react';
 import { openSchedulePrintView } from './schedulePrint.js';
 import { nextTeamCoverageDate, teamCoverageSummary, teamDaySummary, teamMonthRows } from './scheduleTeamMonth.js';
@@ -8,6 +9,7 @@ const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const dateLabel = date => new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
 
 export default function ScheduleTeamMonth({ companyName, days, employees, departments, filters, getDepartments, today, selectedDate, selectedPerson, onSelectCell, onSelectCoverage, showAbsences, showEvents, showCoverage, coverageReady, coverageError }) {
+  const scrollRef = useRef(null);
   const [showHours, setShowHours] = useState(false);
   const [onlyScheduled, setOnlyScheduled] = useState(false);
   const filterKey = [filters.department, filters.employee, filters.status, filters.search, onlyScheduled, showAbsences].join('|');
@@ -16,6 +18,25 @@ export default function ScheduleTeamMonth({ companyName, days, employees, depart
   const rows = teamMonthRows(days, employees, { filters, getDepartments, showAbsences, onlyScheduled });
   const visibleRowCount = rowPagination.key === filterKey ? rowPagination.count : 12;
   const visibleRows = rows.slice(0, visibleRowCount);
+  const activeRow = Math.max(0, visibleRows.findIndex(row => row.userId === selectedPerson));
+  const activeDay = Math.max(0, days.findIndex(day => day.date === selectedDate));
+  const selectCell = (cell, row, keyboard = false) => {
+    const summary = teamDaySummary(cell);
+    onSelectCell(cell.date, row.userId, cell.absences.length && ['vacation', 'absence'].includes(summary.tone) ? 'absences' : 'schedules', { keyboard });
+  };
+  const moveSelection = (event, rowIndex, dayIndex) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const next = teamMonthKeyboardTarget(event.key, rowIndex, dayIndex, rows.length, days.length);
+    if (!next) return;
+    event.preventDefault();
+    if (next.row >= visibleRows.length) setRowPagination({ key: filterKey, count: Math.min(rows.length, Math.max(visibleRowCount + 12, next.row + 1)) });
+    selectCell(rows[next.row].cells[next.day], rows[next.row], true);
+    requestAnimationFrame(() => {
+      const target = scrollRef.current?.querySelector(`[data-team-row="${next.row}"][data-team-day="${next.day}"]`);
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    });
+  };
   const coverageSummaries = days.map(day => ({ date: day.date, ...teamCoverageSummary(day.coverage, departments, { ready: coverageReady, error: coverageError }) }));
   const coverageCounts = coverageSummaries.reduce((counts, day) => ({ ...counts, [day.tone]: (counts[day.tone] || 0) + 1 }), {});
   const nextPendingDate = coverageReady && !coverageError ? nextTeamCoverageDate(days, selectedDate, departments) : '';
@@ -46,14 +67,15 @@ export default function ScheduleTeamMonth({ companyName, days, employees, depart
         {nextPendingDate && <button type="button" onClick={() => onSelectCoverage(nextPendingDate)}><ArrowRight size={14}/>Próxima pendência · {Number(nextPendingDate.slice(-2))}</button>}
       </>}
     </div>}
-    <p className="stm-help">Role para os lados para percorrer o mês. Os nomes ficam fixos. Clique em uma célula para consultar ou editar aquele dia.</p>
-    <div className={`stm-scroll ${showHours ? 'stm-with-hours' : ''}`} tabIndex={0} aria-label="Quadro mensal da equipe; role para os lados">
+    <p className="stm-selection" aria-live="polite">{days.some(day => day.date === selectedDate) ? `Dia selecionado: ${dateLabel(selectedDate)}${selectedPerson ? ` · ${rows.find(row => row.userId === selectedPerson)?.name || ''}` : ''}` : 'Selecione uma célula da equipe'}</p>
+    <p className="stm-help">Clique em uma célula e use ← → para mudar o dia e ↑ ↓ para mudar o funcionário. Os dias e os nomes ficam fixos durante a rolagem.</p>
+    <div ref={scrollRef} className={`stm-scroll ${showHours ? 'stm-with-hours' : ''}`} aria-label="Quadro mensal da equipe; use as setas do teclado nas células">
       <table className="stm-table"><caption>Escala publicada da equipe · {days[0]?.date.slice(0, 7).split('-').reverse().join('/')}</caption>
-        <thead><tr><th scope="col" className="stm-person">Colaborador / setor</th>{days.map(day => <th scope="col" key={day.date} className={`${[0, 6].includes(new Date(day.date + 'T12:00:00').getDay()) ? 'stm-weekend' : ''} ${day.date === today ? 'stm-today' : ''}`} aria-current={day.date === today ? 'date' : undefined}><span>{Number(day.date.slice(-2))}</span><small>{weekdays[new Date(day.date + 'T12:00:00').getDay()]}</small>{showEvents && day.events.length > 0 && <abbr title={day.events.map(event => event.title).join('; ')} aria-label={day.events.map(event => event.title).join('; ')}>●</abbr>}</th>)}</tr></thead>
-        <tbody>{showCoverage && <tr className="stm-coverage-row"><th scope="row" className="stm-person">Disponíveis / mínimo<small>Pior faixa · toda a equipe</small></th>{coverageSummaries.map(summary => <td key={summary.date}><button type="button" className={`stm-coverage stm-${summary.tone}`} aria-label={`${dateLabel(summary.date)}: ${summary.label}${summary.details ? `. ${summary.details}` : ''}`} title={`${summary.label}${summary.details ? `\n${summary.details}` : ''}`} onClick={() => onSelectCoverage(summary.date)}><span>{summary.code}{summary.unknown ? ' ?' : summary.excess ? ' ↑' : ''}</span><small>{summary.tone === 'shortage' ? 'Falta' : summary.tone === 'unknown' ? 'Revisar' : summary.tone === 'excess' ? 'Excesso' : summary.tone === 'sufficient' ? 'OK' : summary.tone === 'closed' ? 'Fechado' : '—'}</small></button></td>)}</tr>}
-          {visibleRows.map(row => <tr key={row.key}><th scope="row" className="stm-person" title={row.name}><strong>{row.name}</strong><small>{row.departments.map(id => departments.find(department => department.id === id)?.name || id).join(' · ') || 'Sem setor'}</small></th>{row.cells.map(cell => {
+        <thead><tr><th scope="col" className="stm-person">Colaborador / setor</th>{days.map(day => <th scope="col" key={day.date} className={`${[0, 6].includes(new Date(day.date + 'T12:00:00').getDay()) ? 'stm-weekend' : ''} ${day.date === today ? 'stm-today' : ''} ${day.date === selectedDate ? 'stm-day-selected' : ''}`} aria-label={`${dateLabel(day.date)}${day.date === selectedDate ? ', dia selecionado' : ''}`}  aria-current={day.date === today ? 'date' : undefined}><span>{Number(day.date.slice(-2))}</span><small>{weekdays[new Date(day.date + 'T12:00:00').getDay()]}</small>{showEvents && day.events.length > 0 && <abbr title={day.events.map(event => event.title).join('; ')} aria-label={day.events.map(event => event.title).join('; ')}>●</abbr>}</th>)}</tr></thead>
+        <tbody>{showCoverage && <tr className="stm-coverage-row"><th scope="row" className="stm-person">Disponíveis / mínimo<small>Pior faixa · toda a equipe</small></th>{coverageSummaries.map(summary => <td key={summary.date} className={summary.date === selectedDate ? 'stm-column-selected' : ''}><button type="button" className={`stm-coverage stm-${summary.tone}`} aria-label={`${dateLabel(summary.date)}: ${summary.label}${summary.details ? `. ${summary.details}` : ''}`} title={`${summary.label}${summary.details ? `\n${summary.details}` : ''}`} onClick={() => onSelectCoverage(summary.date)}><span>{summary.code}{summary.unknown ? ' ?' : summary.excess ? ' ↑' : ''}</span><small>{summary.tone === 'shortage' ? 'Falta' : summary.tone === 'unknown' ? 'Revisar' : summary.tone === 'excess' ? 'Excesso' : summary.tone === 'sufficient' ? 'OK' : summary.tone === 'closed' ? 'Fechado' : '—'}</small></button></td>)}</tr>}
+          {visibleRows.map((row, rowIndex) => <tr key={row.key}><th scope="row" className={`stm-person ${row.userId === selectedPerson ? 'stm-person-selected' : ''}`} title={row.name}><strong>{row.name}</strong><small>{row.departments.map(id => departments.find(department => department.id === id)?.name || id).join(' · ') || 'Sem setor'}</small></th>{row.cells.map((cell, dayIndex) => {
             const summary = teamDaySummary(cell), selected = Boolean(selectedPerson) && selectedDate === cell.date && selectedPerson === row.userId;
-            return <td key={cell.date} className={cell.date === today ? 'stm-today' : ''}><button type="button" aria-pressed={selected} title={`${row.name} · ${dateLabel(cell.date)}: ${summary.description}${summary.fixed ? ' · Dia fixado' : ''}`} aria-label={`${row.name}, ${dateLabel(cell.date)}: ${summary.description}${summary.fixed ? '. Dia fixado' : ''}`} className={`stm-cell stm-${summary.tone} ${selected ? 'stm-selected' : ''}`} onClick={() => onSelectCell(cell.date, row.userId, cell.absences.length && ['vacation', 'absence'].includes(summary.tone) ? 'absences' : 'schedules')}><span>{summary.code}{summary.partial && <sup title="Ausência parcial">A</sup>}{summary.fixed && <i aria-hidden="true">•</i>}</span>{showHours && summary.hours && <small>{summary.hours}</small>}</button></td>;
+            return <td key={cell.date} className={`${cell.date === today ? 'stm-today' : ''} ${cell.date === selectedDate ? 'stm-column-selected' : ''}`}><button type="button" data-team-row={rowIndex} data-team-day={dayIndex} tabIndex={rowIndex === activeRow && dayIndex === activeDay ? 0 : -1} onKeyDown={event => moveSelection(event, rowIndex, dayIndex)} aria-pressed={selected} title={`${row.name} · ${dateLabel(cell.date)}: ${summary.description}${summary.fixed ? ' · Dia fixado' : ''}`} aria-label={`${row.name}, ${dateLabel(cell.date)}: ${summary.description}${summary.fixed ? '. Dia fixado' : ''}`} className={`stm-cell stm-${summary.tone} ${selected ? 'stm-selected' : ''}`} onClick={() => selectCell(cell, row)}><span>{summary.code}{summary.partial && <sup title="Ausência parcial">A</sup>}{summary.fixed && <i aria-hidden="true">•</i>}</span>{showHours && summary.hours && <small>{summary.hours}</small>}</button></td>;
           })}</tr>)}
         </tbody>
       </table>
