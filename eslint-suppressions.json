@@ -18,10 +18,10 @@
       "count": 2
     },
     "react-hooks/immutability": {
-      "count": 3
+      "count": 4
     },
     "react-hooks/purity": {
-      "count": 86
+      "count": 93
     },
     "react-hooks/refs": {
       "count": 5
