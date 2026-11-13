@@ -5,10 +5,10 @@ import { normalizeCoverageRequirements, validateCoverageRequirements } from './s
 const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const emptyRule = department => ({ id: '', department: department === 'all' ? '' : department, start: '08:00', end: '12:00', minimum: 1, maximum: '', weekdays: [1, 2, 3, 4, 5], includeRemote: false, date: '', scope: 'weekly', closed: false });
 
-export function CoverageRequirementEditor({ requirements, departments, canConfigure, onSave, defaultDepartment, ready, error, embedded = false }) {
+export function CoverageRequirementEditor({ requirements, departments, canConfigure, onSave, defaultDepartment, ready, error, embedded = false, initialRule = null }) {
   const Form = embedded ? 'div' : 'form';
-  const [draft, setDraft] = useState(() => emptyRule(defaultDepartment));
-  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => ({ ...emptyRule(defaultDepartment), ...initialRule }));
+  const [editing, setEditing] = useState(Boolean(initialRule));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const patch = changes => setDraft(previous => ({ ...previous, ...changes }));

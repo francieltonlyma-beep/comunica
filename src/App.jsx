@@ -1,3 +1,4 @@
+import { scheduleOperationIssue, scheduleOperationDraft } from './scheduleOperationIssue.js';
 import { planManualScheduleEdit } from './scheduleManualEdit.js';
 import { coverageChangeError, coverageChangesForDates } from './scheduleCoverageChange.js';
 import ScheduleCoverageApproval from './ScheduleCoverageApproval.jsx';
@@ -43,7 +44,7 @@ import { planPublishedScheduleSwap } from './publishedScheduleSwap.js';
 import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch } from './scheduleSwapRequests.js';
 import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
 import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
-import { coverageRequirementsForDate, normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
+import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
@@ -1061,6 +1062,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   });
   const [bulkScheduleMode, setBulkScheduleMode] = useState('smart');
   const bulkScheduleSaveInFlight = useRef(false);
+  const [bulkScheduleOperationIssue, setBulkScheduleOperationIssue] = useState(null);
   const [isSavingBulkSchedule, setIsSavingBulkSchedule] = useState(false);
   const [scheduleCoverageSources, setScheduleCoverageSources] = useState({});
   const [scheduleCoverageReady, setScheduleCoverageReady] = useState(false);
@@ -4351,10 +4353,14 @@ const submitPresence = async (e) => {
       } catch (error) { return triggerNotification(error.message, 'error'); }
       const schedules = plan.edited;
       if (!schedulePlanningDataReady()) return triggerNotification('Aguarde a confirmação dos dados da empresa.', 'error');
+      const operationIssue = scheduleOperationIssue(schedules, scheduleScopedCoverageRequirements, { events: calendarEvents });
+      if (operationIssue) {
+        setBulkScheduleOperationIssue({ ...operationIssue, companyId: activeCompany.id });
+        return;
+      }
       const changedDates = new Set();
       for (const item of schedules) for (let date = item.startDate; date <= item.endDate; date = civilDateShift(date, { days: 1 })) {
         if (changedDates.size >= 366 && !changedDates.has(date)) return triggerNotification('Publique a escala manual em períodos de até um ano.', 'error');
-        if (['Presencial', 'Home Office'].includes(item.status) && coverageRequirementsForDate(date, scheduleScopedCoverageRequirements, item.dept, { events: calendarEvents }).some(rule => rule.closed || rule.configurationMissing)) return triggerNotification('Defina o setor como aberto em Necessidade de pessoas antes de marcar trabalho neste domingo ou feriado.', 'error');
         changedDates.add(date); changedDates.add(civilDateShift(date, { days: 1 }));
       }
       const changedIds = new Set(plan.deletedIds);
@@ -11040,6 +11046,24 @@ const handleDownload = async (fileUrl, fileName) => {
               <label className="block text-[10px] font-bold uppercase text-slate-500">Observação da escala (opcional)<input maxLength="250" value={bulkSchedule.notes} onChange={event => setBulkSchedule(previous => ({ ...previous, notes: event.target.value }))} placeholder="Ex.: Cobertura de feriado" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs text-slate-700" /></label>
               <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setShowBulkScheduleModal(false)} className="px-4 py-2 text-xs font-bold text-slate-500">Cancelar</button>{bulkScheduleMode === 'manual' ? <button type="submit" disabled={isSavingBulkSchedule} className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{isSavingBulkSchedule ? 'Salvando...' : `Salvar escala para ${bulkSchedule.userIds.length} pessoa(s)`}</button> : !automaticScheduleProposal.length ? <button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-bold text-white hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro da equipe</button> : null}</div>
             </fieldset></form>
+          </div>
+        </div>
+      )}
+
+      {showBulkScheduleModal && bulkScheduleOperationIssue?.companyId === activeCompany?.id && (
+        <div className="fixed inset-0 z-[1005] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="manual-operation-title">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-800 shadow-2xl">
+            <div className="flex items-start justify-between gap-3"><div><h3 id="manual-operation-title" className="text-base font-extrabold">Confirme o funcionamento deste dia</h3>
+              <p className="mt-2 text-sm font-semibold">{bulkScheduleOperationIssue.date.split('-').reverse().join('/')} · {scheduleScope.departments.find(dept => dept.id === bulkScheduleOperationIssue.department)?.name || bulkScheduleOperationIssue.department}</p>
+              <p className="mt-2 text-sm">{bulkScheduleOperationIssue.closed ? 'Este setor está marcado como fechado.' : 'O funcionamento deste domingo ou feriado ainda não foi definido.'} Para marcar trabalho, informe os horários de abertura e a necessidade de pessoas abaixo. A exceção vale somente para esta data.</p>
+              <p className="mt-2 text-xs text-slate-500">Sua seleção de funcionários e os dados da escala estão preservados. Depois de salvar a necessidade, confira e salve a escala novamente.</p></div>
+              <button type="button" aria-label="Voltar à escala" onClick={() => setBulkScheduleOperationIssue(null)}><X className="h-5 w-5" /></button></div>
+            <div className="sc-calendar mt-4">
+              <CoverageRequirementEditor key={`${bulkScheduleOperationIssue.companyId}|${bulkScheduleOperationIssue.date}|${bulkScheduleOperationIssue.department}`} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} canConfigure={canConfigureScheduleRules} defaultDepartment={bulkScheduleOperationIssue.department} ready={scheduleCoverageReady} error={scheduleCoverageError}
+              initialRule={scheduleOperationDraft(bulkScheduleOperationIssue, scheduleScopedCoverageRequirements)}
+              onSave={async requirements => { const saved = await saveScheduleCoverageRequirements(requirements); if (saved) setBulkScheduleOperationIssue(null); return saved; }} />
+            </div>
+            <button type="button" className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold" onClick={() => setBulkScheduleOperationIssue(null)}>Voltar à escala</button>
           </div>
         </div>
       )}

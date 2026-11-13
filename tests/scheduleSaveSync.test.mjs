@@ -1,3 +1,4 @@
+import { scheduleOperationIssue } from '../src/scheduleOperationIssue.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,10 +10,10 @@ const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const body = source.split('  const saveBulkSchedule = async (event) => {')[1].split('\n  };')[0];
 const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
 const date = '2026-11-17';
-function fixture({ syncBefore = true, success = true, pause, ready = true } = {}) {
+function fixture({ syncBefore = true, success = true, pause, ready = true, requirements = [], events = [] } = {}) {
   const old = { id: 'old', userId: 'a', startDate: date, endDate: date, status: 'Folga' };
   let state = [old], writes = 0, closed = false, pending = false;
-  let snapshot;
+  let snapshot, issue;
   const ref = { current: false };
   const notifications = [];
   const context = {
@@ -23,8 +24,8 @@ function fixture({ syncBefore = true, success = true, pause, ready = true } = {}
     automaticScheduleRules: { shiftStart: '08:00', shiftEnd: '17:00', version: 1 }, workSchedules: [old],
     currentUser: { name: 'Gestor' }, scheduleDepartmentForEmployee: () => 'Loja', getUserDepts: () => ['Loja'],
     schedulePlanningDataReady: () => ready, civilDateShift: (value, { days }) => shiftDate(value, days),
-    scheduleScopedCoverageRequirements: [], calendarEvents: [], coverageRequirementsForDate: () => [],
-    coverageChangesForDates, coverageChangeError, schedulePlanningContext: () => ({}),
+    scheduleScopedCoverageRequirements: requirements, calendarEvents: events, coverageRequirementsForDate: () => [],
+    scheduleOperationIssue, setBulkScheduleOperationIssue: value => { issue = value; }, coverageChangesForDates, coverageChangeError, schedulePlanningContext: () => ({}),
     activeCompany: { id: 'company' }, absences: [],
     saveRelatedRecords: async records => {
       writes++;
@@ -40,7 +41,7 @@ function fixture({ syncBefore = true, success = true, pause, ready = true } = {}
   };
   const execute = new AsyncFunction('event', ...Object.keys(context), body);
   return { run: () => execute({ preventDefault() {} }, ...Object.values(context)), deliverSnapshot: () => { state = snapshot; },
-    get state() { return state; }, get writes() { return writes; }, get closed() { return closed; }, get pending() { return pending; }, ref, notifications };
+    get issue() { return issue; }, get state() { return state; }, get writes() { return writes; }, get closed() { return closed; }, get pending() { return pending; }, ref, notifications };
 }
 
 for (const syncBefore of [true, false]) test(`manual save keeps one record when Firebase snapshot arrives ${syncBefore ? 'before' : 'after'} save confirmation`, async () => {
@@ -85,4 +86,16 @@ test('a validation error releases the save guard without writing', async () => {
   assert.equal(f.ref.current, false);
   assert.equal(f.pending, false);
   assert.equal(f.closed, false);
+});
+
+test('a holiday block opens the exact configuration, preserves the form and permits retry after opening the date', async () => {
+  const requirements = [{ id: 'weekly', department: 'Loja', weekdays: [2], start: '08:00', end: '17:00', minimum: 1 }];
+  const f = fixture({ requirements, events: [{ date, type: 'Feriado' }] });
+  await f.run();
+  assert.deepEqual(f.issue, { companyId: 'company', date, department: 'Loja', closed: false });
+  assert.equal(f.writes, 0); assert.equal(f.closed, false); assert.equal(f.state[0].id, 'old');
+  assert.equal(f.ref.current, false); assert.equal(f.pending, false);
+  requirements.push({ ...requirements[0], id: 'date', date, weekdays: [] });
+  await f.run();
+  assert.equal(f.writes, 1); assert.equal(f.closed, true); assert.equal(f.state[0].status, 'Presencial');
 });
