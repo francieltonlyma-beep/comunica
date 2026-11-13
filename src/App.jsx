@@ -1060,6 +1060,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     repeatCount: 1, repeatInterval: 'semanal'
   });
   const [bulkScheduleMode, setBulkScheduleMode] = useState('smart');
+  const bulkScheduleSaveInFlight = useRef(false);
+  const [isSavingBulkSchedule, setIsSavingBulkSchedule] = useState(false);
   const [scheduleCoverageSources, setScheduleCoverageSources] = useState({});
   const [scheduleCoverageReady, setScheduleCoverageReady] = useState(false);
   const [scheduleCoverageError, setScheduleCoverageError] = useState('');
@@ -4322,44 +4324,52 @@ const submitPresence = async (e) => {
 
   const saveBulkSchedule = async (event) => {
     event.preventDefault();
-    if (!isManager) {
-      triggerNotification('Apenas gestores podem alterar escalas em lote.', 'error');
-      return;
-    }
-    if (bulkSchedule.endDate < bulkSchedule.startDate) {
-      triggerNotification('A data final da escala não pode ser anterior à inicial.', 'error');
-      return;
-    }
-    const targets = scheduleScope.employees.filter(user => bulkSchedule.userIds.includes(user.id));
-    if (!targets.length) {
-      triggerNotification('Selecione pelo menos um colaborador para a escala.', 'error');
-      return;
-    }
-    const now = Date.now();
-    const occurrences = bulkScheduleOccurrences();
-    let plan;
+    if (bulkScheduleSaveInFlight.current) return;
+    bulkScheduleSaveInFlight.current = true;
+    setIsSavingBulkSchedule(true);
     try {
-      plan = planManualScheduleEdit({ targets, periods: occurrences, form: bulkSchedule, rules: automaticScheduleRules,
-        history: workSchedules, publicationId: globalThis.crypto.randomUUID(), now, actor: currentUser,
-        getDepartment: user => scheduleDepartmentForEmployee(user, scheduleScope, getUserDepts) });
-    } catch (error) { return triggerNotification(error.message, 'error'); }
-    const schedules = plan.edited;
-    if (!schedulePlanningDataReady()) return triggerNotification('Aguarde a confirmação dos dados da empresa.', 'error');
-    const changedDates = new Set();
-    for (const item of schedules) for (let date = item.startDate; date <= item.endDate; date = civilDateShift(date, { days: 1 })) {
-      if (changedDates.size >= 366 && !changedDates.has(date)) return triggerNotification('Publique a escala manual em períodos de até um ano.', 'error');
-      if (['Presencial', 'Home Office'].includes(item.status) && coverageRequirementsForDate(date, scheduleScopedCoverageRequirements, item.dept, { events: calendarEvents }).some(rule => rule.closed || rule.configurationMissing)) return triggerNotification('Defina o setor como aberto em Necessidade de pessoas antes de marcar trabalho neste domingo ou feriado.', 'error');
-      changedDates.add(date); changedDates.add(civilDateShift(date, { days: 1 }));
+      if (!isManager) {
+        triggerNotification('Apenas gestores podem alterar escalas em lote.', 'error');
+        return;
+      }
+      if (bulkSchedule.endDate < bulkSchedule.startDate) {
+        triggerNotification('A data final da escala não pode ser anterior à inicial.', 'error');
+        return;
+      }
+      const targets = scheduleScope.employees.filter(user => bulkSchedule.userIds.includes(user.id));
+      if (!targets.length) {
+        triggerNotification('Selecione pelo menos um colaborador para a escala.', 'error');
+        return;
+      }
+      const now = Date.now();
+      const occurrences = bulkScheduleOccurrences();
+      let plan;
+      try {
+        plan = planManualScheduleEdit({ targets, periods: occurrences, form: bulkSchedule, rules: automaticScheduleRules,
+          history: workSchedules, publicationId: globalThis.crypto.randomUUID(), now, actor: currentUser,
+          getDepartment: user => scheduleDepartmentForEmployee(user, scheduleScope, getUserDepts) });
+      } catch (error) { return triggerNotification(error.message, 'error'); }
+      const schedules = plan.edited;
+      if (!schedulePlanningDataReady()) return triggerNotification('Aguarde a confirmação dos dados da empresa.', 'error');
+      const changedDates = new Set();
+      for (const item of schedules) for (let date = item.startDate; date <= item.endDate; date = civilDateShift(date, { days: 1 })) {
+        if (changedDates.size >= 366 && !changedDates.has(date)) return triggerNotification('Publique a escala manual em períodos de até um ano.', 'error');
+        if (['Presencial', 'Home Office'].includes(item.status) && coverageRequirementsForDate(date, scheduleScopedCoverageRequirements, item.dept, { events: calendarEvents }).some(rule => rule.closed || rule.configurationMissing)) return triggerNotification('Defina o setor como aberto em Necessidade de pessoas antes de marcar trabalho neste domingo ou feriado.', 'error');
+        changedDates.add(date); changedDates.add(civilDateShift(date, { days: 1 }));
+      }
+      const changedIds = new Set(plan.deletedIds);
+      const after = [...workSchedules.filter(item => !changedIds.has(item.id)), ...plan.schedules];
+      const coverageProblem = coverageChangeError(coverageChangesForDates([...changedDates], workSchedules, after, scheduleScopedCoverageRequirements, schedulePlanningContext()));
+      if (coverageProblem) return triggerNotification(coverageProblem, 'error');
+      if (!await saveRelatedRecords(plan.records, 'Não foi possível salvar a escala em lote. Nenhuma alteração foi confirmada.',
+        { companyId: activeCompany.id, history: workSchedules, replaced: plan.replaced, absences, rulesVersion: automaticScheduleRules.version })) return;
+      // The tenant listener owns the list, including snapshots arriving before this save resolves.
+      setShowBulkScheduleModal(false);
+      triggerNotification(`Escala atualizada para ${targets.length} colaborador(es).`);
+    } finally {
+      bulkScheduleSaveInFlight.current = false;
+      setIsSavingBulkSchedule(false);
     }
-    const changedIds = new Set(plan.deletedIds);
-    const after = [...workSchedules.filter(item => !changedIds.has(item.id)), ...plan.schedules];
-    const coverageProblem = coverageChangeError(coverageChangesForDates([...changedDates], workSchedules, after, scheduleScopedCoverageRequirements, schedulePlanningContext()));
-    if (coverageProblem) return triggerNotification(coverageProblem, 'error');
-    if (!await saveRelatedRecords(plan.records, 'Não foi possível salvar a escala em lote. Nenhuma alteração foi confirmada.',
-      { companyId: activeCompany.id, history: workSchedules, replaced: plan.replaced, absences, rulesVersion: automaticScheduleRules.version })) return;
-    setWorkSchedules(previous => [...plan.schedules, ...previous.filter(schedule => !changedIds.has(schedule.id))]);
-    setShowBulkScheduleModal(false);
-    triggerNotification(`Escala atualizada para ${targets.length} colaborador(es).`);
   };
 
   const openPublishedScheduleSwap = (source, date) => {
@@ -4463,8 +4473,7 @@ const submitPresence = async (e) => {
         ? await saveApprovedScheduleSwap(plan, swap)
         : await saveRelatedRecords(plan.records, 'Não foi possível salvar a troca. Nenhum dia foi alterado; sua revisão foi preservada.', { companyId: swap.companyId, history: swap.history, replaced: plan.replaced });
       if (!saved) return false;
-      const replacedIds = new Set(plan.replaced.map(item => item.id));
-      setWorkSchedules(previous => [...previous.filter(item => !replacedIds.has(item.id)), ...plan.schedules]);
+      // The tenant listener refreshes the list after the confirmed transaction.
       setPublishedScheduleSwap(null);
       triggerNotification(swap.requestId ? 'Solicitação aprovada e troca aplicada nos dois dias.' : 'Troca salva nos dois dias. O restante das escalas foi preservado.');
       return true;
@@ -11029,7 +11038,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 {bulkScheduleVisibleEmployees.length === 0 ? <p className="p-3 text-center text-xs text-slate-500">Nenhum colaborador encontrado para esse filtro.</p> : bulkScheduleVisibleEmployees.map(user => <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-slate-50"><input type="checkbox" checked={bulkSchedule.userIds.includes(user.id)} onChange={event => { setBulkSchedule(previous => ({ ...previous, userIds: event.target.checked ? [...new Set([...previous.userIds, user.id])] : previous.userIds.filter(id => id !== user.id) })); setAutomaticScheduleProposal([]); }} className="accent-violet-600" /><span className="min-w-0"><strong className="block truncate text-slate-800">{user.name}</strong><small className="text-slate-500">{scheduleScope.departments.find(dept => dept.id === getUserDepts(user)[0])?.name || user.role}</small></span></label>)}
               </div>
               <label className="block text-[10px] font-bold uppercase text-slate-500">Observação da escala (opcional)<input maxLength="250" value={bulkSchedule.notes} onChange={event => setBulkSchedule(previous => ({ ...previous, notes: event.target.value }))} placeholder="Ex.: Cobertura de feriado" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs text-slate-700" /></label>
-              <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setShowBulkScheduleModal(false)} className="px-4 py-2 text-xs font-bold text-slate-500">Cancelar</button>{bulkScheduleMode === 'manual' ? <button type="submit" className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-800">Salvar escala para {bulkSchedule.userIds.length} pessoa(s)</button> : !automaticScheduleProposal.length ? <button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-bold text-white hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro da equipe</button> : null}</div>
+              <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setShowBulkScheduleModal(false)} className="px-4 py-2 text-xs font-bold text-slate-500">Cancelar</button>{bulkScheduleMode === 'manual' ? <button type="submit" disabled={isSavingBulkSchedule} className="rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{isSavingBulkSchedule ? 'Salvando...' : `Salvar escala para ${bulkSchedule.userIds.length} pessoa(s)`}</button> : !automaticScheduleProposal.length ? <button type="button" onClick={generateAutomaticSchedule} className="rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-bold text-white hover:bg-cyan-900"><Sparkles className="mr-1.5 inline h-4 w-4" />Gerar quadro da equipe</button> : null}</div>
             </fieldset></form>
           </div>
         </div>
