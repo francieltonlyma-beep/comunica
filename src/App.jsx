@@ -1847,7 +1847,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       try {
         const saved = currentUser.isDeveloper
           ? Boolean((await httpsCallable(functionsClient, 'registerSupportPushToken')({token: pushToken})).data?.registered)
-          : await updateDocField('users', accountId, {pushTokens: [...new Set([...savedTokens, pushToken])]});
+          : await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', activeCompany.id, 'users', accountId), {pushTokens: arrayUnion(pushToken)}).then(() => true);
         if (saved) setCurrentUser(previous => previous?.id === accountId
           ? {...previous, pushTokens: [...new Set([...(previous.pushTokens || []), pushToken])]}
           : previous);
