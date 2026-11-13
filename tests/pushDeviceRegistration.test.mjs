@@ -35,7 +35,8 @@ const register = async ({serverTokens, localTokens = [], token, fail = false}) =
     triggerNotification: () => {},
     console: {error: () => {}},
   };
-  vm.runInNewContext(effect, context);
+  const helper = source.slice(source.indexOf('  const persistBrowserPushToken'), source.indexOf('  const handleEnablePushNotifications'));
+  vm.runInNewContext(helper + '\n' + effect, context);
   await new Promise(resolve => setImmediate(resolve));
   return {local, writes};
 };
