@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeftRight, Pencil, CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { calendarRecordsForDay, scheduleCalendarDates, scheduleTone, shiftCalendarPeriod } from './scheduleCalendarModel.js';
@@ -76,11 +76,16 @@ export default function ScheduleCalendar({
     };
   }, [fullscreen]);
 
-  const data = { schedules, absences, events, employees, getDepartments };
-  const filters = { department, employee, status, search };
-  const dates = scheduleCalendarDates(anchor, view);
-  const days = dates.map(date => ({ ...calendarRecordsForDay(date, data, filters), coverage: coverageForDay(date, coverageRequirements, data, department) }));
-  const activeCoverage = coverageForDay(selectedDate, coverageRequirements, data, department);
+  // Selection and panel toggles must not rebuild coverage for the entire month.
+  const data = useMemo(() => ({ schedules, absences, events, employees, getDepartments }),
+    [schedules, absences, events, employees, getDepartments]);
+  const filters = useMemo(() => ({ department, employee, status, search }), [department, employee, status, search]);
+  const dates = useMemo(() => scheduleCalendarDates(anchor, view), [anchor, view]);
+  const days = useMemo(() => dates.map(date => ({ ...calendarRecordsForDay(date, data, filters), coverage: coverageForDay(date, coverageRequirements, data, department) })),
+    [dates, data, filters, coverageRequirements, department]);
+  const activeCoverage = useMemo(() => days.find(day => day.date === selectedDate)?.coverage
+    ?? coverageForDay(selectedDate, coverageRequirements, data, department),
+  [days, selectedDate, coverageRequirements, data, department]);
   const activeDay = calendarRecordsForDay(selectedDate, data, { ...filters, employee: detailEmployee || employee });
   const month = anchor.slice(0, 7);
   const eligibleEmployees = employees.filter(user => department === 'all' || getDepartments(user).includes(department))

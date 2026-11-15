@@ -12,7 +12,7 @@ import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
 import { scopedScheduleSource } from './scheduleScope.js';
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAudit.jsx'));
-import { isCompanyEmployee } from './teamMembership';
+import { useCompanyEmployees } from './useCompanyEmployees.js';
 import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
 import { loginDirectoryUsers, filterLoginEmployees, normalizeLoginName } from './loginDirectory.js';
@@ -43,7 +43,8 @@ import { canEditPublishedSchedule, planPublishedDayEdit } from './publishedSched
 import { planPublishedScheduleSwap } from './publishedScheduleSwap.js';
 import { buildScheduleSwapRequest, resolveScheduleSwapRequest, swapRequestPatch } from './scheduleSwapRequests.js';
 import { buildCoverageFirstProposal, balancePreparedScheduleProposal, analyzeProposalCoverage, isFixedProposalRow, isProtectedProposalRow, optimizeScheduleCoverage, planSchedulePublication, prepareScheduleProposal, scheduleSignature } from './scheduleOptimizer.js';
-import { scheduleDepartmentForEmployee, scheduleRecordInScope, scheduleScopeForUser } from './scheduleScope.js';
+import { scheduleDepartmentForEmployee } from './scheduleScope.js';
+import { useScheduleWorkspace } from './useScheduleWorkspace.js';
 import { normalizeCoverageRequirements, validateCoverageRequirements } from './scheduleCoverage.js';
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
@@ -746,7 +747,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 };
   const [departmentsList, setDepartmentsList] = useState(INITIAL_DEPARTMENTS);
   const [usersList, setUsersList] = useState(INITIAL_USERS);
-  const employeesList = usersList.filter(isCompanyEmployee);
+  const employeesList = useCompanyEmployees(usersList);
   const messageContacts = withPlatformSupport(usersList);
   const [supportRequests, setSupportRequests] = useState({});
   const [supportLoadError, setSupportLoadError] = useState(false);
@@ -5367,10 +5368,9 @@ try {
   }).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0) || Number(a.formOrder || 0) - Number(b.formOrder || 0));
 
   const isManager = currentUser && (currentUser.isAdmin || ['coordenador', 'encarregado', 'supervis', 'diretor', 'rh', 'gest'].some(r => currentUser.role.toLowerCase().includes(r)));
-  const scheduleScope = scheduleScopeForUser(currentUser, employeesList, departmentsList, getUserDepts);
-  const scheduleScopedSchedules = workSchedules.filter(record => scheduleRecordInScope(record, scheduleScope, employeesList, getUserDepts));
-  const scheduleScopedAbsences = absences.filter(record => scheduleRecordInScope(record, scheduleScope, employeesList, getUserDepts));
-  const scheduleScopedCoverageRequirements = (automaticScheduleRules.coverageRequirements || []).filter(rule => scheduleScope.allDepartments || scheduleScope.departmentIds.includes(String(rule.department)));
+  const { scheduleScope, scheduleScopedSchedules, scheduleScopedAbsences, scheduleScopedCoverageRequirements } = useScheduleWorkspace(
+    currentUser, employeesList, departmentsList, workSchedules, absences, automaticScheduleRules.coverageRequirements, getUserDepts,
+  );
   const isProductionSupervisor = Boolean(currentUser?.role && /encarregado.*produ|produ.*encarregado/i.test(currentUser.role));
   const canAccessProductivity = Boolean(currentUser && (currentUser.isAdmin || currentUser.prodGroup || isProductionSupervisor));
   const canManageAllProductivity = Boolean(currentUser && (currentUser.isAdmin || isProductionSupervisor));

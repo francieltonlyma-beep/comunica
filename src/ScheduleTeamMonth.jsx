@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { teamMonthKeyboardTarget } from './scheduleKeyboardNavigation.js';
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Printer } from 'lucide-react';
 import { openSchedulePrintView } from './schedulePrint.js';
@@ -15,7 +15,8 @@ export default function ScheduleTeamMonth({ companyName, days, employees, depart
   const filterKey = [filters.department, filters.employee, filters.status, filters.search, onlyScheduled, showAbsences].join('|');
   const [rowPagination, setRowPagination] = useState({ key: filterKey, count: 12 });
   const [printError, setPrintError] = useState('');
-  const rows = teamMonthRows(days, employees, { filters, getDepartments, showAbsences, onlyScheduled });
+  const rows = useMemo(() => teamMonthRows(days, employees, { filters, getDepartments, showAbsences, onlyScheduled }),
+    [days, employees, filters, getDepartments, showAbsences, onlyScheduled]);
   const visibleRowCount = rowPagination.key === filterKey ? rowPagination.count : 12;
   const visibleRows = rows.slice(0, visibleRowCount);
   const activeRow = Math.max(0, visibleRows.findIndex(row => row.userId === selectedPerson));
@@ -37,7 +38,8 @@ export default function ScheduleTeamMonth({ companyName, days, employees, depart
       target?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     });
   };
-  const coverageSummaries = days.map(day => ({ date: day.date, ...teamCoverageSummary(day.coverage, departments, { ready: coverageReady, error: coverageError }) }));
+  const coverageSummaries = useMemo(() => days.map(day => ({ date: day.date, ...teamCoverageSummary(day.coverage, departments, { ready: coverageReady, error: coverageError }) })),
+    [days, departments, coverageReady, coverageError]);
   const coverageCounts = coverageSummaries.reduce((counts, day) => ({ ...counts, [day.tone]: (counts[day.tone] || 0) + 1 }), {});
   const nextPendingDate = coverageReady && !coverageError ? nextTeamCoverageDate(days, selectedDate, departments) : '';
   const printMonth = () => {

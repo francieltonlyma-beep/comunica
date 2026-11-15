@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './installPrompt.js'
 import { AppErrorBoundary, AppLoadingScreen, RuntimeNotices } from './AppRuntime.jsx'
+import { claimDeployRecovery } from './deployRecovery.js'
 
 try {
   document.documentElement.classList.toggle('comunica-dark', localStorage.getItem('comunica_theme') === 'dark')
@@ -11,15 +12,19 @@ try {
   // O aplicativo continua com o tema claro quando o armazenamento estiver indisponível.
 }
 
-const DEPLOY_RECOVERY_KEY = 'comunica_deploy_recovery'
+let recoveringDeploy = false
 
 window.addEventListener('vite:preloadError', event => {
+  if (recoveringDeploy) { event.preventDefault(); return }
+  const refreshedUrl = claimDeployRecovery({
+    url: window.location.href,
+    buildId: import.meta.env.VITE_COMUNICA_BUILD_ID || 'development',
+    getStorage: () => window.sessionStorage,
+  })
+  if (!refreshedUrl) return // Let the error boundary offer a manual retry.
   event.preventDefault()
-  if (sessionStorage.getItem(DEPLOY_RECOVERY_KEY)) return
-  sessionStorage.setItem(DEPLOY_RECOVERY_KEY, new Date().toISOString())
-  const refreshedUrl = new URL(window.location.href)
-  refreshedUrl.searchParams.set('_deploy', Date.now().toString())
-  window.location.replace(refreshedUrl.toString())
+  recoveringDeploy = true
+  window.location.replace(refreshedUrl)
 })
 
 const Root = lazy(() => window.location.pathname.startsWith('/privacidade') ? import('./Privacy.jsx') : window.location.pathname.startsWith('/carreiras') ? import('./Careers.jsx') : window.location.pathname.startsWith('/denuncias') ? import('./PublicWhistleblowing.jsx') : import('./App.jsx'))
