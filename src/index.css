@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 .comunica-emoji-panel .epr-main {
   --epr-bg-color: #ffffff;
   --epr-highlight-color: #128c7e;

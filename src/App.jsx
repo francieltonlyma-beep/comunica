@@ -13,6 +13,7 @@ import { scopedScheduleSource } from './scheduleScope.js';
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAudit.jsx'));
 import { useCompanyEmployees } from './useCompanyEmployees.js';
+import { useDialogFocus } from './useDialogFocus.js';
 import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
 import { loginDirectoryUsers, filterLoginEmployees, normalizeLoginName } from './loginDirectory.js';
@@ -290,11 +291,12 @@ const EnvironmentBadge = () => IS_STAGING ? (
   </div>
 ) : null;
 const InstallAppDialog = ({ open, onClose, standalone = false }) => {
+  const dialogRef = useDialogFocus(open, onClose);
   if (!open) return null;
   const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
   return (
     <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-950/75 p-4" role="presentation">
-      <section role="dialog" aria-modal="true" aria-labelledby="install-app-title" className="w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="install-app-title" className="w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl">
         <div className="bg-gradient-to-br from-[#071a36] via-blue-950 to-cyan-900 px-6 py-5 text-white">
           <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><img src="/pwa/icon-192.png" alt="" className="h-12 w-12 rounded-2xl border border-white/15 shadow-lg" /><div><span className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-200">Aplicativo</span><h2 id="install-app-title" className="mt-0.5 text-lg font-black">Instalar o Comunica</h2></div></div><button type="button" onClick={onClose} className="rounded-xl p-2 text-blue-100 hover:bg-white/10 hover:text-white" aria-label="Fechar instruções"><X className="h-5 w-5" /></button></div>
         </div>
