@@ -4447,8 +4447,16 @@ const submitPresence = async (e) => {
       const fresh = await getDocsFromServer(scopedScheduleSource(schedulesCollection, scheduleScope, { query, where }));
       const currentSchedules = fresh.docs.map(item => ({ id: item.id, ...item.data() }));
       if (scheduleSignature(currentSchedules) !== scheduleSignature(swap.history)) throw Object.assign(new Error('Escalas alteradas durante a revisão'), { code: 'planning-stale' });
+      if (swap.absences) {
+        const freshAbsences = await getDocsFromServer(getTenantCollection('absences'));
+        if (scheduleSignature(freshAbsences.docs.map(item => ({ id: item.id, ...item.data() }))) !== scheduleSignature(swap.absences)) throw Object.assign(new Error('Ausências alteradas durante a revisão'), { code: 'planning-stale' });
+      }
       const approvedAt = Date.now();
       await runTransaction(db, async transaction => {
+        if (swap.rules) {
+          const settings = await transaction.get(doc(getTenantCollection('settings'), 'schedule-rules'));
+          if (Number(settings.data()?.version || 1) !== Number(swap.rules.version || 1)) throw Object.assign(new Error('Regras alteradas durante a revisão'), { code: 'planning-stale' });
+        }
         const requestRef = doc(requestsCollection, swap.requestId);
         const [requestSnapshot, ...checks] = await Promise.all([transaction.get(requestRef), ...plan.replaced.map(item => transaction.get(doc(schedulesCollection, item.id)))]);
         if (!requestSnapshot.exists() || requestSnapshot.data().status !== 'pending_manager' || Number(requestSnapshot.data().updatedAt) !== Number(swap.requestUpdatedAt)) throw Object.assign(new Error('Solicitação alterada durante a revisão'), { code: 'planning-stale' });

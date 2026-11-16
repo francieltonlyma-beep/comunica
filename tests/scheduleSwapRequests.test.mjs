@@ -75,3 +75,22 @@ test('calendário mantém solicitação, aceite e aprovação dentro da mesma in
   assert.match(app, /activeTab !== 'scale'/); assert.match(app, /getTenantCollection\('scheduleSwapRequests'\)/);
   assert.match(app, /mode="request"/); assert.match(app, /mode=\{publishedScheduleSwap\.requestId \? 'approval'/);
 });
+
+test('aprovação não escreve quando ausências ou versão das regras mudam no servidor', async () => {
+  for (const changed of ['absences', 'rules']) {
+    let writes = 0;
+    const snapshots = [work, off].map(row => ({ id: row.id, data: () => row }));
+    const ctx = { isFirebaseAvailable: true, dbUser: { uid: 'manager' }, db: {}, scheduleSignature, scheduleScope: { allDepartments: true },
+      scopedScheduleSource: collection => collection, query() {}, where() {}, getTenantCollection: name => name, doc: (collection, id) => ({ collection, id }),
+      getDocsFromServer: async collection => ({ docs: collection === 'schedules' ? snapshots : changed === 'absences' ? [{ id: 'new-absence', data: () => ({ userId: 'bia', date: '2026-11-12' }) }] : [] }),
+      runTransaction: async (_db, callback) => callback({
+        get: async reference => { assert.equal(reference.collection, 'settings'); return { data: () => ({ version: 2 }) }; },
+        set: () => writes++, delete: () => writes++, update: () => writes++,
+      }),
+      triggerNotification() {}, console: { error() {} },
+    };
+    const save = extract('saveApprovedScheduleSwap', 'savePublishedScheduleSwap', ctx);
+    assert.equal(await save({ records: [{ collection: 'schedules', id: 'new', data: {} }], replaced: [work, off] }, { history: [work, off], absences: [], rules: { version: 1 } }), false);
+    assert.equal(writes, 0);
+  }
+});
