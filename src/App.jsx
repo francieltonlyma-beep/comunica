@@ -1084,6 +1084,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [automaticScheduleOptimization, setAutomaticScheduleOptimization] = useState(null);
   const [isSavingScheduleProposal, setIsSavingScheduleProposal] = useState(false);
   const [publishedScheduleEdit, setPublishedScheduleEdit] = useState(null);
+  const publishedSwapSaveInFlight = useRef(false);
   const [publishedScheduleSwap, setPublishedScheduleSwap] = useState(null);
   const [publishedScheduleSwapRequest, setPublishedScheduleSwapRequest] = useState(null);
   const [isSavingPublishedSchedule, setIsSavingPublishedSchedule] = useState(false);
@@ -4467,26 +4468,29 @@ const submitPresence = async (e) => {
       return false;
     } finally { finishActivity(); }
   };
-  const savePublishedScheduleSwap = async ({ target, targetDate, reason }) => {
-    if (isSavingPublishedSchedule || !publishedScheduleSwap) return false;
+  const savePublishedScheduleSwap = async ({ target, targetDate, reason, publicationId }) => {
+    if (publishedSwapSaveInFlight.current || isSavingPublishedSchedule || !publishedScheduleSwap) return false;
     if ((!isManager && !currentUser?.isAdmin && !currentUser?.isDeveloper) || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) { triggerNotification('Seu perfil não pode trocar escalas.', 'error'); return false; }
     const swap = publishedScheduleSwap;
     if (!schedulePlanningDataReady() || swap.companyId !== activeCompany?.id) { triggerNotification('Aguarde os dados da empresa correta antes de salvar.', 'error'); return false; }
     if (scheduleSignature(workSchedules) !== scheduleSignature(swap.history) || JSON.stringify(absences) !== JSON.stringify(swap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(swap.rules)) { triggerNotification('Os dados mudaram. Feche e abra novamente esta troca para revisar a versão atual.', 'error'); return false; }
+    if (!String(reason || '').trim()) { triggerNotification('Informe o motivo da troca.', 'error'); return false; }
+    if (![swap.source, target].every(row => row && scheduleScope.employees.some(person => String(person.id) === String(row.userId)))) { triggerNotification('A troca contém um colaborador fora dos seus setores autorizados.', 'error'); return false; }
     let plan;
-    try { plan = planPublishedScheduleSwap(swap.source, swap.date, target, targetDate, { history: workSchedules, absences, rules: automaticScheduleRules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts, publicationId: globalThis.crypto.randomUUID(), now: Date.now(), actor: { id: currentUser.id || dbUser.uid, name: currentUser.name }, reason }); }
+    try { plan = planPublishedScheduleSwap(swap.source, swap.date, target, targetDate, { history: workSchedules, absences, rules: automaticScheduleRules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts, allowedDepartmentIds: scheduleScope.allDepartments ? null : scheduleScope.departmentIds, publicationId: publicationId || globalThis.crypto.randomUUID(), now: Date.now(), actor: { id: currentUser.id || dbUser.uid, name: currentUser.name }, reason }); }
     catch (error) { triggerNotification(error.message, 'error'); return false; }
+    publishedSwapSaveInFlight.current = true;
     setIsSavingPublishedSchedule(true);
     try {
       const saved = swap.requestId
         ? await saveApprovedScheduleSwap(plan, swap)
-        : await saveRelatedRecords(plan.records, 'Não foi possível salvar a troca. Nenhum dia foi alterado; sua revisão foi preservada.', { companyId: swap.companyId, history: swap.history, replaced: plan.replaced });
+        : await saveRelatedRecords(plan.records, 'Não foi possível salvar a troca. Nenhum dia foi alterado; sua revisão foi preservada.', { companyId: swap.companyId, history: swap.history, replaced: plan.replaced, absences: swap.absences, rulesVersion: swap.rules.version || 1 });
       if (!saved) return false;
       // The tenant listener refreshes the list after the confirmed transaction.
       setPublishedScheduleSwap(null);
       triggerNotification(swap.requestId ? 'Solicitação aprovada e troca aplicada nos dois dias.' : 'Troca salva nos dois dias. O restante das escalas foi preservado.');
       return true;
-    } finally { setIsSavingPublishedSchedule(false); }
+    } finally { publishedSwapSaveInFlight.current = false; setIsSavingPublishedSchedule(false); }
   };
 
   const openPublishedScheduleEdit = (source, date) => {

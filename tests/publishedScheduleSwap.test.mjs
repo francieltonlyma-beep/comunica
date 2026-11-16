@@ -66,14 +66,91 @@ const extract = (name, next, ctx) => vm.runInNewContext('(' + app.split('const '
 test('salvamento real confirma os dois registros em uma transação protegida', async () => {
   for (const ok of [false, true]) {
     const swap = { source: work, date: sourceDate, companyId: 'company', history, absences: [], rules: context.rules };
-    const ctx = { calendarEvents: [], scheduleScope: { employees: [] }, getUserDepts: user => user?.depts || [], currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {}, publishedScheduleSwap: swap,
-      setWorkSchedules: update => { ctx.updated = update(history); }, isSavingPublishedSchedule: false, activeCompany: { id: 'company' }, workSchedules: history, absences: [], automaticScheduleRules: context.rules,
+    const ctx = { calendarEvents: [], scheduleScope: { allDepartments: true, employees: [{ id: 'ana' }, { id: 'bia' }] }, getUserDepts: user => user?.depts || [], currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {}, publishedScheduleSwap: swap,
+      setWorkSchedules: update => { ctx.updated = update(history); }, publishedSwapSaveInFlight: { current: false }, isSavingPublishedSchedule: false, activeCompany: { id: 'company' }, workSchedules: history, absences: [], automaticScheduleRules: context.rules,
       schedulePlanningDataReady: () => true, scheduleSignature, planPublishedScheduleSwap, crypto: webcrypto, notifications: [], writes: [], setIsSavingPublishedSchedule() {},
     };
     ctx.triggerNotification = message => ctx.notifications.push(message);
     ctx.saveRelatedRecords = async (...args) => { ctx.writes.push(args); return ok; };
     ctx.setPublishedScheduleSwap = value => { ctx.closed = value; };
-    const result = await extract('savePublishedScheduleSwap', 'openPublishedScheduleEdit', ctx)({ target: off, targetDate, reason: '' });
+    const result = await extract('savePublishedScheduleSwap', 'openPublishedScheduleEdit', ctx)({ target: off, targetDate, reason: 'Acordo entre colaboradores' });
     assert.equal(result, ok); assert.equal(ctx.writes.length, 1); assert.equal(ctx.writes[0][2].replaced.length, 2); assert.equal(ctx.closed, ok ? null : undefined);
+  }
+});
+
+
+test('não oferece nem planeja troca entre setores e respeita o setor autorizado', () => {
+  const outsider = { ...off, id: 'outside', userId: 'carla', dept: 'financeiro' };
+  assert.deepEqual(publishedSwapCandidates(work, sourceDate, [...history, outsider], [{ id: 'bia', name: 'Bia' }, { id: 'carla', name: 'Carla' }]).map(person => person.id), ['bia']);
+  assert.match(publishedSwapIssues(work, sourceDate, outsider, targetDate, context)[0], /mesmo setor/);
+  assert.match(publishedSwapIssues(work, sourceDate, off, targetDate, { ...context, allowedDepartmentIds: ['financeiro'] })[0], /permissão/);
+  assert.throws(() => planPublishedScheduleSwap(work, sourceDate, outsider, targetDate, context), /mesmo setor/);
+});
+
+test('guarda identificador comum e antes/depois nos dois dias, sem alterar os originais', () => {
+  const original = JSON.stringify(history);
+  const plan = planPublishedScheduleSwap(work, sourceDate, off, targetDate, context);
+  const changed = plan.schedules.filter(row => row.swapOperationId);
+  assert.equal(changed.length, 2);
+  assert.ok(changed.every(row => row.swapOperationId === 'swap-id'));
+  assert.equal(changed[0].swapBefore.status, 'Presencial');
+  assert.equal(changed[0].swapAfter.status, 'Folga');
+  assert.equal(changed[1].swapPeerUserId, 'ana');
+  assert.equal(changed[1].swapPeerDate, sourceDate);
+  assert.equal(JSON.stringify(history), original);
+  for (const row of changed) assert.equal(plan.records.find(record => record.id === row.id).data.swapOperationId, 'swap-id');
+});
+
+test('mantém regras pessoais de folgas consecutivas e domingo alternado na validação', () => {
+  const sunday = '2026-11-08';
+  const sundayWork = { ...work, alternateSundayExpected: true };
+  assert.match(publishedSwapIssues(sundayWork, sunday, off, sunday, { ...context, history: [sundayWork, off] }).join(' '), /Ana.*08\/11\/2026.*domingo/);
+  const restricted = { ...work, maxConsecutiveRestDays: 2 };
+  const extraOff = [{ ...off, id: 'ana-off-before', userId: 'ana', startDate: '2026-11-08', endDate: '2026-11-09' }];
+  const single = { ...restricted, startDate: sourceDate, endDate: sourceDate };
+  assert.match(publishedSwapIssues(single, sourceDate, off, sourceDate, { ...context, history: [single, off, ...extraOff] }).join(' '), /folgas consecutivas/);
+});
+
+test('verifica descanso entre jornadas na virada do mês', () => {
+  const date = '2026-12-01';
+  const dayOff = { ...off, startDate: date, endDate: date, minRestHours: 11 };
+  const source = { ...work, startDate: date, endDate: date, shiftStart: '08:00', baseShiftEnd: '12:00', shiftEnd: '12:00', breakStart: '', breakEnd: '', breakMinutes: 0 };
+  const previous = { ...work, id: 'previous-night', userId: 'bia', startDate: '2026-11-30', endDate: '2026-11-30', shiftStart: '22:00', baseShiftEnd: '06:00', shiftEnd: '06:00', breakStart: '', breakEnd: '', breakMinutes: 0 };
+  assert.match(publishedSwapIssues(source, date, dayOff, date, { ...context, history: [source, dayOff, previous] }).join(' '), /descanso/);
+});
+
+test('impede dois salvamentos simultâneos e libera tentativa após falha confirmada', async () => {
+  let finish;
+  const ctx = { calendarEvents: [], scheduleScope: { allDepartments: true, employees: [{ id: 'ana' }, { id: 'bia' }] }, getUserDepts: () => ['loja'], currentUser: { id: 'admin', name: 'Gestora', isAdmin: true }, isManager: true, effectiveAccessProfile: {},
+    publishedScheduleSwap: { source: work, date: sourceDate, companyId: 'company', history, absences: [], rules: context.rules }, publishedSwapSaveInFlight: { current: false }, isSavingPublishedSchedule: false,
+    activeCompany: { id: 'company' }, workSchedules: history, absences: [], automaticScheduleRules: context.rules, schedulePlanningDataReady: () => true,
+    scheduleSignature, planPublishedScheduleSwap, crypto: webcrypto, triggerNotification() {}, setIsSavingPublishedSchedule() {}, setPublishedScheduleSwap() {},
+    saveRelatedRecords: () => new Promise(resolve => { finish = resolve; }),
+  };
+  const save = extract('savePublishedScheduleSwap', 'openPublishedScheduleEdit', ctx);
+  const payload = { target: off, targetDate, reason: 'Troca acordada', publicationId: 'stable-id' };
+  const first = save(payload);
+  assert.equal(await save(payload), false);
+  finish(false);
+  assert.equal(await first, false);
+  assert.equal(ctx.publishedSwapSaveInFlight.current, false);
+  const retry = save(payload);
+  finish(true);
+  assert.equal(await retry, true);
+});
+
+test('não escreve sem motivo, fora do escopo, com perfil sem edição ou dados desatualizados', async () => {
+  for (const scenario of ['reason', 'scope', 'permission', 'stale']) {
+    let writes = 0;
+    const ctx = { calendarEvents: [], scheduleScope: { allDepartments: true, employees: scenario === 'scope' ? [{ id: 'ana' }] : [{ id: 'ana' }, { id: 'bia' }] }, getUserDepts: () => ['loja'],
+      currentUser: { id: 'manager', name: 'Gestora' }, isManager: true, effectiveAccessProfile: { canEdit: scenario !== 'permission' },
+      publishedScheduleSwap: { source: work, date: sourceDate, companyId: 'company', history, absences: [], rules: context.rules }, publishedSwapSaveInFlight: { current: false }, isSavingPublishedSchedule: false,
+      activeCompany: { id: 'company' }, workSchedules: scenario === 'stale' ? [] : history, absences: [], automaticScheduleRules: context.rules,
+      schedulePlanningDataReady: () => true, scheduleSignature, planPublishedScheduleSwap, crypto: webcrypto, triggerNotification() {}, setIsSavingPublishedSchedule() {}, setPublishedScheduleSwap() {},
+      saveRelatedRecords: async () => { writes++; return true; },
+    };
+    const save = extract('savePublishedScheduleSwap', 'openPublishedScheduleEdit', ctx);
+    assert.equal(await save({ target: off, targetDate, reason: scenario === 'reason' ? ' ' : 'Acordado' }), false);
+    assert.equal(writes, 0);
   }
 });

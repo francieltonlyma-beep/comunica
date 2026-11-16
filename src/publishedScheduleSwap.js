@@ -11,7 +11,7 @@ export function publishedScheduleOnDay(history, userId, date) {
 }
 
 export function publishedSwapCandidates(source, date, history, employees) {
-  return employees.filter(person => String(person.id) !== String(source.userId) && publishedScheduleOnDay(history, person.id, date))
+  return employees.filter(person => String(person.id) !== String(source.userId) && publishedScheduleOnDay(history, person.id, date)?.dept === source.dept)
     .slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
@@ -19,11 +19,13 @@ const incomingDraft = (source, reason) => ({ ...publishedScheduleDraft(source), 
 
 export function publishedSwapIssues(source, sourceDate, target, targetDate, context = {}) {
   if (!source || !target || source.id === target.id || String(source.userId) === String(target.userId)) return ['Escolha outro colaborador com uma escala publicada.'];
+  if (!source.dept || source.dept !== target.dept) return ['A troca deve ocorrer entre escalas do mesmo setor.'];
+  if (context.allowedDepartmentIds && !context.allowedDepartmentIds.map(String).includes(String(source.dept))) return ['Você não tem permissão para trocar escalas deste setor.'];
   if (!active(source, sourceDate) || !active(target, targetDate)) return ['A escala escolhida não corresponde ao dia informado.'];
   if (JSON.stringify(publishedScheduleDraft(source)) === JSON.stringify(publishedScheduleDraft(target))) return ['As duas pessoas já têm a mesma jornada. Escolha uma folga ou um turno diferente para que a troca altere o calendário.'];
   const first = publishedEditIssues(source, incomingDraft(target, ''), sourceDate, context);
   const second = publishedEditIssues(target, incomingDraft(source, ''), targetDate, context);
-  return [...new Set([...first, ...second])];
+  return [...new Set([...first.map(message => `${source.userName} · ${sourceDate.split('-').reverse().join('/')}: ${message}`), ...second.map(message => `${target.userName} · ${targetDate.split('-').reverse().join('/')}: ${message}`)])];
 }
 
 export function planPublishedScheduleSwap(source, sourceDate, target, targetDate, { publicationId, actor, now, reason = '', ...context }) {
@@ -33,6 +35,14 @@ export function planPublishedScheduleSwap(source, sourceDate, target, targetDate
   const reverseNote = String(reason || '').trim().slice(0, 240) || `Troca com ${source.userName || 'outro colaborador'}`;
   const first = planPublishedDayEdit(source, incomingDraft(target, note), sourceDate, { ...context, publicationId: `${publicationId}-a`, actor, now, skipCoverageCheck: true });
   const second = planPublishedDayEdit(target, incomingDraft(source, reverseNote), targetDate, { ...context, publicationId: `${publicationId}-b`, actor, now, skipCoverageCheck: true });
+  for (const [plan, original, peer, date] of [[first, source, target, sourceDate], [second, target, source, targetDate]]) {
+    const changed = plan.schedules.find(row => row.startDate === date && row.endDate === date);
+    Object.assign(changed, { swapOperationId: publicationId, swapPeerUserId: String(peer.userId), swapPeerDate: date === sourceDate && original === source ? targetDate : sourceDate,
+      swapBefore: publishedScheduleDraft(original), swapAfter: publishedScheduleDraft(peer) });
+    const record = plan.records.find(row => row.id === changed.id);
+    record.data = { ...changed };
+    delete record.data.id;
+  }
   if (!context.skipCoverageCheck && context.rules?.coverageRequirements?.length) {
     const after = [...context.history.filter(item => item.id !== source.id && item.id !== target.id), ...first.schedules, ...second.schedules];
     const problem = coverageChangeError(coverageChangesForDates([sourceDate, shiftDate(sourceDate, 1), targetDate, shiftDate(targetDate, 1)], context.history, after, context.rules.coverageRequirements, context));

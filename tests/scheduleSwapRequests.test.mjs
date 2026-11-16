@@ -5,8 +5,8 @@ import vm from 'node:vm';
 import { buildScheduleSwapRequest, canCancelSwapRequest, canRespondSwapRequest, canReviewSwapRequest, resolveScheduleSwapRequest, swapRequestPatch } from '../src/scheduleSwapRequests.js';
 import { scheduleSignature } from '../src/scheduleOptimizer.js';
 
-const work = { id: 'ana-work', userId: 'ana', userName: 'Ana', startDate: '2026-11-01', endDate: '2026-11-30', status: 'Presencial', shiftStart: '08:00', baseShiftEnd: '17:00', shiftEnd: '17:00', breakStart: '12:00', breakEnd: '13:00' };
-const off = { id: 'bia-off', userId: 'bia', userName: 'Bia', startDate: '2026-11-01', endDate: '2026-11-30', status: 'Folga' };
+const work = { id: 'ana-work', userId: 'ana', userName: 'Ana', dept: 'loja', startDate: '2026-11-01', endDate: '2026-11-30', status: 'Presencial', shiftStart: '08:00', baseShiftEnd: '17:00', shiftEnd: '17:00', breakStart: '12:00', breakEnd: '13:00' };
+const off = { id: 'bia-off', userId: 'bia', userName: 'Bia', dept: 'loja', startDate: '2026-11-01', endDate: '2026-11-30', status: 'Folga' };
 const input = { id: 'request-1', source: work, sourceDate: '2026-11-10', target: off, targetDate: '2026-11-12', requester: { id: 'ana', name: 'Ana' }, reason: 'Combinado', history: [work, off], absences: [], rules: { restEveryDays: 7 }, existing: [], now: 10 };
 
 test('colaborador cria pedido próprio com assinatura imutável da escala', () => {
