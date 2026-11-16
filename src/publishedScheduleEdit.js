@@ -42,6 +42,7 @@ export function publishedEditIssues(source, draft, date, { history = [], absence
     if (absence) return [isFullDayAbsence(absence, date) ? 'Esta pessoa tem uma ausência de dia inteiro. Ajuste a ausência no calendário antes de marcar trabalho.' : 'A jornada informada coincide com uma ausência parcial desta pessoa. Ajuste a ausência ou os horários antes de marcar trabalho.'];
   }
   return scheduleRuleIssues([{ ...draft, key: 'published-edit', userId: String(source.userId), userName: source.userName, date,
+    maxConsecutiveRestDays: Number(source.maxConsecutiveRestDays) || 0, alternateSundayExpected: source.alternateSundayExpected ?? null,
     restEveryDays: Number(source.restEveryDays || rules.restEveryDays) || 7, minRestHours: Number(source.minRestHours ?? rules.minRestHours) || 0,
     maxDailyHours: Number(source.maxDailyHours || rules.maxDailyHours) || 24, maxWeeklyHours: Number(source.maxWeeklyHours || rules.maxWeeklyHours) || 84,
     maxExtraHoursPerDay: Number(source.maxExtraHoursPerDay ?? rules.maxExtraHoursPerDay ?? 12), limitSeverity: source.limitSeverity || rules.limitSeverity || 'blocking' }], history).filter(issue => issue.blocking).map(issue => issue.message);
