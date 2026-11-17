@@ -57,10 +57,11 @@ jobs:
           npm --prefix functions ci
           npm --prefix functions run build
           node --test functions/tests/scheduleCoverage.test.cjs functions/tests/purchaseQuoteApproval.test.cjs
+          npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-comunica-procurement --config firebase.json "node --test functions/tests/purchaseWorkspace.test.cjs"
       - name: Validate access rules before publishing
         run: npm run test:purchases:rules
       - name: Publish compatible employee and purchase endpoints
-        run: npx --yes firebase-tools deploy --only functions:createEmployee,functions:bulkImportEmployees,functions:registerCompany,functions:removeEmployee,functions:recordEmployeeAccess,functions:notifyStandaloneActivityChange,functions:approvePurchaseQuote --project comunica-salvador --non-interactive
+        run: npx --yes firebase-tools deploy --only functions:createEmployee,functions:bulkImportEmployees,functions:registerCompany,functions:removeEmployee,functions:recordEmployeeAccess,functions:notifyStandaloneActivityChange,functions:approvePurchaseQuote,functions:purchaseWorkspace --project comunica-salvador --non-interactive
       - name: Prepare public employee directory
         working-directory: functions
         env:

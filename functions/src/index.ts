@@ -1700,3 +1700,13 @@ export const notifyPendingReminders = onSchedule({
   if (failed) throw new Error('Some pending reminders failed; retry requested.');
 });
 
+
+export const purchaseWorkspace = onCall({region:'us-central1', invoker:'public', maxInstances:3, timeoutSeconds:30}, async request => {
+  try {
+    const {purchaseWorkspaceAction} = await import('./purchaseWorkspace.js');
+    return await purchaseWorkspaceAction(getFirestore(), request.data || {}, request.auth);
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('invalid-argument', error instanceof Error ? error.message : 'Confira os dados da cotação.');
+  }
+});

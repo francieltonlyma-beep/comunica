@@ -228,6 +228,9 @@ export function filterPurchases(records, filters, search = '', stage = 'all', us
       && (!filters.view || (filters.view === 'overdue' ? purchaseOverdue(item, today)
         : filters.view === 'mine' ? pending && item[pending] === actorId
           : filters.view === 'unassigned' ? pending && !item[pending] : true))
+      && (!filters.supplier || item.supplier === filters.supplier)
+      && (!filters.minValue || Number(item.quotedPrice || 0)*Number(item.quantity) >= Number(filters.minValue))
+      && (!filters.maxValue || Number(item.quotedPrice || 0)*Number(item.quantity) <= Number(filters.maxValue))
       && normalizedText([item.id, item.quoteNumber, item.bundleId ? purchaseQuoteNumber(item.createdAt, item.bundleId) : '', item.item, item.specification, item.requesterName, item.department, item.category,
         item.orderNumber, item.supplier, item.destination, ...roles.map(role => names.get(item[role]) || '')].join(' ')).includes(query);
   }).sort((a, b) => filters.sort === 'deadline' ? String(a.neededBy || '9999').localeCompare(String(b.neededBy || '9999'))

@@ -231,4 +231,31 @@ const restrictedRef=await assertSucceeds(addDoc(collection(managerDb,base+'/purc
 const restricted=(await getDoc(restrictedRef)).data();
 await assertFails(updateDoc(restrictedRef,purchaseDataPatch(restricted,{...restricted,buyerId:'employee'},true,actorAdmin,now+1202)));
 console.log('PASS: configurações restringem solicitantes e compradores no servidor');
+// New commercial metadata is written only by the server. Closure requires the
+// finance review for the exact agreement version, even for an administrator.
+const commercial={...current,status:'delivered',financeId:'employee',procurement:{version:123,offer:{paymentPlan:{method:'boleto'}}}};
+await env.withSecurityRulesDisabled(async ctx=>{
+ const d=ctx.firestore();
+ await setDoc(doc(d,base+'/purchaseRequests/commercial'),commercial);
+ await setDoc(doc(d,base+'/purchaseRequests/commercial/offers/vendor'),{supplier:'Fornecedor',totalCents:1000});
+ await setDoc(doc(d,base+'/purchaseRequests/commercial/invitations/hash'),{supplier:'Fornecedor',status:'pending'});
+ await setDoc(doc(d,base+'/purchaseProducts/product'),{name:'Luvas',unit:'cx'});
+ await setDoc(doc(d,'purchaseInvitationTokens/private-hash'),{companyId:'company-a',supplier:'Fornecedor'});
+});
+const commercialRef=doc(db,base+'/purchaseRequests/commercial');
+await assertSucceeds(getDoc(doc(db,commercialRef.path+'/offers/vendor')));
+await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(),commercialRef.path+'/offers/vendor')));
+await assertFails(getDoc(doc(env.authenticatedContext('outsider',{companyId:'other'}).firestore(),commercialRef.path+'/offers/vendor')));
+await assertFails(setDoc(doc(managerDb,commercialRef.path+'/offers/forged'),{supplier:'Forjado'}));
+await assertFails(getDoc(doc(managerDb,'purchaseInvitationTokens/private-hash')));
+await assertSucceeds(getDoc(doc(db,base+'/purchaseProducts/product')));
+await assertFails(setDoc(doc(managerDb,base+'/purchaseProducts/forged'),{name:'Forjado'}));
+const closeCommercial=purchaseTransitionPatch(commercial,'closed',commercial,{id:'employee',name:'Financeiro'},now+2000);
+await assertFails(updateDoc(commercialRef,closeCommercial));
+await assertFails(updateDoc(commercialRef,{paymentReview:{version:123,by:'employee'}}));
+await env.withSecurityRulesDisabled(async ctx=>updateDoc(doc(ctx.firestore(),commercialRef.path),{paymentReview:{version:122,by:'employee'}}));
+await assertFails(updateDoc(commercialRef,closeCommercial));
+await env.withSecurityRulesDisabled(async ctx=>updateDoc(doc(ctx.firestore(),commercialRef.path),{paymentReview:{version:123,by:'employee'}}));
+await assertSucceeds(updateDoc(commercialRef,closeCommercial));
+console.log('PASS: propostas privadas, catálogo protegido e fechamento condicionado à conferência do acordo');
 await env.cleanup();
