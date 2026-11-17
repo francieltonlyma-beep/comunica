@@ -1,12 +1,12 @@
 export const SUPPLIER_COLUMNS = [
   'Nome do fornecedor', 'Razão social', 'CNPJ/CPF', 'Inscrição estadual',
   'Ramo de atividade', 'Telefone', 'E-mail', 'Endereço', 'Número',
-  'Complemento', 'Bairro', 'CEP', 'Cidade', 'UF',
+  'Complemento', 'Bairro', 'CEP', 'Cidade', 'UF', 'Produtos fornecidos',
 ];
 
 export const SUPPLIER_FIELDS = [
   'name', 'legalName', 'taxId', 'stateRegistration', 'activity', 'phone',
-  'email', 'address', 'number', 'complement', 'district', 'postalCode', 'city', 'state',
+  'email', 'address', 'number', 'complement', 'district', 'postalCode', 'city', 'state', 'products',
 ];
 
 const XLSX_HEADERS = {
@@ -24,6 +24,7 @@ const XLSX_HEADERS = {
   postalCode: ['CEP'],
   city: ['Nome Município', 'Cidade'],
   state: ['UF'],
+  products: ['Produtos fornecidos'],
 };
 
 const normalizedHeader = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -33,7 +34,7 @@ function validateSupplierRecord(record, rowNumber) {
   if (!record.name) throw new Error(`Linha ${rowNumber}: informe o nome do fornecedor.`);
   for (const field of SUPPLIER_FIELDS) {
     const limit = field === 'legalName' || field === 'address' ? 240 : 160;
-    if (record[field].length > limit) throw new Error(`Linha ${rowNumber}: ${SUPPLIER_COLUMNS[SUPPLIER_FIELDS.indexOf(field)]} excede ${limit} caracteres.`);
+    if ((record[field] || '').length > limit) throw new Error(`Linha ${rowNumber}: ${SUPPLIER_COLUMNS[SUPPLIER_FIELDS.indexOf(field)]} excede ${limit} caracteres.`);
   }
   return record;
 }
@@ -50,6 +51,7 @@ export function parseSupplierSpreadsheetRows(rows) {
   return rows.slice(headerIndex + 1).flatMap((row, index) => {
     if (!row.some(value => cellText(value))) return [];
     const record = Object.fromEntries(SUPPLIER_FIELDS.map(field => [field, cellText(row[columns[field]])]));
+    if (columns.products < 0) delete record.products;
     return [validateSupplierRecord(record, headerIndex + index + 2)];
   });
 }
@@ -75,12 +77,12 @@ export function parseSupplierCsv(content) {
   if (quoted) throw new Error('O CSV contém aspas sem fechamento.');
   cells.push(value);
   if (cells.some(cell => cell.trim())) rows.push(cells);
-  if (!rows.length || SUPPLIER_COLUMNS.some((column, index) => rows[0][index]?.trim() !== column)) {
+  if (!rows.length || SUPPLIER_COLUMNS.slice(0,14).some((column, index) => rows[0][index]?.trim() !== column) || ![14,15].includes(rows[0].length)) {
     throw new Error('Use o CSV de fornecedores preparado para o Comunica, com as 14 colunas esperadas.');
   }
   return rows.slice(1).map((cells, index) => {
-    if (cells.length !== SUPPLIER_FIELDS.length) throw new Error(`Linha ${index + 2}: quantidade de colunas inválida.`);
-    const record = Object.fromEntries(SUPPLIER_FIELDS.map((field, position) => [field, cells[position].trim()]));
+    if (cells.length !== rows[0].length) throw new Error(`Linha ${index + 2}: quantidade de colunas inválida.`);
+    const record = Object.fromEntries(SUPPLIER_FIELDS.slice(0,cells.length).map((field, position) => [field, cells[position].trim()]));
     return validateSupplierRecord(record, index + 2);
   });
 }

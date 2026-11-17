@@ -29,6 +29,7 @@ try {
   await assertFails(getDocs(collection(outsider, `${base}/purchaseSuppliers`)));
   await assertFails(setDoc(doc(employee, `${base}/purchaseSuppliers/forged`), { ...supplier, createdAt: 1, updatedAt: 1, updatedBy: 'employee' }));
   await assertSucceeds(updateDoc(entry, { phone: '123', updatedAt: 2, updatedBy: 'admin' }));
+  await assertSucceeds(updateDoc(entry, {products:'Caixas, embalagens',updatedAt:3,updatedBy:'admin'}));
   await assertFails(updateDoc(entry, { createdAt: 2, updatedAt: 3, updatedBy: 'admin' }));
   console.log('PASS: fornecedores ficam restritos à empresa e edição administrativa');
 } finally { await env.cleanup(); }

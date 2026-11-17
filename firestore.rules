@@ -182,7 +182,8 @@ service cloud.firestore {
       let changed = after.diff(before).affectedKeys();
       let actor = request.auth.uid;
       let nextStage = after.status;
-      return (!changed.hasAny(['buyerId']) || after.buyerId == '' || purchaseRoleAllowed(app, company, 'buyerIds', after.buyerId))
+      return (!changed.hasAny(['supplier','quotedPrice','expectedDate']) || before.get('procurement',{}).get('version',0) == 0)
+        && (!changed.hasAny(['buyerId']) || after.buyerId == '' || purchaseRoleAllowed(app, company, 'buyerIds', after.buyerId))
         && (!changed.hasAny(['supplier','quotedPrice','quoteTotal','expectedDate']) || purchaseRoleAllowed(app, company, 'buyerIds', actor))
         && (before.status == nextStage
         ? ((manages(app, company) && (before.status != 'closed' || changed.hasOnly(['note','updatedAt','updatedBy','history']))
@@ -244,6 +245,8 @@ service cloud.firestore {
         && after.get('invoiceTotal',0) is number && after.invoiceTotal > 0
         && after.invoiceTotal >= before.quotedPrice * before.quantity - 0.01
         && after.invoiceTotal <= before.quotedPrice * before.quantity + 0.01
+        && (before.get('procurement',{}).get('version',0) == 0 || (before.get('paymentReview',{}).get('version',0) == before.procurement.version
+          && before.paymentReview.get('by','') == actor))
         && after.updatedAt is int && after.updatedAt > before.updatedAt && after.updatedBy == actor
         && after.financeConfirmedBy == actor && after.financeConfirmedAt == after.updatedAt
         && history is list && history.size() > 0 && history.size() <= 50
@@ -538,17 +541,22 @@ service cloud.firestore {
           && request.resource.data.updatedAt is int && request.resource.data.updatedBy == request.auth.uid;
         allow delete: if false;
       }
+      match /purchaseProducts/{id} {
+        allow read: if support() || (member(company) && integraEnabled(app, company));
+        allow write: if false;
+      }
       match /purchaseSuppliers/{id} {
         allow get, list: if access(company) && integraEnabled(app, company);
         allow create, update: if manages(app, company) && integraEnabled(app, company)
           && request.resource.data.keys().hasOnly([
             'name','legalName','taxId','stateRegistration','activity','phone','email',
-            'address','number','complement','district','postalCode','city','state',
+            'address','number','complement','district','postalCode','city','state','products',
             'createdAt','updatedAt','updatedBy'])
           && request.resource.data.keys().hasAll([
             'name','legalName','taxId','stateRegistration','activity','phone','email',
             'address','number','complement','district','postalCode','city','state',
             'createdAt','updatedAt','updatedBy'])
+          && request.resource.data.get('products','') is string && request.resource.data.get('products','').size() <= 160
           && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 160
           && request.resource.data.legalName is string && request.resource.data.legalName.size() <= 240
           && request.resource.data.taxId is string && request.resource.data.taxId.size() <= 160
@@ -607,6 +615,12 @@ service cloud.firestore {
           && request.resource.data.history[request.resource.data.history.size() - 1].get('stage','') == 'requested';
         allow update: if validPurchaseUpdate(app, company, resource.data, request.resource.data);
         allow delete: if false;
+        match /{commercial}/{entryId} {
+          allow read: if commercial in ['offers','invitations'] && (support() || (integraEnabled(app,company) && (admin(app,company) || (member(company)
+            && (get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/purchaseRequests/$(id)).data.get('requesterId','') == request.auth.uid
+            || request.auth.uid in get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/purchaseRequests/$(id)).data.get('participantIds',[]))))));
+          allow write: if false;
+        }
         match /files/{fileId} {
           function parent() { return get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/purchaseRequests/$(id)).data; }
           function participant() { return member(company) && (parent().get('requesterId','') == request.auth.uid || request.auth.uid in parent().get('participantIds',[])); }

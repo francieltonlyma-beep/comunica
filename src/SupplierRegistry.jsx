@@ -1,3 +1,4 @@
+import { normalizeSearch } from '../functions/src/procurement.mjs';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import { parseSupplierCsv, parseSupplierSpreadsheetRows, SUPPLIER_COLUMNS, SUPPLIER_FIELDS, supplierDocumentId } from './supplierImport.js';
@@ -39,7 +40,7 @@ export default function SupplierRegistry({ db, appId, companyId, companyCode, co
     }
     return { add, repeated };
   }, [existingIds, preview]);
-  const visible = records.filter(item => `${item.name} ${item.legalName} ${item.taxId}`.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR'))).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).slice(0, 100);
+  const visible = records.filter(item => normalizeSearch(`${item.name} ${item.legalName} ${item.taxId} ${item.activity} ${item.city} ${item.products || ''}`).includes(normalizeSearch(search))).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).slice(0, 100);
 
   async function selectFile(event) {
     const file = event.target.files?.[0]; event.target.value = '';
@@ -110,7 +111,7 @@ export default function SupplierRegistry({ db, appId, companyId, companyCode, co
       {pending && <label>Confirme o código da empresa<input value={confirmCode} onChange={event => setConfirmCode(event.target.value)} placeholder={companyCode || 'Código da empresa'} /></label>}
       {pending && <button type="button" disabled={!pending.add.length || busy || !loaded || !online || !companyCode || confirmCode.trim() !== companyCode} onClick={importRecords}>{busy ? 'Importando...' : `Cadastrar ${pending.add.length} fornecedores`}</button>}
     </div>}
-    <label className="pm-supplier-search">Buscar fornecedor<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome, razão social ou CNPJ/CPF" /></label>
+    <label className="pm-supplier-search">Buscar fornecedor<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome, CNPJ/CPF, categoria ou cidade" /></label>
     <div className="pm-supplier-list">{visible.map(item => <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setDraft(Object.fromEntries(SUPPLIER_FIELDS.map(field => [field, item[field] || '']))); }}><strong>{item.name}</strong><span>{item.taxId || 'Sem CNPJ/CPF'} · {item.city || 'Cidade não informada'}/{item.state || 'UF não informada'}</span></button>)}{loaded && !visible.length && <p>Nenhum fornecedor encontrado.</p>}</div>
     {manager && <form className="pm-supplier-form" onSubmit={saveRecord}><h4>{selectedId ? 'Editar fornecedor' : 'Novo fornecedor'}</h4><div className="pm-form-grid">{SUPPLIER_FIELDS.map((field, index) => <label key={field}><span>{SUPPLIER_COLUMNS[index]}</span><input value={draft[field]} maxLength={field === 'legalName' || field === 'address' ? 240 : 160} onChange={event => setDraft(previous => ({ ...previous, [field]: event.target.value }))} /></label>)}</div><div className="pm-supplier-actions"><button type="button" onClick={() => { setDraft(EMPTY); setSelectedId(''); }}>Limpar</button><button type="submit" disabled={busy || !online || !loaded}>Salvar fornecedor</button></div></form>}
   </section>;
