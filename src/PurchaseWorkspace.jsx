@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import PurchaseSelect from "./PurchaseSelect.jsx";
+import PurchaseAutocomplete from "./PurchaseAutocomplete.jsx";
 import { PaymentEditor, PaymentSummary } from "./PurchasePayment.jsx";
 import { emptyPayment, PAYMENT_METHODS } from "./purchasePaymentOptions.js";
 import {
@@ -41,6 +42,7 @@ export default function PurchaseWorkspace({
   const [offers, setOffers] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [supplierId, setSupplierId] = useState("");
+  const [supplierSearch, setSupplierSearch] = useState("");
   const [offer, setOffer] = useState(() => emptyOffer(selected.quantity));
   const [filter, setFilter] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
@@ -160,7 +162,8 @@ export default function PurchaseWorkspace({
     )[0];
   return (
     <section className="pm-section pm-commercial">
-      <h4>Quadro comparativo de fornecedores</h4>
+      <h4>Cotação do item · {selected.item}</h4>
+      {!selected.buyerId && <p className="pm-hint">Defina o comprador nos responsáveis acima para registrar propostas. Não é necessário iniciar outra cotação.</p>}
       <p className="pm-hint">
         Cada proposta e pagamento correspondem à quantidade total deste item.
         Frete informado aqui deve ser a parcela atribuída ao item, para evitar
@@ -173,140 +176,6 @@ export default function PurchaseWorkspace({
           /{selected.unit} · {previous.supplier}
         </p>
       )}
-      <div className="pm-fields">
-        <label>
-          Filtrar fornecedor
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Nome do fornecedor"
-          />
-        </label>
-        <label>
-          Custo total máximo (R$)
-          <input
-            type="number"
-            min="0"
-            value={maxPrice}
-            onChange={(e) => setMaxPrice(e.target.value)}
-          />
-        </label>
-        <label>
-          Pagamento
-          <PurchaseSelect
-            label="Forma de pagamento das propostas"
-            value={methodFilter}
-            onChange={setMethodFilter}
-            options={Object.entries(PAYMENT_METHODS)}
-            placeholder="Todas"
-          />
-        </label>
-      </div>
-      <div className="pm-offer-scroll">
-        <table className="pm-offer-table">
-          <thead>
-            <tr>
-              <th>Condição</th>
-              {shown.map((o) => (
-                <th key={o.id}>
-                  {o.supplier}
-                  {current?.offerId === o.id && <small>Escolhido</small>}
-                  {o.totalCents === best &&
-                    !o.alternative &&
-                    o.availableQuantity >= selected.quantity && (
-                      <small>Menor custo total</small>
-                    )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              [
-                "Preço unitário",
-                (o) => (o.available ? money(o.unitPrice) : "Indisponível"),
-              ],
-              [
-                "Quantidade disponível",
-                (o) => `${o.availableQuantity} ${selected.unit}`,
-              ],
-              ["Frete do item", (o) => money(o.freight)],
-              ["Desconto", (o) => money(o.discount)],
-              [
-                "Custo total",
-                (o) => (o.available ? money(o.totalCents / 100) : "—"),
-              ],
-              [
-                "Entrega",
-                (o) =>
-                  o.expectedDate
-                    ? o.expectedDate.split("-").reverse().join("/")
-                    : "—",
-              ],
-              [
-                "Alternativa / observações",
-                (o) =>
-                  [o.alternative, o.note].filter(Boolean).join(" · ") || "—",
-              ],
-              ["Pagamento", (o) => <PaymentSummary plan={o.paymentPlan} />],
-            ].map(([label, render]) => (
-              <tr key={label}>
-                <th>{label}</th>
-                {shown.map((o) => (
-                  <td key={o.id}>{render(o)}</td>
-                ))}
-              </tr>
-            ))}
-            <tr>
-              <th>Escolha</th>
-              {shown.map((o) => (
-                <td key={o.id}>
-                  <button
-                    type="button"
-                    disabled={
-                      !canEdit ||
-                      busy ||
-                      !online ||
-                      !o.available ||
-                      o.availableQuantity < selected.quantity
-                    }
-                    onClick={() =>
-                      run(
-                        "awardOffer",
-                        {
-                          offerId: o.id,
-                          offerUpdatedAt: o.updatedAt,
-                          expectedUpdatedAt: selected.updatedAt,
-                          reason,
-                        },
-                        () => {
-                          onNotice(
-                            "Proposta escolhida. O acordo de pagamento segue para aprovação e financeiro.",
-                          );
-                          onAward();
-                        },
-                      )
-                    }
-                  >
-                    Escolher proposta
-                  </button>
-                  {previous &&
-                    o.unitPrice >
-                      Number(
-                        previous.procurement?.offer.unitPrice ??
-                          previous.quotedPrice,
-                      ) && (
-                      <p className="pm-roles-alert">
-                        Preço unitário acima do último pedido aprovado.
-                      </p>
-                    )}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      {!shown.length && <p>Nenhuma proposta com esses filtros.</p>}
       {canEdit && (
         <>
           <label>
@@ -318,19 +187,15 @@ export default function PurchaseWorkspace({
               placeholder="Obrigatória para maior custo ou produto alternativo"
             />
           </label>
-          <details>
+          <details open>
             <summary>Adicionar ou atualizar proposta</summary>
             <label>
               Fornecedor cadastrado
-              <PurchaseSelect
-                label="Fornecedor da proposta"
-                value={supplierId}
-                options={suppliers.map((s) => [
-                  s.id,
-                  `${s.name} · ${s.taxId || "Sem documento"} · ${s.activity || ""} · ${s.products || ""}`,
-                ])}
-                onChange={chooseSupplier}
-              />
+              <PurchaseAutocomplete label="Fornecedor da proposta" value={supplierSearch}
+                options={suppliers.map(s => ({id:s.id,label:s.name,detail:`${s.taxId || "Sem documento"} · ${s.activity || ""} · ${s.products || ""}`}))}
+                onChange={value => { setSupplierSearch(value); setSupplierId(""); }}
+                onSelect={option => { setSupplierSearch(option.label); chooseSupplier(option.id); }} />
+              {supplierId && <small className="pm-hint">Fornecedor selecionado. Preencha a proposta abaixo.</small>}
             </label>
             <label>
               <input
@@ -471,6 +336,137 @@ export default function PurchaseWorkspace({
           </details>
         </>
       )}
+      <div className="pm-fields">
+        <label>
+          Filtrar propostas por fornecedor
+          <PurchaseAutocomplete label="Fornecedor nas propostas" emptyMessage="Nenhuma proposta encontrada. Para cotar com um fornecedor, use o cadastro na proposta acima." value={filter} onChange={setFilter} options={[...new Map(offers.map(o => [o.supplierId, {id:o.supplierId,label:o.supplier,detail:o.note}])).values()]} />
+        </label>
+        <label>
+          Custo total máximo (R$)
+          <input
+            type="number"
+            min="0"
+            value={maxPrice}
+            onChange={(e) => setMaxPrice(e.target.value)}
+          />
+        </label>
+        <label>
+          Pagamento
+          <PurchaseSelect
+            label="Forma de pagamento das propostas"
+            value={methodFilter}
+            onChange={setMethodFilter}
+            options={Object.entries(PAYMENT_METHODS)}
+            placeholder="Todas"
+          />
+        </label>
+      </div>
+      <h4>Comparar propostas recebidas ({offers.length})</h4>
+      <div className="pm-offer-scroll">
+        <table className="pm-offer-table">
+          <thead>
+            <tr>
+              <th>Condição</th>
+              {shown.map((o) => (
+                <th key={o.id}>
+                  {o.supplier}
+                  {current?.offerId === o.id && <small>Escolhido</small>}
+                  {o.totalCents === best &&
+                    !o.alternative &&
+                    o.availableQuantity >= selected.quantity && (
+                      <small>Menor custo total</small>
+                    )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              [
+                "Preço unitário",
+                (o) => (o.available ? money(o.unitPrice) : "Indisponível"),
+              ],
+              [
+                "Quantidade disponível",
+                (o) => `${o.availableQuantity} ${selected.unit}`,
+              ],
+              ["Frete do item", (o) => money(o.freight)],
+              ["Desconto", (o) => money(o.discount)],
+              [
+                "Custo total",
+                (o) => (o.available ? money(o.totalCents / 100) : "—"),
+              ],
+              [
+                "Entrega",
+                (o) =>
+                  o.expectedDate
+                    ? o.expectedDate.split("-").reverse().join("/")
+                    : "—",
+              ],
+              [
+                "Alternativa / observações",
+                (o) =>
+                  [o.alternative, o.note].filter(Boolean).join(" · ") || "—",
+              ],
+              ["Pagamento", (o) => <PaymentSummary plan={o.paymentPlan} />],
+            ].map(([label, render]) => (
+              <tr key={label}>
+                <th>{label}</th>
+                {shown.map((o) => (
+                  <td key={o.id}>{render(o)}</td>
+                ))}
+              </tr>
+            ))}
+            <tr>
+              <th>Escolha</th>
+              {shown.map((o) => (
+                <td key={o.id}>
+                  <button
+                    type="button"
+                    disabled={
+                      !canEdit ||
+                      busy ||
+                      !online ||
+                      !o.available ||
+                      o.availableQuantity < selected.quantity
+                    }
+                    onClick={() =>
+                      run(
+                        "awardOffer",
+                        {
+                          offerId: o.id,
+                          offerUpdatedAt: o.updatedAt,
+                          expectedUpdatedAt: selected.updatedAt,
+                          reason,
+                        },
+                        () => {
+                          onNotice(
+                            "Proposta escolhida. O acordo de pagamento segue para aprovação e financeiro.",
+                          );
+                          onAward();
+                        },
+                      )
+                    }
+                  >
+                    Escolher proposta
+                  </button>
+                  {previous &&
+                    o.unitPrice >
+                      Number(
+                        previous.procurement?.offer.unitPrice ??
+                          previous.quotedPrice,
+                      ) && (
+                      <p className="pm-roles-alert">
+                        Preço unitário acima do último pedido aprovado.
+                      </p>
+                    )}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {!shown.length && <p>Nenhuma proposta com esses filtros.</p>}
       {!!invitations.length && (
         <div>
           <h4>Respostas dos fornecedores</h4>

@@ -258,4 +258,16 @@ await assertFails(updateDoc(commercialRef,closeCommercial));
 await env.withSecurityRulesDisabled(async ctx=>updateDoc(doc(ctx.firestore(),commercialRef.path),{paymentReview:{version:123,by:'employee'}}));
 await assertSucceeds(updateDoc(commercialRef,closeCommercial));
 console.log('PASS: propostas privadas, catálogo protegido e fechamento condicionado à conferência do acordo');
+// A buyer may be chosen at creation without granting approval or other roles.
+await env.withSecurityRulesDisabled(async ctx => setDoc(doc(ctx.firestore(),base+'/settings/purchase-approval'), {enabled:false,buyerIds:['employee'],requesterIds:[]}));
+await assertSucceeds(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'employee'}));
+const delegated = {...adminData,buyerId:'employee',participantIds:['admin','employee']};
+await assertSucceeds(addDoc(collection(managerDb,base+'/purchaseRequests'),delegated));
+await assertFails(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'admin',participantIds:['employee','admin']}));
+await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...delegated,buyerId:'finance',participantIds:['admin','finance']}));
+await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...delegated,buyerId:'other-company-user',participantIds:['admin','other-company-user']}));
+await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...delegated,participantIds:['admin','employee','finance']}));
+await assertFails(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'employee',approverId:'employee'}));
+await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...delegated,participantIds:['employee','employee']}));
+console.log('PASS: comprador na abertura, sem atribuição indevida, acesso cruzado ou autoaprovação');
 await env.cleanup();

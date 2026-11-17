@@ -26,6 +26,13 @@ export const purchaseQuoteNumber = (createdAt, firstId) => {
   const prefix = Number.isFinite(date.getTime()) ? `${new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(date).replaceAll('-', '')}-` : '';
   return `COT-${prefix}${String(firstId).slice(0, 8).toUpperCase()}`;
 };
+// Human-facing reference; preserve the complete stored identifier for audit/search.
+export function purchaseDisplayReference(record) {
+  const code = record.quoteNumber || purchaseQuoteNumber(record.createdAt, record.bundleId || record.id);
+  const date = new Date(record.createdAt);
+  const day = Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit' }).format(date) : 'Sem data';
+  return `Cotação · ${day} · ${code.split('-').at(-1)}`;
+}
 export const purchaseQuoteTotal = items => items.reduce((total, item) => total + (Number(item.quotedPrice) || 0) * (Number(item.quantity) || 0), 0);
 
 export function purchaseFields(value = {}) {
