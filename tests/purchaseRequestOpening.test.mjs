@@ -8,7 +8,7 @@ const create=source.slice(source.indexOf('  async function createRequest('),sour
 const base={item:'Coca cola',specification:'Garrafa',quantity:1,unit:'un',category:'Alimentos e bebidas',department:'Loja',destination:'Vila A',neededBy:'2026-11-23',reason:'Reposição',buyerId:'buyer'};
 function context(overrides={}) {
  let writes=[],commits=0;
- const ctx={getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{quoteNumber:'COT-000001'}}),setDuplicateSource(){},form:base,extraItems:[{...base,item:'Água'}],sending:{current:false},user:{id:'admin',name:'Admin'},manager:true,buyerOptions:[{id:'buyer'}],policy:null,online:true,db:{},companyId:'company',appId:'comunica',currentTimestamp:()=>Date.UTC(2026,10,17,12),purchaseFields,validatePurchase,purchaseQuoteNumber,purchaseDisplayReference,INITIAL:{},
+ const ctx={getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{quoteNumber:'COT-000001'}}),setDuplicateSource(){},setFormAttempted(){},formRef:{current:null},form:base,extraItems:[{...base,item:'Água'}],sending:{current:false},user:{id:'admin',name:'Admin'},manager:true,buyerOptions:[{id:'buyer'}],policy:null,online:true,db:{},companyId:'company',appId:'comunica',currentTimestamp:()=>Date.UTC(2026,10,17,12),purchaseFields,validatePurchase,purchaseQuoteNumber,purchaseDisplayReference,INITIAL:{},
   setError:message=>{ctx.error=message;},setBusy(){},setNotice(){},setSelectedId(){},setForm(){},setExtraItems(){},setFormOpen(){},resetFilters(){},collection:()=>({}),doc:()=>({id:'id-'+writes.length+'-'+Math.random()}),writeBatch:()=>({set:(ref,data)=>writes.push({ref,data}),commit:async()=>{commits++;}}),...overrides};
  return {ctx,writes,commits:()=>commits,call:vm.runInNewContext('('+create+')',ctx)};
 }

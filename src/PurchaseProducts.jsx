@@ -1,104 +1,29 @@
-import { Package, Plus, Search } from "lucide-react";
-import { useState } from "react";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { normalizeSearch } from "../functions/src/procurement.mjs";
-export default function PurchaseProducts({
-  db,
-  companyId,
-  products,
-  online,
-  onError,
-  onNotice,
-}) {
-  const [draft, setDraft] = useState({
-    name: "",
-    code: "",
-    specification: "",
-    unit: "un",
-    category: "Outros",
-  });
-  const [search, setSearch] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function save(e) {
-    e.preventDefault();
-    if (busy || !online) return;
-    setBusy(true);
-    try {
-      await httpsCallable(
-        getFunctions(db.app, "us-central1"),
-        "purchaseWorkspace",
-      )({ action: "saveProduct", companyId, ...draft });
-      onNotice(
-        "Produto salvo. As sugestões já podem ser usadas na solicitação.",
-      );
-      setDraft({
-        name: "",
-        code: "",
-        specification: "",
-        unit: "un",
-        category: "Outros",
-      });
-    } catch (e) {
-      onError(e.message);
-    } finally {
-      setBusy(false);
-    }
+import { Package, Plus, Search, Upload } from 'lucide-react';
+import { useState } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { normalizeSearch } from '../functions/src/procurement.mjs';
+import { decodeProductCsv,parseProductCsv } from './productImport.js';
+const EMPTY={name:'',code:'',brand:'',suggestedSupplierIds:[],specification:'',unit:'un',category:'Outros'};
+export default function PurchaseProducts({db,companyId,products,suppliers=[],manager=false,online,onError,onNotice}) {
+  const [draft,setDraft]=useState(EMPTY),[search,setSearch]=useState(''),[supplierSearch,setSupplierSearch]=useState(''),[busy,setBusy]=useState(false),[preview,setPreview]=useState(null),[progress,setProgress]=useState(0);
+  const call=payload=>httpsCallable(getFunctions(db.app,'us-central1'),'purchaseWorkspace')({companyId,...payload});
+  async function save(event) {
+    event.preventDefault();if(busy||!online)return;setBusy(true);onError('');
+    try {await call({action:'saveProduct',...draft});onNotice('Produto salvo. Marca e fornecedores vinculados estarão disponíveis na cotação.');setDraft(EMPTY);}catch(error){onError(error.message);}finally{setBusy(false);}
   }
-  return (
-    <details className="pm-section pm-products">
-      <summary><Package size={18} /> Cadastro de produtos <span>{products.length} cadastrado(s)</span></summary>
-      <p className="pm-hint">Organize o catálogo para preencher solicitações e cotações com rapidez.</p>
-      <div className="pm-product-layout"><section className="pm-product-catalog">
-      <label>
-        <Search size={16} /> Buscar no catálogo
-        <input placeholder="Código, nome ou categoria" value={search} onChange={(e) => setSearch(e.target.value)} />
-      </label>
-      <div className="pm-supplier-list">
-        {products
-          .filter((p) =>
-            normalizeSearch(`${p.name} ${p.code} ${p.category}`).includes(
-              normalizeSearch(search),
-            ),
-          )
-          .slice(0, 100)
-          .map((p) => (
-            <button type="button" key={p.id} aria-pressed={draft.id === p.id} onClick={() => setDraft(p)}>
-              <strong>{p.name}</strong><span>{p.code || 'Sem código'} · {p.unit} · {p.category || 'Outros'}</span><small>{p.specification}</small>
-            </button>
-          ))}
-      </div>
-      {!products.length && <p className="pm-hint">Seu catálogo está vazio. Cadastre o primeiro produto ao lado.</p>}
-      </section><form className="pm-form-grid pm-product-form" onSubmit={save}>
-        <header className="pm-wide"><div><h4>{draft.id ? 'Editar produto' : 'Novo produto'}</h4><p className="pm-hint">Nome e unidade são obrigatórios.</p></div><button type="button" onClick={() => setDraft({name:'',code:'',specification:'',unit:'un',category:'Outros'})}><Plus size={16} /> Novo</button></header>
-        {[
-          ["code", "Código"],
-          ["name", "Produto"],
-          ["specification", "Especificação"],
-          ["unit", "Unidade"],
-          ["category", "Categoria"],
-        ].map(([k, label]) => (
-          <label key={k} className={k === "specification" || k === "name" ? "pm-wide" : ""}>
-            {label}
-            <input
-              required={["name", "unit"].includes(k)}
-              value={draft[k] || ""}
-              maxLength={
-                k === "specification"
-                  ? 1000
-                  : k === "unit"
-                    ? 30
-                    : k === "code" || k === "category"
-                      ? 80
-                      : 160
-              }
-              onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
-            />
-          </label>
-        ))}
-        <button type="submit" disabled={busy || !online}>
-          {busy ? 'Salvando...' : draft.id ? 'Salvar alterações' : 'Cadastrar produto'}
-        </button>
-      </form></div>
-    </details>
-  );
+  async function selectFile(event) {
+    const file=event.target.files?.[0];event.target.value='';if(!file)return;setPreview(null);onError('');
+    try {if(file.size>10*1024*1024)throw Error('O CSV deve ter até 10 MB.');const parsed=parseProductCsv(decodeProductCsv(await file.arrayBuffer()));setPreview({...parsed,fileName:file.name});setProgress(0);}catch(error){onError(error.message);}
+  }
+  async function importProducts() {
+    if(busy||!online||!manager||!preview)return;setBusy(true);onError('');let saved=0;
+    try {for(let offset=0;offset<preview.products.length;offset+=200){const {data}=await call({action:'importProducts',products:preview.products.slice(offset,offset+200)});saved+=data.imported;setProgress(saved);}onNotice(`${saved} produtos importados. Códigos existentes foram atualizados, sem apagar marcas ou fornecedores já vinculados.`);setPreview(null);}catch(error){onError(`Importação interrompida após ${saved} produtos. Você pode repetir o arquivo sem duplicar códigos. ${error.message}`);}finally{setBusy(false);}
+  }
+  const visible=products.filter(p=>normalizeSearch(`${p.code} ${p.name} ${p.brand || ''}`).includes(normalizeSearch(search)));
+  return <details className="pm-section pm-products"><summary><Package size={18}/> Cadastro de produtos <span>{products.length} cadastrado(s)</span></summary><p className="pm-hint">Busque por código, produto ou marca. Vincule fornecedores para sugeri-los diretamente na cotação.</p>
+    {manager && <div className="pm-product-import"><label className="pm-upload"><Upload size={16}/>{busy?'Processando...':'Importar produtos do CSV'}<input type="file" accept=".csv,text/csv" disabled={busy||!online} onChange={selectFile}/></label>{preview && <div><strong>{preview.fileName} · {preview.products.length} produtos</strong><p>Importar somente código, produto e marca quando disponível. O estoque será ignorado. Os fornecedores são vinculados pelo cadastro abaixo.</p><p>{preview.hasBrand ? 'Coluna Marca encontrada.' : 'Arquivo sem coluna Marca: marcas existentes serão preservadas.'} {preview.duplicates} código(s) repetido(s) ignorado(s).</p><div className="pm-supplier-actions"><button type="button" disabled={busy} onClick={()=>setPreview(null)}>Cancelar</button><button type="button" disabled={busy||!online} onClick={importProducts}>{busy?`${progress} importados...`:'Confirmar importação'}</button></div></div>}</div>}
+    <div className="pm-product-layout"><section className="pm-product-catalog"><label><Search size={16}/> Buscar no catálogo<input placeholder="Código, produto ou marca" value={search} onChange={e=>setSearch(e.target.value)}/></label><p className="pm-hint">{visible.length} encontrado(s). Exibindo até 100; refine a busca pelo código.</p><div className="pm-supplier-list">{visible.slice(0,100).map(p=><button type="button" key={p.id} aria-pressed={draft.id===p.id} onClick={()=>setDraft({...EMPTY,...p})}><strong>{p.name}</strong><span>{p.code || 'Sem código'} · {p.brand || 'Marca não informada'}</span><small>{(p.suggestedSupplierIds || []).map(id=>suppliers.find(s=>s.id===id)?.name).filter(Boolean).join(' · ') || 'Sem fornecedor sugerido'}</small></button>)}</div>{!products.length && <p className="pm-hint">Importe seu catálogo ou cadastre o primeiro produto.</p>}</section>
+    <form className="pm-form-grid pm-product-form" onSubmit={save}><header className="pm-wide"><div><h4>{draft.id?'Editar produto':'Novo produto'}</h4><p className="pm-hint">Nome obrigatório. Marca e fornecedores são opcionais.</p></div><button type="button" onClick={()=>setDraft(EMPTY)}><Plus size={16}/> Novo</button></header>{[['code','Código'],['name','Produto'],['brand','Marca']].map(([key,label])=><label key={key} className={key==='name'?'pm-wide':''}>{label}<input required={key==='name'} maxLength={key==='code'?80:160} value={draft[key] || ''} onChange={e=>setDraft({...draft,[key]:e.target.value})}/></label>)}
+    <fieldset className="pm-wide pm-product-suppliers"><legend>Sugestões de fornecedor · {(draft.suggestedSupplierIds || []).length} selecionado(s)</legend><label>Buscar fornecedor<input placeholder="Nome ou documento" value={supplierSearch} onChange={e=>setSupplierSearch(e.target.value)}/></label><div>{suppliers.filter(s=>normalizeSearch(`${s.name} ${s.taxId || ''}`).includes(normalizeSearch(supplierSearch))).slice(0,100).map(s=><label key={s.id}><input type="checkbox" checked={(draft.suggestedSupplierIds || []).includes(s.id)} disabled={busy || !(draft.suggestedSupplierIds || []).includes(s.id) && (draft.suggestedSupplierIds || []).length>=30} onChange={e=>setDraft({...draft,suggestedSupplierIds:e.target.checked?[...(draft.suggestedSupplierIds || []),s.id]:(draft.suggestedSupplierIds || []).filter(id=>id!==s.id)})}/>{s.name}</label>)}</div>{!suppliers.length&&<p className="pm-hint">Cadastre fornecedores para criar os vínculos.</p>}</fieldset>
+    <details className="pm-wide"><summary>Detalhes adicionais</summary>{[['specification','Especificação'],['unit','Unidade'],['category','Categoria']].map(([key,label])=><label key={key}>{label}<input maxLength={key==='specification'?1000:key==='unit'?30:80} value={draft[key] || ''} onChange={e=>setDraft({...draft,[key]:e.target.value})}/></label>)}</details><button type="submit" disabled={busy||!online}>{busy?'Salvando...':draft.id?'Salvar alterações':'Cadastrar produto'}</button></form></div></details>;
 }

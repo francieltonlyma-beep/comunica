@@ -8,7 +8,7 @@ test('duplicar pelo segundo item copia o grupo em ordem, limpa prazo e não reut
   let form,extra,opened=false;
   const records=[{id:'second',bundleId:'group',bundleIndex:2,item:'Segundo',quantity:3,neededBy:'2020-01-01',approvedAt:123},{id:'first',bundleId:'group',bundleIndex:1,item:'Primeiro',buyerId:'buyer',quoteNumber:'COT-000001'}];
   const initial={item:'',buyerId:'',neededBy:''};
-  vm.runInNewContext(`(${duplicate})`,{selected:records[0],records,canRequest:true,INITIAL:initial,manager:true,buyerOptions:[{id:'buyer'}],defaultBuyerId:'',setForm:v=>form=v,setExtraItems:v=>extra=v,setDuplicateSource(){},setError(){},setNotice(){},setFormOpen:v=>opened=v})();
+  vm.runInNewContext(`(${duplicate})`,{selected:records[0],records,canRequest:true,INITIAL:initial,manager:true,buyerOptions:[{id:'buyer'}],defaultBuyerId:'',setForm:v=>form=v,setExtraItems:v=>extra=v,setDuplicateSource(){},setFormAttempted(){},setError(){},setNotice(){},setFormOpen:v=>opened=v})();
   assert.equal(form.item,'Primeiro');assert.equal(form.buyerId,'buyer');assert.equal(form.neededBy,'');assert.equal(form.approvedAt,undefined);assert.equal(form.quoteNumber,undefined);assert.equal(extra[0].item,'Segundo');assert.equal(opened,true);
 });
 const workspace=readFileSync(new URL('../src/PurchaseWorkspace.jsx',import.meta.url),'utf8');

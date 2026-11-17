@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import { catalogProductForRequest } from "../functions/src/purchaseProductCatalog.mjs";
 import PurchaseBundleComparison from "./PurchaseBundleComparison.jsx";
 import PurchaseSelect from "./PurchaseSelect.jsx";
 import PurchaseAutocomplete from "./PurchaseAutocomplete.jsx";
@@ -32,6 +33,7 @@ export default function PurchaseWorkspace({
   companyId,
   selected,
   records,
+  products = [],
   suppliers,
   user,
   online,
@@ -51,7 +53,9 @@ export default function PurchaseWorkspace({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [links, setLinks] = useState([]);
-  const [supplierIds, setSupplierIds] = useState([]);
+  const linkedProduct = catalogProductForRequest(products,selected);
+  const [supplierSelection, setSupplierIds] = useState(null);
+  const supplierIds = supplierSelection || (linkedProduct?.suggestedSupplierIds || []).filter(id=>suppliers.some(s=>s.id===id));
   const [supplierQuery, setSupplierQuery] = useState("");
   const [compareSelected, setCompareSelected] = useState(false);
   const [payment, setPayment] = useState(
@@ -200,9 +204,10 @@ export default function PurchaseWorkspace({
         <>
           <div className="pm-supplier-picker">
             <h4>Fornecedores desta cotação · {supplierIds.length} selecionado(s)</h4>
+            {!!linkedProduct?.suggestedSupplierIds?.length && <p className="pm-hint">Fornecedores vinculados ao produto sugeridos automaticamente. Você pode alterar a seleção antes de gerar os links.</p>}
             <p className="pm-hint">Selecione vários fornecedores para solicitar preços. Cada um recebe um link individual. Registre os preços de cada proposta separadamente.</p>
             <label>Buscar fornecedores<input value={supplierQuery} onChange={e => setSupplierQuery(e.target.value)} placeholder="Nome, documento ou produto" /></label>
-            <div className="pm-supplier-checks">{suppliers.filter(s => normalizeSearch(`${s.name} ${s.taxId || ''} ${s.products || ''}`).includes(normalizeSearch(supplierQuery))).map(s => <label key={s.id}><input type="checkbox" checked={supplierIds.includes(s.id)} disabled={busy} onChange={e => setSupplierIds(previous => e.target.checked ? [...previous,s.id] : previous.filter(id => id !== s.id))} /><span><strong>{s.name}</strong><small>{s.taxId || 'Sem documento'}</small></span></label>)}</div>
+            <div className="pm-supplier-checks">{suppliers.filter(s => normalizeSearch(`${s.name} ${s.taxId || ''} ${s.products || ''}`).includes(normalizeSearch(supplierQuery))).map(s => <label key={s.id}><input type="checkbox" checked={supplierIds.includes(s.id)} disabled={busy} onChange={e => setSupplierIds(previous => e.target.checked ? [...(previous || supplierIds),s.id] : (previous || supplierIds).filter(id => id !== s.id))} /><span><strong>{s.name}</strong><small>{linkedProduct?.suggestedSupplierIds?.includes(s.id) ? 'Sugerido para este produto · ' : ''}{s.taxId || 'Sem documento'}</small></span></label>)}</div>
             {!suppliers.length && <p>Cadastre os fornecedores para solicitar propostas.</p>}
           </div>
           <label>

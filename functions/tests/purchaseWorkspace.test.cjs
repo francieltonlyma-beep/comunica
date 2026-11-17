@@ -254,3 +254,21 @@ test("numeração sequencial por empresa, concorrência, reserva idempotente e a
   await assert.rejects(reserve("four",{uid:"other",token:{companyId}}),/permissão/);
   assert.equal((await companyRef.collection("purchaseQuoteNumbers").doc("counter").get()).data().sequence,3);
 });
+
+test('importação de produtos preserva marca e vínculos, valida fornecedores da empresa e restringe acesso',async()=>{
+ const companyId='catalog-fixture';const companyRef=db.doc(`artifacts/comunica-salvador/public/data/companies/${companyId}`);
+ await companyRef.set({name:'Catálogo de teste'});await companyRef.collection('settings').doc('integra-access').set({enabled:true});
+ await companyRef.collection('users').doc('admin').set({isAdmin:true});await companyRef.collection('users').doc('buyer').set({name:'Comprador'});
+ await companyRef.collection('purchaseSuppliers').doc('supplier').set({name:'Fornecedor'});
+ const admin={uid:'admin',token:{companyId}},buyer={uid:'buyer',token:{companyId}};
+ const action=(action,data={},actor=admin)=>run(db,{action,companyId,...data},actor);
+ const {id}=await action('saveProduct',{code:'0001',name:'Leite',brand:'Marca A',unit:'un',suggestedSupplierIds:['supplier']});
+ await action('importProducts',{products:[{code:'0001',name:'Leite atualizado'},{code:'0002',name:'Tomate Kg'}]});
+ const product=(await companyRef.collection('purchaseProducts').doc(id).get()).data();
+ assert.equal(product.name,'Leite atualizado');assert.equal(product.brand,'Marca A');assert.deepEqual(product.suggestedSupplierIds,['supplier']);
+ assert.equal((await companyRef.collection('purchaseProducts').get()).size,2);
+ await action('importProducts',{products:[{code:'0002',name:'Tomate Kg'}]});assert.equal((await companyRef.collection('purchaseProducts').get()).size,2);
+ await assert.rejects(action('importProducts',{products:[{code:'3',name:'X'}]},buyer),/permissão/);
+ await assert.rejects(action('saveProduct',{name:'X',suggestedSupplierIds:['foreign-supplier']}),/empresa/);
+ await assert.rejects(action('importProducts',{products:[{code:'1',name:'A'},{code:'1',name:'B'}]}),/repetidos/);
+});

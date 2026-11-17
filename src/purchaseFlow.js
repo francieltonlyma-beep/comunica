@@ -76,7 +76,7 @@ export function purchaseDataPatch(current, draft, manager, actor, now) {
 
 export function validatePurchase(fields, stage = 'requested') {
   const data = purchaseFields(fields);
-  if (!data.item || !data.specification || !data.unit || !data.department || !data.destination || !data.reason) return 'Preencha item, especificação, unidade, setor, destino e justificativa.';
+  for (const [key,label] of [['item','item / produto'],['specification','especificação'],['unit','unidade'],['department','setor solicitante'],['destination','destino / local de uso'],['reason','justificativa']]) if (!data[key]) return `Preencha o campo ${label}.`;
   if (!Number.isFinite(data.quantity) || data.quantity <= 0 || data.quantity > 1000000) return 'Informe uma quantidade válida.';
   if (!Number.isFinite(data.quoteTotal) || data.quoteTotal < 0) return 'Informe um total válido para a cotação.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.neededBy)) return 'Informe a data em que o item é necessário.';

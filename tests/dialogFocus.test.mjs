@@ -13,8 +13,8 @@ function fixture() {
   const opener = control(true), first = control(true), last = control(true), hidden = control(false);
   doc.activeElement = opener;
   const dialog = { ownerDocument: doc, querySelectorAll: () => [hidden, first, last], contains: element => [first, last].includes(element) };
-  const key = (key, shiftKey = false) => {
-    const event = { key, shiftKey, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+  const key = (key, shiftKey = false, target) => {
+    const event = { key, shiftKey, target, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
     listeners.get('keydown')(event);
     return event;
   };
@@ -63,4 +63,13 @@ test('cleanup does not try to focus an opener removed during navigation', () => 
   cleanup();
   assert.equal(f.doc.activeElement, f.first);
   assert.equal(f.doc.body.style.overflow, 'auto');
+});
+
+
+test('Escape and Tab in a select popup belong to the selector, not the parent dialog',()=>{
+ const f=fixture();let closed=0;activateDialogFocus(f.dialog,()=>closed++);
+ f.first.closest=()=>({});
+ assert.equal(f.key('Escape',false,f.first).prevented,false);assert.equal(closed,0);
+ assert.equal(f.key('Tab',false,f.first).prevented,false);
+ f.key('Escape');assert.equal(closed,1);
 });

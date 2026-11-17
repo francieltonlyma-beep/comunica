@@ -11,6 +11,8 @@ import {
   checkPayment,
 } from "./procurement.mjs";
 
+import { catalogProductFields } from "./purchaseProductCatalog.mjs";
+
 type Data = Record<string, any>;
 const id = (value: unknown) => {
   const v = String(value || "");
@@ -141,35 +143,35 @@ export async function purchaseWorkspaceAction(
       tx.create(reservation, { quoteNumber, createdBy: uid, createdAt: Date.now() });
       return { quoteNumber };
     }
-    if (action === "saveProduct") {
-      if (
-        profile.isAdmin !== true &&
-        policy.buyerIds?.length &&
-        !policy.buyerIds.includes(uid)
-      )
-        throw new HttpsError(
-          "permission-denied",
-          "Sem permissão para cadastrar produtos.",
-        );
-      const product = {
-        name: clean(data.name),
-        code: clean(data.code, 80),
-        specification: clean(data.specification, 1000),
-        unit: clean(data.unit, 30),
-        category: clean(data.category, 80),
-        updatedAt: Date.now(),
-        updatedBy: uid,
-      };
-      if (!product.name || !product.unit)
-        throw new HttpsError("invalid-argument", "Informe produto e unidade.");
-      const key = data.id ? id(data.id) : createHash("sha256")
-        .update(
-          normalizeSearch(product.code || `${product.name} ${product.unit}`),
-        )
-        .digest("hex")
-        .slice(0, 32);
-      tx.set(base.collection("purchaseProducts").doc(key), product);
-      return { id: key };
+    if (["saveProduct", "importProducts"].includes(action)) {
+      if (profile.isAdmin !== true && (action === "importProducts" || (policy.buyerIds?.length && !policy.buyerIds.includes(uid))))
+        throw new HttpsError("permission-denied", "Sem permissão para cadastrar ou importar produtos.");
+      const rows = action === "importProducts" ? data.products : [data];
+      if (!Array.isArray(rows) || !rows.length || rows.length > 200)
+        throw new HttpsError("invalid-argument", "Envie entre 1 e 200 produtos por lote.");
+      const prepared = rows.map((row:Data) => {
+        let fields:Data;
+        try { fields = catalogProductFields(row); } catch (error:any) { throw new HttpsError("invalid-argument",error.message); }
+        if (action === "importProducts" && !fields.code) throw new HttpsError("invalid-argument", "Informe o código de cada produto importado.");
+        const key = action === "saveProduct" && row.id ? id(row.id) : createHash("sha256").update(normalizeSearch(fields.code || `${fields.name} ${fields.unit}`)).digest("hex").slice(0,32);
+        return {fields,ref:base.collection("purchaseProducts").doc(key)};
+      });
+      if (new Set(prepared.map(p=>p.ref.id)).size !== prepared.length) throw new HttpsError("invalid-argument", "Existem códigos repetidos no lote.");
+      const suppliers = [...new Set(prepared.flatMap(p=>p.fields.suggestedSupplierIds || []))] as string[];
+      const [before, supplierDocs] = await Promise.all([
+        Promise.all(prepared.map(p=>tx.get(p.ref))),
+        Promise.all(suppliers.map(key=>tx.get(base.collection("purchaseSuppliers").doc(key)))),
+      ]);
+      if (supplierDocs.some(s=>!s.exists)) throw new HttpsError("invalid-argument", "Um dos fornecedores não pertence ao cadastro desta empresa.");
+      prepared.forEach((p,index) => {
+        const fields:Data = {...p.fields};
+        // Reimport only supplied columns; retain brand, links and additional details.
+        if (action === "importProducts" && before[index].exists) {
+          for (const key of ["unit","category","specification"]) if (rows[index][key] === undefined) delete fields[key];
+        }
+        tx.set(p.ref,{...fields,updatedAt:Date.now(),updatedBy:uid},{merge:true});
+      });
+      return action === "saveProduct" ? {id:prepared[0].ref.id} : {imported:prepared.length};
     }
     const ref = base.collection("purchaseRequests").doc(id(data.requestId));
     const p = await tx.get(ref);

@@ -9,6 +9,8 @@ export function activateDialogFocus(dialog, onClose) {
   const focusFirst = () => (controls()[0] || dialog).focus({ preventScroll: true });
   focusFirst();
   const onKeyDown = event => {
+    // Select popups inside this dialog own Escape/Tab until they close.
+    if (event.target?.closest?.('[data-dialog-popup]') && dialog.contains(event.target)) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();

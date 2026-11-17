@@ -27,6 +27,7 @@ export default function PurchaseSelect({ label, value = '', options = [], onChan
   const [search, setSearch] = useState('');
   const [active, setActive] = useState(0);
   const [position, setPosition] = useState({});
+  const [popupHost,setPopupHost] = useState(null);
   const choices = [...new Map(options.filter(([key]) => key !== '').map(option => [option[0], option])).values()];
   const ordered = sort ? [...choices].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR', { sensitivity: 'base', numeric: true })) : choices;
   const matches = ordered.filter(([, text]) => normalize(text).includes(normalize(search)));
@@ -38,6 +39,7 @@ export default function PurchaseSelect({ label, value = '', options = [], onChan
     if (restoreFocus) trigger.current?.focus();
   }
   function show() {
+    setPopupHost(trigger.current?.closest('[role="dialog"]') || document.body);
     setPosition(popupPosition(trigger.current));
     setSearch(''); setActive(0); setOpen(true);
   }
@@ -62,7 +64,7 @@ export default function PurchaseSelect({ label, value = '', options = [], onChan
   useEffect(() => { activeOption.current?.scrollIntoView({ block: 'nearest' }); }, [active, open, search]);
 
   function navigate(event) {
-    if (event.key === 'Escape') { event.preventDefault(); close(true); }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
     if (event.key === 'Tab') close(true);
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -78,7 +80,7 @@ export default function PurchaseSelect({ label, value = '', options = [], onChan
       <span>{selected?.[1] || (value ? 'Seleção indisponível' : emptyLabel)}</span><ChevronDown size={15} aria-hidden="true" />
     </button>
     {required && <input className="purchase-select-validation" aria-hidden="true" aria-label={label} tabIndex={-1} value={value} required disabled={disabled} onChange={() => {}} onInvalid={event => { event.preventDefault(); trigger.current?.focus(); show(); }} />}
-    {open && !disabled && createPortal(<div ref={popup} className="purchase-select-popup" style={position}>
+    {open && !disabled && createPortal(<div ref={popup} className="purchase-select-popup" data-dialog-popup style={position}>
       <div className="purchase-select-search"><Search size={16} aria-hidden="true" /><input autoFocus role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls={`${id}-list`}
         aria-activedescendant={matches[active] ? `${id}-option-${active}` : undefined} aria-label={`Pesquisar em ${label}`} placeholder={`Pesquisar ${label.toLocaleLowerCase('pt-BR')}...`}
         value={search} onChange={event => { setSearch(event.target.value); setActive(0); }} onKeyDown={navigate} /></div>
@@ -90,6 +92,6 @@ export default function PurchaseSelect({ label, value = '', options = [], onChan
           onPointerMove={() => setActive(index)} onMouseDown={event => event.preventDefault()} onClick={() => choose(key)}>{text}</div>)}
         {matches.length === 0 && <p className="purchase-select-empty">Nenhuma opção encontrada. Tente outro nome.</p>}
       </div>
-    </div>, document.body)}
+    </div>, popupHost || document.body)}
   </div>;
 }
