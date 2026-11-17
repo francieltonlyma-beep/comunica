@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { expectedApprover, purchaseQuoteNumber, purchaseQuoteTotal, purchaseTransitionPatch } from '../src/purchaseFlow.js';
+import { expectedApprover, purchaseDisplayReference, purchaseQuoteNumber, purchaseQuoteTotal, purchaseTransitionPatch } from '../src/purchaseFlow.js';
 
 const items = [
   { quantity: 3, quotedPrice: 12.5 },
@@ -24,3 +24,6 @@ assert.equal(patch.status, 'quotation');
 assert.equal(patch.quoteTotal, total);
 assert.equal(patch.quotedPrice, 20);
 console.log('PASS: cotação numerada e alçada calculada pelo total dos itens');
+
+assert.equal(purchaseDisplayReference({createdAt:Date.UTC(2026,10,16,12),quoteNumber:'COT-20261116-FQTR8TWY'}), 'Cotação · 16/11/26 · FQTR8TWY');
+assert.equal(purchaseDisplayReference({createdAt:Date.UTC(2026,10,16,12),id:'abcdefgh9'}), 'Cotação · 16/11/26 · ABCDEFGH');

@@ -582,8 +582,16 @@ service cloud.firestore {
         // the full downstream workflow here: it exceeds Firestore's expression budget.
         allow create: if member(company) && integraEnabled(app, company) && purchaseRoleAllowed(app, company, 'requesterIds', request.auth.uid) && validPurchase(request.resource.data, false)
           && request.resource.data.status == 'requested' && request.resource.data.requesterId == request.auth.uid
-          && request.resource.data.workflowVersion == 2 && request.resource.data.participantIds == [request.auth.uid]
-          && request.resource.data.buyerId == '' && request.resource.data.approverId == '' && request.resource.data.receiverId == ''
+          && request.resource.data.workflowVersion == 2
+          && (request.resource.data.buyerId == ''
+            ? request.resource.data.participantIds == [request.auth.uid]
+            : ((manages(app, company) || request.resource.data.buyerId == request.auth.uid)
+              && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.buyerId))
+              && purchaseRoleAllowed(app, company, 'buyerIds', request.resource.data.buyerId)
+              && request.resource.data.participantIds.size() == (request.resource.data.buyerId == request.auth.uid ? 1 : 2)
+              && request.resource.data.participantIds.hasOnly([request.auth.uid, request.resource.data.buyerId])
+              && request.resource.data.participantIds.hasAll([request.auth.uid, request.resource.data.buyerId])))
+          && request.resource.data.approverId == '' && request.resource.data.receiverId == ''
           && request.resource.data.recipientId == '' && request.resource.data.financeId == ''
           && request.resource.data.get('financeIssue','') == '' && request.resource.data.get('financeResolution','') == ''
           && (request.resource.data.get('bundleId','') == '' ||
