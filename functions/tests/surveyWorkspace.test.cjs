@@ -62,3 +62,31 @@ test('formulário interno preserva votos parciais e pesquisa expirada não gera 
  await base.collection('polls').doc('internal-3').update({expiresAt:'2020-01-01'});
  await assert.rejects(call('createLink',{groupId:'internal'}),/encerrada/);
 });
+test('RH edita, analisa e arquiva preservando votos; membro não gerencia; link público abre sem autenticação',async()=>{
+ await seed('manage');
+ const rh={uid:'hr',token:{companyId}};await base.collection('users').doc(rh.uid).set({role:'Analista de Recursos Humanos'});
+ const draft={title:'Pesquisa revisada',description:'Contexto novo',category:'Pesquisa de clima',expiresAt:'2099-01-01',topics:[{id:'topic-1',title:'Liderança'},{id:'topic-2',title:'Ambiente'}],questions:[1,2,3].map(i=>({id:`manage-${i}`,question:`Pergunta ${i}`,type:'yesNo',options:['Sim','Não'],topicId:i===3?'topic-2':'topic-1'}))};
+ await assert.rejects(call('edit',{groupId:'manage',draft},member),/permissão/);
+ await assert.rejects(call('report',{groupId:'manage'},member),/permissão/);
+ const oldLink=await call('createLink',{groupId:'manage',audience:'public'},rh);
+ draft.questions[0].question='Pergunta revisada';await call('edit',{groupId:'manage',draft},rh);
+ await assert.rejects(call('read',{token:oldLink.token,respondentId:'browser-management-001'},undefined),/encerrado/);
+ const link=await call('createLink',{groupId:'manage',audience:'public'},rh);
+ const view=await call('read',{token:link.token,respondentId:'browser-management-001'},undefined);assert.equal(view.questions[0].question,'Pergunta revisada');assert.equal(view.requiresLogin,undefined);
+ await call('submit',{token:link.token,respondentId:'browser-management-001',answers:{'manage-1':0,'manage-2':1,'manage-3':0}},undefined);
+ let report=await call('report',{groupId:'manage'},rh);assert.equal(report.respondents,1);assert.equal(report.completed,1);assert.equal(report.answers,3);assert.equal(report.topics[0].questions[0].options[0].count,1);assert.equal(JSON.stringify(report).includes('external-'),false);
+ draft.questions[0].question='Alteração após votos';await assert.rejects(call('edit',{groupId:'manage',draft},rh),/recebeu respostas/);
+ draft.questions[0].question='Pergunta revisada';draft.title='Título atualizado';await call('edit',{groupId:'manage',draft},rh);
+ await assert.rejects(call('archive',{groupId:'manage'},member),/permissão/);
+ const currentLink=await call('createLink',{groupId:'manage',audience:'public'},rh);
+ await call('archive',{groupId:'manage'},rh);await assert.rejects(call('readInternal',{groupId:'manage'},member),/arquivada/);await assert.rejects(call('createLink',{groupId:'manage'},rh),/arquivada/);await assert.rejects(call('read',{token:currentLink.token,respondentId:'browser-management-002'},undefined),/encerrado/);
+ report=await call('report',{groupId:'manage'},rh);assert.equal(report.archived,true);assert.equal(report.completed,1);
+ await call('restore',{groupId:'manage'},rh);assert.equal((await call('report',{groupId:'manage'},rh)).archived,false);assert.equal((await call('readInternal',{groupId:'manage'},member)).title,'Título atualizado');
+});
+test('edição sem respostas permite incluir e remover perguntas com validação de IDs e mantém atomicidade',async()=>{
+ await seed('draft');
+ const draft={title:'Revisão',topics:[{id:'topic-1',title:'Único tópico'}],questions:[{id:'draft-1',topicId:'topic-1',question:'Pergunta editada',type:'yesNo',options:['Sim','Não']},{topicId:'topic-1',question:'Pergunta nova',type:'scale',options:['1','2','3','4','5']} ]};
+ await call('edit',{groupId:'draft',draft});
+ const view=await call('readInternal',{groupId:'draft'},member);assert.equal(view.questions.length,2);assert.equal(view.questions[0].id,'draft-1');assert.notEqual(view.questions[1].id,'draft-2');assert.equal((await base.collection('polls').doc('draft-3').get()).exists,false);
+ draft.questions[0].id='unknown';await assert.rejects(call('edit',{groupId:'draft',draft}),/Identificação/);assert.equal((await call('readInternal',{groupId:'draft'},member)).questions.length,2);
+});

@@ -27,7 +27,7 @@ window.addEventListener('vite:preloadError', event => {
   window.location.replace(refreshedUrl)
 })
 
-const Root = lazy(() => window.location.pathname.startsWith('/pesquisa') ? import('./PublicSurvey.jsx') : window.location.pathname.startsWith('/cotacao') ? import('./PublicPurchaseQuote.jsx') : window.location.pathname.startsWith('/privacidade') ? import('./Privacy.jsx') : window.location.pathname.startsWith('/carreiras') ? import('./Careers.jsx') : window.location.pathname.startsWith('/denuncias') ? import('./PublicWhistleblowing.jsx') : import('./App.jsx'))
+const Root = lazy(() => (window.location.pathname.startsWith('/pesquisa') || (new URLSearchParams(window.location.search).has('pesquisa') && !new URLSearchParams(window.location.search).has('entrar'))) ? import('./PublicSurvey.jsx') : window.location.pathname.startsWith('/cotacao') ? import('./PublicPurchaseQuote.jsx') : window.location.pathname.startsWith('/privacidade') ? import('./Privacy.jsx') : window.location.pathname.startsWith('/carreiras') ? import('./Careers.jsx') : window.location.pathname.startsWith('/denuncias') ? import('./PublicWhistleblowing.jsx') : import('./App.jsx'))
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

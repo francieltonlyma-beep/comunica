@@ -29,7 +29,7 @@ export const normalizePollQuestions = normalizeSurveyQuestions;
 
 export function pollTimelineItems(polls) {
   return (polls || [])
-    .filter(poll => !poll.formId || Number(poll.formOrder || 0) === 1)
+    .filter(poll => !poll.archived && (!poll.formId || Number(poll.formOrder || 0) === 1))
     .map(poll => ({
       ...poll,
       notifType: 'poll',

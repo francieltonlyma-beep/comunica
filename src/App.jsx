@@ -50,7 +50,7 @@ import { normalizeCoverageRequirements, validateCoverageRequirements } from './s
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
-import { surveyDraftQuestions } from '../functions/src/surveyModel.mjs';
+import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
 const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
 const SurveyTopicsEditor = lazy(() => import('./SurveyTopicsEditor.jsx'));
 const SurveyLibrary = lazy(() => import('./SurveyLibrary.jsx'));
@@ -3228,6 +3228,7 @@ const getStatusEmTempoReal = (colaborador) => {
   };
 
   const handleVotePoll = async (poll, optionIndex) => {
+    if(poll.archived)return;
     if (!currentUser?.id || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= (poll.options || []).length) return;
     if (poll.votes?.[currentUser.id] !== undefined) return;
     if (poll.expiresAt && poll.expiresAt < todayStr) return;
@@ -5373,16 +5374,17 @@ try {
   const overdueDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'vencida').length;
   const upcomingDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'proxima').length;
   const pollEmployeeIds = employeesList.map(employee => employee.id).filter(Boolean);
-  const pollTimelineEntries = pollTimelineItems(pollsList);
-  const activePollsCount = pollsList.filter(poll => !poll.expiresAt || poll.expiresAt >= todayStr).length;
+  const pollTimelineEntries = pollTimelineItems(pollsList.filter(poll=>!poll.archived));
+  const activePollsCount = pollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr)).length;
   const pollParticipationValues = pollsList.map(poll => pollParticipation(poll, pollEmployeeIds));
   const pollAverageParticipation = pollParticipationValues.length ? Math.round(pollParticipationValues.reduce((sum, value) => sum + value, 0) / pollParticipationValues.length) : 0;
-  const pendingPollResponses = pollsList.filter(poll => (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[currentUser?.id] === undefined).length;
-  const pollFormGroups = Object.values(pollsList.filter(poll => poll.formId).reduce((groups, poll) => {
+  const pendingPollResponses = pollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[currentUser?.id] === undefined).length;
+  const pollFormGroups = Object.values(pollsList.filter(poll => poll.formId && !poll.archived).reduce((groups, poll) => {
     (groups[poll.formId] ||= []).push(poll);
     return groups;
   }, {}));
   const visiblePolls = pollsList.filter(poll => {
+    if(poll.archived)return false;
     const expired = Boolean(poll.expiresAt && poll.expiresAt < todayStr);
     const matchesStatus = pollViewFilter === 'Todas'
       || (pollViewFilter === 'Ativas' && !expired)
@@ -9479,7 +9481,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 })}
               </div>
 
-              <Suspense fallback={<p>Carregando pesquisas...</p>}><SurveyLibrary polls={pollsList} companyId={activeCompany?.id} functionsClient={functionsClient} manager={Boolean(currentUser.isAdmin)} onRespond={setSurveyResponseGroup} onNotice={message=>triggerNotification(message)} onError={message=>{if(message)triggerNotification(message,'error');}}/></Suspense>
+              <Suspense fallback={<p>Carregando pesquisas...</p>}><SurveyLibrary polls={pollsList} companyId={activeCompany?.id} functionsClient={functionsClient} manager={isSurveyManager(currentUser)} onRespond={setSurveyResponseGroup} onNotice={message=>triggerNotification(message)} onError={message=>{if(message)triggerNotification(message,'error');}}/></Suspense>
               {currentUser.isAdmin && pollFormGroups.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Acompanhamento dos formulários</h4><p className="mt-1 text-xs text-slate-500">Conclusão integral por colaborador.</p></div><TrendingUp className="h-5 w-5 text-cyan-700" /></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{pollFormGroups.map(group => { const completion = pollFormCompletion(group, pollEmployeeIds); return <div key={group[0].formId} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><strong className="block text-xs text-slate-800">{group[0].formTitle}</strong><span className="text-[10px] text-slate-500">{group.length} perguntas · {completion.completed} de {pollEmployeeIds.length} concluíram</span></div><strong className="text-sm text-cyan-800">{completion.percentage}%</strong></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${completion.percentage}%` }} /></div></div>; })}</div></section>}
 
               <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={pollSearch} onChange={event => setPollSearch(event.target.value)} aria-label="Buscar enquete ou formulário" placeholder="Buscar por título ou pergunta" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs focus:border-cyan-500 focus:outline-none" /></div><select value={pollViewFilter} onChange={event => setPollViewFilter(event.target.value)} aria-label="Filtrar enquetes" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option>Todas</option><option>Ativas</option><option>Encerradas</option><option>Pendentes</option><option>Formulários</option></select>{(pollSearch || pollViewFilter !== 'Todas') && <button type="button" onClick={() => { setPollSearch(''); setPollViewFilter('Todas'); }} className="rounded-xl px-3 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100">Limpar</button>}</div>

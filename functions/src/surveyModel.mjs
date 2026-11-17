@@ -47,3 +47,23 @@ export function validateSurveyAnswers(questions,answers) {
  for(const q of questions){const value=answers[q.id];if(!Number.isInteger(value)||value<0||value>=q.options.length)throw Error(`Confira a resposta da pergunta: ${q.question}`);}
  return Object.fromEntries(questions.map(q=>[q.id,answers[q.id]]));
 }
+
+export function isSurveyManager(profile) {
+ if(!profile)return false;
+ if(profile.isAdmin===true)return true;
+ const values=[profile.role,profile.department,profile.dept,...(Array.isArray(profile.departments)?profile.departments:[]),...(Array.isArray(profile.depts)?profile.depts:[])];
+ return values.some(value=>{const text=String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();return text.includes('recursos humanos')||/(^|[^a-z])rh([^a-z]|$)/.test(text);});
+}
+export function surveyReport(polls) {
+ const people=new Map();let answers=0;
+ const topics=surveyTopics(polls).map(topic=>{let sum=0,scaleAnswers=0;
+  const questions=topic.questions.map(q=>{const counts=q.options.map(()=>0);for(const [uid,vote] of Object.entries(q.votes || {})){if(!Number.isInteger(vote)||vote<0||vote>=counts.length)continue;counts[vote]++;people.set(uid,(people.get(uid)||0)+1);}
+   const responses=counts.reduce((a,b)=>a+b,0);answers+=responses;
+   const numeric=q.type==='scale';const weighted=numeric?counts.reduce((total,count,i)=>total+count*(i+1),0):0;
+   if(numeric){sum+=weighted;scaleAnswers+=responses;}
+   return {id:q.id,question:q.question,type:q.type,responses,average:numeric&&responses?Number((weighted/responses).toFixed(2)):null,favorable:numeric&&responses?Math.round(counts.slice(3).reduce((a,b)=>a+b,0)/responses*100):null,options:q.options.map((label,i)=>({label,count:counts[i],percentage:responses?Math.round(counts[i]/responses*100):0}))};
+  });return {id:topic.id,title:topic.title,average:scaleAnswers?Number((sum/scaleAnswers).toFixed(2)):null,questions};
+ });
+ const completed=[...people.values()].filter(count=>count===polls.length).length;
+ return {respondents:people.size,completed,partial:people.size-completed,answers,questions:polls.length,topics};
+}
