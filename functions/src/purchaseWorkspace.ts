@@ -124,6 +124,23 @@ export async function purchaseWorkspaceAction(
   }
   return db.runTransaction(async (tx) => {
     const { profile, policy } = await access(tx, base, uid);
+    if (action === "reserveQuoteNumber") {
+      if (policy.requesterIds?.length && !policy.requesterIds.includes(uid))
+        throw new HttpsError("permission-denied", "Sem permissão para solicitar compras.");
+      const reservation = base.collection("purchaseQuoteNumbers").doc(id(data.requestId));
+      const before = await tx.get(reservation);
+      if (before.exists) {
+        if (before.data()!.createdBy !== uid) throw new HttpsError("permission-denied", "Reserva não autorizada.");
+        return { quoteNumber: before.data()!.quoteNumber };
+      }
+      const counter = base.collection("purchaseQuoteNumbers").doc("counter");
+      const count = await tx.get(counter);
+      const sequence = Number(count.data()?.sequence || 0) + 1;
+      const quoteNumber = `COT-${String(sequence).padStart(6, "0")}`;
+      tx.set(counter, { sequence });
+      tx.create(reservation, { quoteNumber, createdBy: uid, createdAt: Date.now() });
+      return { quoteNumber };
+    }
     if (action === "saveProduct") {
       if (
         profile.isAdmin !== true &&
@@ -145,7 +162,7 @@ export async function purchaseWorkspaceAction(
       };
       if (!product.name || !product.unit)
         throw new HttpsError("invalid-argument", "Informe produto e unidade.");
-      const key = createHash("sha256")
+      const key = data.id ? id(data.id) : createHash("sha256")
         .update(
           normalizeSearch(product.code || `${product.name} ${product.unit}`),
         )
@@ -337,7 +354,7 @@ export async function purchaseWorkspaceAction(
       tx.update(ref, {
         orderNumber:
           current.orderNumber ||
-          `PC-${clean(current.quoteNumber || p.id, 80)}`.slice(0, 80),
+          clean(current.quoteNumber || `PC-${p.id}`, 80),
         supplier: offerDoc.data()!.supplier,
         quotedPrice: cost / current.quantity,
         expectedDate: selected.expectedDate,

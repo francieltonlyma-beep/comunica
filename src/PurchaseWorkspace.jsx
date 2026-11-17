@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import PurchaseBundleComparison from "./PurchaseBundleComparison.jsx";
 import PurchaseSelect from "./PurchaseSelect.jsx";
 import PurchaseAutocomplete from "./PurchaseAutocomplete.jsx";
 import { PaymentEditor, PaymentSummary } from "./PurchasePayment.jsx";
@@ -49,7 +50,10 @@ export default function PurchaseWorkspace({
   const [methodFilter, setMethodFilter] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [link, setLink] = useState("");
+  const [links, setLinks] = useState([]);
+  const [supplierIds, setSupplierIds] = useState([]);
+  const [supplierQuery, setSupplierQuery] = useState("");
+  const [compareSelected, setCompareSelected] = useState(false);
   const [payment, setPayment] = useState(
     () => selected.procurement?.offer.paymentPlan || emptyPayment(),
   );
@@ -131,6 +135,21 @@ export default function PurchaseWorkspace({
         : emptyOffer(selected.quantity),
     );
   }
+  async function generateLinks() {
+    if (busy || !online || !supplierIds.length) return;
+    setBusy(true); onError("");
+    const requestIds = records.filter(p => (selected.bundleId ? p.bundleId === selected.bundleId : p.id === selected.id) && p.buyerId === user.id && !p.approvedAt && ["requested", "quotation"].includes(p.status)).map(p => p.id);
+    const failures = [];
+    for (const supplierId of supplierIds) {
+      try {
+        const { data } = await callable({action:"createInvitation", companyId, requestIds, supplierId});
+        setLinks(previous => [...previous.filter(l => l.supplierId !== supplierId), {supplierId, supplier:data.supplier, url:`${window.location.origin}/cotacao#${data.token}`}]);
+      } catch (problem) { failures.push(`${suppliers.find(s => s.id === supplierId)?.name || supplierId}: ${problem.message}`); }
+    }
+    setBusy(false);
+    if (failures.length) onError(`Alguns links não foram gerados. ${failures.join("; ")}`);
+    else onNotice("Links gerados. Envie a cada fornecedor o seu próprio link.");
+  }
   const comparable = offers.filter(
     (o) =>
       o.available && o.availableQuantity >= selected.quantity && !o.alternative,
@@ -139,6 +158,7 @@ export default function PurchaseWorkspace({
   const shown = offers
     .filter(
       (o) =>
+        (!compareSelected || supplierIds.includes(o.supplierId)) &&
         normalizeSearch(`${o.supplier} ${o.note}`).includes(
           normalizeSearch(filter),
         ) &&
@@ -178,6 +198,13 @@ export default function PurchaseWorkspace({
       )}
       {canEdit && (
         <>
+          <div className="pm-supplier-picker">
+            <h4>Fornecedores desta cotação · {supplierIds.length} selecionado(s)</h4>
+            <p className="pm-hint">Selecione vários fornecedores para solicitar preços. Cada um recebe um link individual. Registre os preços de cada proposta separadamente.</p>
+            <label>Buscar fornecedores<input value={supplierQuery} onChange={e => setSupplierQuery(e.target.value)} placeholder="Nome, documento ou produto" /></label>
+            <div className="pm-supplier-checks">{suppliers.filter(s => normalizeSearch(`${s.name} ${s.taxId || ''} ${s.products || ''}`).includes(normalizeSearch(supplierQuery))).map(s => <label key={s.id}><input type="checkbox" checked={supplierIds.includes(s.id)} disabled={busy} onChange={e => setSupplierIds(previous => e.target.checked ? [...previous,s.id] : previous.filter(id => id !== s.id))} /><span><strong>{s.name}</strong><small>{s.taxId || 'Sem documento'}</small></span></label>)}</div>
+            {!suppliers.length && <p>Cadastre os fornecedores para solicitar propostas.</p>}
+          </div>
           <label>
             Justificativa da escolha
             <input
@@ -196,6 +223,7 @@ export default function PurchaseWorkspace({
                 onChange={value => { setSupplierSearch(value); setSupplierId(""); }}
                 onSelect={option => { setSupplierSearch(option.label); chooseSupplier(option.id); }} />
               {supplierId && <small className="pm-hint">Fornecedor selecionado. Preencha a proposta abaixo.</small>}
+              {!!supplierIds.length && <div className="pm-supplier-tabs">{suppliers.filter(s => supplierIds.includes(s.id)).map(s => <button type="button" key={s.id} aria-pressed={supplierId === s.id} onClick={() => {setSupplierSearch(s.name); chooseSupplier(s.id);}}>{s.name}{offers.some(o => o.supplierId === s.id) ? ' · proposta salva' : ''}</button>)}</div>}
             </label>
             <label>
               <input
@@ -277,62 +305,10 @@ export default function PurchaseWorkspace({
             </button>
           </details>
           <details>
-            <summary>Link para o fornecedor responder</summary>
-            <p>
-              Selecione o fornecedor acima. O link inclui os itens em aberto
-              desta cotação sob sua responsabilidade e vale por 7 dias. Cada
-              fornecedor vê somente os próprios itens, sem preços concorrentes.
-            </p>
-            <button
-              type="button"
-              disabled={!supplierId || busy || !online}
-              onClick={() =>
-                run(
-                  "createInvitation",
-                  {
-                    supplierId,
-                    requestIds: records
-                      .filter(
-                        (p) =>
-                          (selected.bundleId
-                            ? p.bundleId === selected.bundleId
-                            : p.id === selected.id) &&
-                          p.buyerId === user.id &&
-                          !p.approvedAt &&
-                          ["requested", "quotation"].includes(p.status),
-                      )
-                      .map((p) => p.id),
-                  },
-                  (r) =>
-                    setLink(`${window.location.origin}/cotacao#${r.token}`),
-                )
-              }
-            >
-              Gerar link de cotação
-            </button>
-            {link && (
-              <label>
-                Copie e envie ao fornecedor
-                <input
-                  readOnly
-                  value={link}
-                  onFocus={(e) => e.target.select()}
-                />
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(link);
-                      onNotice("Link copiado.");
-                    } catch {
-                      onError("Selecione o link e copie manualmente.");
-                    }
-                  }}
-                >
-                  Copiar link
-                </button>
-              </label>
-            )}
+            <summary>Gerar links para os fornecedores selecionados</summary>
+            <p>Os links incluem os itens em aberto desta cotação sob sua responsabilidade e valem por 7 dias. Cada fornecedor vê somente a própria proposta.</p>
+            <button type="button" disabled={!supplierIds.length || busy || !online} onClick={generateLinks}>{busy ? 'Gerando...' : `Gerar ${supplierIds.length} link(s) de cotação`}</button>
+            {links.map(link => <label key={link.supplierId}>{link.supplier}<input readOnly value={link.url} onFocus={e => e.target.select()} /><button type="button" onClick={async () => {try {await navigator.clipboard.writeText(link.url); onNotice("Link copiado.");} catch {onError("Selecione o link e copie manualmente.");}}}>Copiar link de {link.supplier}</button></label>)}
           </details>
         </>
       )}
@@ -361,7 +337,10 @@ export default function PurchaseWorkspace({
           />
         </label>
       </div>
+      {selected.bundleId && <PurchaseBundleComparison db={db} appId={appId} companyId={companyId} items={records.filter(p => p.bundleId === selected.bundleId).sort((a,b) => a.bundleIndex - b.bundleIndex)} onError={onError} />}
       <h4>Comparar propostas recebidas ({offers.length})</h4>
+      {!!supplierIds.length && <label><input type="checkbox" checked={compareSelected} onChange={e => setCompareSelected(e.target.checked)} /> Comparar somente os fornecedores selecionados</label>}
+      <p className="pm-hint">Compare as colunas lado a lado. No celular, deslize a tabela para ver todos os fornecedores.</p>
       <div className="pm-offer-scroll">
         <table className="pm-offer-table">
           <thead>

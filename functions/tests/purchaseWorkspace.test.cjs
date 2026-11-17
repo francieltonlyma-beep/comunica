@@ -236,3 +236,21 @@ after(async () => {
   await db.terminate();
   await deleteApp(app);
 });
+
+test("numeração sequencial por empresa, concorrência, reserva idempotente e autorização", async () => {
+  const companyId = "numbering-fixture";
+  const companyRef = db.doc(`artifacts/comunica-salvador/public/data/companies/${companyId}`);
+  await companyRef.set({name:"Empresa de teste"});
+  await companyRef.collection("settings").doc("integra-access").set({enabled:true});
+  await companyRef.collection("settings").doc("purchase-approval").set({requesterIds:["requester"]});
+  await companyRef.collection("users").doc("requester").set({name:"Solicitante"});
+  await companyRef.collection("users").doc("other").set({name:"Outro"});
+  const actor = {uid:"requester",token:{companyId}};
+  const reserve = (requestId, auth = actor) => run(db,{action:"reserveQuoteNumber",companyId,requestId},auth);
+  const results = await Promise.all(["one","two","three"].map(key => reserve(key)));
+  assert.equal(new Set(results.map(r => r.quoteNumber)).size,3);
+  assert.deepEqual(results.map(r => r.quoteNumber).sort(),["COT-000001","COT-000002","COT-000003"]);
+  assert.equal((await reserve("one")).quoteNumber,results[0].quoteNumber);
+  await assert.rejects(reserve("four",{uid:"other",token:{companyId}}),/permissão/);
+  assert.equal((await companyRef.collection("purchaseQuoteNumbers").doc("counter").get()).data().sequence,3);
+});
