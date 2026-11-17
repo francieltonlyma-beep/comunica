@@ -1,3 +1,4 @@
+import { normalizeSurveyQuestions } from '../functions/src/surveyModel.mjs';
 export function pollVoteCount(poll) {
   return Object.keys(poll?.votes || {}).length;
 }
@@ -24,19 +25,7 @@ export function pollFormCompletion(polls, employeeIds) {
   return { completed, percentage: Math.round(completed / employeeIds.length * 100) };
 }
 
-export function normalizePollQuestions(questions) {
-  if (!Array.isArray(questions) || questions.length < 1 || questions.length > 10) {
-    throw new Error('Informe de 1 a 10 perguntas.');
-  }
-  return questions.map((item, index) => {
-    const question = String(item?.question || '').trim();
-    const type = ['single', 'yesNo', 'scale', 'mood'].includes(item?.type) ? item.type : 'single';
-    const options = (item?.options || []).map(option => String(option || '').trim()).filter(Boolean);
-    if (!question) throw new Error(`Escreva o enunciado da pergunta ${index + 1}.`);
-    if (options.length < 2 || options.length > 8) throw new Error(`A pergunta ${index + 1} precisa ter de 2 a 8 opções.`);
-    return { question, type, options };
-  });
-}
+export const normalizePollQuestions = normalizeSurveyQuestions;
 
 export function pollTimelineItems(polls) {
   return (polls || [])

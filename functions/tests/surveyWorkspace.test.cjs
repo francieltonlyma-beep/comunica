@@ -1,0 +1,64 @@
+const {test,after}=require('node:test');
+const assert=require('node:assert/strict');
+const {initializeApp,deleteApp}=require('firebase-admin/app');
+const {getFirestore}=require('firebase-admin/firestore');
+const {surveyWorkspaceAction:run}=require('../lib/surveyWorkspace.js');
+if(!process.env.FIRESTORE_EMULATOR_HOST)throw Error('Emulador obrigatório');
+const app=initializeApp({projectId:'demo-comunica-procurement'},'survey-tests'),db=getFirestore(app);
+const companyId='survey-fixture',base=db.doc(`artifacts/comunica-salvador/public/data/companies/${companyId}`);
+const admin={uid:'admin',token:{companyId}},member={uid:'member',token:{companyId}},outsider={uid:'outsider',token:{companyId:'other'}};
+const call=(action,data={},...actors)=>run(db,{action,companyId,...data},actors.length?actors[0]:admin,'test-ip');
+after(()=>deleteApp(app));
+async function seed(groupId='group'){
+ await base.set({name:'Empresa fictícia',codeBlocked:false});
+ await base.collection('users').doc('admin').set({isAdmin:true,name:'Administrador privado'});
+ await base.collection('users').doc('member').set({name:'Pessoa privada',email:'private@example.test'});
+ for(let i=1;i<=3;i++)await base.collection('polls').doc(`${groupId}-${i}`).set({formId:groupId,formTitle:'Clima',formDescription:'Responda por tópico',formOrder:i,formQuestionCount:3,question:`Pergunta ${i}`,type:'yesNo',options:['Sim','Não'],topicId:i===3?'topic-2':'topic-1',topicTitle:i===3?'Ambiente':'Liderança',topicOrder:i===3?2:1,authorId:'admin',votes:{},expiresAt:'2099-12-31'});
+}
+test('link de equipe exige mesma empresa e envia todos os tópicos sem alterar votos existentes',async()=>{
+ await seed('team');
+ await assert.rejects(call('createLink',{groupId:'team'},member),/permissão/);
+ await assert.rejects(call('createLink',{groupId:'team'},outsider),/empresa/);
+ const link=await call('createLink',{groupId:'team',audience:'team'});
+ assert.deepEqual(await call('read',{token:link.token},undefined),{requiresLogin:true});
+ await assert.rejects(call('read',{token:link.token},outsider),/empresa/);
+ const view=await call('read',{token:link.token},member);
+ assert.equal(view.questions.length,3);assert.equal(new Set(view.questions.map(q=>q.topicTitle)).size,2);
+ assert.equal(JSON.stringify(view).includes('private@example.test'),false);assert.equal(JSON.stringify(view).includes('authorId'),false);
+ await assert.rejects(call('submit',{token:link.token,answers:{'team-1':0}},member),/todas/);
+ assert.deepEqual((await base.collection('polls').doc('team-1').get()).data().votes,{});
+ const answers={'team-1':0,'team-2':1,'team-3':0};
+ await call('submit',{token:link.token,answers},member);
+ await call('submit',{token:link.token,answers:{'team-1':1,'team-2':0,'team-3':1}},member);
+ assert.equal((await base.collection('polls').doc('team-1').get()).data().votes.member,0);
+ assert.equal((await call('read',{token:link.token},member)).submitted,true);
+ const same=await call('createLink',{groupId:'team',audience:'team'});assert.equal(same.token,link.token);
+ await call('revokeLink',{groupId:'team'});await assert.rejects(call('read',{token:link.token},member),/encerrado/);
+});
+test('link público só expõe perguntas, impede repetição no mesmo navegador e é invalidado por alteração ou bloqueio',async()=>{
+ await seed('public');
+ const link=await call('createLink',{groupId:'public',audience:'public'}),respondentId='browser-identifier-test-001';
+ const view=await call('read',{token:link.token,respondentId},undefined);
+ assert.equal(view.questions[2].topicTitle,'Ambiente');assert.equal(JSON.stringify(view).includes('votes'),false);assert.equal(JSON.stringify(view).includes('member'),false);
+ await assert.rejects(call('submit',{token:link.token,respondentId,answers:{'public-1':3,'public-2':1,'public-3':1}},undefined),/resposta/);
+ const answers={'public-1':0,'public-2':1,'public-3':0};
+ await call('submit',{token:link.token,respondentId,answers},undefined);
+ await call('submit',{token:link.token,respondentId,answers},undefined);
+ const votes=(await base.collection('polls').doc('public-1').get()).data().votes;
+ assert.equal(Object.keys(votes).length,1);assert.match(Object.keys(votes)[0],/^external-/);
+ assert.equal((await call('read',{token:link.token,respondentId},undefined)).submitted,true);
+ await base.collection('polls').doc('public-2').update({question:'Pergunta alterada'});
+ await assert.rejects(call('read',{token:link.token,respondentId},undefined),/alterada/);
+ const newer=await call('createLink',{groupId:'public',audience:'public'});assert.notEqual(newer.token,link.token);
+ await assert.rejects(call('read',{token:link.token,respondentId},undefined),/encerrado/);
+ await base.update({codeBlocked:true});await assert.rejects(call('read',{token:newer.token,respondentId},undefined),/indisponível/);
+});
+test('formulário interno preserva votos parciais e pesquisa expirada não gera link',async()=>{
+ await seed('internal');await base.collection('polls').doc('internal-1').update({'votes.member':1});
+ const data=await call('readInternal',{groupId:'internal'},member);assert.equal(data.questions[0].answer,1);
+ await call('submitInternal',{groupId:'internal',answers:{'internal-1':0,'internal-2':1,'internal-3':0}},member);
+ assert.equal((await base.collection('polls').doc('internal-1').get()).data().votes.member,1);
+ assert.equal((await call('readInternal',{groupId:'internal'},member)).submitted,true);
+ await base.collection('polls').doc('internal-3').update({expiresAt:'2020-01-01'});
+ await assert.rejects(call('createLink',{groupId:'internal'}),/encerrada/);
+});

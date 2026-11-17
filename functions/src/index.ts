@@ -1710,3 +1710,8 @@ export const purchaseWorkspace = onCall({region:'us-central1', invoker:'public',
     throw new HttpsError('invalid-argument', error instanceof Error ? error.message : 'Confira os dados da cotação.');
   }
 });
+
+export const surveyWorkspace = onCall({region:'us-central1',invoker:'public',maxInstances:3,timeoutSeconds:60},async request=>{
+ const {surveyWorkspaceAction}=await import('./surveyWorkspace.js');
+ return surveyWorkspaceAction(getFirestore(),request.data || {},request.auth,request.rawRequest.ip || 'unknown');
+});
