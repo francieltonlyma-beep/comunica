@@ -30,7 +30,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
-    event.respondWith(fetch(event.request)
+    const options = url.searchParams.has('atualizar') ? {cache: 'no-store'} : undefined;
+    event.respondWith(fetch(event.request, options)
       .then((response) => {
         const copy = response.clone();
         caches.open(COMUNICA_CACHE).then((cache) => cache.put('/', copy));

@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
 
 const BUILD_ID = import.meta.env.VITE_COMUNICA_BUILD_ID || 'development';
 
@@ -31,35 +31,50 @@ export function RuntimeNotices() {
   const [update, setUpdate] = useState(null);
   const [checking, setChecking] = useState(false);
 
-  const checkVersion = useCallback(async () => {
-    if (!navigator.onLine || BUILD_ID === 'development') return;
-    try {
-      const response = await fetch(`/version.json?check=${Date.now()}`, { cache: 'no-store', headers: { 'cache-control': 'no-cache' } });
-      if (!response.ok) return;
-      const release = await response.json();
-      if (release.buildId && release.buildId !== BUILD_ID) setUpdate(release);
-    } catch {
-      // A faixa de conexão já orienta o usuário quando a rede estiver indisponível.
-    }
-  }, []);
-
   useEffect(() => {
+    let request;
+
+    async function checkVersion() {
+      if (request || !navigator.onLine || BUILD_ID === 'development') return;
+      const controller = new AbortController();
+      request = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(`/version.json?check=${Date.now()}`, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) return;
+        const release = await response.json();
+        if (!controller.signal.aborted && typeof release.buildId === 'string' && release.buildId) {
+          setUpdate(release.buildId === BUILD_ID ? null : release);
+        }
+      } catch {
+        // A próxima verificação tenta novamente se a rede estiver indisponível.
+      } finally {
+        window.clearTimeout(timeout);
+        request = undefined;
+      }
+    }
+
     const onOnline = () => { setOnline(true); checkVersion(); };
     const onOffline = () => setOnline(false);
     const onVisible = () => { if (document.visibilityState === 'visible') checkVersion(); };
     window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
     window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVisible);
     const startupTimer = window.setTimeout(checkVersion, 0);
-    const timer = window.setInterval(checkVersion, 5 * 60 * 1000);
+    const timer = window.setInterval(onVisible, 60000);
     return () => {
+      request?.abort();
       window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onVisible);
+      window.removeEventListener('pageshow', onVisible);
       window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', onVisible);
       window.clearTimeout(startupTimer);
       window.clearInterval(timer);
     };
-  }, [checkVersion]);
+  }, []);
 
   const applyUpdate = async () => {
     setChecking(true);

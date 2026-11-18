@@ -16,6 +16,10 @@ test('published versions are detected without trusting a stale service worker ca
   assert.match(runtime, /Nova versão disponível/);
   assert.match(worker, /url\.pathname === '\/version\.json'/);
   assert.match(worker, /SKIP_WAITING/);
+  assert.match(runtime, /addEventListener\('focus', onVisible\)/);
+  assert.match(runtime, /addEventListener\('pageshow', onVisible\)/);
+  assert.match(runtime, /setInterval\(onVisible, 60000\)/);
+  assert.match(worker, /searchParams\.has\('atualizar'\) \? \{cache: 'no-store'\}/);
 });
 
 test('global runtime states explain loading, offline mode and unexpected failures', () => {
