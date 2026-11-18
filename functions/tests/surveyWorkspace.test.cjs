@@ -28,8 +28,10 @@ test('link de equipe exige mesma empresa e envia todos os tópicos sem alterar v
  await assert.rejects(call('submit',{token:link.token,answers:{'team-1':0}},member),/todas/);
  assert.deepEqual((await base.collection('polls').doc('team-1').get()).data().votes,{});
  const answers={'team-1':0,'team-2':1,'team-3':0};
- await call('submit',{token:link.token,answers},member);
- await call('submit',{token:link.token,answers:{'team-1':1,'team-2':0,'team-3':1}},member);
+ await call('submit',{token:link.token,answers,suggestion:'  Melhorar a comunicação.  '},member);
+ await call('submit',{token:link.token,answers:{'team-1':1,'team-2':0,'team-3':1},suggestion:'Duplicada'},member);
+ assert.deepEqual((await call('report',{groupId:'team'})).suggestions,['Melhorar a comunicação.']);
+ assert.equal((await call('read',{token:link.token},member)).suggestions,undefined);
  assert.equal((await base.collection('polls').doc('team-1').get()).data().votes.member,0);
  assert.equal((await call('read',{token:link.token},member)).submitted,true);
  const same=await call('createLink',{groupId:'team',audience:'team'});assert.equal(same.token,link.token);
@@ -42,8 +44,9 @@ test('link público só expõe perguntas, impede repetição no mesmo navegador 
  assert.equal(view.questions[2].topicTitle,'Ambiente');assert.equal(JSON.stringify(view).includes('votes'),false);assert.equal(JSON.stringify(view).includes('member'),false);
  await assert.rejects(call('submit',{token:link.token,respondentId,answers:{'public-1':3,'public-2':1,'public-3':1}},undefined),/resposta/);
  const answers={'public-1':0,'public-2':1,'public-3':0};
+ await call('submit',{token:link.token,respondentId,answers,suggestion:'Mais reuniões curtas'},undefined);
  await call('submit',{token:link.token,respondentId,answers},undefined);
- await call('submit',{token:link.token,respondentId,answers},undefined);
+ assert.deepEqual((await call('report',{groupId:'public'})).suggestions,['Mais reuniões curtas']);
  const votes=(await base.collection('polls').doc('public-1').get()).data().votes;
  assert.equal(Object.keys(votes).length,1);assert.match(Object.keys(votes)[0],/^external-/);
  assert.equal((await call('read',{token:link.token,respondentId},undefined)).submitted,true);
@@ -56,7 +59,12 @@ test('link público só expõe perguntas, impede repetição no mesmo navegador 
 test('formulário interno preserva votos parciais e pesquisa expirada não gera link',async()=>{
  await seed('internal');await base.collection('polls').doc('internal-1').update({'votes.member':1});
  const data=await call('readInternal',{groupId:'internal'},member);assert.equal(data.questions[0].answer,1);
- await call('submitInternal',{groupId:'internal',answers:{'internal-1':0,'internal-2':1,'internal-3':0}},member);
+ const answers={'internal-1':0,'internal-2':1,'internal-3':0};
+ await assert.rejects(call('submitInternal',{groupId:'internal',answers,suggestion:'x'.repeat(1001)},member),/1000/);
+ assert.equal((await call('readInternal',{groupId:'internal'},member)).submitted,false);
+ await call('submitInternal',{groupId:'internal',answers,suggestion:'Mais formação'},member);
+ await call('submitInternal',{groupId:'internal',answers,suggestion:'Duplicada'},member);
+ assert.deepEqual((await call('report',{groupId:'internal'})).suggestions,['Mais formação']);
  assert.equal((await base.collection('polls').doc('internal-1').get()).data().votes.member,1);
  assert.equal((await call('readInternal',{groupId:'internal'},member)).submitted,true);
  await base.collection('polls').doc('internal-3').update({expiresAt:'2020-01-01'});

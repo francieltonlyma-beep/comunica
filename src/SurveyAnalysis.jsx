@@ -157,6 +157,14 @@ export default function SurveyAnalysis({ report, onClose }) {
         </div>
       </section>}
 
+      <section className="survey-analysis-card survey-written-suggestions">
+        <h3>Sugestões escritas pelos participantes</h3>
+        {report.suggestions?.length ? <details>
+          <summary>{number.format(report.suggestions.length)} sugestões{report.suggestionsLimited ? ' mais recentes' : ''} · Ver comentários</summary>
+          <ul>{report.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul>
+        </details> : <p>Ainda não há sugestões escritas.</p>}
+      </section>
+
       <p className="survey-report-note">A pontuação geral dá o mesmo peso a cada nota registrada. A conclusão considera quem participou da pesquisa. Participações públicas são contadas por navegador. Interprete as médias junto com o volume de respostas.</p>
 
       <section className="survey-analysis-card">

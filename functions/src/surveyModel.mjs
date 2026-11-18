@@ -42,6 +42,16 @@ export function surveyTopics(questions) {
  }
  return [...groups.values()];
 }
+export const SURVEY_SUGGESTION_MAX_LENGTH = 1000;
+
+export function normalizeSurveySuggestion(value) {
+ if(value === undefined)return '';
+ if(typeof value !== 'string' || value.length > SURVEY_SUGGESTION_MAX_LENGTH) {
+  throw Error(`Escreva uma sugestão de até ${SURVEY_SUGGESTION_MAX_LENGTH} caracteres.`);
+ }
+ return value.trim();
+}
+
 export function validateSurveyAnswers(questions,answers) {
  if(!answers||typeof answers!=='object'||Array.isArray(answers)||Object.keys(answers).length!==questions.length)throw Error('Responda todas as perguntas antes de enviar.');
  for(const q of questions){const value=answers[q.id];if(!Number.isInteger(value)||value<0||value>=q.options.length)throw Error(`Confira a resposta da pergunta: ${q.question}`);}
