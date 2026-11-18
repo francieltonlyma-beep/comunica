@@ -24,7 +24,7 @@ import {removeEmployeeAccess} from './employeeRemoval';
 import {SUPPORT_UID, verifyPlatformSupport} from './platformSupport';
 import {registerPlatformPushToken, getSupportNotificationTokens} from './platformSupportPush';
 import {listAccessibleDocuments} from './documents';
-import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getCandidateProfile, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, submitApplication, uploadCandidateResume, downloadCandidateResume} from './careers';
+import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getCandidateProfile, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, submitApplication, uploadCandidateResume, downloadCandidateResume, refreshCandidateFit} from './careers';
 import {randomUUID} from 'node:crypto';
 import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivateReports, updatePrivateReport, deletePrivateReport, deleteConfirmedTestReport} from './whistleblowing';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
@@ -110,6 +110,9 @@ export const uploadCareerResume = onCall({invoker: 'public', maxInstances: 2}, a
 
 export const downloadCareerResume = onCall({invoker: 'public', maxInstances: 2}, async request =>
   downloadCandidateResume(careerIdentity(request.auth), request.data || {}));
+
+export const refreshCareerFit = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  refreshCandidateFit(careerIdentity(request.auth), request.data || {}));
 
 export const listCompanyDocuments = onCall({invoker: 'public', maxInstances: 5}, async request =>
   listAccessibleDocuments(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data?.companyId));
