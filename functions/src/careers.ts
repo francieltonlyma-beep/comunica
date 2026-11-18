@@ -23,6 +23,34 @@ const cleanSkills = (value: unknown) => Array.isArray(value)
   ? [...new Set(value.map(skill => cleanText(skill, 60)).filter(Boolean))].slice(0, 30)
   : [];
 const normalized = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim();
+const competencyAliases: Record<string, string[]> = {
+  'experiencia com operacao de caixa': ['operador de caixa', 'operadora de caixa', 'funcao caixa', 'cargo caixa', 'experiencia como caixa'],
+  'ensino medio completo': ['segundo grau completo', '2 grau completo', 'colegial completo'],
+  'trabalho em equipe': ['trabalhar em equipe', 'facilidade em trabalhar em equipe', 'facilidade para trabalhar em equipe', 'facilidade de trabalhar em equipe'],
+  'disponibilidade de horario': ['disponibilidade total de horario', 'flexibilidade de horario', 'horarios flexiveis'],
+  proatividade: ['proativa', 'proativo', 'iniciativa'],
+  'boa comunicacao': ['comunicativa', 'comunicativo', 'facilidade de comunicacao', 'comunicacao clara'],
+  'bom relacionamento interpessoal': ['bom relacionamento', 'facilidade de relacionamento', 'relacionamento interpessoal'],
+};
+
+const searchableText = (value: string) => ` ${normalized(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+const containsPhrase = (text: string, phrase: string) => text.includes(` ${phrase} `);
+
+type SkillEvidence = {skill: string; source: string; excerpt: string};
+
+function evidenceFor(skill: string, sources: {label: string; text: string}[]): SkillEvidence | null {
+  const canonical = searchableText(skill).trim();
+  const aliases = competencyAliases[canonical] || [];
+  for (const source of sources) {
+    const lines = source.text.split(/[\n.!?;]+/).map(line => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      const searchableLine = searchableText(line);
+      const matchedTerm = [canonical, ...aliases].find(alias => containsPhrase(searchableLine, alias));
+      if (matchedTerm) return {skill, source: source.label, excerpt: line.slice(0, 220)};
+    }
+  }
+  return null;
+}
 
 export function isHumanResourcesProfile(profile: Record<string, unknown>) {
   const values = [
@@ -51,17 +79,19 @@ async function verifyCompanyRecruiter(identity: CandidateIdentity | undefined, c
   return identity;
 }
 
-export function matchCandidateSkills(required: string[], declared: string[], resumeText = '') {
+export function matchCandidateSkills(required: string[], declared: string[], resumeText = '', profileSummary = '') {
   const candidate = new Set(declared.map(normalized));
-  const cv = ` ${normalized(resumeText).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+  const sources = [
+    {label: 'Currículo anexado', text: resumeText},
+    {label: 'Resumo profissional', text: profileSummary},
+  ].filter(source => source.text.trim());
   const matchedDeclared = required.filter(skill => candidate.has(normalized(skill)));
-  const matchedFromCv = required.filter(skill => {
-    const term = normalized(skill).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-    return term.length >= 3 && cv.includes(` ${term} `);
-  });
+  const evidenceFromCv = required.map(skill => evidenceFor(skill, sources))
+    .filter((item): item is SkillEvidence => item !== null);
+  const matchedFromCv = evidenceFromCv.map(item => item.skill);
   const matched = required.filter(skill => matchedDeclared.includes(skill) || matchedFromCv.includes(skill));
   const missing = required.filter(skill => !matched.includes(skill));
-  return {matched, matchedDeclared, matchedFromCv, missing, percentage: required.length ? Math.round(matched.length / required.length * 100) : null};
+  return {version: 2, matched, matchedDeclared, matchedFromCv, evidenceFromCv, missing, percentage: required.length ? Math.round(matched.length / required.length * 100) : null};
 }
 
 export async function listPublicVacancies(rawCompanyId: unknown) {
@@ -331,6 +361,36 @@ export async function downloadCandidateResume(identity: CandidateIdentity | unde
   return {base64: bytes.toString('base64'), fileName: data.resumeFileName || 'curriculo', contentType: data.resumeContentType || 'application/octet-stream'};
 }
 
+export async function refreshCandidateFit(identity: CandidateIdentity | undefined, input: Record<string, unknown>) {
+  const companyId = cleanText(input.companyId, 100);
+  const applicationId = cleanText(input.applicationId, 220);
+  await verifyCompanyRecruiter(identity, companyId);
+  if (!validId(applicationId)) throw new HttpsError('invalid-argument', 'Candidatura inválida.');
+
+  const applicationRef = tenant(companyId).collection('applications').doc(applicationId);
+  const applicationSnapshot = await applicationRef.get();
+  if (!applicationSnapshot.exists) throw new HttpsError('not-found', 'Candidatura não encontrada.');
+  const application = applicationSnapshot.data() || {};
+  const vacancyId = cleanText(application.vacancyId, 120);
+  const candidateUid = cleanText(application.candidateUid, 240);
+  if (!validId(vacancyId) || !validId(candidateUid)) throw new HttpsError('failed-precondition', 'A candidatura não possui os dados necessários para atualizar a análise.');
+
+  const [vacancy, analysisSnapshot] = await Promise.all([
+    publicOpportunity(companyId, vacancyId),
+    getFirestore().collection('_candidateResumeAnalyses').doc(`${companyId}_${vacancyId}_${candidateUid}`).get(),
+  ]);
+  if (!vacancy) throw new HttpsError('not-found', 'A vaga desta candidatura não foi encontrada.');
+  const analysis = analysisSnapshot.data() || {};
+  const fit = matchCandidateSkills(
+    Array.isArray(vacancy.skills) ? vacancy.skills : [],
+    Array.isArray(application.skills) ? application.skills : [],
+    String(analysis.text || ''),
+    String(application.resumeText || ''),
+  );
+  await applicationRef.update({fit, resumeReadable: analysis.readable === true});
+  return {fit};
+}
+
 export async function submitApplication(identity: CandidateIdentity | undefined, input: Record<string, unknown>) {
   const candidate = verifiedCandidate(identity);
   const companyId = cleanText(input.companyId, 100);
@@ -363,7 +423,12 @@ export async function submitApplication(identity: CandidateIdentity | undefined,
       throw new HttpsError('invalid-argument', 'Responda todas as perguntas do questionário.');
     }
     const extracted = analysisSnapshot.data();
-    const fit = matchCandidateSkills(Array.isArray(vacancy.skills) ? vacancy.skills : [], Array.isArray(profile.skills) ? profile.skills : [], extracted?.text || '');
+    const fit = matchCandidateSkills(
+      Array.isArray(vacancy.skills) ? vacancy.skills : [],
+      Array.isArray(profile.skills) ? profile.skills : [],
+      extracted?.text || '',
+      profile.resumeText || '',
+    );
     const applicationData = {
       id: applicationRef.id,
       candidateUid: candidate.uid,
