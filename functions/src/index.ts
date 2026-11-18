@@ -1,1 +1,1720 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíß^uÝ:-jZ.¶›­–)Þ³Rò¢ ¢¢–×÷'BgVæ7F–öâG&–vvW'2g&öÒF†V—"&W7V7F—fR7V&ÖöGVÆW3 ¢ ¢¢–×÷'B¶öä6ÆÇÒg&öÒ&f—&V&6RÖgVæ7F–öç2÷c"ö‡GG2#°¢¢–×÷'B¶öäFö7VÖVçEw&—GFVçÒg&öÒ&f—&V&6RÖgVæ7F–öç2÷c"öf—&W7F÷&R#°¢ ¢¢6VRgVÆÂÆ—7Böb7W÷'FVBG&–vvW'2B‡GG3¢òöf—&V&6RævöövÆRæ6öÒöFö72ögVæ7F–öç0¢¢ð ¦–×÷'B·6WDvÆö&Ä÷F–öç7Òg&öÒ&f—&V&6RÖgVæ7F–öç2#°¦–×÷'B¶öäFö7VÖVçD7&VFVBÂöäFö7VÖVçDFVÆWFVBÂöäFö7VÖVçEWFFVGÒg&öÒ&f—&V&6RÖgVæ7F–öç2÷c"öf—&W7F÷&R#°¦–×÷'B¶öä6ÆÂÂ‡GG4W'&÷'Òg&öÒ&f—&V&6RÖgVæ7F–öç2÷c"ö‡GG2#°¦–×÷'B¶öå66†VGVÆWÒg&öÒ&f—&V&6RÖgVæ7F–öç2÷c"÷66†VGVÆW"#°¦–×÷'B¶FVf–æU6V7&WGÒg&öÒ&f—&V&6RÖgVæ7F–öç2÷&×2#°¦–×÷'B¶–æ—F–Æ—¦TÒg&öÒ&f—&V&6RÖFÖ–âö#°¦–×÷'B´f–VÆEfÇVRÂvWDf—&W7F÷&WÒg&öÒ&f—&V&6RÖFÖ–âöf—&W7F÷&R#°¦–×÷'B¶vWDWF‡Òg&öÒ&f—&V&6RÖFÖ–âöWF‚#°¦–×÷'B¶vWDÖW76v–æwÒg&öÒ&f—&V&6RÖFÖ–âöÖW76v–ær#°¦–×÷'B¶vWE7F÷&vWÒg&öÒ&f—&V&6RÖFÖ–â÷7F÷&vR#°¦–×÷'B·&—fFT7&VFVçF–Ç2Â7&VFVçF–Ä¶W’Â†6…–çÒg&öÒ"â÷&—fFT7&VFVçF–Ç2#°¦–×÷'B·V&Æ–4F—&V7F÷'•&öf–ÆWÒg&öÒrâ÷W6W$F—&V7F÷'’s°¦–×÷'B·&Vv—7FW$V×Æ÷–VWÒg&öÒrâöV×Æ÷–VU&Vv—7G&F–öâs°¦–×÷'B·&VÖ÷fTV×Æ÷–VT66W77Òg&öÒrâöV×Æ÷–VU&VÖ÷fÂs°¦–×÷'Bµ5Uõ%EõT”BÂfW&–g•ÆFf÷&Õ7W÷'GÒg&öÒrâ÷ÆFf÷&Õ7W÷'Bs°¦–×÷'B·&Vv—7FW%ÆFf÷&ÕW6…Fö¶VâÂvWE7W÷'Dæ÷F–f–6F–öåFö¶Vç7Òg&öÒrâ÷ÆFf÷&Õ7W÷'EW6‚s°¦–×÷'B¶Æ—7D66W76–&ÆTFö7VÖVçG7Òg&öÒrâöFö7VÖVçG2s°¦–×÷'B¶Æ—7EV&Æ–5f6æ6–W2Â6fT6æF–FFU&öf–ÆRÂvWD6æF–FFTÆ–6F–öâÂvWD6æF–FFU&öf–ÆRÂv—F†G&t6æF–FFTÆ–6F–öâÂFVÆWFT6æF–FFT66÷VçBÂW‡FVæDÆ–6F–öå&WFVçF–öâÂW&vTW‡—&VDÆ–6F–öç2Â–æ—F–Æ—¦TÆ–6F–öå&WFVçF–öâÂ7V&Ö—DÆ–6F–öâÂWÆöD6æF–FFU&W7VÖRÂF÷væÆöD6æF–FFU&W7VÖRÂ&Vg&W6„6æF–FFTf—GÒg&öÒrâö6&VW'2s°¦–×÷'B·&æFöÕUT”GÒg&öÒvæöFS¦7'—Fòs°¦–×÷'B¶vWEV&Æ–46ö×ç’Â7V&Ö—EV&Æ–5&W÷'BÂvWEV&Æ–5&W÷'E7FGW2ÂÆ—7E&—fFU&W÷'G2ÂWFFU&—fFU&W÷'BÂFVÆWFU&—fFU&W÷'BÂFVÆWFT6öæf—&ÖVEFW7E&W÷'GÒg&öÒrâ÷v†—7FÆV&Æ÷v–ærs°¦–×÷'B¶vWEÆFf÷&Ô6ö×ç”†VÇF‡Òg&öÒrâ÷ÆFf÷&Ô6ö×ç”†VÇF‚s°¦–×÷'B·7V&Ö—E6ÆW4ÆVGÒg&öÒrâ÷6ÆW4ÆVG2s°¦–×÷'B·6fT6÷fW&vU6WGF–æw7Òg&öÒrâ÷66†VGVÆT6÷fW&vRs°¦–×÷'B¶'V–ÆEVæF–æu&VÖ–æFW'7Òg&öÒrâ÷VæF–æu&VÖ–æFW'2æÖ§2s°¦–×÷'B¶&÷fUW&6†6UV÷FTw&÷WÒg&öÒrâ÷W&6†6UV÷FT&÷fÂs° ¢òò7F'Bw&—F–ærgVæ7F–öç0¢òò‡GG3¢òöf—&V&6RævöövÆRæ6öÒöFö72ögVæ7F–öç2÷G—W67&—@ ¢òòf÷"6÷7B6öçG&öÂÂ–÷R6â6WBF†RÖ†–×VÒçVÖ&W"öb6öçF–æW'2F†B6â&P¢òò'Vææ–ærBF†R6ÖRF–ÖRâF†—2†VÇ2Ö—F–vFRF†R–×7BöbVæW‡V7FV@¢òòG&ff–27–¶W2'’–ç7FVBF÷væw&F–ærW&f÷&Öæ6RâF†—2Æ–Ö—B—2¢òòW"ÖgVæ7F–öâÆ–Ö—Bâ–÷R6â÷fW'&–FRF†RÆ–Ö—Bf÷"V6‚gVæ7F–öâW6–ærF†P¢òòÖ„–ç7Fæ6W6÷F–öâ–âF†RgVæ7F–öâw2÷F–öç2ÂRærà¢òòöå&WVW7B‡²Ö„–ç7Fæ6W3¢RÒÂ‡&WÂ&W2’Óâ²âââÒ–à¢òòäõDS¢6WDvÆö&Ä÷F–öç2FöW2æ÷BÇ’FògVæ7F–öç2W6–ærF†Rc’âc¢òògVæ7F–öç26†÷VÆBV6‚W6RgVæ7F–öç2ç'Våv—F‚‡²Ö„–ç7Fæ6W3¢Ò’–ç7FVBà¢òò–âF†Rc’ÂV6‚gVæ7F–öâ6âöæÇ’6W'fRöæR&WVW7BW"6öçF–æW"Â6ð¢òòF†—2v–ÆÂ&RF†RÖ†–×VÒ6öæ7W'&VçB&WVW7B6÷VçBà§6WDvÆö&Ä÷F–öç2‡²Ö„–ç7Fæ6W3¢Ò“° ¦–æ—F–Æ—¦T‚“° ¦6öç7B7F÷&vUF„g&öÔf–ÆU&V6÷&BÒ†f–ÆS¢Væ¶æ÷vâ’Óâ°¢–b‚f–ÆRÇÂG—Vöbf–ÆRÓÒvö&¦V7Br’&WGW&ârs°¢6öç7B&V6÷&BÒf–ÆR2&V6÷&CÇ7G&–ærÂVæ¶æ÷vãã°¢6öç7BW‡Æ–6—EF‚Ò7G&–ær‡&V6÷&Bç7F÷&vUF‚ÇÂrr“°¢–b†W‡Æ–6—EF‚ç7F'G5v—F‚‚v6ö×æ–W2òr’’&WGW&âW‡Æ–6—EFƒ°¢6öç7BF÷væÆöEW&ÂÒ7G&–ær‡&V6÷&BæFFÇÂ&V6÷&BçW&ÂÇÂrr“°¢6öç7Bf—&V&6UF‚ÒF÷væÆöEW&ÂæÖF6‚‚õÂöõÂò…µãõÒ²’ò“°¢–b†f—&V&6UFƒòå³Ò’°¢G'’°¢6öç7BFV6öFVBÒFV6öFUU$”6ö×öæVçB†f—&V&6UF…³Ò“°¢&WGW&âFV6öFVBç7F'G5v—F‚‚v6ö×æ–W2òr’òFV6öFVB¢rs°¢Ò6F6‚°¢&WGW&ârs°¢Ð¢Ð¢&WGW&ârs°§Ó° ¦6öç7B6&VW$–FVçF—G’Ò†WFƒ¢·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVB’ÓâWF‚ò°¢V–C¢WF‚çV–BÀ¢VÖ–Ã¢7G&–ær†WF‚çFö¶VâæVÖ–ÂÇÂrr’À¢VÖ–Å÷fW&–f–VC¢WF‚çFö¶VâæVÖ–Å÷fW&–f–VBÓÓÒG'VRÀ¢Fö¶Vã¢WF‚çFö¶VâÀ§Ò¢VæFVf–æVC° ¦W‡÷'B6öç7BÆ—7D6&VW%f6æ6–W2Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢Æ—7EV&Æ–5f6æ6–W2‡&WVW7BæFFòæ6ö×ç”–B’“° ¦W‡÷'B6öç7B6fT6&VW%&öf–ÆRÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢6fT6æF–FFU&öf–ÆR†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BvWD6&VW%&öf–ÆRÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢vWD6æF–FFU&öf–ÆR†6&VW$–FVçF—G’‡&WVW7BæWF‚’’“° ¦W‡÷'B6öç7BvWD6&VW$Æ–6F–öâÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢vWD6æF–FFTÆ–6F–öâ†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7Bv—F†G&t6&VW$Æ–6F–öâÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢v—F†G&t6æF–FFTÆ–6F–öâ†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BFVÆWFT6&VW$6æF–FFT66÷VçBÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢FVÆWFT6æF–FFT66÷VçB†6&VW$–FVçF—G’‡&WVW7BæWF‚’’“° ¦W‡÷'B6öç7BW‡FVæD6&VW$Æ–6F–öå&WFVçF–öâÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢W‡FVæDÆ–6F–öå&WFVçF–öâ†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BW&vTW‡—&VD6&VW$Æ–6F–öç2Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢W&vTW‡—&VDÆ–6F–öç2†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7B–æ—F–Æ—¦T6&VW%&WFVçF–öâÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢–æ—F–Æ—¦TÆ–6F–öå&WFVçF–öâ†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7B7V&Ö—D6&VW$Æ–6F–öâÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢7V&Ö—DÆ–6F–öâ†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BWÆöD6&VW%&W7VÖRÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢WÆöD6æF–FFU&W7VÖR†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BF÷væÆöD6&VW%&W7VÖRÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢F÷væÆöD6æF–FFU&W7VÖR†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7B&Vg&W6„6&VW$f—BÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓà¢&Vg&W6„6æF–FFTf—B†6&VW$–FVçF—G’‡&WVW7BæWF‚’Â&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BÆ—7D6ö×ç”Fö7VÖVçG2Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢WÒÂ7–æ2&WVW7BÓà¢Æ—7D66W76–&ÆTFö7VÖVçG2‡&WVW7BæWF‚2·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVBÂ&WVW7BæFFòæ6ö×ç”–B’“° ¦W‡÷'B6öç7BvWEv†—7FÆV&Æ÷v–æt6ö×ç’Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓà¢vWEV&Æ–46ö×ç’‡&WVW7BæFFòæ6ö×ç”–B’“° ¦W‡÷'B6öç7B7V&Ö—Ev†—7FÆV&Æ÷v–æu&W÷'BÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓà¢7V&Ö—EV&Æ–5&W÷'B‡&WVW7BæFFÇÂ·ÒÂ7G&–ær‡&WVW7Bç&u&WVW7Bæ—ÇÂrr’’“° ¦W‡÷'B6öç7BvWEv†—7FÆV&Æ÷v–æu7FGW2Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓà¢vWEV&Æ–5&W÷'E7FGW2‡&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BÆ—7Ev†—7FÆV&Æ÷v–æu&W÷'G2Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓà¢Æ—7E&—fFU&W÷'G2‡&WVW7BæWF‚2·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVBÂ&WVW7BæFFòæ6ö×ç”–B’“° ¦W‡÷'B6öç7BWFFUv†—7FÆV&Æ÷v–æu&W÷'BÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓà¢WFFU&—fFU&W÷'B‡&WVW7BæWF‚2·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVBÂ&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BFVÆWFUv†—7FÆV&Æ÷v–æu&W÷'BÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓà¢FVÆWFU&—fFU&W÷'B‡&WVW7BæWF‚2·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVBÂ&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BFVÆWFT6öæf—&ÖVEv†—7FÆV&Æ÷v–æuFW7BÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢ÒÂ7–æ2&WVW7BÓà¢FVÆWFT6öæf—&ÖVEFW7E&W÷'B‡&WVW7BæWF‚2·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVBÂ&WVW7BæFFÇÂ·Ò’“° ¦W‡÷'B6öç7BÆFf÷&Ô6ö×ç”†VÇF‚Òöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢ÒÂ7–æ2&WVW7BÓà¢vWEÆFf÷&Ô6ö×ç”†VÇF‚€¢vWDf—&W7F÷&R‚’À¢&WVW7BæWF‚2·V–C¢7G&–æs²Fö¶Vã¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãçÒÂVæFVf–æVBÀ¢&WVW7BæFFòæf÷&6U&Vg&W6‚ÓÓÒG'VRÀ¢’“° ¦W‡÷'B6öç7B7V&Ö—EÆFf÷&Õ6ÆW46öçF7BÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢'ÒÂ7–æ2&WVW7BÓâ°¢6öç7BFF&6RÒvWDf—&W7F÷&R‚“°¢6öç7B&W7VÇBÒv—B7V&Ö—E6ÆW4ÆVB†FF&6RÂ&WVW7BæFFÇÂ·ÒÂ7G&–ær‡&WVW7Bç&u&WVW7Bæ—ÇÂrr’“°¢–b‡&W7VÇBæÆVD–B’°¢G'’°¢6öç7BFö¶Vç2Òv—BvWE7W÷'Dæ÷F–f–6F–öåFö¶Vç2†FF&6RÂv6ö×Væ–6×6ÇfF÷"rÂµ5Uõ%EõT”EÒÂwV&Æ–2×6ÆW2Ö6öçF7Br“°¢–b‡Fö¶Vç2æÆVæwF‚’v—BvWDÖW76v–ær‚’ç6VæDV6„f÷$×VÇF–67B‡°¢Fö¶Vç2À¢æ÷F–f–6F–öã¢·F—FÆS¢tæ÷fò6öçFFò6öÖW&6–ÂrÂ&öG“¢Gµ7G&–ær‡&WVW7BæFFòæ6ö×ç”æÖRÇÂuVÖV×&W6r’ç6Æ–6RƒÂƒ—ÒVW"6öæ†V6W"ò6ö×Væ–6æÒÀ¢FF¢·G—S¢w6ÆW5öÆVBrÂÆVD–C¢&W7VÇBæÆVD–GÒÀ¢æG&ö–C¢·&–÷&—G“¢v†–v‚wÒÀ¢Ò“°¢Ò6F6‚†W'&÷"’°¢6öç6öÆRæW'&÷"‚t6öçFFò6öÖW&6–Â6ÇfòÂÖ2æ÷F–f–6:|:6òò7W÷'FRfÆ†÷RârÂW'&÷"“°¢Ð¢Ð¢&WGW&â&W7VÇC°§Ò“° ¦W‡÷'B6öç7B7&VFT6öçfW'6F–öâÒöä6ÆÂ‡¶–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3¢ÒÂ7–æ2&WVW7BÓâ°¢–b‚&WVW7BæWF‚’F‡&÷ræWr‡GG4W'&÷"‚wVæWF†VçF–6FVBrÂtVçG&Ræ÷fÖVçFR&'&—"VÖ6öçfW'6âr“°¢6öç7B–BÒ7G&–ær‡&WVW7BæFFòæ–BÇÂrr“°¢6öç7B—4FWfVÆ÷W"Ò&WVW7BæWF‚çFö¶Vâæ—4FWfVÆ÷W"ÓÓÒG'VS°¢6öç7B6ö×ç”–BÒ7G&–ær‡&WVW7BæWF‚çFö¶Vâæ6ö×ç”–BÇÂ†—4FWfVÆ÷W"ò&WVW7BæFFòæ6ö×ç”–B¢rr’ÇÂrr“°¢6öç7BÖW76vRÒ&WVW7BæFFòæÖW76vRbbG—Vöb&WVW7BæFFæÖW76vRÓÓÒvö&¦V7Brò&WVW7BæFFæÖW76vR2&V6÷&CÇ7G&–ærÂVæ¶æ÷vãâ¢çVÆÃ°¢6öç7B'F–6—çG2Ò'&’æ—4'&’†ÖW76vSòç'F–6—çG2’ò²ââææWr6WB†ÖW76vRç'F–6—çG2æÖ…7G&–ær’•Ò¢µÓ°¢6öç7BÖW76vT–BÒ7G&–ær†ÖW76vSòæ–BÇÂrr“°¢6öç7BF‡&VD–BÒ7G&–ær†ÖW76vSòçF‡&VD–BÇÂrr“°¢6öç7B7V&¦V7BÒ7G&–ær†ÖW76vSòç7V&¦V7BÇÂrr’çG&–Ò‚“°¢6öç7B6öçFVçBÒ7G&–ær†ÖW76vSòæ6öçFVçBÇÂrr’çG&–Ò‚“°¢6öç7B—56W'f–6U&WVW7BÒÖW76vSòç6W'f–6U&WVW7BÓÓÒG'VS°¢6öç7B6W'f–6T6FVv÷'”–BÒ7G&–ær†ÖW76vSòç6W'f–6T6FVv÷'”–BÇÂrr“°¢6öç7B6W'f–6U&–÷&—G’Ò7G&–ær†ÖW76vSòç6W'f–6U&–÷&—G’ÇÂvæ÷&ÖÂr“°¢6öç7B6W'f–6T76–væVT–BÒ'F–6—çG2æ–æ6ÇVFW2…7G&–ær†ÖW76vSòç6W'f–6T76–væVT–BÇÂrr’’ò7G&–ær†ÖW76vSòç6W'f–6T76–væVT–BÇÂrr’¢rs°¢6öç7BÆÆ÷vVE6W'f–6T6FVv÷&–W2ÒæWr6WB…²wV÷ÆRrÂwFV6†æöÆöw’rÂvÖ–çFVææ6RrÂwVæ–f÷&×2rÂw66†VGVÆRrÂvFö7VÖVçG2rÂwW&6†6W2rÂv–×&÷fVÖVçBuÒ“°¢6öç7BÆÆ÷vVE6W'f–6U&–÷&—F–W2ÒæWr6WB…²væ÷&ÖÂrÂv–×÷'FçBrÂwW&vVçBuÒ“°¢–b†–BÓÒv6ö×Væ–6×6ÇfF÷"rÇÂõå¶×¤Õ£Ó•òÕÒ²BòçFW7B†6ö×ç”–B’ÇÀ¢õæ×6rÕ¶×¤Õ£Ó•òÕÒ²BòçFW7B†ÖW76vT–B’ÇÂõçF‡&VBÕ¶×¤Õ£Ó•òÕÒ²BòçFW7B‡F‡&VD–B’ÇÀ¢7V&¦V7BæÆVæwF‚ÂÇÂ7V&¦V7BæÆVæwF‚âƒÇÂ'F–6—çG2æÆVæwF‚Â"ÇÂ'F–6—çG2æÆVæwF‚â#RÇÀ¢'F–6—çG2æ–æ6ÇVFW2‡&WVW7BæWF‚çV–B’ÇÂ7G&–ær†ÖW76vSòç6VæFW$–BÇÂrr’ÓÒ&WVW7BæWF‚çV–BÇÀ¢‚6öçFVçBbbÖW76vSòæGF6†ÖVçB’ÇÂ6öçFVçBæÆVæwF‚â#ÇÀ¢†—56W'f–6U&WVW7Bbb‚ÆÆ÷vVE6W'f–6T6FVv÷&–W2æ†2‡6W'f–6T6FVv÷'”–B’ÇÂÆÆ÷vVE6W'f–6U&–÷&—F–W2æ†2‡6W'f–6U&–÷&—G’’ÇÂÖW76vSòç6W'f–6U7FGW2ÓÒ†ÖW76vSòç6W'f–6U&WV—&W4&÷fÂÓÓÒG'VRòv&÷fÂr¢v÷Vâr’’’’°¢F‡&÷ræWr‡GG4W'&÷"‚v–çfÆ–BÖ&wVÖVçBrÂt6öæf—&ò77VçFòÂ÷2'F–6—çFW2RÖVç6vVÒâr“°¢Ð¢6öç7BfÆ–FFVDÖW76vS¢&V6÷&CÇ7G&–ærÂVæ¶æ÷vãâÒ°¢âââ†ÖW76vR2&V6÷&CÇ7G&–ærÂVæ¶æ÷vãâ’À¢âââ†—56W'f–6U&WVW7Bò°¢6W'f–6U&WVW7C¢G'VRÀ¢6W'f–6T6FVv÷'”–BÀ¢6W'f–6T6FVv÷'“¢7G&–ær†ÖW76vSòç6W'f–6T6FVv÷'’ÇÂrr’ç6Æ–6RƒÂƒ’À¢6W'f–6U&–÷&—G’À¢6W'f–6U&–÷&—G”Æ&VÃ¢7G&–ær†ÖW76vSòç6W'f–6U&–÷&—G”Æ&VÂÇÂrr’ç6Æ–6RƒÂ3’À¢6W'f–6U&WV—&W4&÷fÃ¢ÖW76vSòç6W'f–6U&WV—&W4&÷fÂÓÓÒG'VRÀ¢6W'f–6TFV6—6–öã¢rrÀ¢6W'f–6TFV6—6–öä'“¢rrÀ¢6W'f–6TFV6—6–öäC¢çVÆÂÀ¢6W'f–6U7FGW3¢ÖW76vSòç6W'f–6U&WV—&W4&÷fÂÓÓÒG'VRòv&÷fÂr¢v÷VârÀ¢6W'f–6U&WVW7FVDC¢çVÖ&W"†ÖW76vSòç6W'f–6U&WVW7FVDBÇÂFFRææ÷r‚’’À¢6W'f–6U6ÆF—3¢ÖF‚æÖ–âƒ3ÂÖF‚æÖ‚ƒÂçVÖ&W"†ÖW76vSòç6W'f–6U6ÆF—2ÇÂ2’’’À¢6W'f–6TW‡G&FWF–Ã¢7G&–ær†ÖW76vSòç6W'f–6TW‡G&FWF–ÂÇÂrr’ç6Æ–6RƒÂ’À¢6W'f–6T76–væVT–BÀ¢6W'f–6T76–væVTæÖS¢6W'f–6T76–væVT–Bò7G&–ær†ÖW76vSòç6W'f–6T76–væVTæÖRÇÂrr’ç6Æ–6RƒÂ#’¢rrÀ¢6W'f–6U7F'FVDC¢çVÆÂÀ¢6W'f–6Uv—F–æu6–æ6S¢çVÆÂÀ¢Ò¢·Ò’À¢Ó° ¢6öç7BFF&6RÒvWDf—&W7F÷&R‚“°¢6öç7B6ö×ç•&VbÒFF&6RæFö2†'F–f7G2òG¶–GÒ÷V&Æ–2öFFö6ö×æ–W2òG¶6ö×ç”–GÖ“°¢6öç7B¶6ö×ç•6æ6†÷BÂW†—7F–ætÖW76vW2Â6W'f–6T6FÆöu6æ6†÷EÒÒv—B&öÖ—6RæÆÂ…°¢6ö×ç•&VbævWB‚’À¢6ö×ç•&Vbæ6öÆÆV7F–öâ‚vÖW76vW2r’ç6VÆV7B‚wF‡&VD–BrÂwF–6¶WDçVÖ&W"r’ævWB‚’À¢6ö×ç•&Vbæ6öÆÆV7F–öâ‚w6WGF–æw2r’æFö2‚w6W'f–6RÖ6FÆörr’ævWB‚’À¢Ò“°¢–b‚6ö×ç•6æ6†÷BæW†—7G2’F‡&÷ræWr‡GG4W'&÷"‚væ÷BÖf÷VæBrÂtV×&W6ì:6òVæ6öçG&Fâr“°¢–b†—56W'f–6U&WVW7Bbb6W'f–6T6FÆöu6æ6†÷BæW†—7G2’°¢6öç7B6öæf–wW&VD—FV×2Ò'&’æ—4'&’‡6W'f–6T6FÆöu6æ6†÷BæFF‚“òæ—FV×2’ò6W'f–6T6FÆöu6æ6†÷BæFF‚’æ—FV×22'&“Å&V6÷&CÇ7G&–ærÂVæ¶æ÷vããâ¢µÓ°¢6öç7B6öæf–wW&VD6FVv÷'’Ò6öæf–wW&VD—FV×2æf–æB†—FVÒÓâ7G&–ær†—FVÓòæ–BÇÂrr’ÓÓÒ6W'f–6T6FVv÷'”–B“°¢–b†6öæf–wW&VD6FVv÷'“òæ7F—fRÓÓÒfÇ6R’F‡&÷ræWr‡GG4W'&÷"‚vf–ÆVB×&V6öæF—F–öârÂtW7FR6W'fœ:vòW7L:–æF—7öì:×fVÂæò6L:ÆövòFV×&W6âr“°¢–b†6öæf–wW&VD6FVv÷'’’°¢6öç7B&WV—&W4&÷fÂÒG—Vöb6öæf–wW&VD6FVv÷'’ç&WV—&W4&÷fÂÓÓÒv&ööÆVâp¢ò6öæf–wW&VD6FVv÷'’ç&WV—&W4&÷fÀ¢¢ÖW76vSòç6W'f–6U&WV—&W4&÷fÂÓÓÒG'VS°¢fÆ–FFVDÖW76vRç6W'f–6U&WV—&W4&÷fÂÒ&WV—&W4&÷fÃ°¢fÆ–FFVDÖW76vRç6W'f–6U7FGW2Ò&WV—&W4&÷fÂòv&÷fÂr¢v÷Vâs°¢fÆ–FFVDÖW76vRç6W'f–6U6ÆF—2ÒÖF‚æÖ–âƒ3ÂÖF‚æÖ‚ƒÂçVÖ&W"†6öæf–wW&VD6FVv÷'’ç6ÆF—2ÇÂfÆ–FFVDÖW76vRç6W'f–6U6ÆF—2ÇÂ2’’“°¢Ð¢Ð¢6öç7B¶æ÷våF‡&VG2ÒæWr6WCÇ7G&–æsâ‚“°¢ÆWB†–v†W7EF–6¶WBÒ°¢W†—7F–ætÖW76vW2æFö72æf÷$V6‚†—FVÒÓâ°¢6öç7BFFÒ—FVÒæFF‚“°¢–b†FFçF‡&VD–B’¶æ÷våF‡&VG2æFB…7G&–ær†FFçF‡&VD–B’“°¢†–v†W7EF–6¶WBÒÖF‚æÖ‚††–v†W7EF–6¶WBÂçVÖ&W"†FFçF–6¶WDçVÖ&W"ÇÂ’“°¢Ò“°¢6öç7B&6VÆ–æRÒÖF‚æÖ‚†¶æ÷våF‡&VG2ç6—¦RÂ†–v†W7EF–6¶WB“°¢6öç7B6÷VçFW%&VbÒ6ö×ç•&Vbæ6öÆÆV7F–öâ‚w6WGF–æw2r’æFö2‚wF–6¶WBÖ6÷VçFW"r“°¢6öç7B&WVW7E&VbÒ6ö×ç•&Vbæ6öÆÆV7F–öâ‚v6öçfW'6F–öåF–6¶WG2r’æFö2‡F‡&VD–B“°¢6öç7BÖW76vU&VbÒ6ö×ç•&Vbæ6öÆÆV7F–öâ‚vÖW76vW2r’æFö2†ÖW76vT–B“°¢6öç7BVF—E&VbÒ6ö×ç•&Vbæ6öÆÆV7F–öâ‚vVF—DÆöw2r’æFö2‚“°¢6öç7Bæ÷rÒFFRææ÷r‚“°¢6öç7BF–6¶WDçVÖ&W"Òv—BFF&6Rç'VåG&ç67F–öâ†7–æ2G&ç67F–öâÓâ°¢6öç7B&WVW7E6æ6†÷BÒv—BG&ç67F–öâævWB‡&WVW7E&Vb“°¢–b‡&WVW7E6æ6†÷BæW†—7G2’°¢6öç7BW†—7F–æuF–6¶WBÒçVÖ&W"‡&WVW7E6æ6†÷BæFF‚“òçF–6¶WDçVÖ&W"ÇÂ“°¢–b†W†—7F–æuF–6¶WBâ’&WGW&âW†—7F–æuF–6¶WC°¢Ð¢6öç7B6÷VçFW%6æ6†÷BÒv—BG&ç67F–öâævWB†6÷VçFW%&Vb“°¢6öç7BæW‡BÒÖF‚æÖ‚„çVÖ&W"†6÷VçFW%6æ6†÷BæFF‚“òæÆ7DçVÖ&W"ÇÂ’Â&6VÆ–æR’²°¢G&ç67F–öâç6WB†6÷VçFW%&VbÂ¶Æ7DçVÖ&W#¢æW‡BÂµç]í¢G§²ÚîÆ­yÖô6—f–ÄFFR‚“°¢6öç7BFöÖ÷'&÷rÒ6õVÆô6—f–ÄFFRƒ“°¢6öç7BFVFÆ–æU7FvRÒ†GVTFFS¢7G&–ær“¢6öçfW'6F–öäFVFÆ–æU7FvRÂVæFVf–æVBÓâ°¢–b‚õåÆG³GÒÕÆG³'ÒÕÆG³'ÒBòçFW7B†GVTFFR’’&WGW&âVæFVf–æVC°¢–b†GVTFFRÂæ÷F–f–6F–öäFFR’&WGW&âv÷fW&GVRs°¢–b†GVTFFRÓÓÒæ÷F–f–6F–öäFFR’&WGW&âvGVU÷FöF’s°¢–b†GVTFFRÓÓÒFöÖ÷'&÷r’&WGW&âvGVU÷6ööâs°¢&WGW&âVæFVf–æVC°¢Ó°¢6öç7B6öçfW'6F–öç2ÒæWrÖÇ7G&–ærÂ6öçfW'6F–öäFVFÆ–æT—FVÓâ‚“°¢6öç7B7F—f—F–W2ÒæWrÖÇ7G&–ærÂ7F—f—G”FVFÆ–æT—FVÓâ‚“°¢6öç7B–BÒv6ö×Væ–6×6ÇfF÷"s°¢6öç7B6ö×æ–W2Òv—BFF&6Ræ6öÆÆV7F–öâ†'F–f7G2òG¶–GÒ÷V&Æ–2öFFö6ö×æ–W6’ævWB‚“°¢f÷"†6öç7B6ö×ç’öb6ö×æ–W2æFö72’°¢6öç7B6ö×ç”–BÒ6ö×ç’æ–C°¢–b‚õå¶×¤Õ£Ó•òÕÒ²BòçFW7B†6ö×ç”–B’’6öçF–çVS°¢6öç7BÖW76vU6æ6†÷BÒv—B6ö×ç’ç&Vbæ6öÆÆV7F–öâ‚vÖW76vW2r’çv†W&R‚vGVTFFRrÂsârÂrr’çv†W&R‚vGVTFFRrÂsÃÒrÂFöÖ÷'&÷r’ævWB‚“°¢ÖW76vU6æ6†÷BæFö72æf÷$V6‚‚†ÖW76vTFö7VÖVçB’Óâ°¢6öç7B6öçFVçBÒÖW76vTFö7VÖVçBæFF‚“°¢6öç7BF‡&VD–BÒ7G&–ær†6öçFVçBçF‡&VD–BÇÂrr“°¢6öç7BGVTFFRÒ7G&–ær†6öçFVçBæGVTFFRÇÂrr“°¢6öç7B7FvRÒFVFÆ–æU7FvR†GVTFFR“°¢6öç7B'F–6—çG2Ò'&’æ—4'&’†6öçFVçBç'F–6—çG2¢ò²ââææWr6WB†6öçFVçBç'F–6—çG2æf–ÇFW"‚†–B“¢–B—27G&–ærÓâG—Vöb–BÓÓÒw7G&–ærrbbõå¶×¤Õ£Ó•òÕÒ²BòçFW7B†–B’’•Ð¢¢µÓ°¢6öç7B×WFVD'’Ò'&’æ—4'&’†6öçFVçBæ×WFVD'’¢ò6öçFVçBæ×WFVD'’æf–ÇFW"‚†–B“¢–B—27G&–ærÓâG—Vöb–BÓÓÒw7G&–ærr¢¢µÓ°¢6öç7Bæ÷F–f–VE'F–6—çG2Ò'F–6—çG2æf–ÇFW"‚†–B’Óâ×WFVD'’æ–æ6ÇVFW2†–B’“°¢–b‚õå¶×¤Õ£Ó•òÕÒ²BòçFW7B‡F‡&VD–B’ÇÂ7FvRÇÂ'F–6—çG2æÆVæwF‚ÓÓÒÇÂ6öçFVçBæ6ö×ÆWFVDB’&WGW&ã°¢6öç7B¶W’ÒG¶–GÒòG¶6ö×ç”–GÒòG·F‡&VD–GÖ°¢6öç7BF–ÖW7F×ÒçVÖ&W"†6öçFVçBçF–ÖW7F×ÇÂ“°¢6öç7B&Wf–÷W2Ò6öçfW'6F–öç2ævWB†¶W’“°¢–b‚&Wf–÷W2ÇÂF–ÖW7F×ãÒ&Wf–÷W2çF–ÖW7F×’°¢6öçfW'6F–öç2ç6WB†¶W’Â°¢–BÂ6ö×ç”–BÂF‡&VD–BÂGVTFFRÂ7FvRÀ¢7V&¦V7C¢7G&–ær†6öçFVçBç7V&¦V7BÇÂt6öçfW'66VÒ77VçFòr’ç6Æ–6RƒÂC’À¢'F–6—çG3¢æ÷F–f–VE'F–6—çG2À¢F–6¶WDçVÖ&W#¢çVÖ&W"†6öçFVçBçF–6¶WDçVÖ&W"ÇÂ’À¢F–ÖW7F×À¢Ò“°¢Ð¢Ò“° ¢6öç7B7F—f—G•6æ6†÷BÒv—B6ö×ç’ç&Vbæ6öÆÆV7F–öâ‚vÖW76vW2r’çv†W&R‚v7F—f—G’æGVTFFRrÂsârÂrr’çv†W&R‚v7F—f—G’æGVTFFRrÂsÃÒrÂFöÖ÷'&÷r’ævWB‚“°¢7F—f—G•6æ6†÷BæFö72æf÷$V6‚‚†ÖW76vTFö7VÖVçB’Óâ°¢6öç7B6öçFVçBÒÖW76vTFö7VÖVçBæFF‚“°¢6öç7B7F—f—G’ÒÖW76vT7F—f—G”FF†6öçFVçBæ7F—f—G’“°¢6öç7BF‡&VD–BÒ7G&–ær†6öçFVçBçF‡&VD–BÇÂrr“°¢6öç7BGVTFFRÒ7F—f—G“òæGVTFFRÇÂrs°¢6öç7B7FvRÒFVFÆ–æU7FvR†GVTFFR“°¢–b‚7F—f—G’ÇÂ7F—f—G’ç7FGW2ÓÓÒw&W6öÇfVBrÇÂ7FvRÇÂõå¶×¤Õ£Ó•òÕÒ²BòçFW7B‡F‡&VD–B’’&WGW&ã°¢6öç7B×WFVD'’Ò'&’æ—4'&’†6öçFVçBæ×WFVD'’’ò6öçFVçBæ×WFVD'’æf–ÇFW"‚†–B“¢–B—27G&–ærÓâG—Vöb–BÓÓÒw7G&–ærr’¢µÓ°¢6öç7B&V6—–VçD–G2Ò†7F—f—G’æ76–væVT–G2æÆVæwF‚âò7F—f—G’æ76–væVT–G2¢¶7F—f—G’æ7&VFVD'•Òæf–ÇFW"„&ööÆVâ’¢æf–ÇFW"‚†–B’Óâ×WFVD'’æ–æ6ÇVFW2†–B’“°¢–b‡&V6—–VçD–G2æÆVæwF‚ÓÓÒ’&WGW&ã°¢7F—f—F–W2ç6WB†G¶–GÒòG¶6ö×ç”–GÒòG¶ÖW76vTFö7VÖVçBæ–GÖÂ°¢–BÂ6ö×ç”–BÂF‡&VD–BÂÖW76vT–C¢ÖW76vTFö7VÖVçBæ–BÂGVTFFRÂ7FvRÂ&V6—–VçD–G2À¢7V&¦V7C¢7G&–ær†6öçFVçBç7V&¦V7BÇÂ6öçFVçBæ6öçFVçBÇÂtF—f–FFRF6öçfW'6r’ç6Æ–6RƒÂc’À¢Ò“°¢Ò“° ¢6öç7B7FæFÆöæT7F—f—G•6æ6†÷BÒv—B6ö×ç’ç&Vbæ6öÆÆV7F–öâ‚v7F—f—F–W2r’çv†W&R‚vGVTFFRrÂsârÂrr’çv†W&R‚vGVTFFRrÂsÃÒrÂFöÖ÷'&÷r’ævWB‚“°¢7FæFÆöæT7F—f—G•6æ6†÷BæFö72æf÷$V6‚‚†7F—f—G”Fö7VÖVçB’Óâ°¢6öç7B6öçFVçBÒ7F—f—G”Fö7VÖVçBæFF‚“°¢6öç7B7F—f—G’ÒÖW76vT7F—f—G”FF†6öçFVçB“°¢6öç7BGVTFFRÒ7F—f—G“òæGVTFFRÇÂrs°¢6öç7B7FvRÒFVFÆ–æU7FvR†GVTFFR“°¢–b‚7F—f—G’ÇÂ7F—f—G’ç7FGW2ÓÓÒw&W6öÇfVBrÇÂ7FvR’&WGW&ã°¢6öç7B&V6—–VçD–G2Ò7F—f—G’æ76–væVT–G2æÆVæwF‚âò7F—f—G’æ76–væVT–G2¢¶7F—f—G’æ7&VFVD'•Òæf–ÇFW"„&ööÆVâ“°¢–b‡&V6—–VçD–G2æÆVæwF‚ÓÓÒ’&WGW&ã°¢7F—f—F–W2ç6WB†G¶–GÒòG¶6ö×ç”–GÒ÷7FæFÆöæRòG¶7F—f—G”Fö7VÖVçBæ–GÖÂ°¢–BÂ6ö×ç”–BÂF‡&VD–C¢rrÂÖW76vT–C¢7F—f—G”Fö7VÖVçBæ–BÂGVTFFRÂ7FvRÂ&V6—–VçD–G2À¢7V&¦V7C¢7G&–ær†6öçFVçBçF—FÆRÇÂtF—f–FFRgVÇ6r’ç6Æ–6RƒÂc’À¢Ò“°¢Ò“°¢Ð ¢6öç7B6ö×ç•W6W'2ÒæWrÖÇ7G&–ærÂÖÇ7G&–ærÂ7G&–æuµÓãâ‚“°¢f÷"†6öç7B6öçfW'6F–öâöb6öçfW'6F–öç2çfÇVW2‚’’°¢6öç7B6ö×ç”¶W’ÒG¶6öçfW'6F–öâæ–GÒòG¶6öçfW'6F–öâæ6ö×ç”–GÖ°¢–b‚6ö×ç•W6W'2æ†2†6ö×ç”¶W’’’°¢6öç7BW6W'2Òv—BFF&6Ræ6öÆÆV7F–öâ†'F–f7G2òG¶6öçfW'6F–öâæ–GÒ÷V&Æ–2öFFö6ö×æ–W2òG¶6öçfW'6F–öâæ6ö×ç”–GÒ÷W6W'6’ævWB‚“°¢6ö×ç•W6W'2ç6WB†6ö×ç”¶W’ÂæWrÖ‡W6W'2æFö72æÖ‚‡W6W"’Óâ°¢W6W"æ–BÀ¢'&’æ—4'&’‡W6W"æFF‚’çW6…Fö¶Vç2¢òW6W"æFF‚’çW6…Fö¶Vç2æf–ÇFW"‚‡Fö¶Vã¢Væ¶æ÷vâ“¢Fö¶Vâ—27G&–ærÓâG—VöbFö¶VâÓÓÒw7G&–ærrbbFö¶VâæÆVæwF‚â¢¢µÒÀ¢Ò’’“°¢Ð¢6öç7B&V6V—D–BÒFVFÆ–æRÒG¶6öçfW'6F–öâçF‡&VD–GÒÒG¶6öçfW'6F–öâæGVTFFWÒÒG¶6öçfW'6F–öâç7FvWÒÒG¶æ÷F–f–6F–öäFFWÖ°¢6öç7B&V6V—E&VbÒFF&6RæFö2†'F–f7G2òG¶6öçfW'6F–öâæ–GÒ÷V&Æ–2öFFö6ö×æ–W2òG¶6öçfW'6F–öâæ6ö×ç”–GÒöæ÷F–f–6F–öå&V6V—G2òG·&V6V—D–GÖ“°¢6öç7B7V—&VBÒv—BFF&6Rç'VåG&ç67F–öâ†7–æ2‡G&ç67F–öâ’Óâ°¢–b‚†v—BG&ç67F–öâævWB‡&V6V—E&Vb’’æW†—7G2’&WGW&âfÇ6S°¢G&ç67F–öâæ7&VFR‡&V6V—E&VbÂ°¢G—S¢v6öçfW'6F–öåöFVFÆ–æRrÂF‡&VD–C¢6öçfW'6F–öâçF‡&VD–BÂGVTFFS¢6öçfW'6F–öâæGVTFFRÀ¢7FvS¢6öçfW'6F–öâç7FvRÂæ÷F–f–6F–öäFFRÂ7FGW3¢w&ö6W76–ærrÂ7&VFVDC¢FFRææ÷r‚’À¢Ò“°¢&WGW&âG'VS°¢Ò“°¢–b‚7V—&VB’6öçF–çVS° ¢G'’°¢6öç7BW6W'2Ò6ö×ç•W6W'2ævWB†6ö×ç”¶W’’°¢6öç7BFö¶Vç2Ò6öçfW'6F–öâç'F–6—çG2æfÆDÖ‚‡'F–6—çD–B’ÓâW6W'2ævWB‡'F–6—çD–B’ÇÂµÒ“°¢Fö¶Vç2çW6‚‚ââæv—BvWE7W÷'Dæ÷F–f–6F–öåFö¶Vç2†FF&6RÂ6öçfW'6F–öâæ–BÂ6öçfW'6F–öâç'F–6—çG2Ârr’“°¢6öç7BVæ—VUFö¶Vç2Ò²ââææWr6WB‡Fö¶Vç2•Ó°¢–b‡Væ—VUFö¶Vç2æÆVæwF‚ÓÓÒ’°¢v—B&V6V—E&Vbç6WB‡·7FGW3¢væõ÷&Vv—7FW&VEöFWf–6W2rÂ6ö×ÆWFVDC¢FFRææ÷r‚—ÒÂ¶ÖW&vS¢G'VWÒ“°¢6öçF–çVS°¢Ð¢6öç7B6÷’ÒFVFÆ–æTæ÷F–f–6F–öä6÷’†6öçfW'6F–öâç7FvR“°¢6öç7BF–6¶WBÒ6öçfW'6F–öâçF–6¶WDçVÖ&W"âò2Gµ7G&–ær†6öçfW'6F–öâçF–6¶WDçVÖ&W"’çE7F'BƒbÂsr—Ò+r¢rs°¢6öç7B&öG’ÒG¶6÷’ç&Vf—‡Ó¢G·F–6¶WGÒG¶6öçfW'6F–öâç7V&¦V7GÖç6Æ–6RƒÂ##“°¢ÆWB7V66W746÷VçBÒ°¢ÆWBf–ÇW&T6÷VçBÒ°¢f÷"†ÆWB–æFW‚Ò²–æFW‚ÂVæ—VUFö¶Vç2æÆVæwFƒ²–æFW‚³ÒS’°¢6öç7B&W7öç6RÒv—BvWDÖW76v–ær‚’ç6VæDV6„f÷$×VÇF–67B‡°¢Fö¶Vç3¢Væ—VUFö¶Vç2ç6Æ–6R†–æFW‚Â–æFW‚²S’À¢æ÷F–f–6F–öã¢·F—FÆS¢6÷’çF—FÆRÂ&öG—ÒÀ¢FF¢°¢G—S¢vÖW76vUöFVFÆ–æRrÂ6ö×ç”–C¢6öçfW'6F–öâæ6ö×ç”–BÂF‡&VD–C¢6öçfW'6F–öâçF‡&VD–BÀ¢GVTFFS¢6öçfW'6F–öâæGVTFFRÂ7FvS¢6öçfW'6F–öâç7FvRÂWfVçD–C¢&V6V—D–BÀ¢ÒÀ¢vV'W6ƒ¢°¢†VFW'3¢µW&vVæ7“¢v†–v‚rÂEDÃ¢s3cwÒÀ¢æ÷F–f–6F–öã¢¶–6öã¢r÷vö–6öâÓ“"çærrÂFs¢&V6V—D–BÂ&Væ÷F–g“¢fÇ6WÒÀ¢f6Ô÷F–öç3¢¶Æ–æ³¢‡GG3¢òö6ö×Væ–6Ö–æfòçvV"æóöÖW76vT6ö×ç“ÒG¶Væ6öFUU$”6ö×öæVçB†6öçfW'6F–öâæ6ö×ç”–B—ÒfÖW76vUF‡&VCÒG¶Væ6öFUU$”6ö×öæVçB†6öçfW'6F–öâçF‡&VD–B—ÖÒÀ¢ÒÀ¢æG&ö–C¢·&–÷&—G“¢v†–v‚rÂGFÃ¢c¢c¢Âæ÷F–f–6F–öã¢·Fs¢&V6V—D–BÂ6÷VæC¢vFVfVÇBw×ÒÀ¢Ò“°¢7V66W746÷VçB³Ò&W7öç6Rç7V66W746÷VçC°¢f–ÇW&T6÷VçB³Ò&W7öç6Ræf–ÇW&T6÷VçC°¢Ð¢v—B&V6V—E&Vbç6WB‡·7FGW3¢vFVÆ—fW&VBrÂ7V66W746÷VçBÂf–ÇW&T6÷VçBÂ6ö×ÆWFVDC¢FFRææ÷r‚—ÒÂ¶ÖW&vS¢G'VWÒ“°¢Ò6F6‚†W'&÷"’°¢6öç6öÆRæW'&÷"‚t6öçfW'6F–öâFVFÆ–æRæ÷F–f–6F–öâf–ÆVBrÂ°¢6ö×ç”–C¢6öçfW'6F–öâæ6ö×ç”–BÂF‡&VD–C¢6öçfW'6F–öâçF‡&VD–BÂ7FvS¢6öçfW'6F–öâç7FvRÂW'&÷"À¢Ò“°¢v—B&V6V—E&VbæFVÆWFR‚“°¢F‡&÷rW'&÷#°¢Ð¢Ð ¢f÷"†6öç7B7F—f—G’öb7F—f—F–W2çfÇVW2‚’’°¢6öç7B&V6V—D–BÒ7F—f—G’ÖFVFÆ–æRÒG¶7F—f—G’æÖW76vT–GÒÒG¶7F—f—G’æGVTFFWÒÒG¶7F—f—G’ç7FvWÒÒG¶æ÷F–f–6F–öäFFWÖ°¢6öç7B&V6V—E&VbÒFF&6RæFö2†'F–f7G2òG¶7F—f—G’æ–GÒ÷V&Æ–2öFFö6ö×æ–W2òG¶7F—f—G’æ6ö×ç”–GÒöæ÷F–f–6F–öå&V6V—G2òG·&V6V—D–GÖ“°¢6öç7B7V—&VBÒv—BFF&6Rç'VåG&ç67F–öâ†7–æ2‡G&ç67F–öâ’Óâ°¢–b‚†v—BG&ç67F–öâævWB‡&V6V—E&Vb’’æW†—7G2’&WGW&âfÇ6S°¢G&ç67F–öâæ7&VFR‡&V6V—E&VbÂ°¢G—S¢v7F—f—G•öFVFÆ–æRrÂF‡&VD–C¢7F—f—G’çF‡&VD–BÂÖW76vT–C¢7F—f—G’æÖW76vT–BÀ¢GVTFFS¢7F—f—G’æGVTFFRÂ7FvS¢7F—f—G’ç7FvRÂæ÷F–f–6F–öäFFRÂ7FGW3¢w&ö6W76–ærrÂ7&VFVDC¢FFRææ÷r‚’À¢Ò“°¢&WGW&âG'VS°¢Ò“°¢–b‚7V—&VB’6öçF–çVS° ¢G'’°¢6öç7B6÷’Ò7F—f—G”FVFÆ–æTæ÷F–f–6F–öä6÷’†7F—f—G’ç7FvR“°¢6öç7BFVÆ—fW'’Òv—B6VæD7F—f—G•W6‚‡°¢FF&6RÂ–C¢7F—f—G’æ–BÂ6ö×ç”–C¢7F—f—G’æ6ö×ç”–BÀ¢&V6—–VçD–G3¢7F—f—G’ç&V6—–VçD–G2Â7F÷$–C¢rrÂF—FÆS¢6÷’çF—FÆRÀ¢&öG“¢G¶6÷’ç&Vf—‡Ó¢G¶7F—f—G’ç7V&¦V7GÖÂG—S¢v7F—f—G•öFVFÆ–æRrÀ¢F‡&VD–C¢7F—f—G’çF‡&VD–BÂÖW76vT–C¢7F—f—G’æÖW76vT–BÂWfVçD–C¢&V6V—D–BÀ¢Ò“°¢v—B&V6V—E&Vbç6WB‡°¢7FGW3¢FVÆ—fW'’ç7V66W746÷VçBâòvFVÆ—fW&VBr¢væõ÷&Vv—7FW&VEöFWf–6W2rÀ¢ââæFVÆ—fW'’Â6ö×ÆWFVDC¢FFRææ÷r‚’À¢ÒÂ¶ÖW&vS¢G'VWÒ“°¢Ò6F6‚†W'&÷"’°¢6öç6öÆRæW'&÷"‚t7F—f—G’FVFÆ–æRæ÷F–f–6F–öâf–ÆVBrÂ°¢6ö×ç”–C¢7F—f—G’æ6ö×ç”–BÂÖW76vT–C¢7F—f—G’æÖW76vT–BÂ7FvS¢7F—f—G’ç7FvRÂW'&÷"À¢Ò“°¢v—B&V6V—E&VbæFVÆWFR‚“°¢F‡&÷rW'&÷#°¢Ð¢Ð§Ò“°    ¦W‡÷'B6öç7B6fU66†VGVÆT6÷fW&vRÒöä6ÆÂ‡·&Vv–öã¢wW2Ö6VçG&ÃrÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓâ°¢–b‚&WVW7BæWF‚’F‡&÷ræWr‡GG4W'&÷"‚wVæWF†VçF–6FVBrÂtVçG&Ræ÷fÖVçFRæò6ö×Væ–6âr“°¢&WGW&â6fT6÷fW&vU6WGF–æw2†vWDf—&W7F÷&R‚’Â7G&–ær‡&WVW7BæFFòæ6ö×ç”–BÇÂrr’Â°¢V–C¢&WVW7BæWF‚çV–BÂ6ö×ç”–C¢7G&–ær‡&WVW7BæWF‚çFö¶Vâæ6ö×ç”–BÇÂrr’Â—4FWfVÆ÷W#¢&WVW7BæWF‚çFö¶Vâæ—4FWfVÆ÷W"ÓÓÒG'VRÀ¢ÒÂ&WVW7BæFFòç&WV—&VÖVçG2ÂçVÖ&W"‡&WVW7BæFFòæW‡V7FVEfW'6–öâ’“°§Ò“° ¦W‡÷'B6öç7B&÷fUW&6†6UV÷FRÒöä6ÆÂ‡·&Vv–öã¢wW2Ö6VçG&ÃrÂÖ„–ç7Fæ6W3¢7ÒÂ7–æ2&WVW7BÓâ°¢–b‚&WVW7BæWF‚’F‡&÷ræWr‡GG4W'&÷"‚wVæWF†VçF–6FVBrÂtVçG&Ræ÷fÖVçFRæò6ö×Væ–6âr“°¢6öç7B6ö×ç”–BÒ7G&–ær‡&WVW7BæFFòæ6ö×ç”–BÇÂrr“°¢–b‡&WVW7BæWF‚çFö¶Vâæ6ö×ç”–BÓÒ6ö×ç”–BÇÂ&WVW7BæWF‚çFö¶Vâæ—4FWfVÆ÷W"ÓÓÒG'VR’°¢F‡&÷ræWr‡GG4W'&÷"‚wW&Ö—76–öâÖFVæ–VBrÂu6VÒ6W76ò:V×&W66VÆV6–öæFâr“°¢Ð¢&WGW&â&÷fUW&6†6UV÷FTw&÷W†vWDf—&W7F÷&R‚’Â6ö×ç”–BÂ7G&–ær‡&WVW7BæFFòæ'VæFÆT–BÇÂrr’Â&WVW7BæWF‚çV–B“°§Ò“° ¢ò¢¢–æFWVæFVçBöbFVFÆ–æW3¢&VÖ–æB&÷WBVç&VBÖW76vW2æB#BÖ†÷W"–æ7F—f—G’â¢ð¦W‡÷'B6öç7Bæ÷F–g•VæF–æu&VÖ–æFW'2Òöå66†VGVÆR‡°¢66†VGVÆS¢s’¢¢¢rÀ¢F–ÖU¦öæS¢tÖW&–6õ6õõVÆòrÀ¢&WG'”6÷VçC¢À¢Ö„–ç7Fæ6W3¢À§ÒÂ7–æ2‚’Óâ°¢6öç7BFF&6RÒvWDf—&W7F÷&R‚“°¢6öç7Bæ÷rÒFFRææ÷r‚“°¢6öç7Bæ÷F–f–6F–öäFFRÒ6õVÆô6—f–ÄFFR‚“°¢6öç7B–BÒv6ö×Væ–6×6ÇfF÷"s°¢6öç7B6ö×æ–W2Òv—BFF&6Ræ6öÆÆV7F–öâ†'F–f7G2òG¶–GÒ÷V&Æ–2öFFö6ö×æ–W6’ævWB‚“°¢ÆWBf–ÆVBÒfÇ6S°¢ÆWBFVÆ—fW&VBÒ°¢f÷"†6öç7B6ö×ç’öb6ö×æ–W2æFö72’°¢6öç7B6ö×ç”–BÒ6ö×ç’æ–C°¢–b‚õå¶×¤Õ£Ó•òÕÒ²BòçFW7B†6ö×ç”–B’’6öçF–çVS°¢6öç7B¶ÖW76vW2Â7F—f—F–W5ÒÒv—B&öÖ—6RæÆÂ…°¢6ö×ç’ç&Vbæ6öÆÆV7F–öâ‚vÖW76vW2r’ç6VÆV7B€¢wF‡&VD–BrÂw6VæFW$–BrÂw'F–6—çG2rÂw&VD'’rÂv×WFVD'’rÀ¢wF–ÖW7F×rÂw7V&¦V7BrÂv6ö×ÆWFVDBrÂv7F—f—G’rÀ¢’ævWB‚’À¢6ö×ç’ç&Vbæ6öÆÆV7F–öâ‚v7F—f—F–W2r’ç6VÆV7B€¢wF—FÆRrÂw7FGW2rÂv76–væVT–G2rÂv7&VFVD'’rÂv7&VFVDBrÂwWFFVDBrÀ¢’ævWB‚’À¢Ò“°¢6öç7B&VÖ–æFW'2Ò'V–ÆEVæF–æu&VÖ–æFW'2€¢ÖW76vW2æFö72æÖ†—FVÒÓâ‡²ââæ—FVÒæFF‚’Â–C¢—FVÒæ–GÒ’’À¢7F—f—F–W2æFö72æÖ†—FVÒÓâ‡²ââæ—FVÒæFF‚’Â–C¢—FVÒæ–GÒ’’À¢æ÷rÀ¢“°¢f÷"†6öç7B&VÖ–æFW"öb&VÖ–æFW'2’°¢6öç7B&V6V—D–BÒVæF–ærÒG·&VÖ–æFW"æ¶W—ÒÒG¶æ÷F–f–6F–öäFFWÖ°¢6öç7B&V6V—E&VbÒ6ö×ç’ç&Vbæ6öÆÆV7F–öâ‚væ÷F–f–6F–öå&V6V—G2r’æFö2‡&V6V—D–B“°¢6öç7B7V—&VBÒv—BFF&6Rç'VåG&ç67F–öâ†7–æ2G&ç67F–öâÓâ°¢6öç7BW†—7F–ærÒv—BG&ç67F–öâævWB‡&V6V—E&Vb“°¢òòÆÆ÷r&V6÷fW'’gFW"â–çFW''WFVBW†V7WF–öâÂ&WF–æ–ær6ÖRÖF’FVGWÆ–6F–öâà¢–b†W†—7F–æræW†—7G2bb†W†—7F–æræFF‚“òç7FGW2ÓÓÒw&ö6W76–ærrb`¢æ÷rÒçVÖ&W"†W†—7F–æræFF‚“òæ7&VFVDBÇÂæ÷r’â¢c¢’’&WGW&âfÇ6S°¢G&ç67F–öâç6WB‡&V6V—E&VbÂ°¢G—S¢wVæF–æu÷&VÖ–æFW"rÂ¶–æC¢&VÖ–æFW"æ¶–æBÂæ÷F–f–6F–öäFFRÀ¢F‡&VD–C¢&VÖ–æFW"çF‡&VD–BÂÖW76vT–C¢&VÖ–æFW"æÖW76vT–BÀ¢7FGW3¢w&ö6W76–ærrÂ7&VFVDC¢æ÷rÀ¢Ò“°¢&WGW&âG'VS°¢Ò“°¢–b‚7V—&VB’6öçF–çVS°¢G'’°¢6öç7BFVÆ—fW'’Òv—B6VæD7F—f—G•W6‚‡°¢FF&6RÂ–BÂ6ö×ç”–BÂ&V6—–VçD–G3¢&VÖ–æFW"ç&V6—–VçD–G2À¢7F÷$–C¢rrÂF—FÆS¢&VÖ–æFW"çF—FÆRÂ&öG“¢&VÖ–æFW"æ&öG’À¢G—S¢&VÖ–æFW"æ¶–æBÓÓÒwVç&VBròvÖW76vRr¢v7F—f—G•÷WFFRrÀ¢F‡&VD–C¢&VÖ–æFW"çF‡&VD–BÂÖW76vT–C¢&VÖ–æFW"æÖW76vT–BÂWfVçD–C¢&V6V—D–BÀ¢Ò“°¢–b†FVÆ—fW'’ç7V66W746÷VçBÓÓÒbbFVÆ—fW'’æf–ÇW&T6÷VçBâ’°¢F‡&÷ræWrW'&÷"‚tæòVæF–ær&VÖ–æFW"6÷VÆB&RFVÆ—fW&VBFò&Vv—7FW&VBFWf–6W2âr“°¢Ð¢v—B&V6V—E&Vbç6WB‡°¢7FGW3¢FVÆ—fW'’ç7V66W746÷VçBâòvFVÆ—fW&VBr¢væõ÷&Vv—7FW&VEöFWf–6W2rÀ¢ââæFVÆ—fW'’Â6ö×ÆWFVDC¢FFRææ÷r‚’À¢ÒÂ¶ÖW&vS¢G'VWÒ“°¢FVÆ—fW&VB³ÒFVÆ—fW'’ç7V66W746÷VçC°¢Ò6F6‚†W'&÷"’°¢f–ÆVBÒG'VS°¢v—B&V6V—E&VbæFVÆWFR‚“°¢6öç6öÆRæW'&÷"‚uVæF–ær&VÖ–æFW"f–ÆVBrÂ¶6ö×ç”–BÂ¶–æC¢&VÖ–æFW"æ¶–æBÂW'&÷'Ò“°¢Ð¢Ð¢Ð¢6öç6öÆRæ–æfò‚uVæF–ær&VÖ–æFW'26ö×ÆWFVBrÂ¶æ÷F–f–6F–öäFFRÂFVÆ—fW&VBÂf–ÆVGÒ“°¢–b†f–ÆVB’F‡&÷ræWrW'&÷"‚u6öÖRVæF–ær&VÖ–æFW'2f–ÆVC²&WG'’&WVW7FVBâr“°§Ò“°  ¦W‡÷'B6öç7BW&6†6Uv÷&·76RÒöä6ÆÂ‡·&Vv–öã¢wW2Ö6VçG&ÃrÂ–çfö¶W#¢wV&Æ–2rÂÖ„–ç7Fæ6W3£2ÂF–ÖV÷WE6V6öæG3£3ÒÂ7–æ2&WVW7BÓâ°¢G'’°¢6öç7B·W&6†6Uv÷&·76T7F–öçÒÒv—B–×÷'B‚râ÷W&6†6Uv÷&·76Ræ§2r“°¢&WGW&âv—BW&6†6Uv÷&·76T7F–öâ†vWDf—&W7F÷&R‚’Â&WVW7BæFFÇÂ·ÒÂ&WVW7BæWF‚“°¢Ò6F6‚†W'&÷"’°¢–b†W'&÷"–ç7Fæ6Vöb‡GG4W'&÷"’F‡&÷rW'&÷#°¢F‡&÷ræWr‡GG4W'&÷"‚v–çfÆ–BÖ&wVÖVçBrÂW'&÷"–ç7Fæ6VöbW'&÷"òW'&÷"æÖW76vR¢t6öæf—&÷2FF÷2F6÷F:|:6òâr“°¢Ð§Ò“° ¦W‡÷'B6öç7B7W'fW•v÷&·76RÒöä6ÆÂ‡·&Vv–öã¢wW2Ö6VçG&ÃrÆ–çfö¶W#¢wV&Æ–2rÆÖ„–ç7Fæ6W3£2ÇF–ÖV÷WE6V6öæG3£cÒÆ7–æ2&WVW7CÓç°¢6öç7B·7W'fW•v÷&·76T7F–öçÓÖv—B–×÷'B‚râ÷7W'fW•v÷&·76Ræ§2r“°¢&WGW&â7W'fW•v÷&·76T7F–öâ†vWDf—&W7F÷&R‚’Ç&WVW7BæFFÇÂ·ÒÇ&WVW7BæWF‚Ç&WVW7Bç&u&WVW7Bæ—ÇÂwVæ¶æ÷vâr“°§Ò“°
+/**
+ * Import function triggers from their respective submodules:
+ *
+ * import {onCall} from "firebase-functions/v2/https";
+ * import {onDocumentWritten} from "firebase-functions/v2/firestore";
+ *
+ * See a full list of supported triggers at https://firebase.google.com/docs/functions
+ */
+
+import {setGlobalOptions} from "firebase-functions";
+import {onDocumentCreated, onDocumentDeleted, onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
+import {defineSecret} from "firebase-functions/params";
+import {initializeApp} from "firebase-admin/app";
+import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
+import {getMessaging} from "firebase-admin/messaging";
+import {getStorage} from "firebase-admin/storage";
+import {privateCredentials, credentialKey, hashPin} from "./privateCredentials";
+import {publicDirectoryProfile} from './userDirectory';
+import {registerEmployee} from './employeeRegistration';
+import {removeEmployeeAccess} from './employeeRemoval';
+import {SUPPORT_UID, verifyPlatformSupport} from './platformSupport';
+import {registerPlatformPushToken, getSupportNotificationTokens} from './platformSupportPush';
+import {listAccessibleDocuments} from './documents';
+import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getCandidateProfile, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, submitApplication, uploadCandidateResume, downloadCandidateResume, refreshCandidateFit} from './careers';
+import {randomUUID} from 'node:crypto';
+import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivateReports, updatePrivateReport, deletePrivateReport, deleteConfirmedTestReport} from './whistleblowing';
+import {getPlatformCompanyHealth} from './platformCompanyHealth';
+import {submitSalesLead} from './salesLeads';
+import {saveCoverageSettings} from './scheduleCoverage';
+import {buildPendingReminders} from './pendingReminders.mjs';
+import {approvePurchaseQuoteGroup} from './purchaseQuoteApproval';
+
+// Start writing functions
+// https://firebase.google.com/docs/functions/typescript
+
+// For cost control, you can set the maximum number of containers that can be
+// running at the same time. This helps mitigate the impact of unexpected
+// traffic spikes by instead downgrading performance. This limit is a
+// per-function limit. You can override the limit for each function using the
+// `maxInstances` option in the function's options, e.g.
+// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
+// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
+// functions should each use functions.runWith({ maxInstances: 10 }) instead.
+// In the v1 API, each function can only serve one request per container, so
+// this will be the maximum concurrent request count.
+setGlobalOptions({ maxInstances: 10 });
+
+initializeApp();
+
+const storagePathFromFileRecord = (file: unknown) => {
+  if (!file || typeof file !== 'object') return '';
+  const record = file as Record<string, unknown>;
+  const explicitPath = String(record.storagePath || '');
+  if (explicitPath.startsWith('companies/')) return explicitPath;
+  const downloadUrl = String(record.data || record.url || '');
+  const firebasePath = downloadUrl.match(/\/o\/([^?]+)/);
+  if (firebasePath?.[1]) {
+    try {
+      const decoded = decodeURIComponent(firebasePath[1]);
+      return decoded.startsWith('companies/') ? decoded : '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
+};
+
+const careerIdentity = (auth: {uid: string; token: Record<string, unknown>} | undefined) => auth ? {
+  uid: auth.uid,
+  email: String(auth.token.email || ''),
+  email_verified: auth.token.email_verified === true,
+  token: auth.token,
+} : undefined;
+
+export const listCareerVacancies = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  listPublicVacancies(request.data?.companyId));
+
+export const saveCareerProfile = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  saveCandidateProfile(careerIdentity(request.auth), request.data || {}));
+
+export const getCareerProfile = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  getCandidateProfile(careerIdentity(request.auth)));
+
+export const getCareerApplication = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  getCandidateApplication(careerIdentity(request.auth), request.data || {}));
+
+export const withdrawCareerApplication = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  withdrawCandidateApplication(careerIdentity(request.auth), request.data || {}));
+
+export const deleteCareerCandidateAccount = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  deleteCandidateAccount(careerIdentity(request.auth)));
+
+export const extendCareerApplicationRetention = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  extendApplicationRetention(careerIdentity(request.auth), request.data || {}));
+
+export const purgeExpiredCareerApplications = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  purgeExpiredApplications(careerIdentity(request.auth), request.data || {}));
+
+export const initializeCareerRetention = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  initializeApplicationRetention(careerIdentity(request.auth), request.data || {}));
+
+export const submitCareerApplication = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  submitApplication(careerIdentity(request.auth), request.data || {}));
+
+export const uploadCareerResume = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  uploadCandidateResume(careerIdentity(request.auth), request.data || {}));
+
+export const downloadCareerResume = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  downloadCandidateResume(careerIdentity(request.auth), request.data || {}));
+
+export const refreshCareerFit = onCall({invoker: 'public', maxInstances: 2}, async request =>
+  refreshCandidateFit(careerIdentity(request.auth), request.data || {}));
+
+export const listCompanyDocuments = onCall({invoker: 'public', maxInstances: 5}, async request =>
+  listAccessibleDocuments(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data?.companyId));
+
+export const getWhistleblowingCompany = onCall({invoker: 'public', maxInstances: 3}, async request =>
+  getPublicCompany(request.data?.companyId));
+
+export const submitWhistleblowingReport = onCall({invoker: 'public', maxInstances: 3}, async request =>
+  submitPublicReport(request.data || {}, String(request.rawRequest.ip || '')));
+
+export const getWhistleblowingStatus = onCall({invoker: 'public', maxInstances: 3}, async request =>
+  getPublicReportStatus(request.data || {}));
+
+export const listWhistleblowingReports = onCall({invoker: 'public', maxInstances: 3}, async request =>
+  listPrivateReports(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data?.companyId));
+
+export const updateWhistleblowingReport = onCall({invoker: 'public', maxInstances: 3}, async request =>
+  updatePrivateReport(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data || {}));
+
+export const deleteWhistleblowingReport = onCall({invoker: 'public', maxInstances: 3}, async request =>
+  deletePrivateReport(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data || {}));
+
+export const deleteConfirmedWhistleblowingTest = onCall({invoker: 'public', maxInstances: 1}, async request =>
+  deleteConfirmedTestReport(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data || {}));
+
+export const platformCompanyHealth = onCall({invoker: 'public', maxInstances: 1}, async request =>
+  getPlatformCompanyHealth(
+    getFirestore(),
+    request.auth as {uid: string; token: Record<string, unknown>} | undefined,
+    request.data?.forceRefresh === true,
+  ));
+
+export const submitPlatformSalesContact = onCall({invoker: 'public', maxInstances: 2}, async request => {
+  const database = getFirestore();
+  const result = await submitSalesLead(database, request.data || {}, String(request.rawRequest.ip || ''));
+  if (result.leadId) {
+    try {
+      const tokens = await getSupportNotificationTokens(database, 'comunica-salvador', [SUPPORT_UID], 'public-sales-contact');
+      if (tokens.length) await getMessaging().sendEachForMulticast({
+        tokens,
+        notification: {title: 'Novo contato comercial', body: `${String(request.data?.companyName || 'Uma empresa').slice(0, 80)} quer conhecer o Comunica.`},
+        data: {type: 'sales_lead', leadId: result.leadId},
+        android: {priority: 'high'},
+      });
+    } catch (error) {
+      console.error('Contato comercial salvo, mas a notificaÃ§Ã£o ao suporte falhou.', error);
+    }
+  }
+  return result;
+});
+
+export const createConversation = onCall({invoker: 'public', maxInstances: 10}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente para abrir uma conversa.');
+  const appId = String(request.data?.appId || '');
+  const isDeveloper = request.auth.token.isDeveloper === true;
+  const companyId = String(request.auth.token.companyId || (isDeveloper ? request.data?.companyId : '') || '');
+  const message = request.data?.message && typeof request.data.message === 'object' ? request.data.message as Record<string, unknown> : null;
+  const participants = Array.isArray(message?.participants) ? [...new Set(message.participants.map(String))] : [];
+  const messageId = String(message?.id || '');
+  const threadId = String(message?.threadId || '');
+  const subject = String(message?.subject || '').trim();
+  const content = String(message?.content || '').trim();
+  const isServiceRequest = message?.serviceRequest === true;
+  const serviceCategoryId = String(message?.serviceCategoryId || '');
+  const servicePriority = String(message?.servicePriority || 'normal');
+  const serviceAssigneeId = participants.includes(String(message?.serviceAssigneeId || '')) ? String(message?.serviceAssigneeId || '') : '';
+  const allowedServiceCategories = new Set(['people', 'technology', 'maintenance', 'uniforms', 'schedule', 'documents', 'purchases', 'improvement']);
+  const allowedServicePriorities = new Set(['normal', 'important', 'urgent']);
+  if (appId !== 'comunica-salvador' || !/^[a-zA-Z0-9_-]+$/.test(companyId) ||
+      !/^msg-[a-zA-Z0-9_-]+$/.test(messageId) || !/^thread-[a-zA-Z0-9_-]+$/.test(threadId) ||
+      subject.length < 1 || subject.length > 180 || participants.length < 2 || participants.length > 25 ||
+      !participants.includes(request.auth.uid) || String(message?.senderId || '') !== request.auth.uid ||
+      (!content && !message?.attachment) || content.length > 12000 ||
+      (isServiceRequest && (!allowedServiceCategories.has(serviceCategoryId) || !allowedServicePriorities.has(servicePriority) || message?.serviceStatus !== (message?.serviceRequiresApproval === true ? 'approval' : 'open')))) {
+    throw new HttpsError('invalid-argument', 'Confira o assunto, os participantes e a mensagem.');
+  }
+  const validatedMessage: Record<string, unknown> = {
+    ...(message as Record<string, unknown>),
+    ...(isServiceRequest ? {
+      serviceRequest: true,
+      serviceCategoryId,
+      serviceCategory: String(message?.serviceCategory || '').slice(0, 80),
+      servicePriority,
+      servicePriorityLabel: String(message?.servicePriorityLabel || '').slice(0, 30),
+      serviceRequiresApproval: message?.serviceRequiresApproval === true,
+      serviceDecision: '',
+      serviceDecisionBy: '',
+      serviceDecisionAt: null,
+      serviceStatus: message?.serviceRequiresApproval === true ? 'approval' : 'open',
+      serviceRequestedAt: Number(message?.serviceRequestedAt || Date.now()),
+      serviceSlaDays: Math.min(30, Math.max(1, Number(message?.serviceSlaDays || 3))),
+      serviceExtraDetail: String(message?.serviceExtraDetail || '').slice(0, 1000),
+      serviceAssigneeId,
+      serviceAssigneeName: serviceAssigneeId ? String(message?.serviceAssigneeName || '').slice(0, 120) : '',
+      serviceStartedAt: null,
+      serviceWaitingSince: null,
+    } : {}),
+  };
+
+  const database = getFirestore();
+  const companyRef = database.doc(`artifacts/${appId}/public/data/companies/${companyId}`);
+  const [companySnapshot, existingMessages, serviceCatalogSnapshot] = await Promise.all([
+    companyRef.get(),
+    companyRef.collection('messages').select('threadId', 'ticketNumber').get(),
+    companyRef.collection('settings').doc('service-catalog').get(),
+  ]);
+  if (!companySnapshot.exists) throw new HttpsError('not-found', 'Empresa nÃ£o encontrada.');
+  if (isServiceRequest && serviceCatalogSnapshot.exists) {
+    const configuredItems = Array.isArray(serviceCatalogSnapshot.data()?.items) ? serviceCatalogSnapshot.data()!.items as Array<Record<string, unknown>> : [];
+    const configuredCategory = configuredItems.find(item => String(item?.id || '') === serviceCategoryId);
+    if (configuredCategory?.active === false) throw new HttpsError('failed-precondition', 'Este serviÃ§o estÃ¡ indisponÃ­vel no catÃ¡logo da empresa.');
+    if (configuredCategory) {
+      const requiresApproval = typeof configuredCategory.requiresApproval === 'boolean'
+        ? configuredCategory.requiresApproval
+        : message?.serviceRequiresApproval === true;
+      validatedMessage.serviceRequiresApproval = requiresApproval;
+      validatedMessage.serviceStatus = requiresApproval ? 'approval' : 'open';
+      validatedMessage.serviceSlaDays = Math.min(30, Math.max(1, Number(configuredCategory.slaDays || validatedMessage.serviceSlaDays || 3)));
+    }
+  }
+  const knownThreads = new Set<string>();
+  let highestTicket = 0;
+  existingMessages.docs.forEach(item => {
+    const data = item.data();
+    if (data.threadId) knownThreads.add(String(data.threadId));
+    highestTicket = Math.max(highestTicket, Number(data.ticketNumber || 0));
+  });
+  const baseline = Math.max(knownThreads.size, highestTicket);
+  const counterRef = companyRef.collection('settings').doc('ticket-counter');
+  const requestRef = companyRef.collection('conversationTickets').doc(threadId);
+  const messageRef = companyRef.collection('messages').doc(messageId);
+  const auditRef = companyRef.collection('auditLogs').doc();
+  const now = Date.now();
+  const ticketNumber = await database.runTransaction(async transaction => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists) {
+      const existingTicket = Number(requestSnapshot.data()?.ticketNumber || 0);
+      if (existingTicket > 0) return existingTicket;
+    }
+    const counterSnapshot = await transaction.get(counterRef);
+    const next = Math.max(Number(counterSnapshot.data()?.lastNumber || 0), baseline) + 1;
+    transaction.set(counterRef, {lastNumber: next, updatedAt: now}, {merge: true});
+    transaction.create(requestRef, {ticketNumber: next, messageId, createdAt: now, createdBy: request.auth!.uid});
+    transaction.create(messageRef, {...validatedMessage, ticketNumber: next, timestamp: Number(validatedMessage.timestamp || now)});
+    transaction.create(auditRef, {
+      actorId: request.auth!.uid,
+      actorName: String(validatedMessage.senderName || request.auth!.token.name || 'Colaborador'),
+      actorRole: String(request.auth!.token.role || 'Colaborador'),
+      action: 'conversation.created',
+      collection: 'messages',
+      documentId: messageId,
+      fields: ['ticketNumber', 'subject', 'participants', 'dueDate', ...(isServiceRequest ? ['serviceCategory', 'servicePriority', 'serviceStatus'] : [])],
+      ticketNumber: next,
+      timestamp: now,
+    });
+    return next;
+  });
+  return {created: true, ticketNumber};
+});
+
+const googleGenAiApiKey = defineSecret("GOOGLE_GENAI_API_KEY");
+
+type CompanyRecord = {id: string; name?: string; code?: string};
+type UserRecord = Record<string, unknown> & {id: string; name?: string; pin?: string; isAdmin?: boolean; isDeveloper?: boolean; role?: string};
+
+const getCompanyByCode = async (appId: string, rawCode: string) => {
+  const code = rawCode.trim().toUpperCase();
+  if (appId !== 'comunica-salvador' || !code) throw new HttpsError("invalid-argument", "Empresa invÃ¡lida.");
+  const snapshot = await getFirestore().collection(`artifacts/${appId}/public/data/companies`).where("code", "==", code).limit(1).get();
+  if (snapshot.empty) throw new HttpsError("not-found", "Empresa nÃ£o encontrada.");
+  const item = snapshot.docs[0];
+  if (item.data().codeBlocked === true) {
+    throw new HttpsError("failed-precondition", "Acesso nÃ£o autorizado. Por favor, contate o suporte da plataforma.");
+  }
+  return {id: item.id, ...item.data()} as CompanyRecord;
+};
+
+const safeUserProfile = (user: UserRecord, companyId: string) => {
+  const {pin: _pin, pushTokens: _pushTokens, ...profile} = user;
+  return {...profile, companyId};
+};
+
+const validatePrivatePin = async (appId: string, companyId: string, userId: string, providedPin: unknown) => {
+  const credentials = privateCredentials(getFirestore());
+  const scope = {appId, companyId, userId};
+  if (!await credentials.migrateLegacy(scope)) return false;
+  const result = await credentials.verify(scope, String(providedPin || ""));
+  if (result === 'locked') throw new HttpsError('resource-exhausted', 'Muitas tentativas. Aguarde 30 segundos e tente novamente.');
+  return result === 'ok';
+};
+
+// Staged integration: do not deploy separately from the remaining PIN flows.
+export const changeOwnPin = onCall({invoker: "public"}, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Entre novamente para alterar seu PIN.");
+  const appId = String(request.data?.appId || "");
+  const companyId = String(request.auth.token.companyId || "");
+  const userId = request.auth.uid;
+  const currentPin = String(request.data?.currentPin || "");
+  const newPin = String(request.data?.newPin || "");
+  if (appId !== "comunica-salvador" || !companyId || !/^\d{4,6}$/.test(currentPin) || !/^\d{4,6}$/.test(newPin)) {
+    throw new HttpsError("invalid-argument", "Confira os dados e o formato do PIN.");
+  }
+  const database = getFirestore();
+  const credentials = privateCredentials(database);
+  const scope = {appId, companyId, userId};
+  if (!await credentials.migrateLegacy(scope)) {
+    throw new HttpsError("permission-denied", "NÃ£o foi possÃ­vel alterar o PIN. Confira o PIN atual ou aguarde e tente novamente.");
+  }
+  const now = Date.now();
+  const companyPath = `artifacts/${appId}/public/data/companies/${companyId}`;
+  const changeResult = await credentials.change(scope, currentPin, newPin, {
+    profileRef: database.doc(`${companyPath}/users/${userId}`),
+    profileData: {mustChangePin: false, pinChangedAt: now, updatedAt: now},
+    auditRef: database.collection(`${companyPath}/auditLogs`).doc(),
+    auditData: {
+      actorId: userId,
+      actorName: String(request.auth.token.name || 'Colaborador'),
+      action: 'security.pin_changed',
+      collection: 'users',
+      documentId: userId,
+      fields: ['pinChangedAt'],
+      timestamp: now,
+    },
+  });
+  if (changeResult === 'locked') throw new HttpsError('resource-exhausted', 'Muitas tentativas. Aguarde 30 segundos e tente novamente.');
+  if (changeResult === 'conflict') throw new HttpsError('aborted', 'O PIN foi alterado em outra tentativa. Entre novamente.');
+  if (changeResult !== 'changed') throw new HttpsError('permission-denied', 'O PIN atual informado nÃ£o confere.');
+  return {changed: true};
+});
+
+export const createEmployee = onCall({invoker: 'public'}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente.');
+  const appId = String(request.data?.appId || '');
+  const companyId = String(request.auth.token.companyId || '');
+  const userId = String(request.data?.userId || '');
+  if (appId !== 'comunica-salvador' || !request.data?.profile || typeof request.data.profile !== 'object') {
+    throw new HttpsError('invalid-argument', 'Cadastro invalido.');
+  }
+  try {
+    return await registerEmployee(getFirestore(), appId, companyId, request.auth.uid, userId,
+      request.data.profile, String(request.data?.pin || ''));
+  } catch {
+    throw new HttpsError('failed-precondition', 'Cadastro nao confirmado. Confira os dados, a permissao ou se ja existe.');
+  }
+});
+
+type BulkEmployeeInput = {name?: unknown; department?: unknown; role?: unknown};
+
+// Keeps imports consistent even when the spreadsheet uses different accents, spacing
+// or capitalisation from the records already stored by the company.
+const normalizeImportText = (value: unknown) => String(value || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+
+const importDocumentId = (prefix: string, value: string) => {
+  const slug = normalizeImportText(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 110);
+  return `${prefix}-${slug || 'registro'}-${randomUUID().slice(0, 8)}`;
+};
+
+/**
+ * Restricted, server-side personnel import. This deliberately does not use the
+ * client Firestore rules: a spreadsheet import creates a user, their presence
+ * record and their private PIN credential as one controlled operation.
+ */
+export const bulkImportEmployees = onCall({invoker: 'public', maxInstances: 1}, async request => {
+  if (!request.auth || request.auth.uid !== SUPPORT_UID || request.auth.token.isDeveloper !== true) {
+    throw new HttpsError('permission-denied', 'A importaÃ§Ã£o Ã© exclusiva do suporte da plataforma.');
+  }
+  const appId = String(request.data?.appId || '');
+  const companyId = String(request.data?.companyId || '');
+  const companyCode = String(request.data?.companyCode || '').trim().toUpperCase();
+  const defaultPin = String(request.data?.defaultPin || '');
+  const entries = Array.isArray(request.data?.employees) ? request.data.employees as BulkEmployeeInput[] : [];
+  if (appId !== 'comunica-salvador' || !/^[a-zA-Z0-9_-]+$/.test(companyId) ||
+      !/^[A-Z0-9-]{4,30}$/.test(companyCode) || !/^\d{4,6}$/.test(defaultPin) || !entries.length || entries.length > 200) {
+    throw new HttpsError('invalid-argument', 'Confira a empresa, os colaboradores e o PIN provisÃ³rio.');
+  }
+
+  const database = getFirestore();
+  const support = await database.doc(`_platformSupport/${SUPPORT_UID}`).get();
+  if (!support.exists || support.data()?.enabled !== true || support.data()?.appId !== appId) {
+    throw new HttpsError('permission-denied', 'Acesso de suporte nÃ£o autorizado.');
+  }
+
+  const companyRef = database.doc(`artifacts/${appId}/public/data/companies/${companyId}`);
+  const [companySnapshot, usersSnapshot, departmentsSnapshot, rolesSnapshot] = await Promise.all([
+    companyRef.get(),
+    companyRef.collection('users').get(),
+    companyRef.collection('departments').get(),
+    companyRef.collection('roles').get(),
+  ]);
+  if (!companySnapshot.exists || String(companySnapshot.data()?.code || '').trim().toUpperCase() !== companyCode) {
+    throw new HttpsError('not-found', 'Empresa nÃ£o encontrada para esse cÃ³digo.');
+  }
+
+  const employees: Array<{name: string; department: string; role: string}> = [];
+  const duplicateRows = new Set<string>();
+  for (const entry of entries) {
+    const name = String(entry?.name || '').trim().replace(/\s+/g, ' ');
+    const department = String(entry?.department || '').trim().replace(/\s+/g, ' ');
+    const role = String(entry?.role || '').trim().replace(/\s+/g, ' ');
+    if (!name || !department || !role || name.length > 250 || department.length > 120 || role.length > 250) {
+      throw new HttpsError('invalid-argument', 'A planilha contÃ©m uma linha com nome, setor ou cargo invÃ¡lido.');
+    }
+    const key = normalizeImportText(name);
+    if (duplicateRows.has(key)) continue;
+    duplicateRows.add(key);
+    employees.push({name, department, role});
+  }
+  if (!employees.length) throw new HttpsError('invalid-argument', 'NÃ£o hÃ¡ colaboradores vÃ¡lidos para importar.');
+
+  const existingNames = new Set(usersSnapshot.docs.map(item => normalizeImportText(item.data().name)));
+  const departmentsByName = new Map(departmentsSnapshot.docs.map(item => [normalizeImportText(item.data().name), item.id]));
+  const rolesByKey = new Set(rolesSnapshot.docs.map(item => `${item.data().dept || ''}|${normalizeImportText(item.data().name)}`));
+  const now = Date.now();
+  const docs: Array<{ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown>}> = [];
+  const importedUsers: string[] = [];
+  let skippedExisting = 0;
+  let createdDepartments = 0;
+  let createdRoles = 0;
+
+  for (const employee of employees) {
+    const nameKey = normalizeImportText(employee.name);
+    if (existingNames.has(nameKey)) {
+      skippedExisting += 1;
+      continue;
+    }
+    existingNames.add(nameKey);
+    const departmentKey = normalizeImportText(employee.department);
+    let departmentId = departmentsByName.get(departmentKey);
+    if (!departmentId) {
+      const id = importDocumentId('dept-import', employee.department);
+      departmentId = id;
+      departmentsByName.set(departmentKey, departmentId);
+      docs.push({ref: companyRef.collection('departments').doc(id), data: {id, name: employee.department, color: '#2563eb'}});
+      createdDepartments += 1;
+    }
+    const roleKey = `${departmentId}|${normalizeImportText(employee.role)}`;
+    if (!rolesByKey.has(roleKey)) {
+      const roleId = importDocumentId('role-import', `${departmentId}-${employee.role}`);
+      docs.push({ref: companyRef.collection('roles').doc(roleId), data: {id: roleId, name: employee.role, dept: departmentId}});
+      rolesByKey.add(roleKey);
+      createdRoles += 1;
+    }
+    const userId = `user-${randomUUID()}`;
+    const user = {id: userId, name: employee.name, role: employee.role, avatar: '', birthDate: '', hireDate: '',
+      emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', companyId, depts: [departmentId],
+      isAdmin: false, isDeveloper: false, isEmployee: true, mustChangePin: true, createdAt: now, updatedAt: now};
+    const presence = {id: `pres-${userId}`, userId, name: employee.name, dept: departmentId, status: 'Presencial', notes: ''};
+    const credential = {...hashPin(defaultPin), failures: 0, windowStart: now, lockedUntil: 0, revision: 1};
+    docs.push({ref: companyRef.collection('users').doc(userId), data: user});
+    docs.push({ref: companyRef.collection('userDirectory').doc(userId), data: publicDirectoryProfile(user)});
+    docs.push({ref: companyRef.collection('presence').doc(presence.id), data: presence});
+    docs.push({ref: database.collection('_privateCredentials').doc(credentialKey({appId, companyId, userId})), data: credential});
+    importedUsers.push(userId);
+  }
+
+  // Firestore batches hold at most 500 operations. Chunks leave headroom for future fields.
+  for (let start = 0; start < docs.length; start += 400) {
+    const batch = database.batch();
+    for (const item of docs.slice(start, start + 400)) batch.create(item.ref, item.data);
+    await batch.commit();
+  }
+  return {imported: importedUsers.length, skippedExisting, createdDepartments, createdRoles};
+});
+
+export const removeEmployee = onCall({invoker: 'public'}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente.');
+  const appId = String(request.data?.appId || '');
+  const targetId = String(request.data?.userId || '');
+  const isDeveloper = request.auth.uid === SUPPORT_UID && request.auth.token.isDeveloper === true;
+  const companyId = isDeveloper
+    ? String(request.data?.companyId || '')
+    : String(request.auth.token.companyId || '');
+  try {
+    const result = await removeEmployeeAccess(getFirestore(), appId, companyId, targetId, {
+      uid: request.auth.uid,
+      companyId: String(request.auth.token.companyId || ''),
+      isDeveloper,
+    });
+    return {removed: true, ...result};
+  } catch {
+    throw new HttpsError('failed-precondition', 'NÃ£o foi possÃ­vel remover o colaborador. Confira a permissÃ£o e a equipe atual.');
+  }
+});
+
+export const resetEmployeePin = onCall({invoker: "public"}, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente.');
+  const appId = String(request.data?.appId || '');
+  const companyId = String(request.auth.token.companyId || '');
+  const userId = String(request.data?.userId || '');
+  const newPin = String(request.data?.newPin || '');
+  if (appId !== 'comunica-salvador' || !/^[a-zA-Z0-9_-]+$/.test(companyId) ||
+      !/^[a-zA-Z0-9_-]+$/.test(userId) || !/^\d{4}$/.test(newPin)) {
+    throw new HttpsError('invalid-argument', 'Confira o colaborador e o PIN de quatro digitos.');
+  }
+  const changed = await privateCredentials(getFirestore()).resetByCompanyAdmin(
+    {appId, companyId, userId}, companyId, request.auth.uid, newPin);
+  if (!changed) throw new HttpsError('permission-denied', 'Nao foi possivel redefinir o PIN deste colaborador.');
+  await getFirestore().doc(`artifacts/${appId}/public/data/companies/${companyId}/users/${userId}`).update({
+    mustChangePin: true,
+    updatedAt: Date.now(),
+  });
+  return {changed: true};
+});
+
+const createSession = async (company: CompanyRecord, user: UserRecord, developer = false) => {
+  const claims = {
+    companyId: company.id,
+    isAdmin: Boolean(user.isAdmin) || developer,
+    isDeveloper: developer || Boolean(user.isDeveloper),
+  };
+  const token = await getAuth().createCustomToken(user.id, claims);
+  return {token, company, user: safeUserProfile({...user, ...(developer ? {isDeveloper: true, isEmployee: false, isAdmin: true, role: "Suporte da Plataforma"} : {})}, company.id)};
+};
+
+export const refreshUploadSession = onCall({invoker: 'public', maxInstances: 5}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente para enviar arquivos.');
+  const appId = String(request.data?.appId || '');
+  const companyId = String(request.data?.companyId || '');
+  const folder = String(request.data?.folder || '');
+  const fileName = String(request.data?.fileName || '');
+  const uploadSize = Number(request.data?.size || 0);
+  const uploadContentType = String(request.data?.contentType || '').trim().toLowerCase();
+  const allowedFolders = ['documents', 'attachments', 'avatars', 'images', 'whistleblowing-poster'];
+  if (appId !== 'comunica-salvador' || !/^[a-zA-Z0-9_-]+$/.test(companyId) ||
+      !allowedFolders.includes(folder) || !/^[a-zA-Z0-9._-]{1,220}$/.test(fileName) ||
+      !Number.isSafeInteger(uploadSize) || uploadSize <= 0) {
+    throw new HttpsError('invalid-argument', 'Empresa invÃ¡lida para o envio.');
+  }
+  const imageFolder = ['avatars', 'images', 'whistleblowing-poster'].includes(folder);
+  const allowedBusinessTypes = new Set([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ]);
+  const validImage = imageFolder && uploadSize <= 25 * 1024 * 1024 && uploadContentType.startsWith('image/');
+  const validBusinessFile = !imageFolder && uploadSize <= 50 * 1024 * 1024 && (
+    uploadContentType.startsWith('image/') || uploadContentType.startsWith('audio/') ||
+    uploadContentType.startsWith('video/') || uploadContentType.startsWith('text/') ||
+    allowedBusinessTypes.has(uploadContentType)
+  );
+  if (!validImage && !validBusinessFile) {
+    throw new HttpsError('invalid-argument', 'O tipo ou o tamanho deste arquivo nÃ£o Ã© permitido.');
+  }
+  const database = getFirestore();
+  const companyDocument = await database.doc(`artifacts/${appId}/public/data/companies/${companyId}`).get();
+  if (!companyDocument.exists) throw new HttpsError('not-found', 'Empresa nÃ£o encontrada.');
+  if (companyDocument.data()?.codeBlocked === true) throw new HttpsError('permission-denied', 'Acesso Ã  empresa bloqueado.');
+
+  const purchaseId = String(request.data?.purchaseId || '');
+  let purchaseParticipants: unknown[] = [];
+  let purchaseRequesterId = '';
+  if (purchaseId) {
+    if (folder !== 'attachments' || !/^[a-zA-Z0-9_-]+$/.test(purchaseId)) {
+      throw new HttpsError('invalid-argument', 'Compra invÃ¡lida para o anexo.');
+    }
+    const purchase = await database.doc(`artifacts/${appId}/public/data/companies/${companyId}/purchaseRequests/${purchaseId}`).get();
+    if (!purchase.exists) throw new HttpsError('not-found', 'Compra nÃ£o encontrada.');
+    purchaseParticipants = Array.isArray(purchase.data()?.participantIds) ? purchase.data()!.participantIds : [];
+    purchaseRequesterId = String(purchase.data()?.requesterId || '');
+  }
+
+  if (request.auth.uid === SUPPORT_UID) {
+    const support = await database.doc(`_platformSupport/${SUPPORT_UID}`).get();
+    if (!support.exists || support.data()?.enabled !== true || support.data()?.appId !== appId) {
+      throw new HttpsError('permission-denied', 'Acesso de suporte nÃ£o autorizado.');
+    }
+    return {token: await getAuth().createCustomToken(SUPPORT_UID, {
+      companyId, isAdmin: true, isDeveloper: true,
+      uploadAuthorized: true, uploadCompanyId: companyId, uploadFolder: folder, uploadFileName: fileName,
+      uploadSize, uploadContentType, uploadPurchaseId: purchaseId,
+    })};
+  }
+
+  if (request.auth.token.isDeveloper === true || String(request.auth.token.companyId || '') !== companyId) {
+    throw new HttpsError('permission-denied', 'Acesso Ã  empresa nÃ£o autorizado.');
+  }
+  const profile = await database.doc(`artifacts/${appId}/public/data/companies/${companyId}/users/${request.auth.uid}`).get();
+  if (!profile.exists) throw new HttpsError('permission-denied', 'Colaborador nÃ£o encontrado nesta empresa.');
+  const profileData = profile.data() || {};
+  const isAdmin = profileData.isAdmin === true;
+  if (purchaseId && !isAdmin && purchaseRequesterId !== request.auth.uid && !purchaseParticipants.includes(request.auth.uid)) {
+    throw new HttpsError('permission-denied','VocÃª nÃ£o participa desta compra.');
+  }
+  if (!isAdmin && !['attachments', 'images'].includes(folder)) {
+    throw new HttpsError('permission-denied', 'Seu perfil nÃ£o possui permissÃ£o para este tipo de envio.');
+  }
+  return {token: await getAuth().createCustomToken(request.auth.uid, {
+    companyId,
+    isAdmin,
+    isDeveloper: false,
+    uploadAuthorized: true,
+    uploadCompanyId: companyId,
+    uploadFolder: folder,
+    uploadFileName: fileName,
+    uploadSize,
+    uploadContentType,
+    uploadPurchaseId: purchaseId,
+  })};
+});
+
+export const authorizePurchaseAttachmentRead = onCall({invoker:'public',maxInstances:5}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated','Entre novamente para acessar o documento.');
+  const appId = 'comunica-salvador';
+  const companyId = String(request.data?.companyId || '');
+  const purchaseId = String(request.data?.purchaseId || '');
+  const fileId = String(request.data?.fileId || '');
+  if (![companyId,purchaseId,fileId].every(value => /^[a-zA-Z0-9_-]+$/.test(value))) {
+    throw new HttpsError('invalid-argument','Documento da compra invÃ¡lido.');
+  }
+  const database = getFirestore();
+  const base = `artifacts/${appId}/public/data/companies/${companyId}`;
+  const company = await database.doc(base).get();
+  if (!company.exists || company.data()?.codeBlocked === true) throw new HttpsError('permission-denied','Empresa indisponÃ­vel.');
+  const supportProfile = request.auth.uid === SUPPORT_UID
+    ? (await database.doc(`_platformSupport/${SUPPORT_UID}`).get()).data() : null;
+  const support = supportProfile?.enabled === true && supportProfile.appId === appId;
+  if (request.auth.uid === SUPPORT_UID && !support) throw new HttpsError('permission-denied','Acesso de suporte nÃ£o autorizado.');
+  if (!support) {
+    if (request.auth.token.isDeveloper === true || request.auth.token.companyId !== companyId) {
+      throw new HttpsError('permission-denied','Acesso Ã  empresa nÃ£o autorizado.');
+    }
+    const profile = await database.doc(`${base}/users/${request.auth.uid}`).get();
+    if (!profile.exists) throw new HttpsError('permission-denied','Colaborador nÃ£o encontrado.');
+    const purchase = await database.doc(`${base}/purchaseRequests/${purchaseId}`).get();
+    if (!purchase.exists || !(profile.data()?.isAdmin === true || purchase.data()?.requesterId === request.auth.uid ||
+      (Array.isArray(purchase.data()?.participantIds) && purchase.data()?.participantIds.includes(request.auth.uid)))) {
+      throw new HttpsError('permission-denied','VocÃª nÃ£o participa desta compra.');
+    }
+  }
+  const attachment = await database.doc(`${base}/purchaseRequests/${purchaseId}/files/${fileId}`).get();
+  const storagePath = String(attachment.data()?.storagePath || '');
+  if (!attachment.exists || !storagePath.startsWith(`companies/${companyId}/users/`) ||
+      !/^companies\/[^/]+\/users\/[^/]+\/attachments\/[^/]+$/.test(storagePath)) {
+    throw new HttpsError('not-found','Documento da compra nÃ£o encontrado.');
+  }
+  const token = await getAuth().createCustomToken(request.auth.uid,{
+    companyId,purchaseReadPath:storagePath,purchaseReadId:purchaseId,
+  });
+  return {token,storagePath,name:String(attachment.data()?.name || 'documento')};
+});
+
+export const getLoginDirectory = onCall({invoker: "public"}, async (request) => {
+  const appId = String(request.data?.appId || "");
+  const company = await getCompanyByCode(appId, String(request.data?.companyCode || ""));
+  const usersSnapshot = await getFirestore().collection(`artifacts/${appId}/public/data/companies/${company.id}/users`).get();
+  const users = usersSnapshot.docs
+    .map((item) => ({id: item.id, ...item.data()} as UserRecord))
+    .filter((user) => !user.isDeveloper)
+    .map((user) => ({id: user.id, name: String(user.name || ""), role: String(user.role || "Colaborador"), avatar: String(user.avatar || "")}))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return {company, users};
+});
+
+export const authenticateWithPin = onCall({invoker: "public"}, async (request) => {
+  const appId = String(request.data?.appId || "");
+  const company = await getCompanyByCode(appId, String(request.data?.companyCode || ""));
+  const userId = String(request.data?.userId || "");
+  if (!/^[a-zA-Z0-9_-]+$/.test(userId)) throw new HttpsError("invalid-argument", "Selecione um colaborador.");
+  const userDocument = await getFirestore().doc(`artifacts/${appId}/public/data/companies/${company.id}/users/${userId}`).get();
+  if (!userDocument.exists) throw new HttpsError("not-found", "Colaborador nÃ£o encontrado.");
+  const user = {...userDocument.data(), id: userDocument.id} as UserRecord;
+  if (user.id === SUPPORT_UID || user.isDeveloper || !await validatePrivatePin(appId, company.id, user.id, request.data?.pin)) throw new HttpsError("permission-denied", "PIN invÃ¡lido.");
+  const requiresPinChange = user.mustChangePin === true || !user.lastLoginAt;
+  await userDocument.ref.update({lastLoginAt: Date.now(), ...(requiresPinChange ? {mustChangePin: true} : {})});
+  return {...await createSession(company, user), requiresPinChange};
+});
+
+// A sessÃ£o do Firebase permanece aberta entre visitas; o login por PIN sozinho
+// nÃ£o representa o Ãºltimo uso do aplicativo.
+export const recordEmployeeAccess = onCall({invoker: 'public', maxInstances: 5}, async request => {
+  const uid = request.auth?.uid;
+  const companyId = String(request.auth?.token.companyId || '');
+  if (!uid || uid === SUPPORT_UID || request.auth?.token.isDeveloper === true ||
+      !/^[a-zA-Z0-9_-]+$/.test(companyId)) {
+    throw new HttpsError('permission-denied', 'SessÃ£o de colaborador invÃ¡lida.');
+  }
+  const database = getFirestore();
+  const base = `artifacts/comunica-salvador/public/data/companies/${companyId}`;
+  const company = await database.doc(base).get();
+  if (!company.exists || company.data()?.codeBlocked === true) {
+    throw new HttpsError('permission-denied', 'Empresa indisponÃ­vel.');
+  }
+  const profile = database.doc(`${base}/users/${uid}`);
+  await database.runTransaction(async transaction => {
+    const snapshot = await transaction.get(profile);
+    if (!snapshot.exists || snapshot.data()?.isDeveloper === true) {
+      throw new HttpsError('permission-denied', 'Colaborador nÃ£o encontrado.');
+    }
+    const now = Date.now();
+    if (now - Number(snapshot.data()?.lastLoginAt || 0) >= 15 * 60 * 1000) {
+      transaction.update(profile, {lastLoginAt: now});
+    }
+  });
+  return {recorded: true};
+});
+
+export const authenticateDeveloper = onCall({invoker: "public"}, async (request) => {
+  const appId = String(request.data?.appId || "");
+  const database = getFirestore();
+  const scope = await verifyPlatformSupport(database, appId, String(request.data?.pin || ''));
+  if (!scope) throw new HttpsError('permission-denied', 'Acesso de suporte nao autorizado.');
+  const companyDocument = await database.doc(`artifacts/${appId}/public/data/companies/${scope.companyId}`).get();
+  if (!companyDocument.exists) throw new HttpsError('failed-precondition', 'Ambiente de suporte indisponivel.');
+  // Platform support is not an employee and must not depend on a company user document.
+  await database.doc(`_platformSupport/${SUPPORT_UID}`).update({lastLoginAt: Date.now()});
+  return createSession({...companyDocument.data(), id: companyDocument.id} as CompanyRecord,
+    {id: SUPPORT_UID, name: 'FRANCIELTON LIMA NUNES', depts: [], avatar: ''} as UserRecord, true);
+});
+
+export const registerSupportPushToken = onCall({invoker: 'public'}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente no suporte.');
+  const registered = await registerPlatformPushToken(getFirestore(), {
+    uid: request.auth.uid,
+    companyId: String(request.auth.token.companyId || ''),
+    isDeveloper: request.auth.token.isDeveloper === true,
+  }, request.data?.token);
+  if (!registered) throw new HttpsError('permission-denied', 'NotificaÃ§Ãµes de suporte nÃ£o autorizadas.');
+  return {registered: true};
+});
+
+export const registerCompany = onCall({invoker: "public"}, async (request) => {
+  if (!request.auth || request.auth.uid !== SUPPORT_UID || request.auth.token.isDeveloper !== true) {
+    throw new HttpsError('permission-denied', 'O cadastro de empresas Ã© exclusivo do suporte da plataforma.');
+  }
+  const appId = String(request.data?.appId || "");
+  const name = String(request.data?.name || "").trim();
+  const code = String(request.data?.code || "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+  const adminName = String(request.data?.adminName || "").trim();
+  const adminPin = String(request.data?.adminPin || "");
+  if (appId !== 'comunica-salvador' || !name || !code || !adminName || !/^\d{4}$/.test(adminPin)) throw new HttpsError("invalid-argument", "Dados de cadastro invÃ¡lidos.");
+  const database = getFirestore();
+  const support = await database.doc(`_platformSupport/${SUPPORT_UID}`).get();
+  if (!support.exists || support.data()?.enabled !== true || support.data()?.appId !== appId) {
+    throw new HttpsError('permission-denied', 'Acesso de suporte nÃ£o autorizado.');
+  }
+  const companyCollection = database.collection(`artifacts/${appId}/public/data/companies`);
+  const now = Date.now();
+  const company: CompanyRecord = {id: `company-${randomUUID()}`, name, code};
+  const administrator: UserRecord = {id: `user-${randomUUID()}`, name: adminName, isAdmin: true, role: "Administrador", depts: ["rh"], avatar: "", companyId: company.id, mustChangePin: true};
+  const secretRef = database.collection('_privateCredentials').doc(credentialKey({appId, companyId: company.id, userId: administrator.id}));
+  const secret = {...hashPin(adminPin), failures: 0, windowStart: now, lockedUntil: 0, revision: 1};
+  await database.runTransaction(async (transaction) => {
+    const exists = await transaction.get(companyCollection.where('code', '==', code).limit(1));
+    if (!exists.empty) throw new HttpsError('already-exists', 'Este codigo de empresa ja esta em uso.');
+    transaction.set(companyCollection.doc(company.id), {...company, createdAt: now});
+    transaction.set(companyCollection.doc(company.id).collection("users").doc(administrator.id), administrator);
+    transaction.set(companyCollection.doc(company.id).collection('userDirectory').doc(administrator.id), publicDirectoryProfile(administrator));
+    transaction.create(companyCollection.doc(company.id).collection('departments').doc('rh'), {id:'rh', name:'Administrativo', color:'slate'});
+    transaction.create(secretRef, secret);
+  });
+  return {company, user: administrator};
+});
+
+export const setCompanyCodeBlocked = onCall({invoker: "public", timeoutSeconds: 120}, async (request) => {
+  if (!request.auth || request.auth.uid !== SUPPORT_UID || request.auth.token.isDeveloper !== true) {
+    throw new HttpsError("permission-denied", "A alteraÃ§Ã£o do cÃ³digo Ã© exclusiva do suporte da plataforma.");
+  }
+  const appId = String(request.data?.appId || "");
+  const companyId = String(request.data?.companyId || "");
+  const blocked = request.data?.blocked;
+  if (appId !== 'comunica-salvador' || !/^[a-zA-Z0-9_-]+$/.test(companyId) || typeof blocked !== 'boolean') {
+    throw new HttpsError("invalid-argument", "Empresa ou estado do cÃ³digo invÃ¡lido.");
+  }
+  const database = getFirestore();
+  const companyRef = database.doc(`artifacts/${appId}/public/data/companies/${companyId}`);
+  const result = await database.runTransaction(async transaction => {
+    const [support, company] = await Promise.all([
+      transaction.get(database.doc(`_platformSupport/${SUPPORT_UID}`)), transaction.get(companyRef),
+    ]);
+    if (!support.exists || support.data()?.enabled !== true || support.data()?.appId !== appId) {
+      throw new HttpsError("permission-denied", "Acesso de suporte nÃ£o autorizado.");
+    }
+    if (!company.exists) throw new HttpsError("not-found", "Empresa nÃ£o encontrada.");
+    if (company.data()?.codeBlocked === blocked) return {companyId, codeBlocked: blocked};
+    const now = Date.now();
+    transaction.update(companyRef, {codeBlocked: blocked, codeAccessUpdatedAt: now, codeAccessUpdatedBy: SUPPORT_UID});
+    transaction.create(database.collection('_platformCompanyCodeAudit').doc(), {
+      appId, companyId, companyCode: String(company.data()?.code || ''), blocked,
+      actorId: SUPPORT_UID, timestamp: now,
+    });
+    return {companyId, codeBlocked: blocked};
+  });
+  if (!blocked) return result;
+  // Invalidate renewal of every open employee session. The live rules deny access immediately.
+  const users = await companyRef.collection('users').get();
+  let revocationFailures = 0;
+  for (let index = 0; index < users.docs.length; index += 20) {
+    const batch = users.docs.slice(index, index + 20);
+    const outcomes = await Promise.allSettled(batch.map(user => getAuth().revokeRefreshTokens(user.id)));
+    revocationFailures += outcomes.filter(outcome => outcome.status === 'rejected' &&
+      (outcome.reason as {code?: string})?.code !== 'auth/user-not-found').length;
+  }
+  if (revocationFailures) console.error(`NÃ£o foi possÃ­vel revogar ${revocationFailures} sessÃ£o(Ãµes) da empresa ${companyId}.`);
+  return {...result, revocationFailures};
+});
+
+export const generateAiText = onCall(
+  {secrets: [googleGenAiApiKey], maxInstances: 10, invoker: "public"},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "FaÃ§a login para usar a IA.");
+    }
+    const companyId = String(request.auth.token.companyId || '');
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) {
+      throw new HttpsError('permission-denied', 'Acesso Ã  IA indisponÃ­vel para esta sessÃ£o.');
+    }
+    if (request.auth.uid === SUPPORT_UID && request.auth.token.isDeveloper === true) {
+      const support = await getFirestore().doc(`_platformSupport/${SUPPORT_UID}`).get();
+      if (!support.exists || support.data()?.enabled !== true || support.data()?.appId !== 'comunica-salvador') {
+        throw new HttpsError('permission-denied', 'Acesso de suporte nÃ£o autorizado.');
+      }
+    } else {
+      if (request.auth.token.isDeveloper === true ||
+          !await getFirestore().doc(`artifacts/comunica-salvador/public/data/companies/${companyId}/users/${request.auth.uid}`).get()
+            .then(profile => profile.exists && profile.data()?.isDeveloper !== true)) {
+        throw new HttpsError('permission-denied', 'Esta conta nÃ£o estÃ¡ ativa na empresa.');
+      }
+    }
+
+    const prompt = String(request.data?.prompt || "").trim();
+    const systemInstruction = String(request.data?.systemInstruction || "").trim();
+    if (!prompt || prompt.length > 50000 || systemInstruction.length > 12000) {
+      throw new HttpsError("invalid-argument", "SolicitaÃ§Ã£o de IA invÃ¡lida.");
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${googleGenAiApiKey.value()}`,
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          system_instruction: {parts: [{text: systemInstruction}]},
+          contents: [{role: "user", parts: [{text: prompt}]}],
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      console.error("Gemini request failed", response.status);
+      throw new HttpsError("internal", "NÃ£o foi possÃ­vel gerar a resposta da IA.");
+    }
+
+    const payload = await response.json() as {candidates?: Array<{content?: {parts?: Array<{text?: string}>}}>};
+    const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
+    if (!text) throw new HttpsError("internal", "A IA nÃ£o retornou uma resposta.");
+    return {text};
+  },
+);
+
+type CompanyNotificationEvent = {
+  id?: string;
+  params: {appId: string; companyId: string};
+  data?: {data: () => Record<string, unknown>};
+};
+
+const notifyCompany = async (
+  event: CompanyNotificationEvent,
+  title: string,
+  body: string,
+  type: string,
+) => {
+  const content = event.data?.data() ?? {};
+  const usersPath = `artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/users`;
+  const usersSnapshot = await getFirestore().collection(usersPath).get();
+  const authorId = typeof content.authorId === "string" ? content.authorId : "";
+  const tokens = usersSnapshot.docs
+    .filter((user) => user.id !== authorId)
+    .flatMap((user) => {
+      const savedTokens = user.data().pushTokens;
+      return Array.isArray(savedTokens) ? savedTokens : [];
+    })
+    .filter((token): token is string => typeof token === "string" && token.length > 0);
+
+  if (tokens.length === 0) return;
+
+  await getMessaging().sendEachForMulticast({
+    tokens: [...new Set(tokens)],
+    notification: {title, body},
+    // MantÃ©m o mesmo identificador em qualquer tentativa de entrega. O app
+    // ignora uma segunda chegada da mesma publicaÃ§Ã£o no mesmo dispositivo.
+    data: {type, companyId: event.params.companyId, eventId: event.id ?? ""},
+    android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
+    webpush: {headers: {Urgency: "high", TTL: "3600"}},
+  });
+};
+
+const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
+  const content = event.data?.data() ?? {};
+  const participants = Array.isArray(content.participants)
+    ? content.participants.filter((id): id is string => typeof id === "string")
+    : [];
+  const mutedBy = Array.isArray(content.mutedBy)
+    ? content.mutedBy.filter((id): id is string => typeof id === "string")
+    : [];
+  const senderId = typeof content.senderId === "string" ? content.senderId : "";
+  const actorId = typeof content.actorId === 'string' ? content.actorId : senderId;
+  if (participants.length === 0) return;
+  const notifiedParticipants = participants.filter((id) => !mutedBy.includes(id));
+
+  const usersPath = `artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/users`;
+  const usersSnapshot = await getFirestore().collection(usersPath).get();
+  const tokenOwners = new Map<string, string[]>();
+  usersSnapshot.docs
+    .filter((user) => notifiedParticipants.includes(user.id) && user.id !== actorId)
+    .forEach((user) => {
+      const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
+      savedTokens.forEach((token: unknown) => {
+        if (typeof token !== 'string' || !token) return;
+        tokenOwners.set(token, [...(tokenOwners.get(token) || []), user.id]);
+      });
+    });
+  const tokens = [...tokenOwners.keys()];
+  tokens.push(...await getSupportNotificationTokens(getFirestore(), event.params.appId, notifiedParticipants, actorId));
+  const uniqueTokens = [...new Set(tokens)];
+  if (uniqueTokens.length === 0) {
+    console.info("Message push skipped: recipients have no registered devices", {
+      messageId: event.id ?? "", companyId: event.params.companyId, recipientCount: notifiedParticipants.filter((id) => id !== actorId).length,
+    });
+    return;
+  }
+
+  const threadId = String(content.threadId ?? "");
+  const response = await getMessaging().sendEachForMulticast({
+    tokens: uniqueTokens,
+    notification: {
+      title: "Nova mensagem no Comunica",
+      body: `${String(content.senderName ?? "AlguÃ©m")}: ${String(content.subject ?? content.content ?? "VocÃª recebeu uma nova mensagem.")}`,
+    },
+    data: {type: "message", companyId: event.params.companyId, threadId, eventId: event.id ?? ""},
+    android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
+    webpush: {
+      headers: {Urgency: "high", TTL: "3600"},
+      notification: {
+        title: "Nova mensagem no Comunica",
+        body: `${String(content.senderName ?? "AlguÃ©m")}: ${String(content.subject ?? content.content ?? "VocÃª recebeu uma nova mensagem.")}`,
+        icon: "/pwa/icon-192.png",
+        tag: `comunica-message-${threadId || event.id || "new"}`,
+        renotify: true,
+      },
+      fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(event.params.companyId)}&messageThread=${encodeURIComponent(threadId)}`},
+    },
+  });
+  const staleTokens = response.responses.flatMap((item, index) => {
+    const code = item.error?.code || '';
+    return !item.success && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token')
+      ? [uniqueTokens[index]] : [];
+  });
+  await Promise.all(staleTokens.flatMap(token => (tokenOwners.get(token) || []).map(userId =>
+    getFirestore().doc(`${usersPath}/${userId}`).update({pushTokens: FieldValue.arrayRemove(token)}))));
+  console.info("Message push delivery completed", {
+    messageId: event.id ?? "", companyId: event.params.companyId,
+    devices: uniqueTokens.length, successCount: response.successCount, failureCount: response.failureCount,
+    failureCodes: [...new Set(response.responses.filter((item) => !item.success).map((item) => item.error?.code || "unknown"))],
+  });
+};
+
+type MessageActivityData = {
+  status: string;
+  assigneeIds: string[];
+  dueDate: string;
+  createdBy: string;
+  updatedBy: string;
+  commentCount: number;
+  attachmentCount: number;
+};
+
+type ActivityRecurrenceData = {frequency: 'none' | 'daily' | 'weekly' | 'monthly'; interval: number};
+
+const activityRecurrenceData = (value: unknown): ActivityRecurrenceData => {
+  const recurrence = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const frequency = ['daily', 'weekly', 'monthly'].includes(String(recurrence.frequency || ''))
+    ? String(recurrence.frequency) as ActivityRecurrenceData['frequency'] : 'none';
+  return {frequency, interval: Math.max(1, Math.min(12, Number(recurrence.interval) || 1))};
+};
+
+const nextRecurringActivityDate = (dueDate: string, recurrenceValue: unknown) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return '';
+  const recurrence = activityRecurrenceData(recurrenceValue);
+  if (recurrence.frequency === 'none') return '';
+  const [year, month, day] = dueDate.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (recurrence.frequency === 'daily') date.setUTCDate(date.getUTCDate() + recurrence.interval);
+  if (recurrence.frequency === 'weekly') date.setUTCDate(date.getUTCDate() + (7 * recurrence.interval));
+  if (recurrence.frequency === 'monthly') {
+    const targetMonth = date.getUTCMonth() + recurrence.interval;
+    const targetYear = date.getUTCFullYear() + Math.floor(targetMonth / 12);
+    const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+    date.setUTCFullYear(targetYear, normalizedMonth, Math.min(day, lastDay));
+  }
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+};
+
+const recurringActivityPayload = (activityValue: unknown, nextDueDate: string, sourceId: string) => {
+  const activity = activityValue && typeof activityValue === 'object' ? activityValue as Record<string, unknown> : {};
+  const now = Date.now();
+  const checklist = Array.isArray(activity.checklist) ? activity.checklist.map((item, index) => {
+    const entry = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    return {id: `item-${now}-${index}`, text: String(entry.text || '').slice(0, 180), completed: false};
+  }).filter((item) => item.text).slice(0, 30) : [];
+  return {
+    ...activity,
+    status: 'pending', dueDate: nextDueDate, checklist, comments: [], attachments: [], collaborators: {},
+    history: [{
+      id: `history-${now}-recurrence`, type: 'created',
+      text: 'PrÃ³xima ocorrÃªncia criada automaticamente', actorId: '', actorName: 'Comunica', timestamp: now,
+    }],
+    createdAt: now, updatedAt: now, resolvedAt: null, resolvedBy: '',
+    recurringSourceId: sourceId, recurringGeneratedAt: now,
+  };
+};
+
+const messageActivityData = (value: unknown): MessageActivityData | null => {
+  if (!value || typeof value !== 'object') return null;
+  const activity = value as Record<string, unknown>;
+  return {
+    status: typeof activity.status === 'string' ? activity.status : 'pending',
+    assigneeIds: Array.isArray(activity.assigneeIds)
+      ? [...new Set(activity.assigneeIds.filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id)))]
+      : [],
+    dueDate: typeof activity.dueDate === 'string' ? activity.dueDate : '',
+    createdBy: typeof activity.createdBy === 'string' ? activity.createdBy : '',
+    updatedBy: typeof activity.updatedBy === 'string' ? activity.updatedBy : '',
+    commentCount: Array.isArray(activity.comments) ? activity.comments.length : 0,
+    attachmentCount: Array.isArray(activity.attachments) ? activity.attachments.length : 0,
+  };
+};
+
+const sendActivityPush = async ({
+  database, appId, companyId, recipientIds, actorId, title, body, type, threadId, messageId, eventId, purchaseId = '',
+}: {
+  database: ReturnType<typeof getFirestore>;
+  appId: string;
+  companyId: string;
+  recipientIds: string[];
+  actorId: string;
+  title: string;
+  body: string;
+  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message' | 'purchase';
+  threadId: string;
+  messageId: string;
+  eventId: string;
+  purchaseId?: string;
+}) => {
+  const usersPath = `artifacts/${appId}/public/data/companies/${companyId}/users`;
+  const recipients = [...new Set(recipientIds)].filter((id) => id && id !== actorId);
+  if (recipients.length === 0) return {successCount: 0, failureCount: 0};
+  const usersSnapshot = await database.collection(usersPath).get();
+  const tokenOwners = new Map<string, string[]>();
+  usersSnapshot.docs.filter((user) => recipients.includes(user.id)).forEach((user) => {
+    const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
+    savedTokens.forEach((token: unknown) => {
+      if (typeof token !== 'string' || !token) return;
+      tokenOwners.set(token, [...(tokenOwners.get(token) || []), user.id]);
+    });
+  });
+  const tokens = [...tokenOwners.keys()];
+  if (tokens.length === 0) return {successCount: 0, failureCount: 0};
+  let successCount = 0;
+  let failureCount = 0;
+  const staleTokens: string[] = [];
+  for (let index = 0; index < tokens.length; index += 500) {
+    const batchTokens = tokens.slice(index, index + 500);
+    const response = await getMessaging().sendEachForMulticast({
+      tokens: batchTokens,
+      notification: {title, body: body.slice(0, 220)},
+      data: {type, companyId, threadId, messageId, eventId, purchaseId},
+      webpush: {
+        headers: {Urgency: 'high', TTL: '3600'},
+        notification: {icon: '/pwa/icon-192.png', tag: eventId, renotify: false},
+        fcmOptions: {link: purchaseId
+          ? `https://comunica-info.web.app/?purchaseCompany=${encodeURIComponent(companyId)}&purchaseId=${encodeURIComponent(purchaseId)}` : threadId
+          ? `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(companyId)}&messageThread=${encodeURIComponent(threadId)}&messageId=${encodeURIComponent(messageId)}`
+          : `https://comunica-info.web.app/?activityCompany=${encodeURIComponent(companyId)}&activityId=${encodeURIComponent(messageId)}`},
+      },
+      android: {priority: 'high', ttl: 60 * 60 * 1000, notification: {tag: eventId, sound: 'default'}},
+    });
+    successCount += response.successCount;
+    failureCount += response.failureCount;
+    response.responses.forEach((item, responseIndex) => {
+      const code = item.error?.code || '';
+      if (!item.success && (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token')) staleTokens.push(batchTokens[responseIndex]);
+    });
+  }
+  await Promise.all(staleTokens.flatMap((token) => (tokenOwners.get(token) || []).map((userId) =>
+    database.doc(`${usersPath}/${userId}`).update({pushTokens: FieldValue.arrayRemove(token)}))));
+  return {successCount, failureCount};
+};
+
+const purchaseNextRole = (purchase: Record<string, unknown>) => {
+  if (purchase.status === 'quotation' && (!purchase.supplier || !purchase.expectedDate || !(Number(purchase.quotedPrice) > 0))) return 'buyerId';
+  return ({requested:'buyerId',quotation:'approverId',approved:'buyerId',ordered:'buyerId',in_transit:'receiverId',
+    received:'receiverId',exception:'receiverId',stored:'recipientId',delivered:'financeId',finance_dispute:'receiverId'} as Record<string,string>)[String(purchase.status)] || '';
+};
+
+export const notifyPurchaseAssignment = onDocumentUpdated(
+  'artifacts/{appId}/public/data/companies/{companyId}/purchaseRequests/{purchaseId}', async event => {
+    const before = event.data?.before.data() || {};
+    const after = event.data?.after.data() || {};
+    const role = purchaseNextRole(after);
+    const responsible = String(after[role] || '');
+    if (!responsible || (before.status === after.status && before[role] === responsible)) return;
+    await sendActivityPush({database:getFirestore(),appId:event.params.appId,companyId:event.params.companyId,
+      recipientIds:[responsible],actorId:String(after.updatedBy || ''),title:'Compra aguardando sua aÃ§Ã£o',
+      body:`${String(after.item || 'SolicitaÃ§Ã£o').slice(0,100)} Â· ${String(after.status || '')}`,
+      type:'purchase',threadId:'',messageId:'',eventId:`purchase-${event.params.purchaseId}-${after.updatedAt}`,purchaseId:event.params.purchaseId});
+  });
+
+export const notifyPendingPurchases = onSchedule({schedule:'15 9 * * *',timeZone:'America/Sao_Paulo',maxInstances:1},async () => {
+  const database = getFirestore();
+  const date = saoPauloCivilDate();
+  const now = Date.now();
+  const appId = 'comunica-salvador';
+  const companies = await database.collection(`artifacts/${appId}/public/data/companies`).get();
+  for (const company of companies.docs) {
+    const companyId = company.id;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) continue;
+    const snapshot = await company.ref.collection('purchaseRequests').get();
+    for (const purchase of snapshot.docs) {
+    const data = purchase.data();
+    if (data.workflowVersion !== 2) continue;
+    const role = purchaseNextRole(data);
+    const responsible = String(data[role] || '');
+    if (!responsible || !['requested','quotation','approved','ordered','in_transit','received','exception','stored','delivered','finance_dispute'].includes(data.status)) continue;
+    const overdue = typeof data.neededBy === 'string' && data.neededBy <= date;
+    const stalled = now - Number(data.updatedAt || now) >= 2 * 24 * 60 * 60 * 1000;
+    if (!overdue && !stalled) continue;
+    const receipt = company.ref.collection('notificationReceipts').doc(`purchase-${purchase.id}-${date}`);
+    const acquired = await database.runTransaction(async tx => {
+      if ((await tx.get(receipt)).exists) return false;
+      tx.create(receipt,{type:'purchase_pending',purchaseId:purchase.id,notificationDate:date,status:'processing',createdAt:now});
+      return true;
+    });
+    if (!acquired) continue;
+    try {
+      const result = await sendActivityPush({database,appId,companyId,recipientIds:[responsible],actorId:'',
+        title:overdue ? 'Compra com prazo vencido' : 'Compra aguardando sua aÃ§Ã£o',
+        body:String(data.item || 'SolicitaÃ§Ã£o').slice(0,180),type:'purchase',threadId:'',messageId:'',
+        eventId:`purchase-${purchase.id}-${date}`,purchaseId:purchase.id});
+      await receipt.update({status:'sent',successCount:result.successCount,failureCount:result.failureCount});
+    } catch (problem) { await receipt.update({status:'failed'}); console.error('Falha no lembrete de compra',problem); }
+    }
+  }
+});
+
+export const notifyNewAnnouncement = onDocumentCreated(
+  "artifacts/{appId}/public/data/companies/{companyId}/announcements/{announcementId}",
+  async (event) => {
+    const content = event.data?.data() ?? {};
+    await notifyCompany(
+      event,
+      String(content.category ?? "") === "EmergÃªncia" ? "ðŸš¨ Comunicado de emergÃªncia" : "Novo aviso no Comunica",
+      String(content.title ?? "Um novo aviso foi publicado."),
+      "announcement",
+    );
+  },
+);
+
+export const notifyNewSectorPost = onDocumentCreated(
+  "artifacts/{appId}/public/data/companies/{companyId}/posts/{postId}",
+  async (event) => {
+    const content = event.data?.data() ?? {};
+    await notifyCompany(
+      event,
+      "Nova publicaÃ§Ã£o no Comunica",
+      String(content.title ?? "Uma nova publicaÃ§Ã£o foi compartilhada."),
+      "sector_post",
+    );
+  },
+);
+
+export const notifyNewMessage = onDocumentCreated(
+  "artifacts/{appId}/public/data/companies/{companyId}/messages/{messageId}",
+  async (event) => {
+    await notifyMessageRecipients(event);
+  },
+);
+
+export const notifyMessageActivityChange = onDocumentUpdated(
+  "artifacts/{appId}/public/data/companies/{companyId}/messages/{messageId}",
+  async (event) => {
+    const before = event.data?.before.data() ?? {};
+    const after = event.data?.after.data() ?? {};
+    const previous = messageActivityData(before.activity);
+    const activity = messageActivityData(after.activity);
+    if (!activity) return;
+
+    const newAssignees = activity.assigneeIds.filter((id) => !previous?.assigneeIds.includes(id));
+    const subject = String(after.subject || after.content || 'Atividade da conversa').slice(0, 160);
+    const threadId = String(after.threadId || '');
+    const messageId = String(event.params.messageId || '');
+    const actorId = activity.updatedBy || String(after.actorId || after.senderId || '');
+    if (!/^[a-zA-Z0-9_-]+$/.test(threadId) || !/^[a-zA-Z0-9_-]+$/.test(messageId)) return;
+
+    if (previous && previous.status !== 'resolved' && activity.status === 'resolved') {
+      const nextDueDate = nextRecurringActivityDate(activity.dueDate, after.activity?.recurrence);
+      if (nextDueDate) {
+        const database = getFirestore();
+        const nextId = `recurring-${messageId}-${nextDueDate}`;
+        const nextRef = database.doc(`artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/messages/${nextId}`);
+        await database.runTransaction(async (transaction) => {
+          if ((await transaction.get(nextRef)).exists) return;
+          transaction.create(nextRef, {
+            ...after,
+            id: nextId,
+            timestamp: Date.now(),
+            date: new Intl.DateTimeFormat('pt-BR', {timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short'}).format(new Date()),
+            readBy: [actorId].filter(Boolean),
+            likedBy: [], savedBy: [], highlightedBy: [], replyTo: null, attachment: null,
+            activity: recurringActivityPayload(after.activity, nextDueDate, messageId),
+          });
+        });
+      }
+    }
+
+    let recipientIds: string[] = [];
+    let title = '';
+    let body = '';
+    let type: 'activity_assignment' | 'activity_update' = 'activity_update';
+    if (newAssignees.length > 0) {
+      recipientIds = newAssignees;
+      title = 'ðŸ“‹ Nova atividade atribuÃ­da a vocÃª';
+      body = subject;
+      type = 'activity_assignment';
+    } else if (previous && previous.status !== activity.status) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = activity.status === 'resolved' ? 'âœ… Atividade concluÃ­da' : 'ðŸ”„ SituaÃ§Ã£o da atividade atualizada';
+      body = subject;
+    } else if (previous && previous.dueDate !== activity.dueDate && activity.assigneeIds.length > 0) {
+      recipientIds = activity.assigneeIds;
+      title = activity.dueDate ? 'ðŸ“… Prazo da atividade atualizado' : 'ðŸ“… Prazo removido da atividade';
+      body = activity.dueDate ? `${subject} Â· ${activity.dueDate.split('-').reverse().join('/')}` : subject;
+    } else if (previous && previous.commentCount < activity.commentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = 'ðŸ’¬ Novo comentÃ¡rio na atividade';
+      body = subject;
+    } else if (previous && previous.attachmentCount < activity.attachmentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy];
+      title = 'ðŸ“Ž Novo anexo na atividade';
+      body = subject;
+    } else {
+      return;
+    }
+
+    const mutedBy = Array.isArray(after.mutedBy) ? after.mutedBy.filter((id): id is string => typeof id === 'string') : [];
+    recipientIds = recipientIds.filter((id) => !mutedBy.includes(id));
+    await sendActivityPush({
+      database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds, actorId, title, body, type, threadId, messageId,
+      eventId: `activity-change-${messageId}-${Number(after.activity?.updatedAt || Date.now())}`,
+    });
+  },
+);
+
+export const notifyStandaloneActivityCreated = onDocumentCreated(
+  "artifacts/{appId}/public/data/companies/{companyId}/activities/{activityId}",
+  async (event) => {
+    const content = event.data?.data() ?? {};
+    const activity = messageActivityData(content);
+    if (!activity || activity.assigneeIds.length === 0) return;
+    await sendActivityPush({
+      database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds: activity.assigneeIds, actorId: activity.createdBy,
+      title: 'ðŸ“‹ Nova atividade avulsa atribuÃ­da a vocÃª', body: String(content.title || 'Atividade na Central de ServiÃ§os'),
+      type: 'activity_assignment', threadId: '', messageId: event.params.activityId,
+      eventId: `standalone-activity-created-${event.params.activityId}`,
+    });
+  },
+);
+
+export const notifyStandaloneActivityChange = onDocumentUpdated(
+  "artifacts/{appId}/public/data/companies/{companyId}/activities/{activityId}",
+  async (event) => {
+    const before = event.data?.before.data() ?? {};
+    const after = event.data?.after.data() ?? {};
+    const previous = messageActivityData(before);
+    const activity = messageActivityData(after);
+    if (!activity) return;
+    const activityId = String(event.params.activityId || '');
+    const actorId = activity.updatedBy || activity.createdBy;
+    const database = getFirestore();
+
+    if (previous && previous.status !== 'resolved' && activity.status === 'resolved') {
+      const nextDueDate = nextRecurringActivityDate(activity.dueDate, after.recurrence);
+      if (nextDueDate) {
+        const nextId = `recurring-${activityId}-${nextDueDate}`;
+        const nextRef = database.doc(`artifacts/${event.params.appId}/public/data/companies/${event.params.companyId}/activities/${nextId}`);
+        await database.runTransaction(async (transaction) => {
+          if ((await transaction.get(nextRef)).exists) return;
+          transaction.create(nextRef, {
+            ...after, ...recurringActivityPayload(after, nextDueDate, activityId), id: nextId,
+          });
+        });
+      }
+    }
+
+    const beforeCollaborators = before.collaborators && typeof before.collaborators === 'object' ? before.collaborators as Record<string, {status?: string}> : {};
+    const afterCollaborators = after.collaborators && typeof after.collaborators === 'object' ? after.collaborators as Record<string, {status?: string}> : {};
+    const newInvitees = Object.keys(afterCollaborators).filter((id) => afterCollaborators[id]?.status === 'invited' && beforeCollaborators[id]?.status !== 'invited');
+    const respondedInvitees = Object.keys(afterCollaborators).filter((id) => beforeCollaborators[id]?.status === 'invited' && ['accepted', 'declined'].includes(afterCollaborators[id]?.status || ''));
+    const acceptedCollaborators = Object.keys(afterCollaborators).filter((id) => afterCollaborators[id]?.status === 'accepted');
+    const newAssignees = activity.assigneeIds.filter((id) => !previous?.assigneeIds.includes(id));
+    let recipientIds: string[] = [];
+    let title = '';
+    let body = String(after.title || 'Atividade na Central de ServiÃ§os');
+    let type: 'activity_assignment' | 'activity_update' = 'activity_update';
+    if (newInvitees.length > 0) {
+      recipientIds = newInvitees;
+      title = 'ðŸ¤ Convite para participar de uma atividade';
+      body = `Aceite ou recuse o convite: ${body}`;
+    } else if (respondedInvitees.length > 0) {
+      recipientIds = [activity.createdBy, ...activity.assigneeIds];
+      title = afterCollaborators[respondedInvitees[0]]?.status === 'accepted' ? 'âœ… Convite para atividade aceito' : 'â†©ï¸ Convite para atividade recusado';
+      body = `${String(afterCollaborators[respondedInvitees[0]]?.status === 'accepted' ? 'ParticipaÃ§Ã£o confirmada' : 'ParticipaÃ§Ã£o recusada')}: ${body}`;
+    } else if (newAssignees.length > 0) {
+      recipientIds = newAssignees;
+      title = 'ðŸ“‹ Nova atividade avulsa atribuÃ­da a vocÃª';
+      type = 'activity_assignment';
+    } else if (previous && previous.status !== activity.status) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
+      title = activity.status === 'resolved' ? 'âœ… Atividade avulsa concluÃ­da' : 'ðŸ”„ SituaÃ§Ã£o da atividade atualizada';
+    } else if (previous && previous.dueDate !== activity.dueDate) {
+      recipientIds = [...activity.assigneeIds, ...acceptedCollaborators];
+      title = activity.dueDate ? 'ðŸ“… Prazo da atividade atualizado' : 'ðŸ“… Prazo removido da atividade';
+      if (activity.dueDate) body = `${body} Â· ${activity.dueDate.split('-').reverse().join('/')}`;
+    } else if (previous && previous.commentCount < activity.commentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
+      title = 'ðŸ’¬ Novo comentÃ¡rio na atividade avulsa';
+    } else if (previous && previous.attachmentCount < activity.attachmentCount) {
+      recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
+      title = 'ðŸ“Ž Novo anexo na atividade avulsa';
+    } else return;
+    await sendActivityPush({
+      database, appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds, actorId, title, body, type, threadId: '', messageId: activityId,
+      eventId: `standalone-activity-change-${activityId}-${Number(after.updatedAt || Date.now())}`,
+    });
+  },
+);
+
+export const cleanupDeletedDocumentFile = onDocumentDeleted(
+  "artifacts/{appId}/public/data/companies/{companyId}/documents/{documentId}",
+  async (event) => {
+    const companyId = String(event.params.companyId || '');
+    const filePath = storagePathFromFileRecord(event.data?.data()?.file);
+    if (!companyId || !filePath.startsWith(`companies/${companyId}/users/`) || !filePath.includes('/documents/')) return;
+    await getStorage().bucket().file(filePath).delete({ignoreNotFound: true});
+  },
+);
+
+export const cleanupDeletedActivityFiles = onDocumentDeleted(
+  "artifacts/{appId}/public/data/companies/{companyId}/activities/{activityId}",
+  async (event) => {
+    const companyId = String(event.params.companyId || '');
+    const attachments = event.data?.data()?.attachments;
+    if (!companyId || !Array.isArray(attachments)) return;
+    const paths = [...new Set(attachments.map(storagePathFromFileRecord).filter((filePath) =>
+      filePath.startsWith(`companies/${companyId}/users/`) && filePath.includes('/attachments/')) )];
+    await Promise.all(paths.map((filePath) => getStorage().bucket().file(filePath).delete({ignoreNotFound: true})));
+  },
+);
+
+type ConversationDeadlineStage = 'due_soon' | 'due_today' | 'overdue';
+type ConversationDeadlineItem = {
+  appId: string;
+  companyId: string;
+  threadId: string;
+  dueDate: string;
+  stage: ConversationDeadlineStage;
+  subject: string;
+  participants: string[];
+  ticketNumber: number;
+  timestamp: number;
+};
+
+type ActivityDeadlineItem = {
+  appId: string;
+  companyId: string;
+  threadId: string;
+  messageId: string;
+  dueDate: string;
+  stage: ConversationDeadlineStage;
+  subject: string;
+  recipientIds: string[];
+};
+
+const saoPauloCivilDate = (dayOffset = 0) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const part = (type: string) => Number(parts.find((item) => item.type === type)?.value || 0);
+  const shifted = new Date(Date.UTC(part('year'), part('month') - 1, part('day') + dayOffset));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+};
+
+const deadlineNotificationCopy = (stage: ConversationDeadlineStage) => {
+  if (stage === 'due_soon') return {title: 'â° Prazo de conversa vence amanhÃ£', prefix: 'Prazo amanhÃ£'};
+  if (stage === 'due_today') return {title: 'âš ï¸ Prazo de conversa vence hoje', prefix: 'Prazo hoje'};
+  return {title: 'ðŸš¨ Conversa com prazo vencido', prefix: 'Em atraso'};
+};
+
+const activityDeadlineNotificationCopy = (stage: ConversationDeadlineStage) => {
+  if (stage === 'due_soon') return {title: 'â° Atividade vence amanhÃ£', prefix: 'Prazo amanhÃ£'};
+  if (stage === 'due_today') return {title: 'âš ï¸ Atividade vence hoje', prefix: 'Prazo hoje'};
+  return {title: 'ðŸš¨ Atividade com prazo vencido', prefix: 'Em atraso'};
+};
+
+export const notifyConversationDeadlines = onSchedule({
+  schedule: '0 9 * * *',
+  timeZone: 'America/Sao_Paulo',
+  retryCount: 1,
+  maxInstances: 1,
+}, async () => {
+  const database = getFirestore();
+  const notificationDate = saoPauloCivilDate();
+  const tomorrow = saoPauloCivilDate(1);
+  const deadlineStage = (dueDate: string): ConversationDeadlineStage | undefined => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return undefined;
+    if (dueDate < notificationDate) return 'overdue';
+    if (dueDate === notificationDate) return 'due_today';
+    if (dueDate === tomorrow) return 'due_soon';
+    return undefined;
+  };
+  const conversations = new Map<string, ConversationDeadlineItem>();
+  const activities = new Map<string, ActivityDeadlineItem>();
+  const appId = 'comunica-salvador';
+  const companies = await database.collection(`artifacts/${appId}/public/data/companies`).get();
+  for (const company of companies.docs) {
+    const companyId = company.id;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) continue;
+    const messageSnapshot = await company.ref.collection('messages').where('dueDate', '>', '').where('dueDate', '<=', tomorrow).get();
+    messageSnapshot.docs.forEach((messageDocument) => {
+      const content = messageDocument.data();
+      const threadId = String(content.threadId || '');
+      const dueDate = String(content.dueDate || '');
+      const stage = deadlineStage(dueDate);
+      const participants = Array.isArray(content.participants)
+        ? [...new Set(content.participants.filter((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id)))]
+        : [];
+      const mutedBy = Array.isArray(content.mutedBy)
+        ? content.mutedBy.filter((id): id is string => typeof id === 'string')
+        : [];
+      const notifiedParticipants = participants.filter((id) => !mutedBy.includes(id));
+      if (!/^[a-zA-Z0-9_-]+$/.test(threadId) || !stage || participants.length === 0 || content.completedAt) return;
+      const key = `${appId}/${companyId}/${threadId}`;
+      const timestamp = Number(content.timestamp || 0);
+      const previous = conversations.get(key);
+      if (!previous || timestamp >= previous.timestamp) {
+        conversations.set(key, {
+          appId, companyId, threadId, dueDate, stage,
+          subject: String(content.subject || 'Conversa sem assunto').slice(0, 140),
+          participants: notifiedParticipants,
+          ticketNumber: Number(content.ticketNumber || 0),
+          timestamp,
+        });
+      }
+    });
+
+    const activitySnapshot = await company.ref.collection('messages').where('activity.dueDate', '>', '').where('activity.dueDate', '<=', tomorrow).get();
+    activitySnapshot.docs.forEach((messageDocument) => {
+      const content = messageDocument.data();
+      const activity = messageActivityData(content.activity);
+      const threadId = String(content.threadId || '');
+      const dueDate = activity?.dueDate || '';
+      const stage = deadlineStage(dueDate);
+      if (!activity || activity.status === 'resolved' || !stage || !/^[a-zA-Z0-9_-]+$/.test(threadId)) return;
+      const mutedBy = Array.isArray(content.mutedBy) ? content.mutedBy.filter((id): id is string => typeof id === 'string') : [];
+      const recipientIds = (activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean))
+        .filter((id) => !mutedBy.includes(id));
+      if (recipientIds.length === 0) return;
+      activities.set(`${appId}/${companyId}/${messageDocument.id}`, {
+        appId, companyId, threadId, messageId: messageDocument.id, dueDate, stage, recipientIds,
+        subject: String(content.subject || content.content || 'Atividade da conversa').slice(0, 160),
+      });
+    });
+
+    const standaloneActivitySnapshot = await company.ref.collection('activities').where('dueDate', '>', '').where('dueDate', '<=', tomorrow).get();
+    standaloneActivitySnapshot.docs.forEach((activityDocument) => {
+      const content = activityDocument.data();
+      const activity = messageActivityData(content);
+      const dueDate = activity?.dueDate || '';
+      const stage = deadlineStage(dueDate);
+      if (!activity || activity.status === 'resolved' || !stage) return;
+      const recipientIds = activity.assigneeIds.length > 0 ? activity.assigneeIds : [activity.createdBy].filter(Boolean);
+      if (recipientIds.length === 0) return;
+      activities.set(`${appId}/${companyId}/standalone/${activityDocument.id}`, {
+        appId, companyId, threadId: '', messageId: activityDocument.id, dueDate, stage, recipientIds,
+        subject: String(content.title || 'Atividade avulsa').slice(0, 160),
+      });
+    });
+  }
+
+  const companyUsers = new Map<string, Map<string, string[]>>();
+  for (const conversation of conversations.values()) {
+    const companyKey = `${conversation.appId}/${conversation.companyId}`;
+    if (!companyUsers.has(companyKey)) {
+      const users = await database.collection(`artifacts/${conversation.appId}/public/data/companies/${conversation.companyId}/users`).get();
+      companyUsers.set(companyKey, new Map(users.docs.map((user) => [
+        user.id,
+        Array.isArray(user.data().pushTokens)
+          ? user.data().pushTokens.filter((token: unknown): token is string => typeof token === 'string' && token.length > 0)
+          : [],
+      ])));
+    }
+    const receiptId = `deadline-${conversation.threadId}-${conversation.dueDate}-${conversation.stage}-${notificationDate}`;
+    const receiptRef = database.doc(`artifacts/${conversation.appId}/public/data/companies/${conversation.companyId}/notificationReceipts/${receiptId}`);
+    const acquired = await database.runTransaction(async (transaction) => {
+      if ((await transaction.get(receiptRef)).exists) return false;
+      transaction.create(receiptRef, {
+        type: 'conversation_deadline', threadId: conversation.threadId, dueDate: conversation.dueDate,
+        stage: conversation.stage, notificationDate, status: 'processing', createdAt: Date.now(),
+      });
+      return true;
+    });
+    if (!acquired) continue;
+
+    try {
+      const users = companyUsers.get(companyKey)!;
+      const tokens = conversation.participants.flatMap((participantId) => users.get(participantId) || []);
+      tokens.push(...await getSupportNotificationTokens(database, conversation.appId, conversation.participants, ''));
+      const uniqueTokens = [...new Set(tokens)];
+      if (uniqueTokens.length === 0) {
+        await receiptRef.set({status: 'no_registered_devices', completedAt: Date.now()}, {merge: true});
+        continue;
+      }
+      const copy = deadlineNotificationCopy(conversation.stage);
+      const ticket = conversation.ticketNumber > 0 ? `#${String(conversation.ticketNumber).padStart(6, '0')} Â· ` : '';
+      const body = `${copy.prefix}: ${ticket}${conversation.subject}`.slice(0, 220);
+      let successCount = 0;
+      let failureCount = 0;
+      for (let index = 0; index < uniqueTokens.length; index += 500) {
+        const response = await getMessaging().sendEachForMulticast({
+          tokens: uniqueTokens.slice(index, index + 500),
+          notification: {title: copy.title, body},
+          data: {
+            type: 'message_deadline', companyId: conversation.companyId, threadId: conversation.threadId,
+            dueDate: conversation.dueDate, stage: conversation.stage, eventId: receiptId,
+          },
+          webpush: {
+            headers: {Urgency: 'high', TTL: '3600'},
+            notification: {icon: '/pwa/icon-192.png', tag: receiptId, renotify: false},
+            fcmOptions: {link: `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(conversation.companyId)}&messageThread=${encodeURIComponent(conversation.threadId)}`},
+          },
+          android: {priority: 'high', ttl: 60 * 60 * 1000, notification: {tag: receiptId, sound: 'default'}},
+        });
+        successCount += response.successCount;
+        failureCount += response.failureCount;
+      }
+      await receiptRef.set({status: 'delivered', successCount, failureCount, completedAt: Date.now()}, {merge: true});
+    } catch (error) {
+      console.error('Conversation deadline notification failed', {
+        companyId: conversation.companyId, threadId: conversation.threadId, stage: conversation.stage, error,
+      });
+      await receiptRef.delete();
+      throw error;
+    }
+  }
+
+  for (const activity of activities.values()) {
+    const receiptId = `activity-deadline-${activity.messageId}-${activity.dueDate}-${activity.stage}-${notificationDate}`;
+    const receiptRef = database.doc(`artifacts/${activity.appId}/public/data/companies/${activity.companyId}/notificationReceipts/${receiptId}`);
+    const acquired = await database.runTransaction(async (transaction) => {
+      if ((await transaction.get(receiptRef)).exists) return false;
+      transaction.create(receiptRef, {
+        type: 'activity_deadline', threadId: activity.threadId, messageId: activity.messageId,
+        dueDate: activity.dueDate, stage: activity.stage, notificationDate, status: 'processing', createdAt: Date.now(),
+      });
+      return true;
+    });
+    if (!acquired) continue;
+
+    try {
+      const copy = activityDeadlineNotificationCopy(activity.stage);
+      const delivery = await sendActivityPush({
+        database, appId: activity.appId, companyId: activity.companyId,
+        recipientIds: activity.recipientIds, actorId: '', title: copy.title,
+        body: `${copy.prefix}: ${activity.subject}`, type: 'activity_deadline',
+        threadId: activity.threadId, messageId: activity.messageId, eventId: receiptId,
+      });
+      await receiptRef.set({
+        status: delivery.successCount > 0 ? 'delivered' : 'no_registered_devices',
+        ...delivery, completedAt: Date.now(),
+      }, {merge: true});
+    } catch (error) {
+      console.error('Activity deadline notification failed', {
+        companyId: activity.companyId, messageId: activity.messageId, stage: activity.stage, error,
+      });
+      await receiptRef.delete();
+      throw error;
+    }
+  }
+});
+
+
+
+
+export const saveScheduleCoverage = onCall({region: 'us-central1', maxInstances: 3}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente no Comunica.');
+  return saveCoverageSettings(getFirestore(), String(request.data?.companyId || ''), {
+    uid: request.auth.uid, companyId: String(request.auth.token.companyId || ''), isDeveloper: request.auth.token.isDeveloper === true,
+  }, request.data?.requirements, Number(request.data?.expectedVersion));
+});
+
+export const approvePurchaseQuote = onCall({region: 'us-central1', maxInstances: 3}, async request => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente no Comunica.');
+  const companyId = String(request.data?.companyId || '');
+  if (request.auth.token.companyId !== companyId || request.auth.token.isDeveloper === true) {
+    throw new HttpsError('permission-denied', 'Sem acesso Ã  empresa selecionada.');
+  }
+  return approvePurchaseQuoteGroup(getFirestore(), companyId, String(request.data?.bundleId || ''), request.auth.uid);
+});
+
+/** Independent of deadlines: remind about unread messages and 24-hour inactivity. */
+export const notifyPendingReminders = onSchedule({
+  schedule: '0 9 * * *',
+  timeZone: 'America/Sao_Paulo',
+  retryCount: 1,
+  maxInstances: 1,
+}, async () => {
+  const database = getFirestore();
+  const now = Date.now();
+  const notificationDate = saoPauloCivilDate();
+  const appId = 'comunica-salvador';
+  const companies = await database.collection(`artifacts/${appId}/public/data/companies`).get();
+  let failed = false;
+  let delivered = 0;
+  for (const company of companies.docs) {
+    const companyId = company.id;
+    if (!/^[a-zA-Z0-9_-]+$/.test(companyId)) continue;
+    const [messages, activities] = await Promise.all([
+      company.ref.collection('messages').select(
+        'threadId', 'senderId', 'participants', 'readBy', 'mutedBy',
+        'timestamp', 'subject', 'completedAt', 'activity',
+      ).get(),
+      company.ref.collection('activities').select(
+        'title', 'status', 'assigneeIds', 'createdBy', 'createdAt', 'updatedAt',
+      ).get(),
+    ]);
+    const reminders = buildPendingReminders(
+      messages.docs.map(item => ({...item.data(), id: item.id})),
+      activities.docs.map(item => ({...item.data(), id: item.id})),
+      now,
+    );
+    for (const reminder of reminders) {
+      const receiptId = `pending-${reminder.key}-${notificationDate}`;
+      const receiptRef = company.ref.collection('notificationReceipts').doc(receiptId);
+      const acquired = await database.runTransaction(async transaction => {
+        const existing = await transaction.get(receiptRef);
+        // Allow recovery after an interrupted execution, retaining same-day deduplication.
+        if (existing.exists && !(existing.data()?.status === 'processing' &&
+            now - Number(existing.data()?.createdAt || now) > 10 * 60 * 1000)) return false;
+        transaction.set(receiptRef, {
+          type: 'pending_reminder', kind: reminder.kind, notificationDate,
+          threadId: reminder.threadId, messageId: reminder.messageId,
+          status: 'processing', createdAt: now,
+        });
+        return true;
+      });
+      if (!acquired) continue;
+      try {
+        const delivery = await sendActivityPush({
+          database, appId, companyId, recipientIds: reminder.recipientIds,
+          actorId: '', title: reminder.title, body: reminder.body,
+          type: reminder.kind === 'unread' ? 'message' : 'activity_update',
+          threadId: reminder.threadId, messageId: reminder.messageId, eventId: receiptId,
+        });
+        if (delivery.successCount === 0 && delivery.failureCount > 0) {
+          throw new Error('No pending reminder could be delivered to registered devices.');
+        }
+        await receiptRef.set({
+          status: delivery.successCount > 0 ? 'delivered' : 'no_registered_devices',
+          ...delivery, completedAt: Date.now(),
+        }, {merge: true});
+        delivered += delivery.successCount;
+      } catch (error) {
+        failed = true;
+        await receiptRef.delete();
+        console.error('Pending reminder failed', {companyId, kind: reminder.kind, error});
+      }
+    }
+  }
+  console.info('Pending reminders completed', {notificationDate, delivered, failed});
+  if (failed) throw new Error('Some pending reminders failed; retry requested.');
+});
+
+
+export const purchaseWorkspace = onCall({region:'us-central1', invoker:'public', maxInstances:3, timeoutSeconds:30}, async request => {
+  try {
+    const {purchaseWorkspaceAction} = await import('./purchaseWorkspace.js');
+    return await purchaseWorkspaceAction(getFirestore(), request.data || {}, request.auth);
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('invalid-argument', error instanceof Error ? error.message : 'Confira os dados da cotaÃ§Ã£o.');
+  }
+});
+
+export const surveyWorkspace = onCall({region:'us-central1',invoker:'public',maxInstances:3,timeoutSeconds:60},async request=>{
+ const {surveyWorkspaceAction}=await import('./surveyWorkspace.js');
+ return surveyWorkspaceAction(getFirestore(),request.data || {},request.auth,request.rawRequest.ip || 'unknown');
+});
