@@ -7,10 +7,12 @@ const percent = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFracti
 const formatScore = value => value == null ? '—' : `${score.format(value)} / 5`;
 const formatPercent = value => value == null ? '—' : percent.format(value);
 
-function ChartRow({ label, value, max, detail }) {
+function ChartRow({ label, value, max, detail, tone = 'default' }) {
   return <div className="survey-report-option">
     <span>{label}</span><strong>{detail}</strong>
-    <meter min={0} max={max || 1} value={value} aria-label={label} />
+    <div className="survey-chart-track" aria-hidden="true">
+      <div className="survey-chart-fill" data-tone={tone} style={{ width: `${max ? value / max * 100 : 0}%` }} />
+    </div>
   </div>;
 }
 
@@ -24,6 +26,8 @@ export default function SurveyAnalysis({ report, onClose }) {
   }, []);
   const [selectedTopic, setSelectedTopic] = useState('');
   const summary = summarizeSurvey(report);
+  const leadingChoice = summary.choices[0];
+  const divided = summary.dividedQuestions[0];
   const details = report.topics.filter(topic => !selectedTopic || topic.id === selectedTopic);
 
   function download() {
@@ -53,7 +57,10 @@ export default function SurveyAnalysis({ report, onClose }) {
           <h2 className="survey-report-title" id={titleId}>{report.title}</h2>
           <p>Resultados agregados por pesquisa, tópico e pergunta.</p>
         </div>
-        <button type="button" className="survey-primary" onClick={download}>Exportar análise CSV</button>
+        <div className="survey-small-actions survey-report-actions">
+          <button type="button" onClick={download}>Exportar CSV</button>
+          <button type="button" className="survey-primary" onClick={() => window.print()}>Imprimir / salvar PDF</button>
+        </div>
       </header>
 
       <div className="survey-metrics">
@@ -72,27 +79,53 @@ export default function SurveyAnalysis({ report, onClose }) {
           {summary.strengths.length > 0 && <p><strong>Destaque positivo</strong> · {summary.strengths[0].title} obteve {formatScore(summary.strengths[0].average)}. Identifique as práticas que a equipe pode manter ou replicar.</p>}
           {summary.attention.length > 0 && <p><strong>Pontos de atenção</strong></p>}
           {summary.attention.length > 0 && <ul>{summary.attention.map(topic => <li key={topic.id}>{topic.title} · {formatScore(topic.average)}</li>)}</ul>}
-          {summary.attention.length > 0 && <p>Revise as perguntas com menores notas nesses tópicos, discuta as causas com a equipe e defina uma ação com responsável e prazo.</p>}
-          {summary.total > 0 && !summary.attention.length && <p>Nenhum tópico ficou abaixo de 3,50. Confira a distribuição por pergunta para identificar possíveis divergências de percepção.</p>}
-          {!summary.total && <p>Para analisar estas respostas, abra o detalhamento e compare as alternativas mais e menos escolhidas.</p>}
-          {report.partial > 0 && <p>Para reduzir respostas parciais, revise a clareza das perguntas e o tempo necessário para concluir o formulário.</p>}
         </>}
       </section>
 
-      <div className="survey-analysis-charts">
+      {report.respondents > 0 && <section className="survey-analysis-card survey-report-recommendations">
+        <h3>Sugestões automáticas para o RH</h3>
+        <ul>
+          {summary.attention.length > 0 && <li><strong>Priorizar {summary.attention[0].title}.</strong> Revise as perguntas com menor nota, valide as causas com a equipe e leve à diretoria uma ação com responsável e prazo.</li>}
+          {divided && <li><strong>Investigar percepções divididas.</strong> Em “{divided.question.question}”, {formatPercent(divided.low)} deram notas 1–2 e {formatPercent(divided.high)} deram 4–5. Ouça quem teve experiências diferentes antes de decidir uma ação.</li>}
+          {leadingChoice && <li><strong>{leadingChoice.leaders.length === 1 ? 'Validar a alternativa mais escolhida' : 'Esclarecer o empate'}.</strong> Em “{leadingChoice.question.question}”, {leadingChoice.leaders.map(option => `“${option.label}”`).join(', ')} {leadingChoice.leaders.length === 1 ? 'recebeu' : 'receberam'} {leadingChoice.leaders[0].count} de {leadingChoice.question.responses} votos {leadingChoice.leaders.length > 1 ? 'cada' : ''}. Confirme o que motivou a escolha antes de definir como agir.</li>}
+          {report.partial > 0 && <li><strong>Revisar a conclusão do formulário.</strong> Houve {report.partial} participações parciais. Confira a clareza das perguntas e o tempo para responder.</li>}
+          {summary.total > 0 && !summary.attention.length && !divided && <li><strong>Acompanhar no próximo ciclo.</strong> Nenhum tópico ficou abaixo de 3,50. Repita as perguntas de escala para acompanhar mudanças na percepção da equipe.</li>}
+        </ul>
+      </section>}
+
+      {summary.total > 0 && <div className="survey-analysis-charts">
         <section className="survey-analysis-card">
-          <h3>Pontuação por tópico</h3>
-          {summary.scoredTopics.length ? summary.scoredTopics.map(topic =>
+          <h3>Pontuação média por tópico</h3>
+          {summary.scoredTopics.map(topic =>
             <ChartRow key={topic.id} label={topic.title} value={topic.average} max={5} detail={formatScore(topic.average)} />
-          ) : <p>Nenhum tópico tem notas registradas.</p>}
+          )}
         </section>
         <section className="survey-analysis-card">
-          <h3>Distribuição de notas</h3>
-          {summary.total ? summary.distribution.map((count, index) =>
-            <ChartRow key={index} label={`Nota ${index + 1}`} value={count} max={summary.total} detail={`${number.format(count)} · ${percent.format(count / summary.total)}`} />
-          ) : <p>A distribuição aparece quando houver respostas em escala.</p>}
+          <h3>Como as notas se distribuem</h3>
+          <p>Veja quantas notas foram baixas, intermediárias ou altas. Uma média de 3 pode vir de notas concentradas em 3 ou de uma divisão entre 1 e 5.</p>
+          {[
+            ['Baixas · 1 e 2', 'low'],
+            ['Intermediárias · 3', 'mid'],
+            ['Altas · 4 e 5', 'high'],
+          ].map(([label, tone], index) => {
+            const count = summary.bands[index];
+            return <ChartRow key={tone} label={label} tone={tone} value={count} max={summary.total} detail={`${formatPercent(count / summary.total)} · ${number.format(count)}`} />;
+          })}
+          <small>Base de cálculo: {number.format(summary.total)} respostas em perguntas de escala.</small>
         </section>
-      </div>
+      </div>}
+
+      {leadingChoice && <section className="survey-analysis-card survey-choice-charts">
+        <h3>Alternativas escolhidas</h3>
+        <p>Perguntas de alternativas com mais respostas. Consulte todos os gráficos no detalhamento por pergunta.</p>
+        <div className="survey-analysis-charts">
+          {summary.choices.slice(0, 4).map(({ topic, question }) => <article key={question.id} className="survey-report-question">
+            <h4>{question.question}</h4>
+            <p>{topic.title} · {question.responses} respostas</p>
+            {question.options.map((option, index) => <ChartRow key={index} label={option.label} value={option.count} max={question.responses} detail={`${option.percentage}% · ${option.count}`} />)}
+          </article>)}
+        </div>
+      </section>}
 
       <p className="survey-report-note">A pontuação geral dá o mesmo peso a cada nota registrada. A conclusão considera quem participou da pesquisa. Participações públicas são contadas por navegador. Interprete as médias junto com o volume de respostas.</p>
 
