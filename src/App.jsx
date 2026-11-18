@@ -1907,13 +1907,19 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         const savedCompany = getLocalStorageItem('comunica_active_company', null);
         const clearIdentity = Boolean(savedUser?.id && savedUser.id !== usr.uid || (!scope.isDeveloper && savedCompany?.id && scope.companyId !== savedCompany.id));
         let profile;
+        let company;
         if (!scope.isDeveloper && scope.companyId) {
           const snapshot = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', scope.companyId, 'users', usr.uid));
           profile = snapshot.exists() ? { ...snapshot.data(), id: usr.uid } : null;
+          if (savedCompany?.id === scope.companyId) company = savedCompany;
+          else {
+            const companySnapshot = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', scope.companyId));
+            company = companySnapshot.exists() ? { id: companySnapshot.id, ...companySnapshot.data() } : null;
+          }
         }
-        return { usr, scope, profile, clearIdentity };
+        return { usr, scope, profile, company, clearIdentity };
       },
-      onReady: ({ usr, scope, profile, clearIdentity, anonymous }) => {
+      onReady: ({ usr, scope, profile, company, clearIdentity, anonymous }) => {
         if (clearIdentity) {
           localStorage.removeItem('comunica_current_user');
           localStorage.removeItem('comunica_active_company');
@@ -1921,6 +1927,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           setActiveCompany(null);
         }
         if (profile !== undefined) setCurrentUser(profile);
+        if (!scope?.isDeveloper && scope?.companyId) setActiveCompany(company || null);
         setAuthScope(scope || { companyId: '', isDeveloper: false });
         setDbUser(usr);
         setSessionStartupError(false);
@@ -6914,6 +6921,8 @@ const notificationsToShow = [...allNotifications]
     const sectorProfile = getUserDepts(user).map(deptId => accessControl.sectorPermissions?.[deptId]).find(Boolean);
     return normalizeAccessProfile(sectorProfile || {});
   };
+  const integraAccessLoadState = liveDataStatus.companyId === activeCompany?.id ? liveDataStatus.users : 'loading';
+  const integraAccessReady = integraAccessLoadState === 'ready';
   const integraAccessUsers = employeesList
     .filter(user => accessProfileForUser(user).tabs.integra !== false)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
@@ -10487,7 +10496,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 <section className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-blue-50 p-4 shadow-sm sm:col-span-2 sm:p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-cyan-800">Acesso específico</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">Comunica Integra</h3><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Libere o módulo para vários colaboradores de uma vez. A alteração preserva as demais permissões de cada pessoa.</p></div>
-                    <span className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-[10px] font-extrabold text-cyan-900">{integraAccessUsers.length} com acesso</span>
+                    <span className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-[10px] font-extrabold text-cyan-900">{integraAccessReady ? `${integraAccessUsers.length} com acesso` : integraAccessLoadState === 'error' ? 'Falha ao carregar' : 'Carregando lista…'}</span>
                   </div>
                   <div className="mt-4 grid gap-4 lg:grid-cols-2">
                     <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -10495,16 +10504,18 @@ const handleDownload = async (fileUrl, fileName) => {
                       <input type="search" value={integraPermissionSearch} onChange={event => setIntegraPermissionSearch(event.target.value)} placeholder="Buscar por nome ou cargo" aria-label="Buscar colaboradores para liberar o Comunica Integra" className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs text-slate-700 outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" />
                       <div className="mt-2 flex gap-2"><button type="button" onClick={() => setIntegraPermissionSelection(previous => [...new Set([...previous, ...integraPermissionCandidates.map(user => user.id)])])} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">Selecionar exibidos</button><button type="button" onClick={() => setIntegraPermissionSelection([])} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">Limpar seleção</button></div>
                       <div className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
-                        {integraPermissionCandidates.map(user => <label key={user.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-cyan-50/60"><input type="checkbox" checked={integraPermissionSelection.includes(user.id)} onChange={event => setIntegraPermissionSelection(previous => event.target.checked ? [...new Set([...previous, user.id])] : previous.filter(id => id !== user.id))} className="h-4 w-4 accent-cyan-700" /><span className="min-w-0"><strong className="block truncate text-slate-800">{user.name}</strong><span className="block truncate text-[10px] text-slate-500">{user.role || 'Sem cargo'}</span></span>{integraAccessUsers.some(accessUser => accessUser.id === user.id) && <span className="ml-auto shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-700">Já tem acesso</span>}</label>)}
-                        {integraPermissionCandidates.length === 0 && <p className="p-4 text-center text-xs text-slate-500">Nenhum colaborador encontrado.</p>}
+                        {!integraAccessReady && <p className="p-4 text-center text-xs text-amber-800">{integraAccessLoadState === 'error' ? 'Falha ao carregar os colaboradores. Reconecte a sessão para consultar os acessos.' : 'Carregando colaboradores da empresa…'}</p>}
+                        {integraAccessReady && integraPermissionCandidates.map(user => <label key={user.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-cyan-50/60"><input type="checkbox" checked={integraPermissionSelection.includes(user.id)} onChange={event => setIntegraPermissionSelection(previous => event.target.checked ? [...new Set([...previous, user.id])] : previous.filter(id => id !== user.id))} className="h-4 w-4 accent-cyan-700" /><span className="min-w-0"><strong className="block truncate text-slate-800">{user.name}</strong><span className="block truncate text-[10px] text-slate-500">{user.role || 'Sem cargo'}</span></span>{integraAccessUsers.some(accessUser => accessUser.id === user.id) && <span className="ml-auto shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-700">Já tem acesso</span>}</label>)}
+                        {integraAccessReady && integraPermissionCandidates.length === 0 && <p className="p-4 text-center text-xs text-slate-500">Nenhum colaborador encontrado.</p>}
                       </div>
-                      <button type="button" onClick={() => saveIntegraAccessForUsers(integraPermissionSelection, true)} disabled={!integraPermissionSelection.length || integraPermissionBusy} className="mt-3 w-full rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-cyan-900 disabled:cursor-not-allowed disabled:opacity-50">{integraPermissionBusy ? 'Atualizando acessos…' : `Liberar acesso${integraPermissionSelection.length ? ` (${integraPermissionSelection.length})` : ''}`}</button>
+                      <button type="button" onClick={() => saveIntegraAccessForUsers(integraPermissionSelection, true)} disabled={!integraAccessReady || !integraPermissionSelection.length || integraPermissionBusy} className="mt-3 w-full rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-cyan-900 disabled:cursor-not-allowed disabled:opacity-50">{integraPermissionBusy ? 'Atualizando acessos…' : `Liberar acesso${integraPermissionSelection.length ? ` (${integraPermissionSelection.length})` : ''}`}</button>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="flex items-center justify-between gap-2"><strong className="text-xs text-slate-800">Quem tem acesso agora</strong><span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-800">{integraAccessUsers.length}</span></div>
+                      <div className="flex items-center justify-between gap-2"><strong className="text-xs text-slate-800">Quem tem acesso agora</strong><span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-800">{integraAccessReady ? integraAccessUsers.length : '—'}</span></div>
                       <div className="mt-3 max-h-[350px] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
-                        {integraAccessUsers.map(user => <div key={user.id} className="flex items-center justify-between gap-2 px-3 py-2.5"><span className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="block truncate text-[10px] text-slate-500">{user.role || 'Sem cargo'}{user.isAdmin || user.isDeveloper ? ' · acesso administrativo' : ''}</span></span>{user.isAdmin || user.isDeveloper ? <span className="shrink-0 text-[9px] font-bold text-slate-400">Obrigatório</span> : <button type="button" onClick={() => saveIntegraAccessForUsers([user.id], false)} disabled={integraPermissionBusy} className="shrink-0 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[10px] font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">Remover</button>}</div>)}
-                        {integraAccessUsers.length === 0 && <p className="p-4 text-center text-xs text-slate-500">Nenhum colaborador tem acesso individual ao módulo.</p>}
+                        {!integraAccessReady && <p className="p-4 text-center text-xs text-amber-800">{integraAccessLoadState === 'error' ? 'A lista está indisponível por falha de sincronização.' : 'Sincronizando os dados da empresa…'}</p>}
+                        {integraAccessReady && integraAccessUsers.map(user => <div key={user.id} className="flex items-center justify-between gap-2 px-3 py-2.5"><span className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="block truncate text-[10px] text-slate-500">{user.role || 'Sem cargo'}{user.isAdmin || user.isDeveloper ? ' · acesso administrativo' : ''}</span></span>{user.isAdmin || user.isDeveloper ? <span className="shrink-0 text-[9px] font-bold text-slate-400">Obrigatório</span> : <button type="button" onClick={() => saveIntegraAccessForUsers([user.id], false)} disabled={integraPermissionBusy} className="shrink-0 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[10px] font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">Remover</button>}</div>)}
+                        {integraAccessReady && integraAccessUsers.length === 0 && <p className="p-4 text-center text-xs text-slate-500">Nenhum colaborador tem acesso ao módulo.</p>}
                       </div>
                     </div>
                   </div>
