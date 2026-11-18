@@ -1,7 +1,7 @@
 import {Firestore,Transaction,DocumentReference,FieldPath} from 'firebase-admin/firestore';
 import {HttpsError} from 'firebase-functions/v2/https';
 import {createHash,randomBytes} from 'node:crypto';
-import {normalizeSurveyQuestions,validateSurveyAnswers,surveyDraftQuestions,isSurveyManager,surveyReport} from './surveyModel.mjs';
+import {normalizeSurveyQuestions,normalizeSurveySuggestion,validateSurveyAnswers,surveyDraftQuestions,isSurveyManager,surveyReport} from './surveyModel.mjs';
 type Data=Record<string,any>;
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const key=(value:unknown)=>{const s=String(value || '');if(!/^[a-zA-Z0-9_-]{1,128}$/.test(s))throw new HttpsError('invalid-argument','Identificação da pesquisa inválida.');return s;};
@@ -22,6 +22,13 @@ async function source(tx:Transaction,base:DocumentReference,groupId:string,manag
  if(!management&&polls.some(p=>p.expiresAt&&p.expiresAt<today()))throw new HttpsError('failed-precondition','Esta pesquisa já foi encerrada.');
  return polls;
 }
+function suggestionCollection(base:DocumentReference,groupId:string){
+ return base.collection('surveyLinks').doc(groupId).collection('suggestions');
+}
+function saveSuggestion(tx:Transaction,base:DocumentReference,groupId:string,value:unknown){
+ const text=normalizeSurveySuggestion(value);
+ if(text)tx.create(suggestionCollection(base,groupId).doc(),{text,createdAt:Date.now()});
+}
 function signature(polls:Data[]){return hash(JSON.stringify(polls.map(p=>[p.id,p.question,p.options,p.type,p.topicId || '',p.topicTitle || '',p.topicOrder || 1,p.formOrder || 1,p.expiresAt || '',p.formTitle || '',p.formDescription || ''])));}
 function publicView(polls:Data[],companyName:string,uid?:string){
  return {companyName,title:String(polls[0].formTitle || polls[0].question).slice(0,160),description:String(polls[0].formDescription || '').slice(0,2000),expiresAt:polls[0].expiresAt || '',questions:polls.map(p=>({id:p.id,question:p.question,options:p.options,type:p.type || 'single',topicId:p.topicId || 'general',topicTitle:p.topicTitle || 'Perguntas',topicOrder:p.topicOrder || 1,formOrder:p.formOrder || 1,...(uid&&p.votes?.[uid]!==undefined?{answer:p.votes[uid]}:{})}))};
@@ -41,7 +48,11 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    }
    const management=['edit','archive','restore','report'].includes(action);
    const polls=await source(tx,base,groupId,management);
-   if(action==='report')return {...surveyReport(polls),title:polls[0].formTitle || polls[0].question,archived:Boolean(polls[0].archived)};
+   if(action==='report'){
+    const limit=200;
+    const suggestions=await tx.get(suggestionCollection(base,groupId).orderBy('createdAt','desc').limit(limit+1));
+    return {...surveyReport(polls),title:polls[0].formTitle || polls[0].question,archived:Boolean(polls[0].archived),suggestions:suggestions.docs.slice(0,limit).map(doc=>doc.data().text),suggestionsLimited:suggestions.size>limit};
+   }
    if(action==='archive'||action==='restore'){
     if(meta.data()?.tokenHash)tx.update(db.collection('_surveyLinks').doc(meta.data()!.tokenHash),{revoked:true});
     tx.set(metaRef,{revoked:true,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});
@@ -66,7 +77,9 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    }
    if(action==='readInternal')return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[auth.uid]!==undefined)};
    if(action==='submitInternal'){
+    if(polls.every(p=>p.votes?.[auth.uid]!==undefined))return {submitted:true};
     const answers=validateSurveyAnswers(polls,data.answers);
+    saveSuggestion(tx,base,groupId,data.suggestion);
     for(const p of polls)if(p.votes?.[auth.uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',auth.uid),answers[p.id]);
     return {submitted:true};
    }
@@ -104,6 +117,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    if(count>=120)throw new HttpsError('resource-exhausted','Muitas respostas simultâneas. Aguarde um minuto.');
    tx.set(rateRef,{window:recent?rate.data()!.window:Date.now(),count:count+1});
   }
+  saveSuggestion(tx,base,v.groupId,data.suggestion);
   for(const p of polls)if(p.votes?.[uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',uid),answers[p.id]);
   tx.create(responseRef,{submittedAt:Date.now(),groupId:v.groupId,audience:v.audience});
   return {submitted:true};

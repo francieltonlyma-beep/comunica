@@ -66,3 +66,15 @@
   .survey-score, .survey-summary-highlights > div { break-inside: avoid; }
   .survey-score-axis, .survey-score-legend { print-color-adjust: exact; }
 }
+
+.survey-suggestion { display: grid; gap: 8px; margin: 24px 0; padding: 16px; border: 1px solid var(--sv-border); border-radius: 14px; }
+.survey-suggestion label { font-size: 16px; font-weight: 800; }
+.survey-suggestion :is(label span, p, small) { font-size: 13px; color: var(--sv-muted); }
+.survey-suggestion textarea { width: 100%; padding: 10px 12px; resize: vertical; border: 1px solid var(--sv-border); border-radius: 8px; color: var(--sv-text); background: var(--sv-bg); font: inherit; }
+.survey-suggestion small { justify-self: end; }
+.survey-written-suggestions { margin-top: 14px; }
+.survey-written-suggestions summary { cursor: pointer; margin-top: 10px; font-size: 13px; font-weight: 700; }
+.survey-analysis .survey-written-suggestions li { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; }
+@media print {
+  body:has(.survey-analysis) .survey-written-suggestions { display: none !important; }
+}
