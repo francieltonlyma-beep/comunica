@@ -807,6 +807,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [permissionScope, setPermissionScope] = useState('user');
   const [permissionTargetId, setPermissionTargetId] = useState('');
   const [permissionDraft, setPermissionDraft] = useState(fullAccessProfile());
+  const [integraPermissionSelection, setIntegraPermissionSelection] = useState([]);
+  const [integraPermissionSearch, setIntegraPermissionSearch] = useState('');
+  const [integraPermissionBusy, setIntegraPermissionBusy] = useState(false);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPersonFilter, setAuditPersonFilter] = useState('all');
   const [auditAreaFilter, setAuditAreaFilter] = useState('all');
@@ -6911,6 +6914,38 @@ const notificationsToShow = [...allNotifications]
     const sectorProfile = getUserDepts(user).map(deptId => accessControl.sectorPermissions?.[deptId]).find(Boolean);
     return normalizeAccessProfile(sectorProfile || {});
   };
+  const integraAccessUsers = employeesList
+    .filter(user => accessProfileForUser(user).tabs.integra !== false)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
+  const integraPermissionCandidates = employeesList
+    .filter(user => !user.isAdmin && !user.isDeveloper)
+    .filter(user => `${user.name || ''} ${user.role || ''}`.toLocaleLowerCase('pt-BR').includes(integraPermissionSearch.toLocaleLowerCase('pt-BR')))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
+  const saveIntegraAccessForUsers = async (userIds, enabled) => {
+    if (!currentUser?.isAdmin && !currentUser?.isDeveloper) return;
+    const uniqueIds = [...new Set(userIds)].filter(Boolean);
+    if (!uniqueIds.length) return triggerNotification('Selecione pelo menos um colaborador.', 'error');
+    setIntegraPermissionBusy(true);
+    try {
+      const results = await Promise.all(uniqueIds.map(userId => {
+        const user = employeesList.find(item => item.id === userId);
+        if (!user || user.isAdmin || user.isDeveloper) return Promise.resolve(false);
+        const profile = accessProfileForUser(user);
+        const payload = { ...profile, tabs: { ...profile.tabs, integra: enabled } };
+        return updateDocField('users', userId, { permissions: payload, permissionsUpdatedAt: Date.now(), permissionsUpdatedBy: currentUser.name });
+      }));
+      const changedCount = results.filter(Boolean).length;
+      if (changedCount) {
+        setIntegraPermissionSelection([]);
+        triggerNotification(enabled
+          ? `Acesso ao Comunica Integra liberado para ${changedCount} colaborador(es).`
+          : `Acesso ao Comunica Integra removido de ${changedCount} colaborador(es).`);
+      }
+      if (changedCount < uniqueIds.length) triggerNotification('Alguns acessos não puderam ser atualizados. Confira a lista e tente novamente.', 'error');
+    } finally {
+      setIntegraPermissionBusy(false);
+    }
+  };
   const effectiveAccessProfile = accessProfileForUser(currentUser);
   const canConfigureScheduleRules = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageScheduleRules !== false);
   const canManageActivities = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageActivities !== false);
@@ -10448,6 +10483,31 @@ const handleDownload = async (fileUrl, fileName) => {
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">{ACCESS_MODULES.map(module => <label key={module.id} className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-semibold ${permissionDraft.tabs?.[module.id] !== false ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>{module.label}</span><input type="checkbox" checked={permissionDraft.tabs?.[module.id] !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, tabs: { ...previous.tabs, [module.id]: event.target.checked } }))} className="accent-blue-700" /></label>)}</div>
                   <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2"><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar informações</span><input type="checkbox" checked={permissionDraft.canEdit !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canEdit: event.target.checked, ...(!event.target.checked ? { canManageActivities: false, canManageActivityTemplates: false } : {}) }))} className="accent-emerald-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageCalendar ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar escalas e calendário</span><input type="checkbox" checked={permissionDraft.canManageCalendar !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageCalendar: event.target.checked, ...(!event.target.checked ? { canManageScheduleRules: false } : {}) }))} className="accent-amber-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageScheduleRules !== false ? 'border-cyan-200 bg-cyan-50 text-cyan-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageCalendar === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Configurar regras da escala inteligente</span><input type="checkbox" disabled={permissionDraft.canManageCalendar === false} checked={permissionDraft.canManageScheduleRules !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageScheduleRules: event.target.checked }))} className="accent-cyan-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageActivities !== false ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canEdit === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Criar e alterar atividades</span><input type="checkbox" disabled={permissionDraft.canEdit === false} checked={permissionDraft.canManageActivities !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageActivities: event.target.checked, ...(!event.target.checked ? { canManageActivityTemplates: false } : {}) }))} className="accent-violet-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageActivityTemplates ? 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageActivities === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Administrar modelos de checklist</span><input type="checkbox" disabled={permissionDraft.canManageActivities === false} checked={permissionDraft.canManageActivityTemplates === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageActivityTemplates: event.target.checked }))} className="accent-fuchsia-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewActivityInsights ? 'border-indigo-200 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver indicadores das atividades</span><input type="checkbox" checked={permissionDraft.canViewActivityInsights === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewActivityInsights: event.target.checked }))} className="accent-indigo-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canPublishAbsenceForOthers ? 'border-sky-200 bg-sky-50 text-sky-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Publicar ausência de outras pessoas</span><input type="checkbox" checked={permissionDraft.canPublishAbsenceForOthers === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canPublishAbsenceForOthers: event.target.checked }))} className="accent-sky-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewEngagement ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver confirmações e curtidas</span><input type="checkbox" checked={permissionDraft.canViewEngagement === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewEngagement: event.target.checked }))} className="accent-violet-700" /></label></div>
                   <div className="mt-5 flex justify-end"><button type="button" onClick={savePermissionTarget} disabled={!permissionTargetId} className="rounded-xl bg-slate-900 px-5 py-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Salvar permissões</button></div>
+                </section>
+                <section className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-blue-50 p-4 shadow-sm sm:col-span-2 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div><span className="text-[9px] font-black uppercase tracking-[.16em] text-cyan-800">Acesso específico</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">Comunica Integra</h3><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">Libere o módulo para vários colaboradores de uma vez. A alteração preserva as demais permissões de cada pessoa.</p></div>
+                    <span className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-[10px] font-extrabold text-cyan-900">{integraAccessUsers.length} com acesso</span>
+                  </div>
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-xs text-slate-800">Liberar para colaboradores</strong><span className="text-[10px] font-semibold text-slate-500">{integraPermissionSelection.length} selecionado(s)</span></div>
+                      <input type="search" value={integraPermissionSearch} onChange={event => setIntegraPermissionSearch(event.target.value)} placeholder="Buscar por nome ou cargo" aria-label="Buscar colaboradores para liberar o Comunica Integra" className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-xs text-slate-700 outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" />
+                      <div className="mt-2 flex gap-2"><button type="button" onClick={() => setIntegraPermissionSelection(previous => [...new Set([...previous, ...integraPermissionCandidates.map(user => user.id)])])} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">Selecionar exibidos</button><button type="button" onClick={() => setIntegraPermissionSelection([])} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">Limpar seleção</button></div>
+                      <div className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
+                        {integraPermissionCandidates.map(user => <label key={user.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-xs hover:bg-cyan-50/60"><input type="checkbox" checked={integraPermissionSelection.includes(user.id)} onChange={event => setIntegraPermissionSelection(previous => event.target.checked ? [...new Set([...previous, user.id])] : previous.filter(id => id !== user.id))} className="h-4 w-4 accent-cyan-700" /><span className="min-w-0"><strong className="block truncate text-slate-800">{user.name}</strong><span className="block truncate text-[10px] text-slate-500">{user.role || 'Sem cargo'}</span></span>{integraAccessUsers.some(accessUser => accessUser.id === user.id) && <span className="ml-auto shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-700">Já tem acesso</span>}</label>)}
+                        {integraPermissionCandidates.length === 0 && <p className="p-4 text-center text-xs text-slate-500">Nenhum colaborador encontrado.</p>}
+                      </div>
+                      <button type="button" onClick={() => saveIntegraAccessForUsers(integraPermissionSelection, true)} disabled={!integraPermissionSelection.length || integraPermissionBusy} className="mt-3 w-full rounded-xl bg-cyan-800 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-cyan-900 disabled:cursor-not-allowed disabled:opacity-50">{integraPermissionBusy ? 'Atualizando acessos…' : `Liberar acesso${integraPermissionSelection.length ? ` (${integraPermissionSelection.length})` : ''}`}</button>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-2"><strong className="text-xs text-slate-800">Quem tem acesso agora</strong><span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-800">{integraAccessUsers.length}</span></div>
+                      <div className="mt-3 max-h-[350px] divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
+                        {integraAccessUsers.map(user => <div key={user.id} className="flex items-center justify-between gap-2 px-3 py-2.5"><span className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="block truncate text-[10px] text-slate-500">{user.role || 'Sem cargo'}{user.isAdmin || user.isDeveloper ? ' · acesso administrativo' : ''}</span></span>{user.isAdmin || user.isDeveloper ? <span className="shrink-0 text-[9px] font-bold text-slate-400">Obrigatório</span> : <button type="button" onClick={() => saveIntegraAccessForUsers([user.id], false)} disabled={integraPermissionBusy} className="shrink-0 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[10px] font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">Remover</button>}</div>)}
+                        {integraAccessUsers.length === 0 && <p className="p-4 text-center text-xs text-slate-500">Nenhum colaborador tem acesso individual ao módulo.</p>}
+                      </div>
+                    </div>
+                  </div>
                 </section>
               </div> : <section data-tour="control-audit" className="space-y-6">
                 <div><span className="text-[9px] font-black uppercase tracking-[.18em] text-blue-700">Conversas e tickets</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Desempenho da Caixa de Entrada</h3><p className="mt-1 text-xs leading-5 text-slate-500">Acompanhe volume, cumprimento de prazo, prorrogações e reaberturas.</p></div>
