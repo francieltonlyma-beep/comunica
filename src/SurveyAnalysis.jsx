@@ -16,6 +16,33 @@ function ChartRow({ label, value, max, detail, tone = 'default' }) {
   </div>;
 }
 
+function ScoreOverview({ summary }) {
+  const { average, total } = summary;
+  const displayedAverage = average == null ? null : Math.round(average * 100) / 100;
+  const tone = displayedAverage < 3.5 ? 'low' : displayedAverage < 4 ? 'mid' : 'high';
+  const status = { low: 'Ponto de atenção', mid: 'Em acompanhamento', high: 'Favorável' };
+
+  return <section className="survey-analysis-card survey-score">
+    <div className="survey-score-heading">
+      <h3>Score geral da pesquisa</h3>
+      {average != null && <span className="survey-score-status" data-tone={tone}>{status[tone]}</span>}
+    </div>
+    {average == null ? <p>O score aparece quando houver respostas em perguntas com escala de 1 a 5.</p> : <>
+      <p className="survey-score-value"><strong>{score.format(displayedAverage)}</strong> / 5</p>
+      <div className="survey-score-axis" aria-hidden="true">
+        <div className="survey-score-track" />
+        <div className="survey-score-marker" style={{ left: `${(displayedAverage - 1) / 4 * 100}%` }} />
+      </div>
+      <div className="survey-score-legend">
+        <span data-tone="low">1 a menos de 3,50 · Atenção</span>
+        <span data-tone="mid">3,50 a menos de 4 · Acompanhamento</span>
+        <span data-tone="high">4 a 5 · Favorável</span>
+      </div>
+      <p>Média de {number.format(total)} notas registradas. {formatPercent(summary.favorable)} foram notas 4 ou 5.</p>
+    </>}
+  </section>;
+}
+
 export default function SurveyAnalysis({ report, onClose }) {
   const titleId = useId();
   const closeButton = useRef(null);
@@ -63,10 +90,11 @@ export default function SurveyAnalysis({ report, onClose }) {
         </div>
       </header>
 
-      <div className="survey-metrics">
+      <ScoreOverview summary={summary} />
+
+      <div className="survey-metrics survey-score-metrics">
         <div><span>Participações</span><strong>{number.format(report.respondents)}</strong><small>{number.format(report.answers)} respostas às perguntas</small></div>
         <div><span>Conclusão</span><strong>{formatPercent(summary.completion)}</strong><small>{report.completed} completas · {report.partial} parciais</small></div>
-        <div><span>Pontuação geral</span><strong>{formatScore(summary.average)}</strong><small>{summary.total} notas na escala de 1 a 5</small></div>
         <div><span>Favorabilidade</span><strong>{formatPercent(summary.favorable)}</strong><small>Proporção de notas 4 e 5</small></div>
       </div>
 
@@ -74,11 +102,13 @@ export default function SurveyAnalysis({ report, onClose }) {
         <h3>Resumo automático</h3>
         {!report.respondents && <p>A pesquisa ainda não recebeu respostas. Volte após a coleta para acompanhar os resultados.</p>}
         {report.respondents > 0 && <>
-          <p>{number.format(report.respondents)} participações registradas, com {report.completed} completas e {report.partial} parciais.
-            {summary.total > 0 && ` A média foi de ${formatScore(summary.average)}, com ${formatPercent(summary.favorable)} de notas favoráveis.`}</p>
-          {summary.strengths.length > 0 && <p><strong>Destaque positivo</strong> · {summary.strengths[0].title} obteve {formatScore(summary.strengths[0].average)}. Identifique as práticas que a equipe pode manter ou replicar.</p>}
-          {summary.attention.length > 0 && <p><strong>Pontos de atenção</strong></p>}
-          {summary.attention.length > 0 && <ul>{summary.attention.map(topic => <li key={topic.id}>{topic.title} · {formatScore(topic.average)}</li>)}</ul>}
+          <div className="survey-summary-highlights">
+            {summary.scoredTopics.length > 0 && <div data-tone={summary.strengths.length ? 'high' : undefined}><span>Tópico com maior score</span><strong>{summary.scoredTopics[0].title}</strong><span>{formatScore(summary.scoredTopics[0].average)}</span></div>}
+            {summary.attention.length > 0 && <div data-tone="low"><span>Prioridade de avaliação</span><strong>{summary.attention[0].title}</strong><span>{formatScore(summary.attention[0].average)}</span></div>}
+            {divided && <div data-tone="mid"><span>Opiniões divididas</span><strong>{divided.question.question}</strong><span>{formatPercent(divided.low)} notas 1–2 · {formatPercent(divided.high)} notas 4–5</span></div>}
+            {!summary.total && leadingChoice && <div><span>{leadingChoice.leaders.length > 1 ? 'Empate entre alternativas' : 'Alternativa mais escolhida'}</span><strong>{leadingChoice.leaders.map(option => option.label).join(', ')}</strong><span>{leadingChoice.question.question}</span></div>}
+          </div>
+          {summary.attention.length > 1 && <p>Outros pontos de atenção: {summary.attention.slice(1).map(topic => `${topic.title} (${formatScore(topic.average)})`).join(', ')}.</p>}
         </>}
       </section>
 
