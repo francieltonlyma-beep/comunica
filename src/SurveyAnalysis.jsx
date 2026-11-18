@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { summarizeSurvey } from './surveyAnalysis.js';
+import { summarizeSurvey, roundSurveyScore, surveyScoreTone, filterSurveyDetails } from './surveyAnalysis.js';
 
 const number = new Intl.NumberFormat('pt-BR');
 const score = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -12,11 +12,6 @@ const ratingBands = [
   { tone: 'mid', label: 'Intermediárias · 3', indexes: [2], scoreLabel: '3,50 a menos de 4 · Acompanhamento', status: 'Em acompanhamento' },
   { tone: 'high', label: 'Altas · 4 e 5', indexes: [3, 4], scoreLabel: '4 a 5 · Favorável', status: 'Favorável' },
 ];
-
-function scoreTone(value) {
-  const rounded = Math.round(value * 100) / 100;
-  return rounded < 3.5 ? 'low' : rounded < 4 ? 'mid' : 'high';
-}
 
 function ChartRow({ label, value, max, detail, tone = 'default', active = false, onSelect }) {
   const content = <>
@@ -32,9 +27,9 @@ function ChartRow({ label, value, max, detail, tone = 'default', active = false,
 
 function ScoreOverview({ summary, activeBand, onSelectBand }) {
   const { average, total } = summary;
-  const displayedAverage = average == null ? null : Math.round(average * 100) / 100;
-  const tone = scoreTone(average);
-  const status = ratingBands.find(band => band.tone === tone).status;
+  const displayedAverage = roundSurveyScore(average);
+  const tone = surveyScoreTone(average);
+  const status = ratingBands.find(band => band.tone === tone)?.status;
 
   return <section className="survey-analysis-card survey-score">
     <div className="survey-score-heading">
@@ -65,26 +60,19 @@ export default function SurveyAnalysis({ report, onClose }) {
     closeButton.current?.focus();
     return () => previous?.focus();
   }, []);
-  const [selectedTopic, setSelectedTopic] = useState('');
   const [selection, setSelection] = useState(null);
-  const detailHeading = useRef(null);
+  const selectionHeading = useRef(null);
 
-  function toggleSelection(next) {
-    setSelection(previous => previous?.key === next.key ? null : next);
-    setSelectedTopic('');
-  }
+  useEffect(() => {
+    if (selection) selectionHeading.current?.focus();
+  }, [selection]);
 
   const summary = summarizeSurvey(report);
   const leadingChoice = summary.choices[0];
   const divided = summary.dividedQuestions[0];
-  const details = report.topics.filter(topic => {
-    if (selectedTopic && topic.id !== selectedTopic) return false;
-    if (selection?.kind === 'score') return topic.average != null && scoreTone(topic.average) === selection.band.tone;
-    if (selection?.kind === 'rating') return topic.questions.some(q => q.type === 'scale' && q.responses > 0);
-    return !selection?.topicId || topic.id === selection.topicId;
-  });
+  const details = filterSurveyDetails(report.topics, selection);
   const choiceSelected = (q, index) => selection?.kind === 'option' && selection.questionId === q.id && selection.index === index;
-  const selectChoice = (topic, q, index) => toggleSelection({ kind: 'option', key: `option-${q.id}-${index}`, topicId: topic.id, questionId: q.id, index, label: q.options[index].label });
+  const selectChoice = (topic, q, index) => setSelection({ kind: 'option', key: `option-${q.id}-${index}`, topicId: topic.id, questionId: q.id, index, label: q.options[index].label });
 
 
   function download() {
@@ -120,25 +108,31 @@ export default function SurveyAnalysis({ report, onClose }) {
         </div>
       </header>
 
-      <ScoreOverview summary={summary} activeBand={selection?.kind === 'score' ? selection.band.tone : null} onSelectBand={band => toggleSelection({ kind: 'score', key: `score-${band.tone}`, band, label: `Faixa de média · ${band.scoreLabel}` })} />
+      {selection && <div className="survey-chart-selection" aria-live="polite">
+        <strong ref={selectionHeading} tabIndex={-1}>Filtro ativo · {selection.label}</strong>
+        <button type="button" onClick={() => { setSelection(null); closeButton.current?.focus(); }}>Limpar filtro</button>
+      </div>}
 
-      <div className="survey-metrics survey-score-metrics">
-        <div><span>Participações</span><strong>{number.format(report.respondents)}</strong><small>{number.format(report.answers)} respostas às perguntas</small></div>
-        <div><span>Conclusão</span><strong>{formatPercent(summary.completion)}</strong><small>{report.completed} completas · {report.partial} parciais</small></div>
-        <div><span>Favorabilidade</span><strong>{formatPercent(summary.favorable)}</strong><small>Proporção de notas 4 e 5</small></div>
-      </div>
+      {!selection && <>
+        <ScoreOverview summary={summary} activeBand={selection?.kind === 'score' ? selection.band.tone : null} onSelectBand={band => setSelection({ kind: 'score', key: `score-${band.tone}`, band, label: `Faixa de média · ${band.scoreLabel}` })} />
 
-      <section className="survey-analysis-card">
-        <h3>Resumo automático</h3>
-        {!report.respondents && <p>A pesquisa ainda não recebeu respostas. Volte após a coleta para acompanhar os resultados.</p>}
-        {report.respondents > 0 && <>
-          <div className="survey-summary-highlights">
-            {summary.scoredTopics.length > 0 && <div data-tone={summary.strengths.length ? 'high' : undefined}><span>Tópico com maior score</span><strong>{summary.scoredTopics[0].title}</strong><span>{formatScore(summary.scoredTopics[0].average)}</span></div>}
-            {summary.attention.length > 0 && <div data-tone="low"><span>Prioridade de avaliação</span><strong>{summary.attention[0].title}</strong><span>{formatScore(summary.attention[0].average)}</span></div>}
-            {divided && <div data-tone="mid"><span>Opiniões divididas</span><strong>{divided.question.question}</strong><span>{formatPercent(divided.low)} notas 1–2 · {formatPercent(divided.high)} notas 4–5</span></div>}
-            {!summary.total && leadingChoice && <div><span>{leadingChoice.leaders.length > 1 ? 'Empate entre alternativas' : 'Alternativa mais escolhida'}</span><strong>{leadingChoice.leaders.map(option => option.label).join(', ')}</strong><span>{leadingChoice.question.question}</span></div>}
-          </div>
-          {summary.attention.length > 1 && <p>Outros pontos de atenção: {summary.attention.slice(1).map(topic => `${topic.title} (${formatScore(topic.average)})`).join(', ')}.</p>}
+        <div className="survey-metrics survey-score-metrics">
+          <div><span>Participações</span><strong>{number.format(report.respondents)}</strong><small>{number.format(report.answers)} respostas às perguntas</small></div>
+          <div><span>Conclusão</span><strong>{formatPercent(summary.completion)}</strong><small>{report.completed} completas · {report.partial} parciais</small></div>
+          <div><span>Favorabilidade</span><strong>{formatPercent(summary.favorable)}</strong><small>Proporção de notas 4 e 5</small></div>
+        </div>
+
+        <section className="survey-analysis-card">
+          <h3>Resumo automático</h3>
+          {!report.respondents && <p>A pesquisa ainda não recebeu respostas. Volte após a coleta para acompanhar os resultados.</p>}
+          {report.respondents > 0 && <>
+            <div className="survey-summary-highlights">
+              {summary.scoredTopics.length > 0 && <div data-tone={summary.strengths.length ? 'high' : undefined}><span>Tópico com maior score</span><strong>{summary.scoredTopics[0].title}</strong><span>{formatScore(summary.scoredTopics[0].average)}</span></div>}
+              {summary.attention.length > 0 && <div data-tone="low"><span>Prioridade de avaliação</span><strong>{summary.attention[0].title}</strong><span>{formatScore(summary.attention[0].average)}</span></div>}
+              {divided && <div data-tone="mid"><span>Opiniões divididas</span><strong>{divided.question.question}</strong><span>{formatPercent(divided.low)} notas 1–2 · {formatPercent(divided.high)} notas 4–5</span></div>}
+              {!summary.total && leadingChoice && <div><span>{leadingChoice.leaders.length > 1 ? 'Empate entre alternativas' : 'Alternativa mais escolhida'}</span><strong>{leadingChoice.leaders.map(option => option.label).join(', ')}</strong><span>{leadingChoice.question.question}</span></div>}
+            </div>
+            {summary.attention.length > 1 && <p>Outros pontos de atenção: {summary.attention.slice(1).map(topic => `${topic.title} (${formatScore(topic.average)})`).join(', ')}.</p>}
         </>}
       </section>
 
@@ -153,15 +147,11 @@ export default function SurveyAnalysis({ report, onClose }) {
         </ul>
       </section>}
 
-      <div className="survey-chart-selection" aria-live="polite">
-        {selection ? <><strong>Seleção · {selection.label}</strong><div className="survey-small-actions"><button type="button" onClick={() => { detailHeading.current?.focus(); }}>Ver perguntas</button><button type="button" onClick={() => setSelection(null)}>Limpar seleção</button></div></> : <p>Selecione uma faixa, um tópico ou uma alternativa nos gráficos para atualizar o detalhamento.</p>}
-      </div>
-
       {summary.total > 0 && <div className="survey-analysis-charts">
         <section className="survey-analysis-card">
           <h3>Pontuação média por tópico</h3>
           {summary.scoredTopics.map(topic =>
-            <ChartRow key={topic.id} label={topic.title} value={topic.average} max={5} detail={formatScore(topic.average)} active={selection?.kind === 'topic' && selection.topicId === topic.id} onSelect={() => toggleSelection({ kind: 'topic', key: `topic-${topic.id}`, topicId: topic.id, label: topic.title })} />
+            <ChartRow key={topic.id} label={topic.title} value={topic.average} max={5} detail={formatScore(topic.average)} active={selection?.kind === 'topic' && selection.topicId === topic.id} onSelect={() => setSelection({ kind: 'topic', key: `topic-${topic.id}`, topicId: topic.id, label: topic.title })} />
           )}
         </section>
         <section className="survey-analysis-card">
@@ -169,7 +159,7 @@ export default function SurveyAnalysis({ report, onClose }) {
           <p>Veja quantas notas foram baixas, intermediárias ou altas. Uma média de 3 pode vir de notas concentradas em 3 ou de uma divisão entre 1 e 5.</p>
           {ratingBands.map((band, index) => {
             const count = summary.bands[index];
-            return <ChartRow key={band.tone} label={band.label} tone={band.tone} value={count} max={summary.total} detail={`${formatPercent(count / summary.total)} · ${number.format(count)}`} active={selection?.kind === 'rating' && selection.band.tone === band.tone} onSelect={() => toggleSelection({ kind: 'rating', key: `rating-${band.tone}`, band, label: band.label })} />;
+            return <ChartRow key={band.tone} label={band.label} tone={band.tone} value={count} max={summary.total} detail={`${formatPercent(count / summary.total)} · ${number.format(count)}`} active={selection?.kind === 'rating' && selection.band.tone === band.tone} onSelect={() => setSelection({ kind: 'rating', key: `rating-${band.tone}`, band, label: band.label })} />;
           })}
           <small>Base de cálculo: {number.format(summary.total)} respostas em perguntas de escala.</small>
         </section>
@@ -197,27 +187,29 @@ export default function SurveyAnalysis({ report, onClose }) {
 
       <p className="survey-report-note">A pontuação geral dá o mesmo peso a cada nota registrada. A conclusão considera quem participou da pesquisa. Participações públicas são contadas por navegador. Interprete as médias junto com o volume de respostas.</p>
 
+      </>}
+
       <section className="survey-analysis-card survey-question-details">
         <header className="survey-analysis-header">
-          <h3 ref={detailHeading} tabIndex={-1}>Detalhamento por pergunta</h3>
-          <label>Tópico
-            <select value={selectedTopic} onChange={event => { setSelection(null); setSelectedTopic(event.target.value); }}>
+          <h3>Detalhamento por pergunta</h3>
+          {(!selection || selection.kind === 'topic') && <label>Tópico
+            <select value={selection?.topicId || ''} onChange={event => { const topic = report.topics.find(item => item.id === event.target.value); setSelection(topic ? { kind: 'topic', topicId: topic.id, label: topic.title } : null); }}>
               <option value="">Todos os tópicos</option>
               {report.topics.map(topic => <option key={topic.id} value={topic.id}>{topic.title}</option>)}
             </select>
-          </label>
+          </label>}
         </header>
-        {!details.length && <p>Nenhum tópico corresponde à seleção.</p>}
+        {!details.length && <p>Nenhum resultado corresponde a este filtro.</p>}
         {details.map(topic => <section key={topic.id} className="survey-response-topic">
-          <h2>{topic.title}</h2>
-          {topic.questions.filter(q => {
-            if (selection?.kind === 'option') return q.id === selection.questionId;
-            if (selection?.kind === 'rating') return q.type === 'scale' && q.responses > 0;
-            return true;
-          }).map(q => <article className="survey-report-question" key={q.id}>
+          <h2>{topic.title}{selection?.kind === 'score' && ` · ${formatScore(topic.average)}`}</h2>
+          {topic.questions.map(q => <article className="survey-report-question" key={q.id}>
             <h3>{q.question}</h3>
-            <p>{q.responses} resposta(s){q.average != null && ` · Média ${formatScore(q.average)} · ${q.favorable}% favoráveis`}</p>
-            {q.options.map((option, index) => <ChartRow key={index} label={option.label} value={option.count} max={q.responses} detail={`${option.count} · ${option.percentage}%`} active={choiceSelected(q, index) || (selection?.kind === 'rating' && selection.band.indexes.includes(index))} tone={selection?.kind === 'rating' && selection.band.indexes.includes(index) ? selection.band.tone : 'default'} onSelect={() => selectChoice(topic, q, index)} />)}
+            <p>{q.responses} resposta(s) na pergunta{selection?.kind !== 'rating' && selection?.kind !== 'option' && q.average != null && ` · Média ${formatScore(q.average)} · ${q.favorable}% favoráveis`}</p>
+            {q.options.map((option, index) => {
+              const originalIndex = option.index ?? index;
+              const filtered = selection?.kind === 'rating' || selection?.kind === 'option';
+              return <ChartRow key={originalIndex} label={option.label} value={option.count} max={q.responses} detail={`${option.count} · ${option.percentage}%`} active={filtered} tone={selection?.kind === 'rating' ? selection.band.tone : 'default'} onSelect={filtered ? undefined : () => selectChoice(topic, q, originalIndex)} />;
+            })}
           </article>)}
         </section>)}
       </section>

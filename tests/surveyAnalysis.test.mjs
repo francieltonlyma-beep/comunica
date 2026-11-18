@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { summarizeSurvey } from '../src/surveyAnalysis.js';
+import { summarizeSurvey, surveyScoreTone, filterSurveyDetails } from '../src/surveyAnalysis.js';
 
 test('weights each scale answer equally and excludes multiple choice answers', () => {
   const summary = summarizeSurvey({
@@ -42,4 +42,27 @@ test('identifies a multiple-choice tie and split ratings even when the average i
   assert.deepEqual(summary.choices[0].leaders.map(option => option.label), ['A', 'B']);
   assert.equal(summary.dividedQuestions[0].low, 3 / 8);
   assert.equal(summary.dividedQuestions[0].high, 3 / 8);
+});
+
+test('filters score bands at the same decimal precision shown in the report', () => {
+  const topics = [null, 3.49, 3.495, 3.83, 3.995, 4.25].map((average, id) => ({ id, average, questions: [{ options: [] }] }));
+  assert.equal(surveyScoreTone(null), null);
+  for (const [tone, ids] of [['low', [1]], ['mid', [2, 3]], ['high', [4, 5]]]) {
+    assert.deepEqual(filterSurveyDetails(topics, { kind: 'score', band: { tone } }).map(topic => topic.id), ids);
+  }
+});
+
+test('rating filters hide unrelated answers and questions without matching votes', () => {
+  const options = [0, 2, 0, 0, 8].map(count => ({ count }));
+  const topics = [{ id: 'team', questions: [
+    { id: 'scale', type: 'scale', responses: 10, options },
+    { id: 'no-match', type: 'scale', options: [{ count: 0 }, { count: 0 }, { count: 10 }] },
+    { id: 'choice', type: 'single', options },
+  ] }];
+  const [team] = filterSurveyDetails(topics, { kind: 'rating', band: { indexes: [0, 1] } });
+  assert.equal(team.questions.length, 1);
+  assert.equal(team.questions[0].responses, 10);
+  assert.deepEqual(team.questions[0].options, [{ count: 2, index: 1 }]);
+  const [choice] = filterSurveyDetails(topics, { kind: 'option', topicId: 'team', questionId: 'choice', index: 4 });
+  assert.deepEqual(choice.questions[0].options, [{ count: 8, index: 4 }]);
 });
