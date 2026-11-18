@@ -8144,9 +8144,311 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                                   <div className="mt-2 flex gap-1"><input value={checklistDrafts[msg.id] || ''} onChange={event => setChecklistDrafts(previous => ({ ...previous, [msg.id]: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleAddMessageChecklistItem(msg); } }} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] text-slate-700" /><button type="button" onClick={() => handleAddMessageChecklistItem(msg)} className="rounded-md bg-slate-900 px-2 py-1 text-[8px] font-bold text-white">Adicionar</button></div>
                                   <button type="button" onClick={() => { setShowMessagesModal(false); setActiveThreadId(null); setActiveTab('services'); setServiceWorkspace('activities'); }} className="mt-2 inline-flex items-center gap-1 text-[8px] font-extrabold text-violet-700"><ListChecks className="h-3 w-3" /> Sincronizada com a Central de Serviços</button>
                                 </section>}
-                                <div className={`mt-2 flex flex-wrap items-center gap-1 border-t pt-1.5 ${isMine ? 'border-blue-100' : 'border-slate-100'}`}><button type="button" onClick={() => { setReplyingToMessage(msg); }} title="Responder" className={`rounded-md p-1.5 ${isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100'}`}><Reply className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageLike(msg)} title="Curtir" className={`inline-flex items-center gap-1 rounded-md p-1.5 ${(msg.likedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/80 text-blue-700' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100')}`}><ThumbsUp className="h-3.5 w-3.5" />{(msg.likedBy || []).length > 0 && <span className="text-[8px] font-bold">{msg.likedBy.length}</span>}</button><button type="button" onClick={() => handleToggleSavedMessage(msg)} title="Salvar" className={`rounded-md p-1.5 ${(msg.savedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/80 text-blue-700' :
-... 35806 bytes omitted ...
-'Ativar modo escuro'} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}>
+                                <div className={`mt-2 flex flex-wrap items-center gap-1 border-t pt-1.5 ${isMine ? 'border-blue-100' : 'border-slate-100'}`}><button type="button" onClick={() => { setReplyingToMessage(msg); }} title="Responder" className={`rounded-md p-1.5 ${isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100'}`}><Reply className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageLike(msg)} title="Curtir" className={`inline-flex items-center gap-1 rounded-md p-1.5 ${(msg.likedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/80 text-blue-700' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100')}`}><ThumbsUp className="h-3.5 w-3.5" />{(msg.likedBy || []).length > 0 && <span className="text-[8px] font-bold">{msg.likedBy.length}</span>}</button><button type="button" onClick={() => handleToggleSavedMessage(msg)} title="Salvar" className={`rounded-md p-1.5 ${(msg.savedBy || []).includes(currentUser.id) ? (isMine ? 'bg-white/80 text-blue-700' : 'bg-blue-50 text-blue-700') : (isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100')}`}><Bookmark className={`h-3.5 w-3.5 ${(msg.savedBy || []).includes(currentUser.id) ? 'fill-current' : ''}`} /></button><button type="button" onClick={() => handleToggleHighlightedMessage(msg)} title="Grifar" className={`rounded-md p-1.5 ${(msg.highlightedBy || []).includes(currentUser.id) ? 'bg-amber-300 text-amber-950' : (isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100')}`}><Highlighter className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleToggleMessageActivity(msg)} title={messageActivity ? 'Remover atividade' : 'Marcar como atividade'} className={`rounded-md p-1.5 ${messageActivity ? 'bg-violet-600 text-white' : (isMine ? 'hover:bg-white/70' : 'hover:bg-slate-100')}`}><ListChecks className="h-3.5 w-3.5" /></button></div>
+                              </article>
+                              {isMine && <button type="button" onClick={() => { setThreadInfoTab('summary'); setShowThreadInfoPanel(true); }} className="shrink-0 rounded-full transition hover:scale-105" aria-label="Ver participantes da conversa"><img src={messageAvatar} alt={`Foto de ${msg.senderName || 'você'}`} className="h-9 w-9 rounded-full border-2 border-white bg-gradient-to-br from-cyan-50 to-blue-100 object-cover shadow-sm" /></button>}
+                            </div>
+                          </React.Fragment>
+                      );
+})
+                    }
+                    {(() => {
+                      const metadata = getThreadMetadata(activeThreadId);
+                      if (!metadata.completedAt) return null;
+                      const opener = getThreadOpener(activeThreadId);
+                      const canEvaluate = isThreadOpenedByCurrentUser(activeThreadId);
+                      if (!canEvaluate) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-600 shadow-sm"><strong className="block text-slate-800">Conversa encerrada</strong><span className="mt-1 block">Aguardando a avaliação de {opener?.senderName || 'quem abriu a conversa'}.</span></section>;
+                      if (metadata.resolutionRating) return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center text-xs text-emerald-950 shadow-sm"><strong>Avaliação registrada: {metadata.resolutionRating}/5</strong>{metadata.resolutionFeedback && <p className="mt-2 whitespace-pre-wrap text-emerald-900">{metadata.resolutionFeedback}</p>}</section>;
+                      return <section className="mx-auto mt-5 max-w-2xl rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm"><p className="font-bold text-slate-900">A demanda foi atendida?</p><p className="mt-1 text-xs leading-5 text-slate-600">Confirme a resolução ou reabra a conversa. Ao reabrir, todos os participantes voltam a ver o chat na Caixa de entrada.</p>{showResolutionEvaluation ? <div className="mt-4 border-t border-slate-100 pt-4"><p className="text-xs font-semibold text-slate-800">Como você avalia a resolução?</p><div className="mt-2 flex flex-wrap gap-1.5">{[1, 2, 3, 4, 5].map(note => <button key={note} type="button" onClick={() => setResolutionRating(note)} className={`h-9 w-9 rounded-lg text-xs font-black ${resolutionRating === note ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{note}</button>)}</div><textarea value={resolutionFeedback} onChange={event => setResolutionFeedback(event.target.value)} rows="3" maxLength={500} className="mt-3 w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-700 outline-none focus:border-emerald-500" placeholder="Comentário opcional sobre a resolução" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={handleEvaluateResolution} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Registrar avaliação</button><button type="button" onClick={() => setShowResolutionEvaluation(false)} className="px-2 text-[11px] font-semibold text-slate-500">Cancelar</button></div></div> : <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setShowResolutionEvaluation(true)} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700">Sim, avaliar resolução</button><button type="button" onClick={handleReopenThread} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-700 hover:bg-rose-50">Não, reabrir conversa</button></div>}</section>;
+                    })()}
+                    </div>
+                  </div>
+
+                  {/* BARRA DE ENVIO */}
+                  <div className="shrink-0 bg-white border-t border-slate-200 p-3 sm:px-7 sm:py-4 shadow-[0_-12px_35px_-30px_rgba(15,23,42,.5)]">
+                    {getThreadMetadata(activeThreadId).completedAt ? (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs leading-5 text-slate-600">
+                        <strong className="block text-slate-800">Conversa concluída</strong>
+                        Novas mensagens ficam bloqueadas até que quem abriu a conversa escolha reabri-la na avaliação.
+                      </div>
+                    ) : <>
+                    {msgAttachment && (
+                      <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2 rounded-lg mb-2 text-[10px] font-bold text-slate-700">
+                        <div className="flex items-center gap-1.5 overflow-hidden"><Paperclip className="h-3.5 w-3.5 text-blue-600" /><span className="truncate">{msgAttachment.name}</span></div>
+                        <button type="button" onClick={discardPendingMessageAttachment} className="text-rose-500 hover:text-rose-700"><X className="h-4 w-4"/></button>
+                      </div>
+                    )}
+                    {replyingToMessage && <div className="mx-auto mb-2 flex w-full max-w-4xl items-center gap-3 rounded-xl border-l-4 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-slate-700"><Reply className="h-4 w-4 shrink-0 text-blue-700" /><span className="min-w-0 flex-1"><strong className="block text-blue-900">Respondendo a {replyingToMessage.senderName}</strong><span className="block truncate text-[10px]">{replyingToMessage.content || replyingToMessage.attachment?.name || 'Mensagem'}</span></span><button type="button" onClick={() => setReplyingToMessage(null)} className="rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-700" aria-label="Cancelar resposta"><X className="h-4 w-4" /></button></div>}
+                    {(() => {
+                      const mentionMatch = msgText.match(/(?:^|\s)@([^\s@]*)$/u);
+                      if (!mentionMatch) return null;
+                      const query = normalizedText(mentionMatch[1]);
+                      const metadata = getThreadMetadata(activeThreadId);
+                      const suggestions = (metadata.participants || []).map(id => messageContacts.find(user => user.id === id)).filter(user => user && user.id !== currentUser.id && (!query || normalizedText(user.name).includes(query))).slice(0, 6);
+                      if (!suggestions.length) return null;
+                      return <div className="mx-auto mb-2 w-full max-w-4xl rounded-xl border border-blue-100 bg-white p-2 shadow-lg"><span className="px-2 text-[9px] font-black uppercase text-blue-700">Marcar participante</span><div className="mt-1 flex flex-wrap gap-1">{suggestions.map(user => <button key={user.id} type="button" onClick={() => setMsgText(previous => previous.replace(/(?:^|\s)@([^\s@]*)$/u, match => `${match.startsWith(' ') ? ' ' : ''}@${user.name} `))} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-800 hover:bg-blue-100"><AtSign className="h-3 w-3" />{user.name}</button>)}</div></div>;
+                    })()}
+
+                    <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-4xl min-w-0 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 transition-all focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
+                      <label className="p-2.5 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors border border-slate-200">
+                        <Paperclip className="h-5 w-5" />
+                        <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
+                      </label>
+                      <textarea
+                        rows="1"
+                        aria-label="Escrever resposta"
+                        placeholder="Escreva uma resposta · use @ para marcar alguém"
+                        value={msgText}
+                        onChange={(e) => setMsgText(e.target.value)}
+                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
+                        className="min-h-12 max-h-32 min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2.5 py-2.5 text-sm leading-6 focus:outline-none focus:ring-0"
+                      ></textarea>
+                      <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
+                      <button type="submit" disabled={isSendingMessage || isUploadingMessageAttachment || (!msgText.trim() && !msgAttachment)} className="bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-xl transition-all shadow-sm disabled:opacity-50" aria-label={isSendingMessage ? 'Enviando mensagem' : 'Enviar mensagem'}>
+                        {isSendingMessage ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <Send className="h-4.5 w-4.5" />}
+                      </button>
+                    </form>
+                    <PreviaEmojis texto={msgText} />
+                    </>}
+                  </div>
+                  </div>
+                  {showThreadInfoPanel && createPortal(<div className="fixed inset-0 z-[10010] flex justify-end"><button type="button" aria-label="Fechar painel de informações" onClick={() => setShowThreadInfoPanel(false)} className="absolute inset-0 bg-slate-950/30 backdrop-blur-[1px]" /><aside role="dialog" aria-modal="true" aria-label="Detalhes da conversa" className="relative h-full min-h-0 w-full overflow-hidden border-l border-blue-100 bg-slate-50 shadow-2xl sm:w-[390px]">{renderThreadInfoPanel()}</aside></div>, document.body)}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-3">
+                  {(() => {
+                    const searchText = inboxSearch.trim().toLocaleLowerCase('pt-BR');
+                    const myThreads = normMessages.filter(m => m.participants.includes(currentUser.id));
+                    const groupedThreads = {};
+
+                    myThreads.forEach(msg => {
+                      if (!groupedThreads[msg.threadId]) {
+                        groupedThreads[msg.threadId] = { id: msg.threadId, subject: msg.subject, messages: [], participants: msg.participants, unread: 0 };
+                      }
+                      groupedThreads[msg.threadId].messages.push(msg);
+                      if (!msg.readBy.includes(currentUser.id)) {
+                        groupedThreads[msg.threadId].unread += 1;
+                      }
+                    });
+
+                    const threadList = Object.values(groupedThreads).map(thread => {
+                      const latest = thread.messages.reduce((max, message) => getMessageTimestamp(message) > getMessageTimestamp(max) ? message : max, thread.messages[0]);
+                      const metadata = getThreadMetadata(thread.id);
+                      const deadline = getThreadDeadlineStatus(thread.id);
+                      const mine = metadata.serviceAssigneeId === currentUser.id || thread.messages.some(message => {
+                        const activity = normalizeMessageActivity(message.activity);
+                        return activity && activity.status !== 'resolved' && activity.assigneeIds.includes(currentUser.id);
+                      });
+                      return { ...thread, latest, metadata, deadline, mine, pinned: isThreadPinned(thread.id), muted: isThreadMuted(thread.id) };
+                    }).sort((a, b) => {
+                      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                      if (messageOrganization === 'sector') {
+                        const otherA = messageContacts.find(user => user.id === a.participants.find(id => id !== currentUser.id));
+                        const otherB = messageContacts.find(user => user.id === b.participants.find(id => id !== currentUser.id));
+                        const sectorA = otherA ? getUserDepts(otherA)[0] || '' : '';
+                        const sectorB = otherB ? getUserDepts(otherB)[0] || '' : '';
+                        const sectorOrder = sectorA.localeCompare(sectorB, 'pt-BR');
+                        if (sectorOrder !== 0) return sectorOrder;
+                      }
+                      if (inboxSort === 'deadline') {
+                        if (a.metadata.dueDate && b.metadata.dueDate) return a.metadata.dueDate.localeCompare(b.metadata.dueDate);
+                        if (a.metadata.dueDate !== b.metadata.dueDate) return a.metadata.dueDate ? -1 : 1;
+                      }
+                      if (inboxSort === 'priority') {
+                        const rank = { urgent: 3, important: 2, normal: 1 };
+                        const priorityOrder = (rank[b.metadata.servicePriority] || 0) - (rank[a.metadata.servicePriority] || 0);
+                        if (priorityOrder !== 0) return priorityOrder;
+                      }
+                      if (inboxSort === 'smart') {
+                        const overdueOrder = Number(/atras/i.test(b.deadline.label || '')) - Number(/atras/i.test(a.deadline.label || ''));
+                        if (overdueOrder !== 0) return overdueOrder;
+                        if (a.unread !== b.unread) return b.unread - a.unread;
+                      }
+                      return getMessageTimestamp(b.latest) - getMessageTimestamp(a.latest);
+                    });
+
+                    const visibleThreadList = threadList.filter(thread => {
+                      if (showArchivedThreads !== isThreadArchived(thread.id)) return false;
+                      const matchesStatus = inboxStatusFilter === 'all'
+                        || (inboxStatusFilter === 'unread' && thread.unread > 0)
+                        || (inboxStatusFilter === 'mine' && thread.mine)
+                        || (inboxStatusFilter === 'open' && !thread.metadata.completedAt)
+                        || (inboxStatusFilter === 'overdue' && !thread.metadata.completedAt && /atras/i.test(thread.deadline.label || ''))
+                        || (inboxStatusFilter === 'completed' && Boolean(thread.metadata.completedAt));
+                      if (!matchesStatus) return false;
+                      if (!searchText) return true;
+                      const names = thread.participants.map(id => messageContacts.find(user => user.id === id)?.name || '').join(' ');
+                      const content = thread.messages.map(message => message.content || '').join(' ');
+                      return `${thread.subject || ''} ${names} ${content}`.toLocaleLowerCase('pt-BR').includes(searchText);
+                    });
+
+                    const inboxTotals = threadList.reduce((totals, thread) => {
+                      if (thread.unread > 0) totals.unread += 1;
+                      if (thread.mine) totals.mine += 1;
+                      if (thread.metadata.completedAt) totals.completed += 1;
+                      else totals.open += 1;
+                      if (!thread.metadata.completedAt && /atras/i.test(thread.deadline.label || '')) totals.overdue += 1;
+                      return totals;
+                    }, { unread: 0, mine: 0, open: 0, overdue: 0, completed: 0 });
+
+                    const summaryBar = !showArchivedThreads && (
+                      <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-5" aria-label="Resumo da caixa de entrada">
+                        {[
+                          { id: 'unread', label: 'Não lidas', value: inboxTotals.unread, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+                          { id: 'mine', label: 'Minhas demandas', value: inboxTotals.mine, icon: UserCheck, tone: 'text-cyan-700 bg-cyan-50 border-cyan-100' },
+                          { id: 'open', label: 'Em andamento', value: inboxTotals.open, icon: MessageSquare, tone: 'text-violet-700 bg-violet-50 border-violet-100' },
+                          { id: 'overdue', label: 'Em atraso', value: inboxTotals.overdue, icon: Clock, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
+                          { id: 'completed', label: 'Concluídas', value: inboxTotals.completed, icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+                        ].map(item => {
+                          const MetricIcon = item.icon;
+                          const active = inboxStatusFilter === item.id;
+                          return <button type="button" aria-pressed={active} onClick={() => setInboxStatusFilter(previous => previous === item.id ? 'all' : item.id)} key={item.label} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${item.tone} ${active ? 'ring-2 ring-offset-2 ring-current shadow-md' : ''}`}><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/80 shadow-sm"><MetricIcon className="h-4 w-4" /></span><div><strong className="block text-lg leading-none">{item.value}</strong><span className="text-[10px] font-bold uppercase tracking-wide opacity-80">{item.label}</span></div></button>;
+                        })}
+                      </section>
+                    );
+
+                    const searchBar = <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center"><div className="relative min-w-0 flex-1"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" /><input type="search" aria-label="Buscar conversas" placeholder="Buscar por assunto, pessoa ou mensagem" value={inboxSearch} onChange={event => setInboxSearch(event.target.value)} className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-300 shadow-sm" /></div><select aria-label="Ordenar conversas" value={inboxSort} onChange={event => setInboxSort(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-700 shadow-sm"><option value="smart">Prioridade inteligente</option><option value="recent">Mais recentes</option><option value="deadline">Prazo mais próximo</option><option value="priority">Maior prioridade</option></select>{inboxStatusFilter !== 'all' && <button type="button" onClick={() => setInboxStatusFilter('all')} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[10px] font-bold text-slate-600 shadow-sm">Limpar filtro</button>}</div>;
+                    const visibleIds = visibleThreadList.map(thread => thread.id);
+                    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedInboxThreadIds.includes(id));
+                    const bulkBar = <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm"><label className="mr-auto inline-flex items-center gap-2 px-2 text-[10px] font-bold text-slate-600"><input type="checkbox" checked={allVisibleSelected} onChange={() => setSelectedInboxThreadIds(previous => allVisibleSelected ? previous.filter(id => !visibleIds.includes(id)) : [...new Set([...previous, ...visibleIds])])} />Selecionar visíveis</label>{selectedInboxThreadIds.length > 0 && <><span className="rounded-full bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-700">{selectedInboxThreadIds.length} selecionada(s)</span><button type="button" onClick={() => handleBulkThreadAction(selectedInboxThreadIds, 'read')} className="rounded-lg px-2 py-1.5 text-[9px] font-bold text-slate-600 hover:bg-slate-100">Marcar lidas</button><button type="button" onClick={() => handleBulkThreadAction(selectedInboxThreadIds, 'unread')} className="rounded-lg px-2 py-1.5 text-[9px] font-bold text-slate-600 hover:bg-slate-100">Não lidas</button><button type="button" onClick={() => handleBulkThreadAction(selectedInboxThreadIds, 'pin')} className="rounded-lg px-2 py-1.5 text-[9px] font-bold text-blue-700 hover:bg-blue-50">Fixar</button><button type="button" onClick={() => handleBulkThreadAction(selectedInboxThreadIds, 'mute')} className="rounded-lg px-2 py-1.5 text-[9px] font-bold text-slate-600 hover:bg-slate-100">Silenciar</button><button type="button" onClick={() => handleBulkThreadAction(selectedInboxThreadIds, showArchivedThreads ? 'restore' : 'archive')} className="rounded-lg px-2 py-1.5 text-[9px] font-bold text-slate-600 hover:bg-slate-100">{showArchivedThreads ? 'Restaurar' : 'Arquivar'}</button><button type="button" onClick={() => setSelectedInboxThreadIds([])} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Limpar seleção"><X className="h-3.5 w-3.5" /></button></> }</div>;
+
+                    if (visibleThreadList.length === 0) {
+                      return <>{summaryBar}{searchBar}{selectedInboxThreadIds.length > 0 && bulkBar}<div className="text-center py-12 flex flex-col items-center gap-3 text-slate-400">
+                        <MessageSquare className="h-10 w-10 opacity-20" />
+                        <span className="text-sm">{searchText ? 'Nenhuma conversa corresponde à busca.' : inboxStatusFilter !== 'all' ? 'Nenhuma conversa corresponde ao indicador selecionado.' : showArchivedThreads ? 'Nenhuma conversa arquivada.' : 'Nenhuma conversa encontrada na sua caixa.'}</span>
+                      </div></>;
+                    }
+
+                    return <>{summaryBar}{searchBar}{bulkBar}<div className="grid w-full grid-cols-1 gap-1.5">{visibleThreadList.map(thread => {
+                      const lastMsg = thread.latest;
+                      const isMine = lastMsg.senderId === currentUser.id;
+                      const hasUnread = thread.unread > 0;
+                      const participantUsers = thread.participants.filter(id => id !== currentUser.id).map(id => messageContacts.find(user => user.id === id)).filter(Boolean);
+
+                      const partsNames = thread.participants
+                        .filter(id => id !== currentUser.id)
+                        .map(id => messageContacts.find(u => u.id === id)?.name.split(' ')[0] || 'Desconhecido')
+                        .join(', ');
+                      const deadlineStatus = thread.deadline;
+                      const threadMetadata = thread.metadata;
+                      return (
+                        <article
+                          key={thread.id}
+                          className={`group overflow-hidden rounded-2xl border text-left transition hover:border-blue-200 hover:shadow-sm ${hasUnread ? 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-[0_14px_35px_-28px_rgba(37,99,235,.8)]' : 'bg-white border-slate-200 hover:border-blue-200 shadow-[0_14px_35px_-30px_rgba(15,23,42,.6)]'}`}
+                        >
+                          <button type="button" onClick={() => openThread(thread.id)} className="flex w-full flex-col gap-2 p-3.5 text-left">
+                          <div className="flex items-start justify-between w-full gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start gap-1.5"><strong className={`block break-words text-sm leading-snug transition-colors [overflow-wrap:anywhere] group-hover:text-blue-800 sm:text-sm ${hasUnread ? 'text-blue-950 font-extrabold' : 'text-slate-900 font-bold'}`}>{thread.subject}</strong>{thread.pinned && <Pin className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-blue-600 text-blue-600" aria-label="Conversa fixada" />}{thread.muted && <VolumeX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" aria-label="Conversa silenciada" />}</div>
+                              <span className="mt-1.5 flex min-w-0 items-center gap-2 text-xs font-medium text-slate-500"><InboxParticipantStack users={participantUsers.length ? participantUsers : [currentUser]} max={3} compact /><span className="truncate">{partsNames || 'Somente você'}</span></span>
+                              <span className="mt-2 flex flex-wrap gap-1.5"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${deadlineStatus.className}`}>{deadlineStatus.label}{threadMetadata.dueDate ? ` · ${formatDueDate(threadMetadata.dueDate)}` : ''}</span>{thread.mine && <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-800">Minha demanda</span>}{threadMetadata.servicePriority && <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${threadMetadata.servicePriority === 'urgent' ? 'bg-rose-100 text-rose-800' : threadMetadata.servicePriority === 'important' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>{threadMetadata.servicePriorityLabel || 'Normal'}</span>}</span>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <span className={`text-xs font-medium ${hasUnread ? 'text-blue-700' : 'text-slate-500'}`}>
+                                {formatMessageDateTime(lastMsg)}
+                              </span>
+                              {hasUnread && <span className="flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-blue-600 text-[9px] font-black text-white">{thread.unread}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 mt-1 opacity-80">
+                            {lastMsg.attachment && <Paperclip className="h-3 w-3 text-slate-400 shrink-0" />}
+                            <p className={`line-clamp-1 w-full min-w-0 break-words text-xs leading-5 [overflow-wrap:anywhere] ${hasUnread ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
+                              {isMine ? 'Você: ' : (lastMsg.senderName.split(' ')[0] + ': ')}{lastMsg.content || 'Arquivo anexo'}
+                            </p>
+                          </div>
+                          </button>
+                          <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 px-3 py-2">
+                            <label className="mr-auto inline-flex items-center gap-2 text-[10px] font-bold text-slate-500"><input type="checkbox" checked={selectedInboxThreadIds.includes(thread.id)} onChange={() => setSelectedInboxThreadIds(previous => previous.includes(thread.id) ? previous.filter(id => id !== thread.id) : [...previous, thread.id])} />Selecionar</label>
+                            <button type="button" aria-pressed={thread.pinned} onClick={() => handleThreadPreference(thread.id, 'pinnedBy', !thread.pinned)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${thread.pinned ? 'bg-blue-100 text-blue-800' : 'text-slate-500 hover:bg-slate-100'}`}><Pin className="h-3.5 w-3.5" />{thread.pinned ? 'Desafixar' : 'Fixar'}</button>
+                            <button type="button" aria-pressed={thread.muted} onClick={() => handleThreadPreference(thread.id, 'mutedBy', !thread.muted)} className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${thread.muted ? 'bg-slate-200 text-slate-800' : 'text-slate-500 hover:bg-slate-100'}`}><VolumeX className="h-3.5 w-3.5" />{thread.muted ? 'Reativar alertas' : 'Silenciar'}</button>
+                            <button type="button" onClick={() => showArchivedThreads ? handleRestoreThread(thread.id) : handleArchiveThread(thread.id)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><Archive className="h-3.5 w-3.5" />{showArchivedThreads ? 'Restaurar' : 'Arquivar'}</button>
+                          </div>
+                        </article>
+                      )
+                    })}</div></>;
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+  );
+
+  const navigationSections = buildManagementNavigation({
+    unreadCount: unreadMessages.length,
+    unreadUpdates: platformUpdates.filter(item => !platformUpdateReadIds.has(item.id)).length,
+    pendingPollResponses,
+    activeServices: serviceMetrics.active + serviceActivityMetrics.active,
+    pendingDocumentReads,
+    canAccessProductivity,
+    canManageCareers: isCareerManagerUser(currentUser),
+    careerPendingCandidateUpdates,
+    canManageWhistleblowing,
+    isAdmin: currentUser.isAdmin,
+    isDeveloper: currentUser.isDeveloper,
+    openPlatformSupport,
+  });
+  const isIntegraWorkspace = activeTab === 'integra';
+  const visibleNavigationSections = (isIntegraWorkspace ? integraNavigationSections : navigationSections)
+    .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
+    .filter(section => section.items.length);
+  const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
+
+  return (
+    <div className={`min-h-[100dvh] bg-slate-100 text-slate-800 flex flex-col font-sans relative ${isDarkMode ? 'comunica-dark' : ''}`}>
+      <EnvironmentBadge />
+
+      <NotificationToast notification={customNotification} />
+      <CloudActivityIndicator activity={cloudActivity} />
+      <InstallAppDialog open={showInstallHelp} standalone={isStandaloneApp} onClose={() => setShowInstallHelp(false)} />
+      {authReady && currentUser && activeCompany && (!dbUser || liveDataStatus.companyId !== activeCompany.id || ['users', 'messages', 'activities'].some(name => liveDataStatus[name] !== 'ready')) && <div role="status" className="sticky top-0 z-[10079] flex flex-wrap items-center justify-center gap-3 bg-amber-100 px-4 py-3 text-xs font-semibold text-amber-950"><span>{Object.values(liveDataStatus).includes('error') ? 'Não foi possível sincronizar os dados da empresa. Os números exibidos podem estar desatualizados.' : 'Aguardando dados atualizados da empresa. Os números exibidos podem estar desatualizados.'}</span><button type="button" onClick={async () => { try { if (!auth.currentUser) { await signOut(auth); return; } await auth.currentUser.getIdToken(true); window.location.reload(); } catch { await signOut(auth); } }} className="rounded-lg bg-amber-900 px-3 py-1.5 font-bold text-white">Tentar reconectar</button><button type="button" onClick={handleUserLogout} className="rounded-lg border border-amber-800 px-3 py-1.5 font-bold text-amber-950">Entrar novamente</button></div>}
+
+
+<header className="sticky top-0 z-40 border-b border-blue-100 bg-gradient-to-r from-white via-white to-cyan-50/80 pt-[env(safe-area-inset-top)] text-slate-800 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur">
+
+  {/* Aqui continua o restante do seu conteúdo do header */}
+
+        <div className="relative z-10 mx-auto flex h-[4.5rem] w-full max-w-7xl items-center justify-between gap-2 px-3 sm:px-4">
+          <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
+            <div className="flex h-14 w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
+               <img
+                 src="/assets/comunica-logo-transparent.png"
+                 alt="Comunica"
+                 className="h-full w-full object-contain"
+               />
+            </div>
+            <div className="hidden min-w-0 sm:block"><div className="flex items-center gap-2"><h1 className="text-base font-black tracking-tight text-slate-900">{isIntegraWorkspace ? 'Comunica Integra' : 'Comunica Gestão'}</h1><span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-cyan-800">Plataforma</span></div><p className="mt-0.5 max-w-52 truncate text-[9px] font-semibold text-slate-500">{activeCompany?.name || 'Comunicação e gestão corporativa'}</p>
+            </div>
+          </button>
+
+          <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
+
+          <div className="flex min-w-0 items-center justify-end gap-1 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
+            <button
+              onClick={() => {
+                setMyProfileForm({
+                  avatar: currentUser.avatar || '',
+                  emergencyName: currentUser.emergencyName || '',
+                  emergencyPhone: currentUser.emergencyPhone || '',
+                  emergencyRelationship: currentUser.emergencyRelationship || ''
+                });
+                setShowPinFieldsInProfile(false);
+                setShowProfileModal(true);
+              }}
+              className="flex items-center gap-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
+              title="Meu Perfil de Colaborador"
+            >
+              <span className="relative"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-9 w-9 rounded-xl border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
+              <div className="hidden max-w-44 md:block">
+                <span className="text-xs font-bold block leading-tight text-slate-800">{currentUser.name}</span>
+                <span className="text-[9px] uppercase font-bold text-slate-500 block tracking-wider">
+                  {currentUser.role} {currentUser.isAdmin && '• ADM'}
+                </span>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 sm:gap-1 sm:pl-2">
+              <button type="button" onClick={() => setIsDarkMode(value => !value)} className="rounded-lg p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-700" title={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}>
                 {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
               {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
