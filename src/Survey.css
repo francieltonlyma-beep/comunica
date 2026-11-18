@@ -94,3 +94,7 @@
 .survey-analysis .survey-score-track button:last-child { border-radius: 0 999px 999px 0; }
 .survey-analysis .survey-score-track button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--sv-text); }
 .survey-score-marker { pointer-events: none; }
+
+.survey-analysis .survey-chart-selection { margin-block: 16px; }
+.survey-analysis .survey-chart-selection strong { scroll-margin-top: 16px; }
+.survey-analysis .survey-report-option[data-active="true"] { padding: 8px; border: 1px solid var(--sv-border); border-radius: 8px; background: var(--sv-raised); }
