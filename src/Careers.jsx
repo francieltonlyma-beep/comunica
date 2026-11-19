@@ -91,6 +91,29 @@ export default function Careers() {
   }, [candidate?.uid, candidate?.emailVerified]);
   useEffect(() => { if (companyId.trim()) loadJobs(companyId); }, []);
   useEffect(() => {
+    const publicCompanyId = careerData?.companyId;
+    if (!publicCompanyId) return;
+    let active = true;
+    let refreshing = false;
+    const refreshJobs = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const result = await call('listCareerVacancies')({ companyId: publicCompanyId });
+        if (active) setCareerData(result.data);
+      } catch (error) {
+        console.warn('Não foi possível atualizar a lista pública de vagas.', error);
+      } finally {
+        refreshing = false;
+      }
+    };
+    window.addEventListener('focus', refreshJobs);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', refreshJobs);
+    };
+  }, [careerData?.companyId]);
+  useEffect(() => {
     if (!candidate?.emailVerified || !careerData?.companyId || !selectedJob?.id) return;
     let active = true;
     call('getCareerApplication')({ companyId: careerData.companyId, vacancyId: selectedJob.id }).then(result => {
