@@ -39,8 +39,10 @@ function saveSuggestion(tx:Transaction,base:DocumentReference,groupId:string,val
  if(text)tx.create(suggestionCollection(base,groupId).doc(),{text,createdAt:Date.now()});
 }
 function signature(polls:Data[]){return hash(JSON.stringify(polls.map(p=>[p.id,p.question,p.options,p.type,p.topicId || '',p.topicTitle || '',p.topicOrder || 1,p.formOrder || 1,p.expiresAt || '',p.formTitle || '',p.formDescription || '',p.surveyTargetType||'sector',p.surveySectorId||'',p.surveyUserIds||[],Boolean(p.isAnonymous)])));}
+function voterKey(polls:Data[],uid:string){return polls[0]?.isAnonymous?`anon-${hash(uid)}`:uid;}
 function publicView(polls:Data[],companyName:string,uid?:string){
- return {companyName,title:String(polls[0].formTitle || polls[0].question).slice(0,160),description:String(polls[0].formDescription || '').slice(0,2000),expiresAt:polls[0].expiresAt || '',questions:polls.map(p=>({id:p.id,question:p.question,options:p.options,type:p.type || 'single',topicId:p.topicId || 'general',topicTitle:p.topicTitle || 'Perguntas',topicOrder:p.topicOrder || 1,formOrder:p.formOrder || 1,...(uid&&p.votes?.[uid]!==undefined?{answer:p.votes[uid]}:{})}))};
+ const storedUid=uid?voterKey(polls,uid):'';
+ return {companyName,title:String(polls[0].formTitle || polls[0].question).slice(0,160),description:String(polls[0].formDescription || '').slice(0,2000),expiresAt:polls[0].expiresAt || '',questions:polls.map(p=>({id:p.id,question:p.question,options:p.options,type:p.type || 'single',topicId:p.topicId || 'general',topicTitle:p.topicTitle || 'Perguntas',topicOrder:p.topicOrder || 1,formOrder:p.formOrder || 1,...(storedUid&&p.votes?.[storedUid]!==undefined?{answer:p.votes[storedUid]}:{})}))};
 }
 export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip='unknown'){
  try {
@@ -92,13 +94,13 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     next.forEach((q:Data,i:number)=>{const previous=old.get(q.id);tx.set(base.collection('polls').doc(q.id),{...(previous || {votes:{},createdAt:Date.now(),authorId:auth.uid,author:'RH'}),...q,formId:groupId,formTitle:title,formDescription:description,formOrder:i+1,formQuestionCount:next.length,category,expiresAt,archived:Boolean(polls[0].archived),updatedAt:Date.now(),updatedBy:auth.uid});});
     return {saved:true};
    }
-   if(action==='readInternal'){await assertSurveyParticipant(tx,base,auth,polls,meta.data()?.sectorId||polls[0].surveySectorId);return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[auth.uid]!==undefined)};}
+   if(action==='readInternal'){await assertSurveyParticipant(tx,base,auth,polls,meta.data()?.sectorId||polls[0].surveySectorId);return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[voterKey(polls,auth.uid)]!==undefined)};}
    if(action==='submitInternal'){
     await assertSurveyParticipant(tx,base,auth,polls,meta.data()?.sectorId||polls[0].surveySectorId);
-    if(polls.every(p=>p.votes?.[auth.uid]!==undefined))return {submitted:true};
+    const voteId=voterKey(polls,auth.uid);if(polls.every(p=>p.votes?.[voteId]!==undefined))return {submitted:true};
     const answers=validateSurveyAnswers(polls,data.answers),sectorId=String(meta.data()?.sectorId||polls[0].surveySectorId||''),responseRef=base.collection('surveyResponses').doc(hash(`${base.id}|${groupId}|internal|${auth.uid}`)),response=await tx.get(responseRef);
     saveSuggestion(tx,base,groupId,data.suggestion);
-    for(const p of polls)if(p.votes?.[auth.uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',auth.uid),answers[p.id]);
+    for(const p of polls)if(p.votes?.[voteId]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',voteId),answers[p.id]);
     if(!response.exists)tx.create(responseRef,{submittedAt:Date.now(),groupId,audience:polls[0].surveyTargetType==='people'?'people':sectorId?'sector':'internal',sectorId,isAnonymous:Boolean(polls[0].isAnonymous),...(!polls[0].isAnonymous?{respondentUid:auth.uid}:{})});
     return {submitted:true};
    }
@@ -138,7 +140,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   if(v.audience==='public'&&!/^[a-zA-Z0-9_-]{16,128}$/.test(respondent))throw new HttpsError('invalid-argument','Não foi possível identificar este navegador.');
   const responseKey=v.audience==='sector'?`${base.id}|${v.groupId}|sector|${v.sectorId}|${auth.uid}`:v.audience==='people'?`${base.id}|${v.groupId}|people|${auth.uid}`:`${base.id}|${v.groupId}|${v.audience}|${v.audience==='team'?auth.uid:respondent}`,responseId=hash(responseKey),uid=(v.audience==='sector'||v.audience==='people'||v.audience==='team')?auth.uid:`external-${responseId.slice(0,40)}`;
   const responseRef=base.collection('surveyResponses').doc(responseId),response=await tx.get(responseRef);
-  const submitted=response.exists||polls.every(p=>p.votes?.[uid]!==undefined);
+  const voteId=voterKey(polls,uid),submitted=response.exists||polls.every(p=>p.votes?.[voteId]!==undefined);
   if(action==='read')return {...publicView(polls,String(company.name || 'Comunica'),(v.audience==='sector'||v.audience==='people'||v.audience==='team')?uid:undefined),submitted};
   if(submitted)return {submitted:true};
   const answers=validateSurveyAnswers(polls,data.answers);
@@ -149,7 +151,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    tx.set(rateRef,{window:recent?rate.data()!.window:Date.now(),count:count+1});
   }
   saveSuggestion(tx,base,v.groupId,data.suggestion);
-  for(const p of polls)if(p.votes?.[uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',uid),answers[p.id]);
+  for(const p of polls)if(p.votes?.[voteId]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',voteId),answers[p.id]);
   tx.create(responseRef,{submittedAt:Date.now(),groupId:v.groupId,audience:v.audience,sectorId:v.sectorId||'',isAnonymous:Boolean(polls[0].isAnonymous),...((v.audience==='sector'||v.audience==='people'||v.audience==='team')&&!polls[0].isAnonymous?{respondentUid:auth.uid}:{})});
   return {submitted:true};
  });
