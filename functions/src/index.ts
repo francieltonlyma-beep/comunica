@@ -1054,7 +1054,7 @@ const messageActivityData = (value: unknown): MessageActivityData | null => {
   };
 };
 
-const sendTargetedPush = async ({
+const sendActivityPush = async ({
   database, appId, companyId, recipientIds, recipientFilter, actorId = '', title, body, type, threadId = '', messageId = '', eventId, purchaseId = '', careerVacancyId = '',
 }: {
   database: ReturnType<typeof getFirestore>;
@@ -1131,7 +1131,7 @@ export const notifyPurchaseAssignment = onDocumentUpdated(
     const role = purchaseNextRole(after);
     const responsible = String(after[role] || '');
     if (!responsible || (before.status === after.status && before[role] === responsible)) return;
-    await sendTargetedPush({database:getFirestore(),appId:event.params.appId,companyId:event.params.companyId,
+    await sendActivityPush({database:getFirestore(),appId:event.params.appId,companyId:event.params.companyId,
       recipientIds:[responsible],actorId:String(after.updatedBy || ''),title:'Compra aguardando sua ação',
       body:`${String(after.item || 'Solicitação').slice(0,100)} · ${String(after.status || '')}`,
       type:'purchase',threadId:'',messageId:'',eventId:`purchase-${event.params.purchaseId}-${after.updatedAt}`,purchaseId:event.params.purchaseId});
@@ -1164,7 +1164,7 @@ export const notifyPendingPurchases = onSchedule({schedule:'15 9 * * *',timeZone
     });
     if (!acquired) continue;
     try {
-      const result = await sendTargetedPush({database,appId,companyId,recipientIds:[responsible],actorId:'',
+      const result = await sendActivityPush({database,appId,companyId,recipientIds:[responsible],actorId:'',
         title:overdue ? 'Compra com prazo vencido' : 'Compra aguardando sua ação',
         body:String(data.item || 'Solicitação').slice(0,180),type:'purchase',threadId:'',messageId:'',
         eventId:`purchase-${purchase.id}-${date}`,purchaseId:purchase.id});
@@ -1180,7 +1180,7 @@ export const notifyNewCareerApplication = onDocumentCreated(
     const application = event.data?.data();
     if (application?.status !== 'received' || typeof application.vacancyId !== 'string' || !application.vacancyId) return;
     const {appId, companyId} = event.params;
-    await sendTargetedPush({
+    await sendActivityPush({
       database: getFirestore(),
       appId,
       companyId,
@@ -1295,7 +1295,7 @@ export const notifyMessageActivityChange = onDocumentUpdated(
 
     const mutedBy = Array.isArray(after.mutedBy) ? after.mutedBy.filter((id): id is string => typeof id === 'string') : [];
     recipientIds = recipientIds.filter((id) => !mutedBy.includes(id));
-    await sendTargetedPush({
+    await sendActivityPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId, messageId,
       eventId: `activity-change-${messageId}-${Number(after.activity?.updatedAt || Date.now())}`,
@@ -1309,7 +1309,7 @@ export const notifyStandaloneActivityCreated = onDocumentCreated(
     const content = event.data?.data() ?? {};
     const activity = messageActivityData(content);
     if (!activity || activity.assigneeIds.length === 0) return;
-    await sendTargetedPush({
+    await sendActivityPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds: activity.assigneeIds, actorId: activity.createdBy,
       title: '📋 Nova atividade avulsa atribuída a você', body: String(content.title || 'Atividade na Central de Serviços'),
@@ -1381,7 +1381,7 @@ export const notifyStandaloneActivityChange = onDocumentUpdated(
       recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
       title = '📎 Novo anexo na atividade avulsa';
     } else return;
-    await sendTargetedPush({
+    await sendActivityPush({
       database, appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId: '', messageId: activityId,
       eventId: `standalone-activity-change-${activityId}-${Number(after.updatedAt || Date.now())}`,
@@ -1622,7 +1622,7 @@ export const notifyConversationDeadlines = onSchedule({
 
     try {
       const copy = activityDeadlineNotificationCopy(activity.stage);
-      const delivery = await sendTargetedPush({
+      const delivery = await sendActivityPush({
         database, appId: activity.appId, companyId: activity.companyId,
         recipientIds: activity.recipientIds, actorId: '', title: copy.title,
         body: `${copy.prefix}: ${activity.subject}`, type: 'activity_deadline',
@@ -1709,7 +1709,7 @@ export const notifyPendingReminders = onSchedule({
       });
       if (!acquired) continue;
       try {
-        const delivery = await sendTargetedPush({
+        const delivery = await sendActivityPush({
           database, appId, companyId, recipientIds: reminder.recipientIds,
           actorId: '', title: reminder.title, body: reminder.body,
           type: reminder.kind === 'unread' ? 'message' : 'activity_update',
