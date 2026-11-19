@@ -60,6 +60,7 @@ const IntegraAccessControl = lazy(() => import('./IntegraAccessControl.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityDependencyCreatesCycle, activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser, unresolvedActivityDependencies } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
+import PlatformRecordMaintenance from './PlatformRecordMaintenance';
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
 import LoginShowcase from './LoginShowcase.jsx';
 import InboxParticipantStack from './InboxParticipantStack.jsx';
@@ -8757,6 +8758,8 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   { label: 'Contatos comerciais', value: newSalesLeads, detail: 'novas empresas', icon: PhoneCall, tone: 'text-emerald-700 bg-emerald-50' },
                 ].map(metric => { const MetricIcon = metric.icon; return <article key={metric.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className={`grid h-10 w-10 place-items-center rounded-xl ${metric.tone}`}><MetricIcon className="h-4.5 w-4.5" /></div><span className="mt-3 block text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className="mt-1 block text-2xl font-black text-slate-900">{metric.value}</strong><span className="text-[9px] text-slate-500">{metric.detail}</span></article>; })}
               </div>
+
+              {!IS_STAGING && <PlatformRecordMaintenance companies={companies} functionsClient={functionsClient} />}
 
               <section className="overflow-hidden rounded-[1.5rem] border border-emerald-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-2 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50 p-5 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Fale conosco</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Contatos comerciais</h3><p className="mt-1 text-xs text-slate-500">Empresas que solicitaram uma apresentação na tela de acesso.</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[9px] font-bold text-emerald-800 shadow-sm">{newSalesLeads} novo(s) · {salesLeads.length} total</span></div>

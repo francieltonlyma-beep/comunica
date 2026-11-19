@@ -27,6 +27,7 @@ import {listAccessibleDocuments} from './documents';
 import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getCandidateProfile, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, submitApplication, uploadCandidateResume, downloadCandidateResume, refreshCandidateFit} from './careers';
 import {randomUUID} from 'node:crypto';
 import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivateReports, updatePrivateReport, deletePrivateReport, deleteConfirmedTestReport} from './whistleblowing';
+import {maintainPlatformRecord} from './platformRecordMaintenance';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
 import {saveCoverageSettings} from './scheduleCoverage';
@@ -137,6 +138,9 @@ export const deleteWhistleblowingReport = onCall({invoker: 'public', maxInstance
 
 export const deleteConfirmedWhistleblowingTest = onCall({invoker: 'public', maxInstances: 1}, async request =>
   deleteConfirmedTestReport(request.auth as {uid: string; token: Record<string, unknown>} | undefined, request.data || {}));
+
+export const platformRecordMaintenance = onCall({invoker: 'public', maxInstances: 1}, async request =>
+  maintainPlatformRecord(getFirestore(), request.auth, request.data || {}));
 
 export const platformCompanyHealth = onCall({invoker: 'public', maxInstances: 1}, async request =>
   getPlatformCompanyHealth(
