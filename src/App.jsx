@@ -357,6 +357,7 @@ const POLL_QUESTION_TYPES = {
   mood: { label: 'Clima com emojis', hint: 'Uma leitura rápida da percepção da equipe.', options: ['😞 Muito ruim', '😕 Ruim', '😐 Neutro', '🙂 Bom', '🤩 Excelente'] },
 };
 const createPollQuestion = (type = 'single') => ({ type, question: '', options: [...(POLL_QUESTION_TYPES[type]?.options || POLL_QUESTION_TYPES.single.options)] });
+const hashSurveyRespondent = async value => { const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value))); return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''); };
 const createVacancyQuestion = (type = 'single') => ({ type, question: '', options: [...(VACANCY_QUESTION_TYPES[type]?.options || VACANCY_QUESTION_TYPES.single.options)] });
 const normalizeVacancyQuiz = questions => {
   if (!Array.isArray(questions) || !questions.length) return [];
@@ -819,6 +820,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
   // Sessão de usuário com persistência local
   const [currentUser, setCurrentUser] = useState(() => readSessionIdentity(localStorage));
+  const [anonymousSurveyHash, setAnonymousSurveyHash] = useState('');
+  useEffect(() => { let active = true; if (!currentUser?.id) { setAnonymousSurveyHash(''); return () => { active = false; }; } hashSurveyRespondent(currentUser.id).then(hash => { if (active) setAnonymousSurveyHash(hash); }).catch(() => { if (active) setAnonymousSurveyHash(''); }); return () => { active = false; }; }, [currentUser?.id]);
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
@@ -3249,14 +3252,15 @@ const getStatusEmTempoReal = (colaborador) => {
   const handleVotePoll = async (poll, optionIndex) => {
     if(poll.archived)return;
     if (!currentUser?.id || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= (poll.options || []).length) return;
-    if (poll.votes?.[currentUser.id] !== undefined) return;
+    const voteId = poll.isAnonymous ? `anon-${anonymousSurveyHash || await hashSurveyRespondent(currentUser.id)}` : currentUser.id;
+    if (poll.votes?.[voteId] !== undefined) return;
     if (poll.expiresAt && poll.expiresAt < todayStr) return;
-    const votes = { ...(poll.votes || {}), [currentUser.id]: optionIndex };
+    const votes = { ...(poll.votes || {}), [voteId]: optionIndex };
     if (isFirebaseAvailable && dbUser) {
       try {
         const pollsCollection = getTenantCollection('polls');
         if (!pollsCollection) throw new Error('Empresa indisponível.');
-        await updateDoc(doc(pollsCollection, poll.id), new FieldPath('votes', currentUser.id), optionIndex);
+        await updateDoc(doc(pollsCollection, poll.id), new FieldPath('votes', voteId), optionIndex);
       } catch (error) {
         console.error('Falha ao registrar voto', error);
         triggerNotification('Não foi possível registrar o voto. Atualize a enquete e tente novamente.', 'error');
@@ -5437,7 +5441,7 @@ try {
   const activePollsCount = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr)).length;
   const pollParticipationValues = eligiblePollsList.map(poll => pollParticipation(poll, pollEmployeeIds));
   const pollAverageParticipation = pollParticipationValues.length ? Math.round(pollParticipationValues.reduce((sum, value) => sum + value, 0) / pollParticipationValues.length) : 0;
-  const pendingPollResponses = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[currentUser?.id] === undefined).length;
+  const pendingPollResponses = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[poll.isAnonymous ? `anon-${anonymousSurveyHash}` : currentUser?.id] === undefined).length;
   const pollFormGroups = Object.values(eligiblePollsList.filter(poll => poll.formId && !poll.archived).reduce((groups, poll) => {
     (groups[poll.formId] ||= []).push(poll);
     return groups;
@@ -5448,7 +5452,7 @@ try {
     const matchesStatus = pollViewFilter === 'Todas'
       || (pollViewFilter === 'Ativas' && !expired)
       || (pollViewFilter === 'Encerradas' && expired)
-      || (pollViewFilter === 'Pendentes' && !expired && poll.votes?.[currentUser?.id] === undefined)
+      || (pollViewFilter === 'Pendentes' && !expired && poll.votes?.[poll.isAnonymous ? `anon-${anonymousSurveyHash}` : currentUser?.id] === undefined)
       || (pollViewFilter === 'Formulários' && Boolean(poll.formId));
     const matchesSearch = `${poll.formTitle || ''} ${poll.question || ''}`.toLocaleLowerCase('pt-BR').includes(pollSearch.trim().toLocaleLowerCase('pt-BR'));
     return matchesStatus && matchesSearch;
