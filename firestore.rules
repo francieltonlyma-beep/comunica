@@ -22,6 +22,25 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get(field, []).size() == 0
         || uid in get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get(field, []);
     }
+    function validNotificationPreferences(data) {
+      let preferences = data.get('notificationPreferences', {});
+      return preferences is map
+        && preferences.keys().hasOnly(['inbox', 'announcements', 'sectors', 'polls', 'services', 'careers', 'integra', 'updates'])
+        && preferences.get('inbox', true) is bool
+        && preferences.get('announcements', true) is bool
+        && preferences.get('sectors', true) is bool
+        && preferences.get('polls', true) is bool
+        && preferences.get('services', true) is bool
+        && preferences.get('careers', true) is bool
+        && preferences.get('integra', true) is bool
+        && preferences.get('updates', true) is bool;
+    }
+    match /_platformNotificationPreferences/{uid} {
+      allow get: if support() && request.auth.uid == uid;
+      allow create, update: if support() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['notificationPreferences'])
+        && validNotificationPreferences(request.resource.data);
+    }
     function protectedUser(data, id) {
       return data.get('isDeveloper', false) == true || id == 'platform-support-francielton';
     }
@@ -31,12 +50,15 @@ service cloud.firestore {
       allow create: if false;
       // Employee offboarding is a server transaction that also removes private credentials.
       allow delete: if false;
-      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pin']) && (support() || (
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pin'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['notificationPreferences'])
+          || (member(company) && request.auth.uid == uid && validNotificationPreferences(request.resource.data)))
+        && (support() || (
         !protectedUser(resource.data, uid) && !protectedUser(request.resource.data, uid) && (
           admin(app, company) || (member(company) && request.auth.uid == uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'emergencyName', 'emergencyPhone', 'emergencyRelationship',
-              'pushTokens', 'readNotifications', 'companyId', 'id'
+              'pushTokens', 'readNotifications', 'notificationPreferences', 'companyId', 'id'
             ])
             && request.resource.data.get('companyId', company) == company
             && request.resource.data.get('id', uid) == uid)
