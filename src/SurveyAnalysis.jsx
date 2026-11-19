@@ -100,7 +100,7 @@ export default function SurveyAnalysis({ report, onClose }) {
         <div>
           <p className="survey-eyebrow">Análise de resultados · RH</p>
           <h2 className="survey-report-title" id={titleId}>{report.title}</h2>
-          <p>Resultados agregados por pesquisa, tópico e pergunta. {report.isAnonymous ? 'Esta pesquisa foi configurada como anônima.' : 'Esta pesquisa foi configurada para registrar a identificação interna dos participantes.'}</p>
+          <p>Resultados agregados por pesquisa, tópico e pergunta. {report.isAnonymous ? 'As respostas não serão vinculadas a identificadores diretos.' : 'A identificação interna dos participantes está habilitada.'}</p>
         </div>
         <div className="survey-small-actions survey-report-actions">
           <button type="button" onClick={download}>Exportar CSV</button>
