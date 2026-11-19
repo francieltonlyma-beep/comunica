@@ -61,13 +61,14 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    if(action==='report'){
     const limit=200;
     const suggestions=await tx.get(suggestionCollection(base,groupId).orderBy('createdAt','desc').limit(limit+1));
+    const departments=await tx.get(base.collection('departments')),sectorNames=new Map(departments.docs.map(doc=>[doc.id,String(doc.data().name||'').trim()]).filter(([,name])=>name));
     const responses=await tx.get(base.collection('surveyResponses').where('groupId','==',groupId).limit(5000));
     const responseBreakdown={public:0,sectors:{} as Record<string,number>,people:0,legacyInternal:0};
     const attributedUsers=new Set<string>();
-    for(const doc of responses.docs){const value=doc.data();if(value.audience==='public')responseBreakdown.public++;else if(value.audience==='people')responseBreakdown.people++;else if(value.audience==='sector'){const sector=String(value.sectorId||'Setor não informado');responseBreakdown.sectors[sector]=(responseBreakdown.sectors[sector]||0)+1;if(value.respondentUid)attributedUsers.add(String(value.respondentUid));}else responseBreakdown.legacyInternal++;}
+    for(const doc of responses.docs){const value=doc.data();if(value.audience==='public')responseBreakdown.public++;else if(value.audience==='people')responseBreakdown.people++;else if(value.audience==='sector'){const sectorId=String(value.sectorId||''),sector=sectorNames.get(sectorId)||sectorId||'Setor não informado';responseBreakdown.sectors[sector]=(responseBreakdown.sectors[sector]||0)+1;if(value.respondentUid)attributedUsers.add(String(value.respondentUid));}else responseBreakdown.legacyInternal++;}
     const legacyVoters=new Set(polls[0].isAnonymous?[]:polls.flatMap(p=>Object.keys(p.votes||{}).filter(uid=>!uid.startsWith('external-')&&!attributedUsers.has(uid))));
     responseBreakdown.legacyInternal=Math.max(responseBreakdown.legacyInternal,legacyVoters.size);
-    return {...surveyReport(polls),responseBreakdown,title:polls[0].formTitle || polls[0].question,archived:Boolean(polls[0].archived),suggestions:suggestions.docs.slice(0,limit).map(doc=>doc.data().text),suggestionsLimited:suggestions.size>limit};
+    return {...surveyReport(polls),responseBreakdown,isAnonymous:Boolean(polls[0].isAnonymous),title:polls[0].formTitle || polls[0].question,archived:Boolean(polls[0].archived),suggestions:suggestions.docs.slice(0,limit).map(doc=>doc.data().text),suggestionsLimited:suggestions.size>limit};
    }
    if(action==='archive'||action==='restore'){
     await revokeSurveyLinks(tx,db,base,groupId,meta.data());
@@ -101,7 +102,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     if(!response.exists)tx.create(responseRef,{submittedAt:Date.now(),groupId,audience:polls[0].surveyTargetType==='people'?'people':sectorId?'sector':'internal',sectorId,isAnonymous:Boolean(polls[0].isAnonymous),...(!polls[0].isAnonymous?{respondentUid:auth.uid}:{})});
     return {submitted:true};
    }
-   const audience=data.audience==='public'?'public':data.audience==='people'?'people':data.audience==='team'?'team':'sector',sectorId=String(data.sectorId||polls[0].surveySectorId||meta.data()?.sectorId||'').trim(),fingerprint=signature(polls);
+   const audience=data.audience==='public'?'public':data.audience==='people'?'people':data.audience==='team'?'team':'sector',sectorId=audience==='public'?'':String(data.sectorId||polls[0].surveySectorId||meta.data()?.sectorId||'').trim(),fingerprint=signature(polls);
    const recipientIds=audience==='people'?[...new Set((Array.isArray(polls[0].surveyUserIds)?polls[0].surveyUserIds:[]).map((v:any)=>String(v||'').trim()).filter(Boolean))]:[];if(audience==='people'&&!recipientIds.length)throw new HttpsError('failed-precondition','Selecione as pessoas que poderão responder.');if(audience==='sector'||(audience==='public'&&sectorId)){
     if(!sectorId||sectorId.length>120)throw new HttpsError('invalid-argument','Selecione o setor da divulgação.');
     const users=await tx.get(base.collection('users')),available=new Set(users.docs.flatMap(doc=>profileSectors(doc.data())));
