@@ -26,55 +26,6 @@ export function AppLoadingScreen() {
   return <main id="main-content" tabIndex="-1" className="runtime-loading" aria-busy="true" aria-live="polite"><img src="/pwa/icon-192.png" alt="" /><div><strong>Comunica</strong><span>Preparando seu ambiente…</span></div><i aria-hidden="true" /></main>;
 }
 
-export function ProductSwitcher() {
-  useEffect(() => {
-    let portal;
-    let style;
-    const hidden = new Set();
-    const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-    const attach = () => {
-      const candidates = [...document.querySelectorAll('button')].filter(button => !button.closest('.comunica-header-product-switcher'));
-      const management = candidates.find(button => normalize(button.textContent).startsWith('comunica gestão'));
-      const integra = candidates.find(button => normalize(button.textContent).startsWith('comunica integra'));
-      const profile = document.querySelector('button[title="Meu Perfil de Colaborador"]');
-      if (!management || !integra || !profile?.parentElement) return;
-      [management, integra].forEach(button => {
-        button.classList.add('comunica-product-switcher-source');
-        hidden.add(button);
-      });
-      if (portal?.isConnected) return;
-      portal = document.createElement('div');
-      portal.className = 'comunica-header-product-switcher';
-      for (const [label, source] of [['Comunica Gestão', management], ['Comunica Integra', integra]]) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'comunica-header-product-button';
-        button.textContent = label;
-        button.setAttribute('aria-label', label);
-        button.title = label;
-        button.addEventListener('click', () => source.click());
-        portal.appendChild(button);
-      }
-      profile.parentElement.insertBefore(portal, profile);
-      if (!style) {
-        style = document.createElement('style');
-        style.textContent = '.comunica-product-switcher-source{display:none!important}.comunica-header-product-switcher{display:flex;align-items:center;gap:6px;margin-inline:8px}.comunica-header-product-button{border:1px solid #d8e1ec;border-radius:999px;background:#f7f9fc;color:#17324d;padding:7px 11px;font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer}.comunica-header-product-button:hover{background:#eaf1f8}@media(max-width:720px){.comunica-header-product-switcher{gap:4px;margin-inline:4px}.comunica-header-product-button{padding:6px 8px;font-size:11px}}';
-        document.head.appendChild(style);
-      }
-    };
-    const observer = new MutationObserver(attach);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    attach();
-    return () => {
-      observer.disconnect();
-      portal?.remove();
-      hidden.forEach(button => button.classList.remove('comunica-product-switcher-source'));
-      style?.remove();
-    };
-  }, []);
-  return null;
-}
-
 export function RuntimeNotices() {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [update, setUpdate] = useState(null);
