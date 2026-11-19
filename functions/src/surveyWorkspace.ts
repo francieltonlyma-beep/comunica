@@ -7,6 +7,7 @@ const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const key=(value:unknown)=>{const s=String(value || '');if(!/^[a-zA-Z0-9_-]{1,128}$/.test(s))throw new HttpsError('invalid-argument','Identificação da pesquisa inválida.');return s;};
 const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date());
 function profileSectors(profile:Data={}){return [...new Set([profile.dept,profile.department,...(Array.isArray(profile.departments)?profile.departments:[]),...(Array.isArray(profile.depts)?profile.depts:[])].map(v=>String(v||'').trim()).filter(Boolean))];}
+async function assertSurveySector(tx:Transaction,base:DocumentReference,auth:any,sectorId:unknown){const target=String(sectorId||'').trim();if(!target)return;const profile=(await tx.get(base.collection('users').doc(auth.uid))).data()||{};if(!profileSectors(profile).includes(target))throw new HttpsError('permission-denied','Esta pesquisa está disponível somente para o setor indicado.');}
 function surveyChannelId(audience:string,sectorId=''){return audience==='public'?'public':`sector-${hash(sectorId).slice(0,24)}`;}
 function surveyChannelRef(base:DocumentReference,groupId:string,audience:string,sectorId=''){return base.collection('surveyLinks').doc(groupId).collection('channels').doc(surveyChannelId(audience,sectorId));}
 async function revokeSurveyLinks(tx:Transaction,db:Firestore,base:DocumentReference,groupId:string,legacy:any){
@@ -90,12 +91,14 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     next.forEach((q:Data,i:number)=>{const previous=old.get(q.id);tx.set(base.collection('polls').doc(q.id),{...(previous || {votes:{},createdAt:Date.now(),authorId:auth.uid,author:'RH'}),...q,formId:groupId,formTitle:title,formDescription:description,formOrder:i+1,formQuestionCount:next.length,category,expiresAt,archived:Boolean(polls[0].archived),updatedAt:Date.now(),updatedBy:auth.uid});});
     return {saved:true};
    }
-   if(action==='readInternal')return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[auth.uid]!==undefined)};
+   if(action==='readInternal'){await assertSurveySector(tx,base,auth,meta.data()?.sectorId);return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[auth.uid]!==undefined)};}
    if(action==='submitInternal'){
+    await assertSurveySector(tx,base,auth,meta.data()?.sectorId);
     if(polls.every(p=>p.votes?.[auth.uid]!==undefined))return {submitted:true};
-    const answers=validateSurveyAnswers(polls,data.answers);
+    const answers=validateSurveyAnswers(polls,data.answers),sectorId=String(meta.data()?.sectorId||''),responseRef=base.collection('surveyResponses').doc(hash(`${base.id}|${groupId}|internal|${auth.uid}`)),response=await tx.get(responseRef);
     saveSuggestion(tx,base,groupId,data.suggestion);
     for(const p of polls)if(p.votes?.[auth.uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',auth.uid),answers[p.id]);
+    if(!response.exists)tx.create(responseRef,{submittedAt:Date.now(),groupId,audience:sectorId?'sector':'internal',sectorId,respondentUid:auth.uid});
     return {submitted:true};
    }
    const audience=data.audience==='public'?'public':data.audience==='team'?'team':'sector',sectorId=audience==='sector'?String(data.sectorId||'').trim():'',fingerprint=signature(polls);
@@ -110,7 +113,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    if(channel.data()?.tokenHash)tx.update(db.collection('_surveyLinks').doc(channel.data()!.tokenHash),{revoked:true});
    const link={companyId:base.id,groupId,audience,sectorId,signature:fingerprint,validUntil,revoked:false,createdAt:Date.now(),createdBy:auth.uid};
    tx.create(db.collection('_surveyLinks').doc(tokenHash),link);
-   tx.set(channelRef,{...link,token:newToken,tokenHash});return {token:newToken,audience,sectorId,validUntil};
+   tx.set(channelRef,{...link,token:newToken,tokenHash});if(audience==='sector')tx.set(metaRef,{sectorId,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});return {token:newToken,audience,sectorId,validUntil};
   });
  }
  if(!['read','submit'].includes(action))throw new HttpsError('invalid-argument','Ação inválida.');
