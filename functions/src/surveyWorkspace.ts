@@ -101,19 +101,19 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     if(!response.exists)tx.create(responseRef,{submittedAt:Date.now(),groupId,audience:sectorId?'sector':'internal',sectorId,respondentUid:auth.uid});
     return {submitted:true};
    }
-   const audience=data.audience==='public'?'public':data.audience==='team'?'team':'sector',sectorId=audience==='sector'?String(data.sectorId||'').trim():'',fingerprint=signature(polls);
-   if(audience==='sector'){
-    if(!sectorId||sectorId.length>120)throw new HttpsError('invalid-argument','Selecione um setor para gerar o link restrito.');
+   const audience=data.audience==='public'?'public':data.audience==='team'?'team':'sector',sectorId=String(data.sectorId||polls[0].surveySectorId||meta.data()?.sectorId||'').trim(),fingerprint=signature(polls);
+   if(audience!=='team'||sectorId){
+    if(!sectorId||sectorId.length>120)throw new HttpsError('invalid-argument','Selecione o setor da divulgação.');
     const users=await tx.get(base.collection('users')),available=new Set(users.docs.flatMap(doc=>profileSectors(doc.data())));
     if(!available.has(sectorId))throw new HttpsError('invalid-argument','O setor selecionado não existe nesta empresa.');
    }
-   const channelRef=surveyChannelRef(base,groupId,audience,sectorId),channel=await tx.get(channelRef);
-   if(channel.exists&&!channel.data()!.revoked&&channel.data()!.signature===fingerprint&&(audience!=='sector'||String(polls[0].surveySectorId||meta.data()?.sectorId||'')===sectorId)&&channel.data()!.validUntil>Date.now())return {token:channel.data()!.token,audience,sectorId,validUntil:channel.data()!.validUntil};
+   const currentSector=String(polls[0].surveySectorId||meta.data()?.sectorId||''),channelRef=surveyChannelRef(base,groupId,audience,sectorId),channel=await tx.get(channelRef);
+   if(channel.exists&&!channel.data()!.revoked&&channel.data()!.signature===fingerprint&&(!sectorId||currentSector===sectorId)&&channel.data()!.validUntil>Date.now())return {token:channel.data()!.token,audience,sectorId,validUntil:channel.data()!.validUntil};
    const tokenHash=hash(newToken),validUntil=Date.now()+90*86400000;
    if(channel.data()?.tokenHash)tx.update(db.collection('_surveyLinks').doc(channel.data()!.tokenHash),{revoked:true});
    const link={companyId:base.id,groupId,audience,sectorId,signature:fingerprint,validUntil,revoked:false,createdAt:Date.now(),createdBy:auth.uid};
    tx.create(db.collection('_surveyLinks').doc(tokenHash),link);
-   tx.set(channelRef,{...link,token:newToken,tokenHash});if(audience==='sector'){for(const p of polls)tx.update(base.collection('polls').doc(p.id),{surveySectorId:sectorId});tx.set(metaRef,{sectorId,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});}return {token:newToken,audience,sectorId,validUntil};
+   tx.set(channelRef,{...link,token:newToken,tokenHash});if(sectorId){for(const p of polls)tx.update(base.collection('polls').doc(p.id),{surveySectorId:sectorId});tx.set(metaRef,{sectorId,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});}return {token:newToken,audience,sectorId,validUntil};
   });
  }
  if(!['read','submit'].includes(action))throw new HttpsError('invalid-argument','Ação inválida.');
