@@ -81,7 +81,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
      if(seen.has(id)||(ordered[i].id&&!old.has(id)))throw new HttpsError('invalid-argument','Identificação de pergunta inválida.');seen.add(id);return {id,...q};});
     const answered=polls.some(p=>Object.keys(p.votes || {}).length>0);
     if(answered&&(next.length!==polls.length||next.some((q:Data)=>{const previous=old.get(q.id);return !previous||q.question!==previous.question||q.type!==(previous.type || 'single')||JSON.stringify(q.options)!==JSON.stringify(previous.options);})))throw new HttpsError('failed-precondition','Esta pesquisa já recebeu respostas. Altere apenas título, apresentação, tópicos, categoria ou prazo para preservar os resultados.');
-    if(meta.data()?.tokenHash)tx.update(db.collection('_surveyLinks').doc(meta.data()!.tokenHash),{revoked:true});
+    await revokeSurveyLinks(tx,db,base,groupId,meta.data());
     tx.set(metaRef,{revoked:true,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});
     for(const p of polls)if(!seen.has(p.id))tx.delete(base.collection('polls').doc(p.id));
     next.forEach((q:Data,i:number)=>{const previous=old.get(q.id);tx.set(base.collection('polls').doc(q.id),{...(previous || {votes:{},createdAt:Date.now(),authorId:auth.uid,author:'RH'}),...q,formId:groupId,formTitle:title,formDescription:description,formOrder:i+1,formQuestionCount:next.length,category,expiresAt,archived:Boolean(polls[0].archived),updatedAt:Date.now(),updatedBy:auth.uid});});
@@ -132,7 +132,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   const responseId=hash(`${base.id}|${v.groupId}|${v.audience}|${v.sectorId||''}|${v.audience==='sector'?auth.uid:respondent}`),uid=v.audience==='sector'?auth.uid:`external-${responseId.slice(0,40)}`;
   const responseRef=base.collection('surveyResponses').doc(responseId),response=await tx.get(responseRef);
   const submitted=response.exists||polls.every(p=>p.votes?.[uid]!==undefined);
-  if(action==='read')return {...publicView(polls,String(company.name || 'Comunica'),v.audience==='team'?uid:undefined),submitted};
+  if(action==='read')return {...publicView(polls,String(company.name || 'Comunica'),v.audience==='sector'?uid:undefined),submitted};
   if(submitted)return {submitted:true};
   const answers=validateSurveyAnswers(polls,data.answers);
   if(v.audience==='public'){
