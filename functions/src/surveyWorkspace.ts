@@ -102,7 +102,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     return {submitted:true};
    }
    const audience=data.audience==='public'?'public':data.audience==='team'?'team':'sector',sectorId=String(data.sectorId||polls[0].surveySectorId||meta.data()?.sectorId||'').trim(),fingerprint=signature(polls);
-   if(audience!=='team'||sectorId){
+   if(audience==='sector'||(audience==='public'&&sectorId)){
     if(!sectorId||sectorId.length>120)throw new HttpsError('invalid-argument','Selecione o setor da divulgação.');
     const users=await tx.get(base.collection('users')),available=new Set(users.docs.flatMap(doc=>profileSectors(doc.data())));
     if(!available.has(sectorId))throw new HttpsError('invalid-argument','O setor selecionado não existe nesta empresa.');
