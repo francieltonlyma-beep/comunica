@@ -91,11 +91,11 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     next.forEach((q:Data,i:number)=>{const previous=old.get(q.id);tx.set(base.collection('polls').doc(q.id),{...(previous || {votes:{},createdAt:Date.now(),authorId:auth.uid,author:'RH'}),...q,formId:groupId,formTitle:title,formDescription:description,formOrder:i+1,formQuestionCount:next.length,category,expiresAt,archived:Boolean(polls[0].archived),updatedAt:Date.now(),updatedBy:auth.uid});});
     return {saved:true};
    }
-   if(action==='readInternal'){await assertSurveySector(tx,base,auth,meta.data()?.sectorId);return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[auth.uid]!==undefined)};}
+   if(action==='readInternal'){await assertSurveySector(tx,base,auth,meta.data()?.sectorId||polls[0].surveySectorId);return {...publicView(polls,String(company.name || 'Comunica'),auth.uid),submitted:polls.every(p=>p.votes?.[auth.uid]!==undefined)};}
    if(action==='submitInternal'){
-    await assertSurveySector(tx,base,auth,meta.data()?.sectorId);
+    await assertSurveySector(tx,base,auth,meta.data()?.sectorId||polls[0].surveySectorId);
     if(polls.every(p=>p.votes?.[auth.uid]!==undefined))return {submitted:true};
-    const answers=validateSurveyAnswers(polls,data.answers),sectorId=String(meta.data()?.sectorId||''),responseRef=base.collection('surveyResponses').doc(hash(`${base.id}|${groupId}|internal|${auth.uid}`)),response=await tx.get(responseRef);
+    const answers=validateSurveyAnswers(polls,data.answers),sectorId=String(meta.data()?.sectorId||polls[0].surveySectorId||''),responseRef=base.collection('surveyResponses').doc(hash(`${base.id}|${groupId}|internal|${auth.uid}`)),response=await tx.get(responseRef);
     saveSuggestion(tx,base,groupId,data.suggestion);
     for(const p of polls)if(p.votes?.[auth.uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',auth.uid),answers[p.id]);
     if(!response.exists)tx.create(responseRef,{submittedAt:Date.now(),groupId,audience:sectorId?'sector':'internal',sectorId,respondentUid:auth.uid});
@@ -108,12 +108,12 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     if(!available.has(sectorId))throw new HttpsError('invalid-argument','O setor selecionado não existe nesta empresa.');
    }
    const channelRef=surveyChannelRef(base,groupId,audience,sectorId),channel=await tx.get(channelRef);
-   if(channel.exists&&!channel.data()!.revoked&&channel.data()!.signature===fingerprint&&channel.data()!.validUntil>Date.now())return {token:channel.data()!.token,audience,sectorId,validUntil:channel.data()!.validUntil};
+   if(channel.exists&&!channel.data()!.revoked&&channel.data()!.signature===fingerprint&&(audience!=='sector'||String(polls[0].surveySectorId||meta.data()?.sectorId||'')===sectorId)&&channel.data()!.validUntil>Date.now())return {token:channel.data()!.token,audience,sectorId,validUntil:channel.data()!.validUntil};
    const tokenHash=hash(newToken),validUntil=Date.now()+90*86400000;
    if(channel.data()?.tokenHash)tx.update(db.collection('_surveyLinks').doc(channel.data()!.tokenHash),{revoked:true});
    const link={companyId:base.id,groupId,audience,sectorId,signature:fingerprint,validUntil,revoked:false,createdAt:Date.now(),createdBy:auth.uid};
    tx.create(db.collection('_surveyLinks').doc(tokenHash),link);
-   tx.set(channelRef,{...link,token:newToken,tokenHash});if(audience==='sector')tx.set(metaRef,{sectorId,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});return {token:newToken,audience,sectorId,validUntil};
+   tx.set(channelRef,{...link,token:newToken,tokenHash});if(audience==='sector'){for(const p of polls)tx.update(base.collection('polls').doc(p.id),{surveySectorId:sectorId});tx.set(metaRef,{sectorId,updatedAt:Date.now(),updatedBy:auth.uid},{merge:true});}return {token:newToken,audience,sectorId,validUntil};
   });
  }
  if(!['read','submit'].includes(action))throw new HttpsError('invalid-argument','Ação inválida.');
@@ -132,7 +132,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    if(channel.data()?.revoked||channel.data()?.tokenHash!==linkHash)throw new HttpsError('not-found','Link da pesquisa inválido ou encerrado.');
   }
   else{const doc=await tx.get(base);if(!doc.exists||doc.data()?.codeBlocked)throw new HttpsError('permission-denied','Pesquisa indisponível.');company=doc.data()!;}
-  const polls=await source(tx,base,v.groupId);if(signature(polls)!==v.signature)throw new HttpsError('failed-precondition','A pesquisa foi alterada. Solicite um novo link ao responsável.');
+  const polls=await source(tx,base,v.groupId);if(v.audience==='sector'&&polls[0].surveySectorId&&String(polls[0].surveySectorId)!==String(v.sectorId||''))throw new HttpsError('not-found','Este link foi substituído por uma divulgação de outro setor. Solicite o link atualizado.');if(signature(polls)!==v.signature)throw new HttpsError('failed-precondition','A pesquisa foi alterada. Solicite um novo link ao responsável.');
   const respondent=String(data.respondentId || '');
   if(v.audience==='public'&&!/^[a-zA-Z0-9_-]{16,128}$/.test(respondent))throw new HttpsError('invalid-argument','Não foi possível identificar este navegador.');
   const responseKey=v.audience==='sector'?`${base.id}|${v.groupId}|sector|${v.sectorId}|${auth.uid}`:`${base.id}|${v.groupId}|${v.audience}|${v.audience==='team'?auth.uid:respondent}`,responseId=hash(responseKey),uid=(v.audience==='sector'||v.audience==='team')?auth.uid:`external-${responseId.slice(0,40)}`;
