@@ -39,7 +39,7 @@ function saveSuggestion(tx:Transaction,base:DocumentReference,groupId:string,val
  if(text)tx.create(suggestionCollection(base,groupId).doc(),{text,createdAt:Date.now()});
 }
 function signature(polls:Data[]){return hash(JSON.stringify(polls.map(p=>[p.id,p.question,p.options,p.type,p.topicId || '',p.topicTitle || '',p.topicOrder || 1,p.formOrder || 1,p.expiresAt || '',p.formTitle || '',p.formDescription || '',p.surveyTargetType||'sector',p.surveySectorId||'',p.surveyUserIds||[],Boolean(p.isAnonymous)])));}
-function voterKey(polls:Data[],uid:string){return polls[0]?.isAnonymous?`anon-${hash(uid)}`:uid;}
+function voterKey(polls:Data[],uid:string){return polls[0]?.isAnonymous&&!uid.startsWith('external-')?`anon-${hash(uid)}`:uid;}
 function publicView(polls:Data[],companyName:string,uid?:string){
  const storedUid=uid?voterKey(polls,uid):'';
  return {companyName,title:String(polls[0].formTitle || polls[0].question).slice(0,160),description:String(polls[0].formDescription || '').slice(0,2000),expiresAt:polls[0].expiresAt || '',questions:polls.map(p=>({id:p.id,question:p.question,options:p.options,type:p.type || 'single',topicId:p.topicId || 'general',topicTitle:p.topicTitle || 'Perguntas',topicOrder:p.topicOrder || 1,formOrder:p.formOrder || 1,...(storedUid&&p.votes?.[storedUid]!==undefined?{answer:p.votes[storedUid]}:{})}))};
