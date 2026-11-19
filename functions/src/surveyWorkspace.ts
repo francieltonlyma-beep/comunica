@@ -95,7 +95,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     for(const p of polls)if(p.votes?.[auth.uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',auth.uid),answers[p.id]);
     return {submitted:true};
    }
-   const audience=data.audience==='public'?'public':'sector',sectorId=audience==='sector'?String(data.sectorId||'').trim():'',fingerprint=signature(polls);
+   const audience=data.audience==='public'?'public':data.audience==='team'?'team':'sector',sectorId=audience==='sector'?String(data.sectorId||'').trim():'',fingerprint=signature(polls);
    if(audience==='sector'){
     if(!sectorId||sectorId.length>120)throw new HttpsError('invalid-argument','Selecione um setor para gerar o link restrito.');
     const users=await tx.get(base.collection('users')),available=new Set(users.docs.flatMap(doc=>profileSectors(doc.data())));
@@ -117,22 +117,22 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   const link=await tx.get(linkRef),v=link.data();if(!v||v.revoked||v.validUntil<Date.now())throw new HttpsError('not-found','Link da pesquisa inválido ou encerrado.');
   const base=db.doc(`artifacts/comunica-salvador/public/data/companies/${key(v.companyId)}`);
   let company:Data;
-  if(v.audience==='sector'){
+  if(v.audience==='sector'||v.audience==='team'){
    if(!auth)return {requiresLogin:true};
    company=await access(tx,base,auth);
    const profile=(await tx.get(base.collection('users').doc(auth.uid))).data()||{};
-   if(!profileSectors(profile).includes(String(v.sectorId||'')))throw new HttpsError('permission-denied','Esta pesquisa está disponível somente para o setor indicado.');
+   if(v.audience==='sector'&&!profileSectors(profile).includes(String(v.sectorId||'')))throw new HttpsError('permission-denied','Esta pesquisa está disponível somente para o setor indicado.');
    const channel=await tx.get(surveyChannelRef(base,key(v.groupId),v.audience,String(v.sectorId||'')));
    if(channel.data()?.revoked||channel.data()?.tokenHash!==linkHash)throw new HttpsError('not-found','Link da pesquisa inválido ou encerrado.');
-  }else if(v.audience==='team'){throw new HttpsError('permission-denied','Este link antigo foi encerrado. Solicite um novo link ao responsável.');}
+  }
   else{const doc=await tx.get(base);if(!doc.exists||doc.data()?.codeBlocked)throw new HttpsError('permission-denied','Pesquisa indisponível.');company=doc.data()!;}
   const polls=await source(tx,base,v.groupId);if(signature(polls)!==v.signature)throw new HttpsError('failed-precondition','A pesquisa foi alterada. Solicite um novo link ao responsável.');
   const respondent=String(data.respondentId || '');
   if(v.audience==='public'&&!/^[a-zA-Z0-9_-]{16,128}$/.test(respondent))throw new HttpsError('invalid-argument','Não foi possível identificar este navegador.');
-  const responseId=hash(`${base.id}|${v.groupId}|${v.audience}|${v.sectorId||''}|${v.audience==='sector'?auth.uid:respondent}`),uid=v.audience==='sector'?auth.uid:`external-${responseId.slice(0,40)}`;
+  const responseId=hash(`${base.id}|${v.groupId}|${v.audience}|${v.sectorId||''}|${(v.audience==='sector'||v.audience==='team')?auth.uid:respondent}`),uid=(v.audience==='sector'||v.audience==='team')?auth.uid:`external-${responseId.slice(0,40)}`;
   const responseRef=base.collection('surveyResponses').doc(responseId),response=await tx.get(responseRef);
   const submitted=response.exists||polls.every(p=>p.votes?.[uid]!==undefined);
-  if(action==='read')return {...publicView(polls,String(company.name || 'Comunica'),v.audience==='sector'?uid:undefined),submitted};
+  if(action==='read')return {...publicView(polls,String(company.name || 'Comunica'),(v.audience==='sector'||v.audience==='team')?uid:undefined),submitted};
   if(submitted)return {submitted:true};
   const answers=validateSurveyAnswers(polls,data.answers);
   if(v.audience==='public'){
