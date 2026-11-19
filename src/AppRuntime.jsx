@@ -58,7 +58,7 @@ export function ProductSwitcher() {
       profile.parentElement.insertBefore(portal, profile);
       if (!style) {
         style = document.createElement('style');
-        style.textContent = '.comunica-product-switcher-source{display:none!important}.comunica-header-product-switcher{display:flex;align-items:center;gap:6px;margin-inline:8px}.comunica-header-product-button{border:1px solid #d8e1ec;border-radius:999px;background:#f7f9fc;color:#17324d;padding:7px 11px;font:600 12px/1.2 inherit;white-space:nowrap;cursor:pointer}.comunica-header-product-button:hover{background:#eaf1f8}@media(max-width:720px){.comunica-header-product-switcher{gap:4px;margin-inline:4px}.comunica-header-product-button{padding:6px 8px;font-size:11px}}';
+        style.textContent = '.comunica-product-switcher-source{display:none!important}.comunica-header-product-switcher{display:flex;align-items:center;gap:6px;margin-inline:8px}.comunica-header-product-button{border:1px solid #d8e1ec;border-radius:999px;background:#f7f9fc;color:#17324d;padding:7px 11px;font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer}.comunica-header-product-button:hover{background:#eaf1f8}@media(max-width:720px){.comunica-header-product-switcher{gap:4px;margin-inline:4px}.comunica-header-product-button{padding:6px 8px;font-size:11px}}';
         document.head.appendChild(style);
       }
     };
