@@ -62,7 +62,10 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
     const suggestions=await tx.get(suggestionCollection(base,groupId).orderBy('createdAt','desc').limit(limit+1));
     const responses=await tx.get(base.collection('surveyResponses').where('groupId','==',groupId).limit(5000));
     const responseBreakdown={public:0,sectors:{} as Record<string,number>,legacyInternal:0};
-    for(const doc of responses.docs){const value=doc.data();if(value.audience==='public')responseBreakdown.public++;else if(value.audience==='sector'){const sector=String(value.sectorId||'Setor não informado');responseBreakdown.sectors[sector]=(responseBreakdown.sectors[sector]||0)+1;}else responseBreakdown.legacyInternal++;}
+    const attributedUsers=new Set<string>();
+    for(const doc of responses.docs){const value=doc.data();if(value.audience==='public')responseBreakdown.public++;else if(value.audience==='sector'){const sector=String(value.sectorId||'Setor não informado');responseBreakdown.sectors[sector]=(responseBreakdown.sectors[sector]||0)+1;if(value.respondentUid)attributedUsers.add(String(value.respondentUid));}else responseBreakdown.legacyInternal++;}
+    const legacyVoters=new Set(polls.flatMap(p=>Object.keys(p.votes||{}).filter(uid=>!uid.startsWith('external-')&&!attributedUsers.has(uid))));
+    responseBreakdown.legacyInternal=Math.max(responseBreakdown.legacyInternal,legacyVoters.size);
     return {...surveyReport(polls),responseBreakdown,title:polls[0].formTitle || polls[0].question,archived:Boolean(polls[0].archived),suggestions:suggestions.docs.slice(0,limit).map(doc=>doc.data().text),suggestionsLimited:suggestions.size>limit};
    }
    if(action==='archive'||action==='restore'){
@@ -143,7 +146,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   }
   saveSuggestion(tx,base,v.groupId,data.suggestion);
   for(const p of polls)if(p.votes?.[uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',uid),answers[p.id]);
-  tx.create(responseRef,{submittedAt:Date.now(),groupId:v.groupId,audience:v.audience,sectorId:v.sectorId||''});
+  tx.create(responseRef,{submittedAt:Date.now(),groupId:v.groupId,audience:v.audience,sectorId:v.sectorId||'',respondentUid:v.audience==='sector'?auth.uid:''});
   return {submitted:true};
  });
  }catch(error:any){if(error instanceof HttpsError)throw error;throw new HttpsError('invalid-argument',error.message || 'Não foi possível concluir a pesquisa.');}
