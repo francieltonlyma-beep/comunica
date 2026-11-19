@@ -23,6 +23,12 @@ try {
   await assertFails(setDoc(doc(employee,`${base}/userDirectory/employee`),{id:'employee',name:'Forjado'}));
   await assertSucceeds(getDoc(doc(admin,`${base}/users/other`)));
   await assertSucceeds(updateDoc(doc(employee,`${base}/users/employee`),{emergencyPhone:'777777777'}));
+  await assertSucceeds(updateDoc(doc(employee,`${base}/users/employee`),{'notificationPreferences.inbox':false}));
+  await assertSucceeds(updateDoc(doc(admin,`${base}/users/admin`),{'notificationPreferences.careers':true}));
+  await assertFails(updateDoc(doc(employee,`${base}/users/employee`),{'notificationPreferences.inbox':'false'}));
+  await assertFails(updateDoc(doc(employee,`${base}/users/employee`),{'notificationPreferences.unknown':false}));
+  await assertFails(updateDoc(doc(admin,`${base}/users/employee`),{'notificationPreferences.inbox':true}));
+  await assertFails(setDoc(doc(employee,'_platformNotificationPreferences/employee'),{notificationPreferences:{inbox:false}}));
   const batch=writeBatch(admin);
   batch.update(doc(admin,`${base}/users/other`),{name:'Nome novo'});
   batch.set(doc(admin,`${base}/userDirectory/other`),{id:'other',name:'Nome novo'},{merge:true});

@@ -32,6 +32,7 @@ import {maintainPlatformRecord} from './platformRecordMaintenance';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
 import {saveCoverageSettings} from './scheduleCoverage';
+import {notificationEnabled, notificationTab} from './notificationPreferences.mjs';
 import {buildPendingReminders} from './pendingReminders.mjs';
 import {approvePurchaseQuoteGroup} from './purchaseQuoteApproval';
 
@@ -892,7 +893,7 @@ const notifyCompany = async (
   const usersSnapshot = await getFirestore().collection(usersPath).get();
   const authorId = typeof content.authorId === "string" ? content.authorId : "";
   const tokens = usersSnapshot.docs
-    .filter((user) => user.id !== authorId)
+    .filter((user) => user.id !== authorId && notificationEnabled(user.data().notificationPreferences, notificationTab(type)))
     .flatMap((user) => {
       const savedTokens = user.data().pushTokens;
       return Array.isArray(savedTokens) ? savedTokens : [];
@@ -929,7 +930,8 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
   const usersSnapshot = await getFirestore().collection(usersPath).get();
   const tokenOwners = new Map<string, string[]>();
   usersSnapshot.docs
-    .filter((user) => notifiedParticipants.includes(user.id) && user.id !== actorId)
+    .filter((user) => notifiedParticipants.includes(user.id) && user.id !== actorId &&
+      notificationEnabled(user.data().notificationPreferences, 'inbox'))
     .forEach((user) => {
       const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
       savedTokens.forEach((token: unknown) => {
@@ -938,7 +940,7 @@ const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
       });
     });
   const tokens = [...tokenOwners.keys()];
-  tokens.push(...await getSupportNotificationTokens(getFirestore(), event.params.appId, notifiedParticipants, actorId));
+  tokens.push(...await getSupportNotificationTokens(getFirestore(), event.params.appId, notifiedParticipants, actorId, 'inbox'));
   const uniqueTokens = [...new Set(tokens)];
   if (uniqueTokens.length === 0) {
     console.info("Message push skipped: recipients have no registered devices", {
@@ -1077,7 +1079,10 @@ const sendActivityPush = async ({
   if (recipients.size === 0 && !recipientFilter) return {successCount: 0, failureCount: 0};
   const usersSnapshot = await database.collection(usersPath).get();
   const tokenOwners = new Map<string, string[]>();
-  usersSnapshot.docs.filter((user) => user.id !== actorId && (recipientFilter ? recipientFilter(user.data()) : recipients.has(user.id))).forEach((user) => {
+  const tab = notificationTab(type, threadId);
+  usersSnapshot.docs.filter((user) => user.id !== actorId &&
+    (recipientFilter ? recipientFilter(user.data()) : recipients.has(user.id)) &&
+    notificationEnabled(user.data().notificationPreferences, tab)).forEach((user) => {
     const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
     savedTokens.forEach((token: unknown) => {
       if (typeof token !== 'string' || !token) return;
@@ -1184,7 +1189,7 @@ export const notifyNewCareerApplication = onDocumentCreated(
       database: getFirestore(),
       appId,
       companyId,
-      recipientFilter: isHumanResourcesProfile,
+      recipientFilter: profile => profile.isAdmin === true || isHumanResourcesProfile(profile),
       title: 'Nova candidatura no Banco de Talentos',
       body: 'Abra o Comunica para consultar a candidatura na Central de triagem.',
       type: 'career_application',
@@ -1546,7 +1551,8 @@ export const notifyConversationDeadlines = onSchedule({
     const companyKey = `${conversation.appId}/${conversation.companyId}`;
     if (!companyUsers.has(companyKey)) {
       const users = await database.collection(`artifacts/${conversation.appId}/public/data/companies/${conversation.companyId}/users`).get();
-      companyUsers.set(companyKey, new Map(users.docs.map((user) => [
+      const optedIn = users.docs.filter(user => notificationEnabled(user.data().notificationPreferences, 'inbox'));
+      companyUsers.set(companyKey, new Map(optedIn.map((user) => [
         user.id,
         Array.isArray(user.data().pushTokens)
           ? user.data().pushTokens.filter((token: unknown): token is string => typeof token === 'string' && token.length > 0)
@@ -1568,7 +1574,7 @@ export const notifyConversationDeadlines = onSchedule({
     try {
       const users = companyUsers.get(companyKey)!;
       const tokens = conversation.participants.flatMap((participantId) => users.get(participantId) || []);
-      tokens.push(...await getSupportNotificationTokens(database, conversation.appId, conversation.participants, ''));
+      tokens.push(...await getSupportNotificationTokens(database, conversation.appId, conversation.participants, '', 'inbox'));
       const uniqueTokens = [...new Set(tokens)];
       if (uniqueTokens.length === 0) {
         await receiptRef.set({status: 'no_registered_devices', completedAt: Date.now()}, {merge: true});

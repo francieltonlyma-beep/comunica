@@ -3,6 +3,7 @@ import test from 'node:test';
 import {stripTypeScriptTypes} from 'node:module';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import {notificationEnabled} from '../functions/src/notificationPreferences.mjs';
 const source = readFileSync(new URL('../functions/src/index.ts', import.meta.url), 'utf8');
 const block = source.slice(source.indexOf('type ConversationDeadlineStage'), source.indexOf('export const saveScheduleCoverage')).replace('export const notifyConversationDeadlines', 'const notifyConversationDeadlines');
 let now = '2026-11-01T12:00:00Z';
@@ -41,6 +42,7 @@ let handler;
 vm.runInNewContext(stripTypeScriptTypes(block), {
   Date:Clock, Intl, console,
   onSchedule(options, callback){assert.equal(options.schedule,'0 9 * * *');assert.equal(options.timeZone,'America/Sao_Paulo');handler=callback;},
+  notificationEnabled,
   getFirestore:()=>db, getSupportNotificationTokens:async()=>[],
   getMessaging:()=>({async sendEachForMulticast(v){sent.push(v);return {successCount:1,failureCount:0};}}),
   messageActivityData:a=>a?.dueDate ? {...a, createdBy:'u1'} : null,

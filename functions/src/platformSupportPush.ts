@@ -1,4 +1,5 @@
 import {FieldValue, Firestore} from 'firebase-admin/firestore';
+import {notificationEnabled} from './notificationPreferences.mjs';
 import {SUPPORT_UID} from './platformSupport';
 
 const APP_ID = 'comunica-salvador';
@@ -30,9 +31,14 @@ export async function getSupportNotificationTokens(
   appId: string,
   participants: string[],
   senderId: string,
+  tab = '',
 ) {
   if (appId !== APP_ID || !participants.includes(SUPPORT_UID) || senderId === SUPPORT_UID) return [];
   const access = (await database.doc(`_platformSupport/${SUPPORT_UID}`).get()).data();
   if (!access || access.enabled !== true || access.appId !== APP_ID) return [];
+  if (tab) {
+    const settings = (await database.doc(`_platformNotificationPreferences/${SUPPORT_UID}`).get()).data();
+    if (!notificationEnabled(settings?.notificationPreferences, tab)) return [];
+  }
   return Array.isArray(access.pushTokens) ? [...new Set(access.pushTokens.filter(validToken))] : [];
 }

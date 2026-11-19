@@ -50,6 +50,7 @@ import { normalizeCoverageRequirements, validateCoverageRequirements } from './s
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
+import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
 const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
 const SurveyTopicsEditor = lazy(() => import('./SurveyTopicsEditor.jsx'));
@@ -1033,6 +1034,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [editingUser, setEditingUser] = useState(null);
 
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const [showNotificationPreferences, setShowNotificationPreferences] = useState(false);
+  const [savingNotificationPreference, setSavingNotificationPreference] = useState('');
   const [platformUpdates, setPlatformUpdates] = useState([]);
   const [platformUpdateReadIds, setPlatformUpdateReadIds] = useState(() => new Set());
 
@@ -1337,6 +1340,46 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [activeTab, activeTutorial, dbLoading, forcePinChange, servicesTourReleaseKey]);
 
   const [authScope, setAuthScope] = useState({ companyId: '', isDeveloper: false });
+  const [notificationProfile, setNotificationProfile] = useState(null);
+  const notificationIsSupport = currentUser?.isDeveloper === true;
+  const notificationCompanyId = authScope.companyId;
+  const notificationAccountId = dbUser?.uid;
+  const notificationAccountKey = authReady && notificationAccountId && notificationAccountId === currentUser?.id
+    && (notificationIsSupport || notificationCompanyId)
+    ? `${notificationIsSupport ? 'support' : notificationCompanyId}/${notificationAccountId}` : '';
+  const notificationPreferences = notificationAccountKey && notificationProfile?.key === notificationAccountKey
+    ? notificationProfile.preferences : currentUser?.notificationPreferences;
+
+  useEffect(() => {
+    if (!isFirebaseAvailable || !notificationAccountKey) return;
+    const profileRef = notificationIsSupport
+      ? doc(db, '_platformNotificationPreferences', notificationAccountId)
+      : doc(db, 'artifacts', appId, 'public', 'data', 'companies', notificationCompanyId, 'users', notificationAccountId);
+    return onSnapshot(profileRef, snapshot => {
+      setNotificationProfile({key: notificationAccountKey, preferences: snapshot.data()?.notificationPreferences || {}});
+    }, error => console.error('Falha ao carregar preferências de notificação', error));
+  }, [notificationAccountKey, notificationAccountId, notificationCompanyId, notificationIsSupport]);
+
+  const saveNotificationPreference = async (tab, enabled) => {
+    if (!notificationAccountKey || notificationProfile?.key !== notificationAccountKey || savingNotificationPreference) return;
+    setSavingNotificationPreference(tab);
+    try {
+      if (notificationIsSupport) {
+        await setDoc(doc(db, '_platformNotificationPreferences', notificationAccountId), {notificationPreferences: {[tab]: enabled}}, {merge: true});
+      } else {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'companies', notificationCompanyId, 'users', notificationAccountId), {
+          [`notificationPreferences.${tab}`]: enabled,
+        });
+      }
+    } catch (error) {
+      console.error('Falha ao salvar preferência de notificação', error);
+      triggerNotification('Não foi possível salvar a preferência de notificação. Tente novamente.', 'error');
+    } finally {
+      setSavingNotificationPreference('');
+    }
+  };
+
+  const isPushEnabled = useEffectEvent(data => notificationEnabled(notificationPreferences, notificationTab(data?.type, data?.threadId)));
   const [pushToken, setPushToken] = useState('');
   const cloudActivityCountRef = useRef(0);
   const [cloudActivity, setCloudActivity] = useState({ count: 0, label: '' });
@@ -1686,7 +1729,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             // No Android, a própria mensagem FCM já é exibida pelo sistema.
             // Não criamos uma segunda notificação dentro do aplicativo.
             const eventId = notification?.data?.eventId;
-            if (!shouldDisplayPush(eventId)) return;
+            if (!isPushEnabled(notification?.data) || !shouldDisplayPush(eventId)) return;
             if (['message_deadline', 'activity_deadline'].includes(notification?.data?.type)) {
               sendNativeNotification(notification.title || 'Prazo no Comunica', notification.body || 'Uma atividade exige sua atenção.');
             }
@@ -1747,7 +1790,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           unsubscribeWebMessage = onMessage(messaging, (payload) => {
             const eventId = payload.data?.eventId || payload.messageId;
             const isCareerNotification = payload.data?.type === 'career_application';
-            if (shouldDisplayPush(eventId)) {
+            if (isPushEnabled(payload.data) && shouldDisplayPush(eventId)) {
               triggerNotification(payload.notification?.title || 'Você recebeu uma nova notificação.', "success");
               if ((isCareerNotification || ['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(payload.data?.type)) && 'Notification' in window && Notification.permission === 'granted') {
                 const desktopNotification = new Notification(payload.notification?.title || 'Atualização no Comunica', {
@@ -2297,21 +2340,21 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [activeTab, activeCompany?.id, currentUser?.id, currentUser?.isAdmin, currentUser?.isDeveloper, currentUser?.role, currentUser?.dept, currentUser?.department]);
 
   useEffect(() => {
-    if (activeTab !== 'careers' || !careerApplications.length || !isCareerManagerUser(currentUser) || !activeCompany?.id) return;
+    if (!notificationEnabled(notificationPreferences, 'careers') || activeTab !== 'careers' || !careerApplications.length || !isCareerManagerUser(currentUser) || !activeCompany?.id) return;
     const due = careerApplications.filter(item => applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000).length;
     const noticeKey = `${activeCompany.id}-${new Date().toISOString().slice(0, 10)}-${due}`;
     if (!due || careerExpiryNoticeRef.current === noticeKey) return;
     careerExpiryNoticeRef.current = noticeKey;
     triggerNotification(`${due} currículo(s) estão vencidos ou expiram nos próximos 15 dias. Revise os prazos no Banco de Talentos.`, 'error');
-  }, [activeTab, activeCompany?.id, careerApplications, currentUser?.id]);
+  }, [activeTab, activeCompany?.id, careerApplications, currentUser?.id, notificationPreferences]);
   useEffect(() => {
-    if (!isCareerManagerUser(currentUser) || !activeCompany?.id) return;
+    if (!notificationEnabled(notificationPreferences, 'careers') || !isCareerManagerUser(currentUser) || !activeCompany?.id) return;
     const pending = careerApplications.filter(item => item.candidateUpdatePending === true).length;
     const noticeKey = `${activeCompany.id}-${pending}`;
     if (!pending || careerCandidateUpdateNoticeRef.current === noticeKey) return;
     careerCandidateUpdateNoticeRef.current = noticeKey;
     triggerNotification(`${pending} candidatura(s) em análise foram atualizadas pelo candidato. Revise o Banco de Talentos.`, 'error');
-  }, [activeCompany?.id, careerApplications, currentUser?.id, currentUser?.isAdmin, currentUser?.role]);
+  }, [activeCompany?.id, careerApplications, currentUser?.id, currentUser?.isAdmin, currentUser?.role, notificationPreferences]);
 const getStatusEmTempoReal = (colaborador) => {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -2543,7 +2586,10 @@ const getStatusEmTempoReal = (colaborador) => {
       const tenantCollection = getTenantCollection(colName);
       if (!tenantCollection) throw new Error('Nenhuma empresa selecionada.');
       const payload = {...data};
-      if (colName === 'users') delete payload.pin;
+      if (colName === 'users') {
+        delete payload.pin;
+        delete payload.notificationPreferences;
+      }
       if (colName === 'users' && currentUser?.isAdmin) {
         const batch = writeBatch(db);
         batch.set(doc(tenantCollection, docId), payload, {merge:true});
@@ -7083,7 +7129,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setCareerScrollTarget(null);
   }, [careerScrollTarget, activeTab, careerViewMode]);
 
-  const careerNotifications = canOpenCareers && isHumanResourcesUser(currentUser) && activeCompany?.id === authScope.companyId
+  const careerNotifications = canOpenCareers && (currentUser?.isAdmin || isHumanResourcesUser(currentUser)) && activeCompany?.id === authScope.companyId
     ? careerApplications.filter(application => getNotifTs(application) >= thirtyDaysAgo).map(application => ({
         id: `career-application-${activeCompany.id}-${application.id}`,
         applicationId: application.id,
@@ -7094,7 +7140,10 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         notifType: 'career_application',
       }))
     : [];
-  const notificationItems = [...allNotifications, ...careerNotifications];
+  const notificationItems = [...allNotifications, ...careerNotifications]
+    .filter(item => notificationEnabled(notificationPreferences, notificationTab(item.notifType)));
+  const availableNotificationTabs = Object.entries(NOTIFICATION_TABS)
+    .filter(([tab]) => notificationIsSupport ? ['inbox', 'updates'].includes(tab) : canOpenModule(tab));
   const isNotificationFromSomeoneElse = notification => notification.notifType === 'career_application' ||
     (notification.authorId !== currentUser?.id && !String(notification.author || '').includes(currentUser?.name || ''));
   const unreadNotifications = notificationItems.filter(n =>
@@ -7565,6 +7614,7 @@ const notificationsToShow = [...notificationItems]
   const careerIndicatorVacancyIds = new Set(vacanciesList.filter(vacancy => vacancy.status !== 'archived').map(vacancy => vacancy.id));
   const careerIndicatorApplications = careerApplications.filter(application => application.source === 'talent_pool' || careerIndicatorVacancyIds.has(application.vacancyId));
   const careerStageInsights = careerStageDefinitions.map(stage => ({ ...stage, count: careerIndicatorApplications.filter(item => (item.status || 'received') === stage.id).length }));
+  const receivedCareerCount = careerStageInsights.find(item => item.id === 'received')?.count || 0;
   const careerFitValues = careerIndicatorApplications.map(item => Number(item.fit?.percentage)).filter(Number.isFinite);
   const careerAverageFit = careerFitValues.length ? Math.round(careerFitValues.reduce((sum, value) => sum + value, 0) / careerFitValues.length) : null;
   const careerRetentionSoon = careerIndicatorApplications.filter(item => {
@@ -7667,7 +7717,7 @@ const notificationsToShow = [...notificationItems]
     { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setActiveTab('inbox') },
     canOpenModule('documents') ? { id: 'documents', label: 'Documentos', detail: pendingDocumentReads ? `${pendingDocumentReads} leitura(s) pendente(s)` : 'Consultar arquivos', icon: FileText, action: () => setActiveTab('documents') } : null,
     canOpenModule('scale') ? { id: 'calendar', label: 'Calendário', detail: `${dashboardUpcomingEvents.length} evento(s) futuro(s)`, icon: Calendar, action: () => setActiveTab('scale') } : null,
-    canOpenModule('careers') ? { id: 'careers', label: 'Recrutamento', detail: `${careerIndicatorApplications.length} candidatura(s) ativas`, icon: Briefcase, action: () => setActiveTab('careers') } : null,
+    canOpenModule('careers') ? { id: 'careers', label: 'Recrutamento', detail: `${receivedCareerCount} candidatura(s) recebida(s)`, icon: Briefcase, action: () => setActiveTab('careers') } : null,
     currentUser?.isAdmin ? { id: 'team', label: 'Gestão da equipe', detail: `${employeesList.length} colaborador(es)`, icon: Users, action: () => setActiveTab('management') } : null,
   ].filter(Boolean);
   const careerVacancyOptions = [
@@ -8603,7 +8653,7 @@ const notificationsToShow = [...notificationItems]
               {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-1.5 sm:p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
               <button type="button" onClick={() => { setActiveTab('updates'); setShowNotificationsDropdown(false); }} className="relative rounded-lg p-1.5 sm:p-2 text-cyan-700 transition hover:bg-cyan-50" title="Novidades do Comunica" aria-label="Novidades do Comunica">
                 <Sparkles className="h-4 w-4" />
-                {platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
+                {notificationEnabled(notificationPreferences, 'updates') && platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
               </button>
 
               <div className="relative">
@@ -8613,7 +8663,7 @@ const notificationsToShow = [...notificationItems]
                   title="Abrir Caixa de entrada" aria-label="Abrir Caixa de entrada"
                 >
                   <MessageSquare className="h-4.5 w-4.5" />
-                  {unreadThreadCount > 0 && (
+                  {notificationEnabled(notificationPreferences, 'inbox') && unreadThreadCount > 0 && (
                     <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white shadow-sm ring-2 ring-white">
                       {unreadThreadCount > 9 ? '9+' : unreadThreadCount}
                     </span>
@@ -8624,7 +8674,7 @@ const notificationsToShow = [...notificationItems]
 <div className="relative">
 
   <button
-    onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+    onClick={() => { setShowNotificationPreferences(false); setShowNotificationsDropdown(!showNotificationsDropdown); }}
     className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
     title="Notificações"
   >
@@ -8642,10 +8692,15 @@ const notificationsToShow = [...notificationItems]
 
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <h4 className="font-extrabold text-sm flex items-center gap-1.5">
-          <Bell className="h-4 w-4 text-slate-300"/> Notificações
+          <Bell className="h-4 w-4 text-slate-300"/> {showNotificationPreferences ? 'Notificações por aba' : 'Notificações'}
         </h4>
         <div className="flex items-center gap-2">
-          {unreadNotifications.length > 0 && (
+          {notificationAccountKey && (
+            <button type="button" onClick={() => setShowNotificationPreferences(value => !value)} aria-label={showNotificationPreferences ? 'Voltar às notificações' : 'Configurar notificações por aba'} className="rounded p-1 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white">
+              {showNotificationPreferences ? <ChevronLeft className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
+            </button>
+          )}
+          {!showNotificationPreferences && unreadNotifications.length > 0 && (
             <button type="button" onClick={handleMarkAllAsRead} className="text-[10px] text-slate-300 hover:text-white font-bold bg-slate-800 px-2 py-1 rounded">
               Marcar lidas
             </button>
@@ -8657,7 +8712,20 @@ const notificationsToShow = [...notificationItems]
       </div>
 
       <div className="max-h-[calc(100dvh-10rem)] overflow-y-auto overscroll-contain sm:max-h-80">
-        {notificationsToShow.length === 0 ? (
+        {showNotificationPreferences ? (
+          <div className="space-y-2 p-3">
+            {availableNotificationTabs.map(([tab, label]) => (
+              <label key={tab} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">
+                {label}
+                <input type="checkbox" role="switch" checked={notificationEnabled(notificationPreferences, tab)}
+                  disabled={notificationProfile?.key !== notificationAccountKey || Boolean(savingNotificationPreference)}
+                  onChange={event => saveNotificationPreference(tab, event.target.checked)}
+                  className="h-4 w-4 shrink-0 accent-blue-700 disabled:opacity-50" />
+              </label>
+            ))}
+            {savingNotificationPreference && <p role="status" className="text-xs text-slate-500">Salvando preferência…</p>}
+          </div>
+        ) : notificationsToShow.length === 0 ? (
           <div className="p-4 text-center text-slate-500 text-xs italic">Nenhuma notificação recente.</div>
         ) :
                (
@@ -9787,12 +9855,12 @@ const handleDownload = async (fileUrl, fileName) => {
               <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-950"><strong>Link para candidatos:</strong> <a href={`/carreiras?empresa=${encodeURIComponent(activeCompany?.id || '')}`} target="_blank" rel="noreferrer" className="ml-1 break-all font-bold underline">{window.location.origin}/carreiras?empresa={activeCompany?.id}</a><p className="mt-1 text-blue-800">O candidato cria uma conta própria, confirma o e-mail e envia currículo em PDF ou Word. A aderência por competências é apenas um apoio para avaliação humana.</p></div>
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <button type="button" aria-pressed={careerSourceFilter === 'open' && careerStageFilter === 'all'} onClick={() => { setCareerSourceFilter('open'); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerViewMode('list'); }} className={`rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-4 text-left text-xs text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'open' && careerStageFilter === 'all' ? 'ring-2 ring-cyan-400 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-slate-300">Vagas ativas</span><strong className="mt-2 block text-2xl">{vacanciesList.filter(item => item.status === 'published').length}</strong><span className="mt-1 block text-[10px] text-slate-300">abertas para inscrição</span></button>
-                <button type="button" aria-pressed={careerSourceFilter === 'all' && careerStageFilter === 'all'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerViewMode('list'); }} className={`rounded-2xl border border-sky-100 bg-sky-50 p-4 text-left text-xs text-sky-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'all' && careerStageFilter === 'all' ? 'ring-2 ring-sky-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-sky-700">Candidaturas</span><strong className="mt-2 block text-2xl">{careerIndicatorApplications.length}</strong><span className="mt-1 block text-[10px] text-sky-700">sem vagas arquivadas</span></button>
+                <button type="button" aria-pressed={careerSourceFilter === 'all' && careerStageFilter === 'received'} onClick={() => { openCareerApplications('all'); setCareerStageFilter('received'); }} className={`rounded-2xl border border-sky-100 bg-sky-50 p-4 text-left text-xs text-sky-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'all' && careerStageFilter === 'received' ? 'ring-2 ring-sky-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-sky-700">Candidaturas recebidas</span><strong className="mt-2 block text-2xl">{receivedCareerCount}</strong><span className="mt-1 block text-[10px] text-sky-700">aguardando triagem</span></button>
                 <button type="button" aria-pressed={careerStageFilter === 'reviewing'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter(previous => previous === 'reviewing' ? 'all' : 'reviewing'); setCareerViewMode('list'); }} className={`rounded-2xl border border-amber-100 bg-amber-50 p-4 text-left text-xs text-amber-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerStageFilter === 'reviewing' ? 'ring-2 ring-amber-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-amber-700">Em análise</span><strong className="mt-2 block text-2xl">{careerStageInsights.find(item => item.id === 'reviewing')?.count || 0}</strong><span className="mt-1 block text-[10px] text-amber-700">aguardando decisão</span></button>
                 <button type="button" aria-pressed={careerStageFilter === 'interview'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter(previous => previous === 'interview' ? 'all' : 'interview'); setCareerViewMode('list'); }} className={`rounded-2xl border border-violet-100 bg-violet-50 p-4 text-left text-xs text-violet-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerStageFilter === 'interview' ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-violet-700">Entrevistas</span><strong className="mt-2 block text-2xl">{careerStageInsights.find(item => item.id === 'interview')?.count || 0}</strong><span className="mt-1 block text-[10px] text-violet-700">próxima etapa</span></button>
               </div>
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Funil de seleção</h4><p className="mt-1 text-xs text-slate-500">Distribuição das candidaturas por etapa.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{careerIndicatorApplications.length} no total</span></div><div className="mt-5 space-y-4">{careerStageInsights.map(stage => <div key={stage.id}><div className="mb-1.5 flex justify-between text-xs"><span className="font-semibold text-slate-700">{stage.label}</span><strong className="text-slate-900">{stage.count}</strong></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${stage.color}`} style={{ width: `${careerIndicatorApplications.length ? Math.max(4, Math.round(stage.count / careerIndicatorApplications.length * 100)) : 0}%` }} /></div></div>)}</div></section>
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Funil de seleção</h4><p className="mt-1 text-xs text-slate-500">Distribuição das candidaturas por etapa.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{careerIndicatorApplications.length} em todas as etapas</span></div><div className="mt-5 space-y-4">{careerStageInsights.map(stage => <div key={stage.id}><div className="mb-1.5 flex justify-between text-xs"><span className="font-semibold text-slate-700">{stage.label}</span><strong className="text-slate-900">{stage.count}</strong></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${stage.color}`} style={{ width: `${careerIndicatorApplications.length ? Math.max(4, Math.round(stage.count / careerIndicatorApplications.length * 100)) : 0}%` }} /></div></div>)}</div></section>
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-900">Qualidade da triagem</h4><p className="mt-1 text-xs text-slate-500">Indicadores de apoio, não de decisão automática.</p><div className="mt-5 flex items-center gap-5"><div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#2563eb ${(careerAverageFit || 0) * 3.6}deg, #e2e8f0 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center"><strong className="text-xl text-slate-900">{careerAverageFit === null ? '—' : `${careerAverageFit}%`}</strong><span className="text-[8px] font-bold uppercase text-slate-400">aderência</span></div></div><div className="space-y-2 text-xs"><p><strong className="text-slate-900">{careerFitValues.length}</strong> perfis com leitura disponível</p><p><strong className="text-slate-900">{careerRetentionSoon}</strong> currículo(s) vencem em até 15 dias</p><p className="text-slate-500">{careerAverageFit === null ? 'A aderência aparecerá após a primeira leitura válida.' : 'Revise sempre currículo e respostas antes de avançar.'}</p></div></div></section>
               </div>
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Candidaturas por vaga</h4><p className="mt-1 text-xs text-slate-500">As cinco vagas com maior volume de inscrições.</p></div><TrendingUp className="h-5 w-5 text-emerald-600" /></div>{careerApplicationsByVacancy.length ? <div className="mt-5 space-y-3">{careerApplicationsByVacancy.map(item => <button key={item.id} type="button" aria-pressed={careerVacancyFilter === item.id} aria-controls="career-application-results" onClick={() => openCareerApplications(item.id)} className={`group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-2 text-left transition focus-visible:outline-2 focus-visible:outline-blue-700 ${careerVacancyFilter === item.id ? 'border-blue-200 bg-blue-50' : 'border-transparent hover:bg-slate-50'}`}><span><span className="mb-1 flex justify-between gap-2 text-xs"><span className="truncate font-semibold text-slate-700">{item.title}</span><span className="shrink-0 text-slate-500">{item.count} inscrição(ões)</span></span><span className="block h-2 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${Math.round(item.count / careerMaxApplications * 100)}%` }} /></span></span><ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-700 transition group-hover:translate-x-0.5" /></button>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">Publique uma vaga para acompanhar a evolução das inscrições aqui.</p>}</section>
