@@ -1,8 +1,9 @@
-import {getFirestore, FieldValue, Timestamp} from 'firebase-admin/firestore';
+import {getFirestore, FieldPath, FieldValue, Timestamp} from 'firebase-admin/firestore';
 import {getStorage} from 'firebase-admin/storage';
 import {getAuth} from 'firebase-admin/auth';
 import {HttpsError} from 'firebase-functions/v2/https';
 import {extractResumeText} from './resumeExtraction';
+import {careerDateInBrazil, isCareerVacancyOpen} from './careerVacancyAvailability.mjs';
 import {SUPPORT_UID} from './platformSupport';
 
 const APP_ID = 'comunica-salvador';
@@ -16,7 +17,6 @@ const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const validId = (value: string) => /^[A-Za-z0-9_-]{1,240}$/.test(value);
 const TALENT_POOL_PREFIX = 'talent-pool--';
 const talentPoolRoleId = (vacancyId: string) => vacancyId.startsWith(TALENT_POOL_PREFIX) ? vacancyId.slice(TALENT_POOL_PREFIX.length) : '';
-const todayBrazil = () => new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
 
 const cleanText = (value: unknown, max: number) => String(value || '').trim().slice(0, max);
 const cleanSkills = (value: unknown) => Array.isArray(value)
@@ -94,19 +94,33 @@ export function matchCandidateSkills(required: string[], declared: string[], res
   return {version: 2, matched, matchedDeclared, matchedFromCv, evidenceFromCv, missing, percentage: required.length ? Math.round(matched.length / required.length * 100) : null};
 }
 
+async function listOpenVacancies(companyId: string) {
+  const pageSize = 50;
+  const query = tenant(companyId).collection('vacancies').where('status', '==', 'published')
+    .orderBy(FieldPath.documentId(), 'desc').limit(pageSize);
+  const today = careerDateInBrazil();
+  const jobs: ({id: string} & FirebaseFirestore.DocumentData)[] = [];
+  let page = await query.get();
+  for (;;) {
+    for (const document of page.docs) {
+      if (isCareerVacancyOpen(document.data(), today)) jobs.push({...document.data(), id: document.id});
+      if (jobs.length === pageSize) return jobs;
+    }
+    if (page.size < pageSize) return jobs;
+    page = await query.startAfter(page.docs[page.docs.length - 1]).get();
+  }
+}
+
 export async function listPublicVacancies(rawCompanyId: unknown) {
   const companyId = cleanText(rawCompanyId, 120);
   if (!validId(companyId)) throw new HttpsError('invalid-argument', 'Informe o link de carreiras da empresa.');
   const company = await tenant(companyId).get();
   if (!company.exists) throw new HttpsError('not-found', 'Empresa não encontrada.');
   const [jobs, roles] = await Promise.all([
-    tenant(companyId).collection('vacancies').where('status', '==', 'published').limit(50).get(),
+    listOpenVacancies(companyId),
     tenant(companyId).collection('roles').limit(100).get(),
   ]);
-  const today = todayBrazil();
-  return {companyId, companyName: cleanText(company.data()?.name, 120), jobs: jobs.docs
-    .filter(doc => !doc.data().closesAt || doc.data().closesAt >= today)
-    .map(doc => ({id: doc.id, ...doc.data()})), talentPoolRoles: roles.docs.map(document => {
+  return {companyId, companyName: cleanText(company.data()?.name, 120), jobs, talentPoolRoles: roles.docs.map(document => {
       const role = document.data() || {};
       return {
         id: document.id,
@@ -312,7 +326,7 @@ export async function uploadCandidateResume(identity: CandidateIdentity | undefi
     publicOpportunity(companyId, vacancyId),
     tenant(companyId).collection('applications').doc(`${vacancyId}_${candidate.uid}`).get(),
   ]);
-  if (!vacancy || vacancy.status !== 'published' || (vacancy.closesAt && vacancy.closesAt < todayBrazil())) {
+  if (!vacancy || !isCareerVacancyOpen(vacancy)) {
     throw new HttpsError('failed-precondition', 'Esta vaga não está aberta.');
   }
   if (previous.exists && previous.data()?.status === 'closed') throw new HttpsError('failed-precondition', 'Esta candidatura já foi encerrada pela empresa.');
@@ -410,7 +424,7 @@ export async function submitApplication(identity: CandidateIdentity | undefined,
     throw new HttpsError('permission-denied', 'Currículo inválido para esta vaga.');
   }
   const vacancy = await publicOpportunity(companyId, vacancyId);
-  if (!vacancy || vacancy.status !== 'published' || (vacancy.closesAt && vacancy.closesAt < todayBrazil())) {
+  if (!vacancy || !isCareerVacancyOpen(vacancy)) {
     throw new HttpsError('failed-precondition', 'Esta oportunidade não está aberta.');
   }
   return getFirestore().runTransaction(async tx => {
