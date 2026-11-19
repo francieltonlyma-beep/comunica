@@ -6,7 +6,7 @@ export function pollVoteCount(poll) {
 export function pollParticipation(poll, employeeIds) {
   if (!employeeIds.length) return 0;
   const eligible = new Set(employeeIds);
-  const responses = Object.keys(poll?.votes || {}).filter(uid => eligible.has(uid)).length;
+  const responses = Object.keys(poll?.votes || {}).filter(uid => poll?.isAnonymous ? uid.startsWith('anon-') : eligible.has(uid)).length;
   return Math.round((responses / eligible.size) * 100);
 }
 
@@ -21,7 +21,9 @@ export function pollOptionResults(poll) {
 
 export function pollFormCompletion(polls, employeeIds) {
   if (!polls.length || !employeeIds.length) return { completed: 0, percentage: 0 };
-  const completed = employeeIds.filter(uid => polls.every(poll => poll.votes?.[uid] !== undefined)).length;
+  const completed = polls[0]?.isAnonymous
+    ? Object.keys(polls[0].votes || {}).filter(uid => uid.startsWith('anon-') && polls.every(poll => poll.votes?.[uid] !== undefined)).length
+    : employeeIds.filter(uid => polls.every(poll => poll.votes?.[uid] !== undefined)).length;
   return { completed, percentage: Math.round(completed / employeeIds.length * 100) };
 }
 
@@ -31,7 +33,7 @@ export function pollTimelineItems(polls, profile) {
   const sectors = [profile?.dept, profile?.department, ...(Array.isArray(profile?.departments) ? profile.departments : []), ...(Array.isArray(profile?.depts) ? profile.depts : [])].map(value => String(value || '').trim()).filter(Boolean);
   return (polls || [])
     .filter(poll => !poll.archived && (!poll.formId || Number(poll.formOrder || 0) === 1))
-    .filter(poll => profile === undefined || isSurveyManager(profile) || Boolean(poll.surveySectorId && sectors.includes(String(poll.surveySectorId))))
+    .filter(poll => profile === undefined || isSurveyManager(profile) || Boolean((poll.surveySectorId && sectors.includes(String(poll.surveySectorId))) || (Array.isArray(poll.surveyUserIds) && poll.surveyUserIds.includes(profile?.id))))
     .map(poll => ({
       ...poll,
       notifType: 'poll',
