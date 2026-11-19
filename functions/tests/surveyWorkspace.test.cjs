@@ -12,8 +12,8 @@ after(()=>deleteApp(app));
 async function seed(groupId='group'){
  await base.set({name:'Empresa fictícia',codeBlocked:false});
  await base.collection('users').doc('admin').set({isAdmin:true,name:'Administrador privado'});
- await base.collection('users').doc('member').set({name:'Pessoa privada',email:'private@example.test'});
- for(let i=1;i<=3;i++)await base.collection('polls').doc(`${groupId}-${i}`).set({formId:groupId,formTitle:'Clima',formDescription:'Responda por tópico',formOrder:i,formQuestionCount:3,question:`Pergunta ${i}`,type:'yesNo',options:['Sim','Não'],topicId:i===3?'topic-2':'topic-1',topicTitle:i===3?'Ambiente':'Liderança',topicOrder:i===3?2:1,authorId:'admin',votes:{},expiresAt:'2099-12-31'});
+ await base.collection('users').doc('member').set({name:'Pessoa privada',email:'private@example.test',dept:'Marketing'});
+ for(let i=1;i<=3;i++)await base.collection('polls').doc(`${groupId}-${i}`).set({formId:groupId,formTitle:'Clima',formDescription:'Responda por tópico',surveySectorId:'Marketing',formOrder:i,formQuestionCount:3,question:`Pergunta ${i}`,type:'yesNo',options:['Sim','Não'],topicId:i===3?'topic-2':'topic-1',topicTitle:i===3?'Ambiente':'Liderança',topicOrder:i===3?2:1,authorId:'admin',votes:{},expiresAt:'2099-12-31'});
 }
 test('link de equipe exige mesma empresa e envia todos os tópicos sem alterar votos existentes',async()=>{
  await seed('team');

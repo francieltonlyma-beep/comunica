@@ -1051,9 +1051,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [editingDocumentFolder, setEditingDocumentFolder] = useState('');
   const [editingDocumentReviewId, setEditingDocumentReviewId] = useState(null);
   const [editingDocumentReviewDate, setEditingDocumentReviewDate] = useState('');
-  const [newPoll, setNewPoll] = useState({ category: 'Pulso da equipe', question: '', type: 'single', options: ['', ''], expiresAt: '' });
+  const [newPoll, setNewPoll] = useState({ category: 'Pulso da equipe', question: '', type: 'single', options: ['', ''], expiresAt: '', sectorId: '' });
   const [pollCreationMode, setPollCreationMode] = useState('enquete');
-  const [newPollForm, setNewPollForm] = useState({ title: '', description: '', category: 'Pesquisa de clima', topics:[{id:'topic-1',title:'Tópico 1'}], questions: [{...createPollQuestion('scale'),topicId:'topic-1'}], expiresAt: '' });
+  const [newPollForm, setNewPollForm] = useState({ title: '', description: '', category: 'Pesquisa de clima', topics:[{id:'topic-1',title:'Tópico 1'}], questions: [{...createPollQuestion('scale'),topicId:'topic-1'}], expiresAt: '', sectorId: '' });
   const [pollViewFilter, setPollViewFilter] = useState('Todas');
   const [pollSearch, setPollSearch] = useState('');
   const [supportForm, setSupportForm] = useState({ subject: '', description: '' });
@@ -3189,22 +3189,24 @@ const getStatusEmTempoReal = (colaborador) => {
 
   const handleSavePoll = async (event) => {
     event.preventDefault();
+    if (!newPoll.sectorId) { triggerNotification('Selecione o setor que receberá esta enquete.', 'error'); return; }
     let question;
     try { [question] = normalizePollQuestions([newPoll]); }
     catch (error) { triggerNotification(error.message, 'error'); return; }
     const id = `poll-${Date.now()}`;
     const createdAt = Date.now();
-    const poll = { id, ...question, category: newPoll.category, votes: {}, expiresAt: newPoll.expiresAt || '', author: currentUser.name, authorId: currentUser.id, createdAt, date: new Date(createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) };
+    const poll = { id, ...question, category: newPoll.category, surveySectorId: newPoll.sectorId, votes: {}, expiresAt: newPoll.expiresAt || '', author: currentUser.name, authorId: currentUser.id, createdAt, date: new Date(createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) };
     if (isFirebaseAvailable && dbUser) { if (!await saveDoc('polls', id, poll)) return; }
     else setPollsList(previous => [poll, ...previous]);
-    setNewPoll({ category: 'Pulso da equipe', question: '', type: 'single', options: ['', ''], expiresAt: '' });
+    setNewPoll({ category: 'Pulso da equipe', question: '', type: 'single', options: ['', ''], expiresAt: '', sectorId: '' });
     setShowPollModal(false);
-    triggerNotification('Enquete publicada e adicionada ao feed da equipe.');
+    triggerNotification(`Enquete publicada para o setor ${poll.surveySectorId}.`);
   };
 
   const handleSavePollForm = async (event) => {
     event.preventDefault();
     if (!currentUser?.isAdmin || !newPollForm.title.trim() || pollSavingGuard.current) return;
+    if (!newPollForm.sectorId) { triggerNotification('Selecione o setor que receberá esta pesquisa.', 'error'); return; }
     let questions;
     try { questions = surveyDraftQuestions(newPollForm); }
     catch (error) { triggerNotification(error.message, 'error'); return; }
@@ -3220,6 +3222,7 @@ const getStatusEmTempoReal = (colaborador) => {
       category: newPollForm.category,
       formOrder: index + 1,
       formQuestionCount: questions.length,
+      surveySectorId: newPollForm.sectorId,
       question,
       topicId,topicTitle,topicOrder,
       type,
@@ -3234,9 +3237,9 @@ const getStatusEmTempoReal = (colaborador) => {
     if (isFirebaseAvailable && dbUser) {
       if (!await saveRelatedRecords(polls.map(poll => ({ collection: 'polls', id: poll.id, data: poll })), 'Não foi possível publicar o formulário. Nenhuma pergunta foi salva.')) return;
     } else setPollsList(previous => [...polls, ...previous]);
-    setNewPollForm({ title: '', description: '', category: 'Pesquisa de clima', topics:[{id:'topic-1',title:'Tópico 1'}], questions: [{...createPollQuestion('scale'),topicId:'topic-1'}], expiresAt: '' });
+    setNewPollForm({ title: '', description: '', category: 'Pesquisa de clima', topics:[{id:'topic-1',title:'Tópico 1'}], questions: [{...createPollQuestion('scale'),topicId:'topic-1'}], expiresAt: '', sectorId: '' });
     setShowPollModal(false);
-    triggerNotification('Pesquisa publicada por tópicos. Gere o link na seção Pesquisas e links.');
+    triggerNotification(`Pesquisa publicada para o setor ${newPollForm.sectorId}. Gere o link público na seção Pesquisas e links se precisar divulgar externamente.`);
     } finally {pollSavingGuard.current=false;setPollSaving(false);}
   };
 
@@ -5424,16 +5427,19 @@ try {
   const overdueDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'vencida').length;
   const upcomingDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'proxima').length;
   const pollEmployeeIds = employeesList.map(employee => employee.id).filter(Boolean);
-  const pollTimelineEntries = pollTimelineItems(pollsList.filter(poll=>!poll.archived));
-  const activePollsCount = pollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr)).length;
-  const pollParticipationValues = pollsList.map(poll => pollParticipation(poll, pollEmployeeIds));
+  const surveySectors = [...new Set(employeesList.flatMap(employee => [employee.dept, employee.department, ...(Array.isArray(employee.departments) ? employee.departments : []), ...(Array.isArray(employee.depts) ? employee.depts : [])]).map(value => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const pollVisibleToUser = poll => isSurveyManager(currentUser) || Boolean(poll.surveySectorId && [currentUser?.dept, currentUser?.department, ...(Array.isArray(currentUser?.departments) ? currentUser.departments : []), ...(Array.isArray(currentUser?.depts) ? currentUser.depts : [])].map(value => String(value || '').trim()).includes(String(poll.surveySectorId)));
+  const eligiblePollsList = pollsList.filter(pollVisibleToUser);
+  const pollTimelineEntries = pollTimelineItems(eligiblePollsList.filter(poll=>!poll.archived), currentUser);
+  const activePollsCount = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr)).length;
+  const pollParticipationValues = eligiblePollsList.map(poll => pollParticipation(poll, pollEmployeeIds));
   const pollAverageParticipation = pollParticipationValues.length ? Math.round(pollParticipationValues.reduce((sum, value) => sum + value, 0) / pollParticipationValues.length) : 0;
-  const pendingPollResponses = pollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[currentUser?.id] === undefined).length;
-  const pollFormGroups = Object.values(pollsList.filter(poll => poll.formId && !poll.archived).reduce((groups, poll) => {
+  const pendingPollResponses = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[currentUser?.id] === undefined).length;
+  const pollFormGroups = Object.values(eligiblePollsList.filter(poll => poll.formId && !poll.archived).reduce((groups, poll) => {
     (groups[poll.formId] ||= []).push(poll);
     return groups;
   }, {}));
-  const visiblePolls = pollsList.filter(poll => {
+  const visiblePolls = eligiblePollsList.filter(poll => {
     if(poll.archived)return false;
     const expired = Boolean(poll.expiresAt && poll.expiresAt < todayStr);
     const matchesStatus = pollViewFilter === 'Todas'
@@ -8444,6 +8450,11 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             </div>
           </button>
 
+          <nav aria-label="Produtos Comunica" className="flex shrink-0 items-center gap-1">
+            <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`rounded-lg border px-2 py-1.5 text-[10px] font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
+            {canOpenModule('integra') && <button type="button" title="Comunica Integra" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`rounded-lg border px-2 py-1.5 text-[10px] font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
+          </nav>
+
           <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
 
           <div className="flex min-w-0 items-center justify-end gap-1 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
@@ -8629,16 +8640,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           </div>
       </header>
 
-      <nav aria-label="Produtos Comunica" className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-2 px-4 pt-4">
-        <button type="button" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`rounded-2xl border px-3 py-3 text-left transition sm:px-5 ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>
-          <span className="block text-xs font-extrabold sm:text-sm">Comunica Gestão</span>
-          <span className={`mt-0.5 block text-[10px] sm:text-xs ${!isIntegraWorkspace ? 'text-blue-100' : 'text-slate-500'}`}>Pessoas e comunicação</span>
-        </button>
-        {canOpenModule('integra') && <button type="button" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`rounded-2xl border px-3 py-3 text-left transition sm:px-5 ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>
-          <span className="block text-xs font-extrabold sm:text-sm">Comunica Integra</span>
-          <span className={`mt-0.5 block text-[10px] sm:text-xs ${isIntegraWorkspace ? 'text-teal-100' : 'text-slate-500'}`}>Operações e compras</span>
-        </button>}
-      </nav>
+      
 
       {/* 1. CAIXA PRINCIPAL: Ela precisa abraçar o Menu e o Feed juntos */}
       <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:flex-row">
@@ -9627,7 +9629,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 })}
               </div>
 
-              <Suspense fallback={<p>Carregando pesquisas...</p>}><SurveyLibrary polls={pollsList} companyId={activeCompany?.id} functionsClient={functionsClient} manager={isSurveyManager(currentUser)} onRespond={setSurveyResponseGroup} onNotice={message=>triggerNotification(message)} onError={message=>{if(message)triggerNotification(message,'error');}}/></Suspense>
+              <Suspense fallback={<p>Carregando pesquisas...</p>}><SurveyLibrary polls={eligiblePollsList} companyId={activeCompany?.id} functionsClient={functionsClient} manager={isSurveyManager(currentUser)} onRespond={setSurveyResponseGroup} onNotice={message=>triggerNotification(message)} onError={message=>{if(message)triggerNotification(message,'error');}}/></Suspense>
               {currentUser.isAdmin && pollFormGroups.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Acompanhamento dos formulários</h4><p className="mt-1 text-xs text-slate-500">Conclusão integral por colaborador.</p></div><TrendingUp className="h-5 w-5 text-cyan-700" /></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{pollFormGroups.map(group => { const completion = pollFormCompletion(group, pollEmployeeIds); return <div key={group[0].formId} className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><strong className="block text-xs text-slate-800">{group[0].formTitle}</strong><span className="text-[10px] text-slate-500">{group.length} perguntas · {completion.completed} de {pollEmployeeIds.length} concluíram</span></div><strong className="text-sm text-cyan-800">{completion.percentage}%</strong></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${completion.percentage}%` }} /></div></div>; })}</div></section>}
 
               <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={pollSearch} onChange={event => setPollSearch(event.target.value)} aria-label="Buscar enquete ou formulário" placeholder="Buscar por título ou pergunta" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs focus:border-cyan-500 focus:outline-none" /></div><select value={pollViewFilter} onChange={event => setPollViewFilter(event.target.value)} aria-label="Filtrar enquetes" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option>Todas</option><option>Ativas</option><option>Encerradas</option><option>Pendentes</option><option>Formulários</option></select>{(pollSearch || pollViewFilter !== 'Todas') && <button type="button" onClick={() => { setPollSearch(''); setPollViewFilter('Todas'); }} className="rounded-xl px-3 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100">Limpar</button>}</div>
@@ -11799,15 +11801,16 @@ const handleDownload = async (fileUrl, fileName) => {
       {showPollModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/70 p-3 sm:p-4">
           <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-slate-950 via-blue-950 to-cyan-800 px-5 py-4 text-white sm:px-6"><div><h3 className="text-sm font-extrabold">Criar pesquisa</h3><p className="mt-0.5 text-[10px] text-blue-100/75">Monte as perguntas visualmente e publique no feed da equipe.</p></div><button type="button" disabled={pollSaving} onClick={() => setShowPollModal(false)} aria-label="Fechar" className="rounded-lg p-1.5 hover:bg-white/10"><X className="h-5 w-5" /></button></div>
+            <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-slate-950 via-blue-950 to-cyan-800 px-5 py-4 text-white sm:px-6"><div><h3 className="text-sm font-extrabold">Criar pesquisa</h3><p className="mt-0.5 text-[10px] text-blue-100/75">Monte as perguntas e escolha o setor que poderá respondê-las.</p></div><button type="button" disabled={pollSaving} onClick={() => setShowPollModal(false)} aria-label="Fechar" className="rounded-lg p-1.5 hover:bg-white/10"><X className="h-5 w-5" /></button></div>
             <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-5 sm:px-6"><button type="button" disabled={pollSaving} onClick={() => setPollCreationMode('enquete')} className={`rounded-xl border p-3 text-left transition ${pollCreationMode === 'enquete' ? 'border-cyan-300 bg-cyan-50 text-cyan-950 ring-2 ring-cyan-100' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><strong className="block text-xs">Enquete rápida</strong><span className="mt-1 block text-[10px]">Uma pergunta para resposta imediata.</span></button><button type="button" disabled={pollSaving} onClick={() => setPollCreationMode('formulario')} className={`rounded-xl border p-3 text-left transition ${pollCreationMode === 'formulario' ? 'border-blue-300 bg-blue-50 text-blue-950 ring-2 ring-blue-100' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}><strong className="block text-xs">Pesquisa completa</strong><span className="mt-1 block text-[10px]">Várias perguntas em um formulário.</span></button></div>
 
             {pollCreationMode === 'enquete' ? <form onSubmit={handleSavePoll} className="flex flex-col gap-5 p-5 sm:p-6">
+              <label className="text-xs font-bold text-slate-700">Setor que receberá a enquete<select required value={newPoll.sectorId} onChange={event => setNewPoll(previous => ({ ...previous, sectorId: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="">Selecione o setor</option>{surveySectors.map(sector => <option key={sector} value={sector}>{sector}</option>)}</select></label>
               <section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-cyan-700 text-[10px] font-extrabold text-white">1</span><div><h4 className="text-sm font-extrabold text-slate-800">Configure a pergunta</h4><p className="text-[10px] text-slate-500">Escolha uma categoria e o formato da resposta.</p></div></div><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Categoria<select value={newPoll.category} onChange={event => setNewPoll(previous => ({ ...previous, category: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option>Pulso da equipe</option><option>Pesquisa de clima</option><option>Comunicação interna</option><option>Segurança e bem-estar</option><option>Sugestões</option><option>Outro tema</option></select></label><label className="text-xs font-bold text-slate-700">Formato da resposta<select value={newPoll.type} onChange={event => { const type = event.target.value; setNewPoll(previous => ({ ...previous, type, options: [...POLL_QUESTION_TYPES[type].options] })); }} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">{Object.entries(POLL_QUESTION_TYPES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}</select></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Pergunta<input required maxLength={240} value={newPoll.question} onChange={event => setNewPoll(previous => ({ ...previous, question: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm" placeholder="Ex.: Como você avalia a comunicação desta semana?" /></label></div><p className="mt-2 text-[10px] text-slate-500">{POLL_QUESTION_TYPES[newPoll.type]?.hint}</p></section>
               <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between"><h4 className="text-xs font-extrabold text-slate-800">Alternativas</h4><span className="text-[10px] text-slate-400">{newPoll.options.length} opções</span></div>{newPoll.type === 'single' ? <div className="mt-3 space-y-2">{newPoll.options.map((option, optionIndex) => <div key={optionIndex} className="flex items-center gap-2"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-[10px] font-bold text-slate-400">{optionIndex + 1}</span><input required value={option} onChange={event => setNewPoll(previous => ({ ...previous, options: previous.options.map((value, index) => index === optionIndex ? event.target.value : value) }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs" placeholder={`Alternativa ${optionIndex + 1}`} />{newPoll.options.length > 2 && <button type="button" onClick={() => setNewPoll(previous => ({ ...previous, options: previous.options.filter((_, index) => index !== optionIndex) }))} className="px-2 text-sm font-bold text-rose-600">×</button>}</div>)}{newPoll.options.length < 8 && <button type="button" onClick={() => setNewPoll(previous => ({ ...previous, options: [...previous.options, ''] }))} className="mt-1 text-xs font-bold text-cyan-800">+ Adicionar alternativa</button>}</div> : <div className="mt-3 flex flex-wrap gap-2">{newPoll.options.map(option => <span key={option} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"><TextoComEmojis texto={option} /></span>)}</div>}</section>
               <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Receber respostas até (opcional)<input type="date" value={newPoll.expiresAt} onChange={event => setNewPoll(previous => ({ ...previous, expiresAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" /></label><div className="rounded-xl bg-cyan-50 p-3 text-[10px] leading-relaxed text-cyan-900"><strong>Publicação automática</strong><br />A enquete aparecerá na timeline e no sino de notificações dos colaboradores.</div></div>
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setShowPollModal(false)} className="px-4 py-2.5 text-xs font-bold text-slate-500">Cancelar</button><button type="submit" className="rounded-xl bg-cyan-800 px-5 py-2.5 text-xs font-extrabold text-white shadow hover:bg-cyan-900">Publicar enquete</button></div>
-            </form> : <Suspense fallback={<p className="p-5 text-sm">Carregando editor de pesquisa...</p>}><SurveyTopicsEditor value={newPollForm} onChange={setNewPollForm} onSubmit={handleSavePollForm} onCancel={()=>setShowPollModal(false)} busy={pollSaving}/></Suspense>}
+            </form> : <div className="p-5 sm:p-6"><label className="mb-4 block text-xs font-bold text-slate-700">Setor que receberá a pesquisa<select required value={newPollForm.sectorId} onChange={event => setNewPollForm(previous => ({ ...previous, sectorId: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="">Selecione o setor</option>{surveySectors.map(sector => <option key={sector} value={sector}>{sector}</option>)}</select></label><Suspense fallback={<p className="p-5 text-sm">Carregando editor de pesquisa...</p>}><SurveyTopicsEditor value={newPollForm} onChange={setNewPollForm} onSubmit={handleSavePollForm} onCancel={()=>setShowPollModal(false)} busy={pollSaving}/></Suspense></div>}
           </div>
         </div>
       )}
