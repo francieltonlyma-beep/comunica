@@ -5428,7 +5428,7 @@ try {
   const upcomingDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'proxima').length;
   const pollEmployeeIds = employeesList.map(employee => employee.id).filter(Boolean);
   const surveySectors = [...new Set(employeesList.flatMap(employee => [employee.dept, employee.department, ...(Array.isArray(employee.departments) ? employee.departments : []), ...(Array.isArray(employee.depts) ? employee.depts : [])]).map(value => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const pollVisibleToUser = poll => !poll.surveySectorId || isSurveyManager(currentUser) || [currentUser?.dept, currentUser?.department, ...(Array.isArray(currentUser?.departments) ? currentUser.departments : []), ...(Array.isArray(currentUser?.depts) ? currentUser.depts : [])].map(value => String(value || '').trim()).includes(String(poll.surveySectorId));
+  const pollVisibleToUser = poll => isSurveyManager(currentUser) || Boolean(poll.surveySectorId && [currentUser?.dept, currentUser?.department, ...(Array.isArray(currentUser?.departments) ? currentUser.departments : []), ...(Array.isArray(currentUser?.depts) ? currentUser.depts : [])].map(value => String(value || '').trim()).includes(String(poll.surveySectorId)));
   const eligiblePollsList = pollsList.filter(pollVisibleToUser);
   const pollTimelineEntries = pollTimelineItems(eligiblePollsList.filter(poll=>!poll.archived), currentUser);
   const activePollsCount = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr)).length;
