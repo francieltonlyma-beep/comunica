@@ -31,13 +31,13 @@ function loadWorker(existingWindow) {
   return {handlers, opened, sent, get focused() { return focused; }};
 }
 
-function click(worker, type = 'message') {
+function click(worker, type = 'message', data = {}) {
   let waiting;
   let stopped = 0;
   let closed = 0;
   const event = {
     notification: {
-      data: {FCM_MSG: {data: {type, companyId: 'company-123', threadId: 'thread-456'}}},
+      data: {FCM_MSG: {data: {type, companyId: 'company-123', threadId: 'thread-456', ...data}}},
       close() { closed++; },
     },
     stopImmediatePropagation() { stopped++; },
@@ -75,4 +75,21 @@ test('other notification types remain with the Firebase handler', () => {
   assert.equal(result.stopped, 0);
   assert.equal(result.closed, 0);
   assert.equal(result.waiting, undefined);
+});
+
+test('career notification opens the filtered vacancy in an existing or new tab', async () => {
+  const data = {careerVacancyId: 'talent-pool--operator'};
+  const existing = loadWorker(true);
+  await click(existing, 'career_application', data).waiting;
+  assert.equal(existing.focused, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(existing.sent[0])), {
+    type: 'comunica-open-career', companyId: 'company-123', vacancyId: data.careerVacancyId,
+  });
+
+  const fresh = loadWorker(false);
+  await click(fresh, 'career_application', data).waiting;
+  const url = new URL(fresh.opened[0]);
+  assert.equal(url.searchParams.get('careerCompany'), 'company-123');
+  assert.equal(url.searchParams.get('careerVacancy'), data.careerVacancyId);
+  assert.equal(url.searchParams.has('messageThread'), false);
 });
