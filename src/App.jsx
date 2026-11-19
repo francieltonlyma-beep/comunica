@@ -8446,7 +8446,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   {/* Aqui continua o restante do seu conteúdo do header */}
 
         <div className="relative z-10 mx-auto grid min-h-[4.5rem] w-full max-w-7xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-3 pb-2 sm:flex sm:flex-wrap sm:justify-between sm:px-4 sm:py-1 lg:flex-nowrap">
-          <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
+          <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group col-start-1 row-start-1 flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
             <div className="flex h-10 w-11 sm:h-14 sm:w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
                <img
                  src="/assets/comunica-logo-transparent.png"
@@ -8458,14 +8458,14 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             </div>
           </button>
 
-          <nav aria-label="Produtos Comunica" className="col-span-full row-start-2 flex min-w-0 items-center gap-1.5 sm:p-2 border-t border-slate-200/70 pt-1.5 sm:shrink-0 sm:border-0 sm:pt-0">
+          <nav aria-label="Produtos Comunica" className="col-span-full row-start-2 flex min-w-0 items-center gap-2 border-t border-slate-200/70 pt-1.5 sm:shrink-0 sm:border-0 sm:pt-0">
             <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
             {canOpenModule('integra') && <button type="button" title="Comunica Integra" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
           </nav>
 
-          <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-1.5 sm:p-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
+          <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
 
-          <div className="flex min-w-0 items-center justify-end gap-0.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
+          <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-0.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
             <button
               onClick={() => {
                 setMyProfileForm({
@@ -8477,7 +8477,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 setShowPinFieldsInProfile(false);
                 setShowProfileModal(true);
               }}
-              className="flex items-center gap-1.5 sm:p-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
+              className="flex items-center gap-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
               title="Meu Perfil de Colaborador"
             >
               <span className="relative"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-7 w-7 rounded-xl sm:h-9 sm:w-9 border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
@@ -8532,7 +8532,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   </button>
 
   {showNotificationsDropdown && (
-    <div className="fixed inset-x-3 top-[calc(7rem+env(safe-area-inset-top))] z-50 mt-2 max-h-[calc(100dvh-8rem-env(safe-area-inset-top))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in slide-in-from-top-1.5 sm:p-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-none">
+    <div className="fixed inset-x-3 top-[calc(7rem+env(safe-area-inset-top))] z-50 mt-2 max-h-[calc(100dvh-8rem-env(safe-area-inset-top))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in slide-in-from-top-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-none">
 
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <h4 className="font-extrabold text-sm flex items-center gap-1.5">
@@ -8572,7 +8572,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                               className={`w-full text-left p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${isUnread ? 'bg-blue-50/20' : ''}`}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <span className={`text-xs font-bold ${isUnread ? 'text-slate-900' : 'text-slate-600'} line-clamp-1.5 sm:p-2 leading-snug`}>{notif.title}</span>
+                                <span className={`text-xs font-bold ${isUnread ? 'text-slate-900' : 'text-slate-600'} line-clamp-2 leading-snug`}>{notif.title}</span>
                                 {isUnread && <span className="h-2 w-2 rounded-full bg-blue-600 flex-shrink-0 mt-1 shadow-sm"></span>}
                               </div>
 
