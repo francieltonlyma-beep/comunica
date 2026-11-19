@@ -843,6 +843,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const companyLookupRequestRef = useRef(0);
   const [showDeveloperLogin, setShowDeveloperLogin] = useState(false);
   const [developerPin, setDeveloperPin] = useState('');
+  const [labAction, setLabAction] = useState('');
   const [showCompanyRegistration, setShowCompanyRegistration] = useState(false);
   const [companyForm, setCompanyForm] = useState({ name: '', code: '', adminName: '', adminPin: '' });
 
@@ -2892,6 +2893,29 @@ const getStatusEmTempoReal = (colaborador) => {
     } catch (error) {
       console.error('Erro no acesso de desenvolvedor:', error);
       setLoginError(loginErrorMessage(error, true));
+    }
+  };
+
+  const handlePlatformLab = async action => {
+    if (labAction || !currentUser?.isDeveloper || !functionsClient) return;
+    if (action === 'reset' && !window.confirm('Apagar todos os dados e anexos da empresa fictícia? Esta limpeza é permanente.')) return;
+    setLabAction(action);
+    try {
+      const { data: result } = await httpsCallable(functionsClient, 'platformLab', { timeout: 300000 })({ action });
+      if (action === 'reset') {
+        triggerNotification('Laboratório limpo. Abra o ambiente para iniciar um novo teste.');
+        return;
+      }
+      await authPersistenceReady;
+      await signInWithCustomToken(auth, result.token);
+      setActiveCompany(result.company);
+      setCurrentUser(result.user);
+      setActiveTab('dashboard');
+      triggerNotification('Sessão de testes iniciada.');
+    } catch (error) {
+      triggerNotification(error.code === 'functions/internal' ? 'Não foi possível concluir a ação no laboratório. Tente novamente.' : error.message, 'error');
+    } finally {
+      setLabAction('');
     }
   };
 
@@ -8439,6 +8463,10 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
       <NotificationToast notification={customNotification} />
       <CloudActivityIndicator activity={cloudActivity} />
       <InstallAppDialog open={showInstallHelp} standalone={isStandaloneApp} onClose={() => setShowInstallHelp(false)} />
+      {currentUser && activeCompany?.platformLab === true && <div role="status" className="flex flex-wrap items-center justify-between gap-2 bg-violet-950 px-4 py-3 text-xs font-semibold text-white">
+        <span>Laboratório · Empresa fictícia · Use os botões Gestão e Integra para testar</span>
+        {!currentUser.isDeveloper && <button type="button" className="rounded-lg border border-white/50 px-3 py-1.5" onClick={handleUserLogout}>Sair da sessão de testes</button>}
+      </div>}
       {authReady && currentUser && activeCompany && (!dbUser || liveDataStatus.companyId !== activeCompany.id || ['users', 'messages', 'activities'].some(name => liveDataStatus[name] !== 'ready')) && <div role="status" className="sticky top-0 z-[10079] flex flex-wrap items-center justify-center gap-3 bg-amber-100 px-4 py-3 text-xs font-semibold text-amber-950"><span>{Object.values(liveDataStatus).includes('error') ? 'Não foi possível sincronizar os dados da empresa. Os números exibidos podem estar desatualizados.' : 'Aguardando dados atualizados da empresa. Os números exibidos podem estar desatualizados.'}</span><button type="button" onClick={async () => { try { if (!auth.currentUser) { await signOut(auth); return; } await auth.currentUser.getIdToken(true); window.location.reload(); } catch { await signOut(auth); } }} className="rounded-lg bg-amber-900 px-3 py-1.5 font-bold text-white">Tentar reconectar</button><button type="button" onClick={handleUserLogout} className="rounded-lg border border-amber-800 px-3 py-1.5 font-bold text-amber-950">Entrar novamente</button></div>}
 
 
@@ -8833,6 +8861,15 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><span className="inline-flex items-center gap-2 rounded-full border border-violet-200/20 bg-white/10 px-3 py-1 text-[9px] font-black uppercase tracking-[.16em] text-violet-100"><FlaskConical className="h-3.5 w-3.5" /> Ambiente privado de homologação</span><h3 className="mt-4 text-2xl font-black sm:text-3xl">Laboratório do Comunica</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/75">Visualize protótipos, valide decisões e escolha quando uma solução estará pronta para um piloto. Nenhuma empresa visualiza estes projetos antes da liberação.</p></div><span className="w-fit rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-xs font-bold text-cyan-100">1 protótipo em validação</span></div>
                   </section>
 
+                  <section className="rounded-[1.5rem] border border-violet-200 bg-white p-5 shadow-sm">
+                    <h3 className="text-base font-extrabold text-slate-900">Testar Gestão e Integra</h3>
+                    <p className="mt-2 text-sm text-slate-600">Abra Gestão e Compras como administrador de uma empresa fictícia. Ao terminar, saia da sessão de testes e volte com seu PIN de suporte para limpar os registros e anexos da empresa de testes.</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button type="button" disabled={Boolean(labAction)} onClick={() => handlePlatformLab('open')} className="rounded-lg bg-violet-800 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Abrir empresa de testes</button>
+                      <button type="button" disabled={Boolean(labAction)} onClick={() => handlePlatformLab('reset')} className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-bold text-rose-800 disabled:opacity-50">Limpar empresa de testes</button>
+                    </div>
+                    {labAction && <p role="status" className="mt-3 text-sm text-slate-600">{labAction === 'open' ? 'Abrindo sessão…' : 'Limpando registros e anexos…'}</p>}
+                  </section>
                   <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
                     <div className="border-b border-slate-100 p-5"><span className="text-[9px] font-black uppercase tracking-[.16em] text-violet-700">Projetos e ensaios</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Protótipos disponíveis</h3><p className="mt-1 text-xs text-slate-500">Abra a experiência em uma página privada para testar no celular ou computador.</p></div>
                     <div className="p-4 sm:p-5"><article className="grid overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-cyan-50 lg:grid-cols-[1fr_300px]"><div className="p-5 sm:p-6"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-black text-violet-800">EM VALIDAÇÃO</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[9px] font-bold text-slate-600">Comunica Integra</span></div><div className="mt-4 flex items-start gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-blue-700 text-white"><MapPin className="h-5 w-5" /></span><div><h4 className="text-lg font-black text-slate-900">Controle de Frotas</h4><p className="mt-1 text-xs leading-5 text-slate-600">Retirada e devolução por QR Code, foto do hodômetro, checklist, GPS, ocorrências e painel do gestor.</p></div></div><div className="mt-5 flex flex-wrap gap-2"><a href="https://comunica-integra-frotas.savoryanole130.chatgpt.site" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-extrabold text-white hover:bg-blue-800"><Eye className="h-4 w-4" /> Abrir protótipo</a><a href="https://comunica-integra-frotas.savoryanole130.chatgpt.site" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-xs font-bold text-blue-800 hover:bg-blue-50"><ExternalLink className="h-4 w-4" /> Abrir em nova tela</a></div></div><div className="border-t border-blue-100 bg-slate-950 p-5 text-white lg:border-l lg:border-t-0"><span className="text-[9px] font-black uppercase tracking-[.15em] text-cyan-200">Etapa atual</span><strong className="mt-2 block text-base">Validação do conceito</strong><p className="mt-2 text-[10px] leading-5 text-slate-300">O próximo avanço será transformar as decisões aprovadas em telas funcionais dentro do Comunica Integra.</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full w-2/5 rounded-full bg-gradient-to-r from-violet-400 to-cyan-300" /></div><span className="mt-2 block text-[9px] text-slate-400">2 de 5 etapas</span></div></article></div>
