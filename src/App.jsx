@@ -8444,6 +8444,11 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             </div>
           </button>
 
+          <nav aria-label="Produtos Comunica" className="flex shrink-0 items-center gap-1">
+            <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`rounded-lg border px-2 py-1.5 text-[10px] font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
+            {canOpenModule('integra') && <button type="button" title="Comunica Integra" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`rounded-lg border px-2 py-1.5 text-[10px] font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
+          </nav>
+
           <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
 
           <div className="flex min-w-0 items-center justify-end gap-1 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
@@ -8629,16 +8634,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           </div>
       </header>
 
-      <nav aria-label="Produtos Comunica" className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-2 px-4 pt-4">
-        <button type="button" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`rounded-2xl border px-3 py-3 text-left transition sm:px-5 ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>
-          <span className="block text-xs font-extrabold sm:text-sm">Comunica Gestão</span>
-          <span className={`mt-0.5 block text-[10px] sm:text-xs ${!isIntegraWorkspace ? 'text-blue-100' : 'text-slate-500'}`}>Pessoas e comunicação</span>
-        </button>
-        {canOpenModule('integra') && <button type="button" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`rounded-2xl border px-3 py-3 text-left transition sm:px-5 ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>
-          <span className="block text-xs font-extrabold sm:text-sm">Comunica Integra</span>
-          <span className={`mt-0.5 block text-[10px] sm:text-xs ${isIntegraWorkspace ? 'text-teal-100' : 'text-slate-500'}`}>Operações e compras</span>
-        </button>}
-      </nav>
+      
 
       {/* 1. CAIXA PRINCIPAL: Ela precisa abraçar o Menu e o Feed juntos */}
       <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:flex-row">
