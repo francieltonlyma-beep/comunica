@@ -62,7 +62,7 @@ firebase.initializeApp({
 // Handle message clicks before the Firebase SDK consumes the click event.
 self.addEventListener('notificationclick', (event) => {
   const data = event.notification?.data?.FCM_MSG?.data;
-  if (!['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(data?.type)) return;
+  if (!['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead', 'career_application'].includes(data?.type)) return;
   event.stopImmediatePropagation();
   event.notification.close();
   event.waitUntil((async () => {
@@ -72,13 +72,18 @@ self.addEventListener('notificationclick', (event) => {
       await existing.focus();
       existing.postMessage(data.type === 'sales_lead'
         ? {type: 'comunica-open-sales-lead', leadId: data.leadId}
-        : data.threadId
-          ? {type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId, messageId: data.messageId}
-          : {type: 'comunica-open-activity', companyId: data.companyId, activityId: data.messageId});
+        : data.type === 'career_application'
+          ? {type: 'comunica-open-career', companyId: data.companyId, vacancyId: data.careerVacancyId}
+          : data.threadId
+            ? {type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId, messageId: data.messageId}
+            : {type: 'comunica-open-activity', companyId: data.companyId, activityId: data.messageId});
     } else {
       const url = new URL('/', self.location.origin);
       if (data.type === 'sales_lead') {
         url.searchParams.set('supportLead', data.leadId || '');
+      } else if (data.type === 'career_application') {
+        url.searchParams.set('careerCompany', data.companyId || '');
+        url.searchParams.set('careerVacancy', data.careerVacancyId || '');
       } else if (data.threadId) {
         url.searchParams.set('messageCompany', data.companyId || '');
         url.searchParams.set('messageThread', data.threadId || '');

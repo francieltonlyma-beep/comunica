@@ -24,7 +24,7 @@ import {removeEmployeeAccess} from './employeeRemoval';
 import {SUPPORT_UID, verifyPlatformSupport} from './platformSupport';
 import {registerPlatformPushToken, getSupportNotificationTokens} from './platformSupportPush';
 import {listAccessibleDocuments} from './documents';
-import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getCandidateProfile, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, submitApplication, uploadCandidateResume, downloadCandidateResume, refreshCandidateFit} from './careers';
+import {listPublicVacancies, saveCandidateProfile, getCandidateApplication, getCandidateProfile, withdrawCandidateApplication, deleteCandidateAccount, extendApplicationRetention, purgeExpiredApplications, initializeApplicationRetention, submitApplication, uploadCandidateResume, downloadCandidateResume, refreshCandidateFit, isHumanResourcesProfile} from './careers';
 import {randomUUID} from 'node:crypto';
 import {getPublicCompany, submitPublicReport, getPublicReportStatus, listPrivateReports, updatePrivateReport, deletePrivateReport, deleteConfirmedTestReport} from './whistleblowing';
 import {managePlatformLab} from './platformLab';
@@ -1054,28 +1054,30 @@ const messageActivityData = (value: unknown): MessageActivityData | null => {
   };
 };
 
-const sendActivityPush = async ({
-  database, appId, companyId, recipientIds, actorId, title, body, type, threadId, messageId, eventId, purchaseId = '',
+const sendTargetedPush = async ({
+  database, appId, companyId, recipientIds, recipientFilter, actorId = '', title, body, type, threadId = '', messageId = '', eventId, purchaseId = '', careerVacancyId = '',
 }: {
   database: ReturnType<typeof getFirestore>;
   appId: string;
   companyId: string;
-  recipientIds: string[];
-  actorId: string;
+  recipientIds?: string[];
+  recipientFilter?: (profile: Record<string, unknown>) => boolean;
+  actorId?: string;
   title: string;
   body: string;
-  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message' | 'purchase';
-  threadId: string;
-  messageId: string;
+  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message' | 'purchase' | 'career_application';
+  threadId?: string;
+  messageId?: string;
   eventId: string;
   purchaseId?: string;
+  careerVacancyId?: string;
 }) => {
   const usersPath = `artifacts/${appId}/public/data/companies/${companyId}/users`;
-  const recipients = [...new Set(recipientIds)].filter((id) => id && id !== actorId);
-  if (recipients.length === 0) return {successCount: 0, failureCount: 0};
+  const recipients = new Set(recipientIds?.filter((id) => id && id !== actorId));
+  if (recipients.size === 0 && !recipientFilter) return {successCount: 0, failureCount: 0};
   const usersSnapshot = await database.collection(usersPath).get();
   const tokenOwners = new Map<string, string[]>();
-  usersSnapshot.docs.filter((user) => recipients.includes(user.id)).forEach((user) => {
+  usersSnapshot.docs.filter((user) => user.id !== actorId && (recipientFilter ? recipientFilter(user.data()) : recipients.has(user.id))).forEach((user) => {
     const savedTokens = Array.isArray(user.data().pushTokens) ? user.data().pushTokens : [];
     savedTokens.forEach((token: unknown) => {
       if (typeof token !== 'string' || !token) return;
@@ -1092,11 +1094,12 @@ const sendActivityPush = async ({
     const response = await getMessaging().sendEachForMulticast({
       tokens: batchTokens,
       notification: {title, body: body.slice(0, 220)},
-      data: {type, companyId, threadId, messageId, eventId, purchaseId},
+      data: {type, companyId, threadId, messageId, eventId, purchaseId, ...(careerVacancyId ? {careerVacancyId} : {})},
       webpush: {
         headers: {Urgency: 'high', TTL: '3600'},
         notification: {icon: '/pwa/icon-192.png', tag: eventId, renotify: false},
-        fcmOptions: {link: purchaseId
+        fcmOptions: {link: careerVacancyId
+          ? `https://comunica-info.web.app/?careerCompany=${encodeURIComponent(companyId)}&careerVacancy=${encodeURIComponent(careerVacancyId)}` : purchaseId
           ? `https://comunica-info.web.app/?purchaseCompany=${encodeURIComponent(companyId)}&purchaseId=${encodeURIComponent(purchaseId)}` : threadId
           ? `https://comunica-info.web.app/?messageCompany=${encodeURIComponent(companyId)}&messageThread=${encodeURIComponent(threadId)}&messageId=${encodeURIComponent(messageId)}`
           : `https://comunica-info.web.app/?activityCompany=${encodeURIComponent(companyId)}&activityId=${encodeURIComponent(messageId)}`},
@@ -1128,7 +1131,7 @@ export const notifyPurchaseAssignment = onDocumentUpdated(
     const role = purchaseNextRole(after);
     const responsible = String(after[role] || '');
     if (!responsible || (before.status === after.status && before[role] === responsible)) return;
-    await sendActivityPush({database:getFirestore(),appId:event.params.appId,companyId:event.params.companyId,
+    await sendTargetedPush({database:getFirestore(),appId:event.params.appId,companyId:event.params.companyId,
       recipientIds:[responsible],actorId:String(after.updatedBy || ''),title:'Compra aguardando sua ação',
       body:`${String(after.item || 'Solicitação').slice(0,100)} · ${String(after.status || '')}`,
       type:'purchase',threadId:'',messageId:'',eventId:`purchase-${event.params.purchaseId}-${after.updatedAt}`,purchaseId:event.params.purchaseId});
@@ -1161,7 +1164,7 @@ export const notifyPendingPurchases = onSchedule({schedule:'15 9 * * *',timeZone
     });
     if (!acquired) continue;
     try {
-      const result = await sendActivityPush({database,appId,companyId,recipientIds:[responsible],actorId:'',
+      const result = await sendTargetedPush({database,appId,companyId,recipientIds:[responsible],actorId:'',
         title:overdue ? 'Compra com prazo vencido' : 'Compra aguardando sua ação',
         body:String(data.item || 'Solicitação').slice(0,180),type:'purchase',threadId:'',messageId:'',
         eventId:`purchase-${purchase.id}-${date}`,purchaseId:purchase.id});
@@ -1170,6 +1173,26 @@ export const notifyPendingPurchases = onSchedule({schedule:'15 9 * * *',timeZone
     }
   }
 });
+
+export const notifyNewCareerApplication = onDocumentCreated(
+  {document: 'artifacts/{appId}/public/data/companies/{companyId}/applications/{applicationId}', maxInstances: 2},
+  async event => {
+    const application = event.data?.data();
+    if (application?.status !== 'received' || typeof application.vacancyId !== 'string' || !application.vacancyId) return;
+    const {appId, companyId} = event.params;
+    await sendTargetedPush({
+      database: getFirestore(),
+      appId,
+      companyId,
+      recipientFilter: isHumanResourcesProfile,
+      title: 'Nova candidatura no Banco de Talentos',
+      body: 'Abra o Comunica para consultar a candidatura na Central de triagem.',
+      type: 'career_application',
+      careerVacancyId: application.vacancyId,
+      eventId: event.id,
+    });
+  },
+);
 
 export const notifyNewAnnouncement = onDocumentCreated(
   "artifacts/{appId}/public/data/companies/{companyId}/announcements/{announcementId}",
@@ -1272,7 +1295,7 @@ export const notifyMessageActivityChange = onDocumentUpdated(
 
     const mutedBy = Array.isArray(after.mutedBy) ? after.mutedBy.filter((id): id is string => typeof id === 'string') : [];
     recipientIds = recipientIds.filter((id) => !mutedBy.includes(id));
-    await sendActivityPush({
+    await sendTargetedPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId, messageId,
       eventId: `activity-change-${messageId}-${Number(after.activity?.updatedAt || Date.now())}`,
@@ -1286,7 +1309,7 @@ export const notifyStandaloneActivityCreated = onDocumentCreated(
     const content = event.data?.data() ?? {};
     const activity = messageActivityData(content);
     if (!activity || activity.assigneeIds.length === 0) return;
-    await sendActivityPush({
+    await sendTargetedPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds: activity.assigneeIds, actorId: activity.createdBy,
       title: '📋 Nova atividade avulsa atribuída a você', body: String(content.title || 'Atividade na Central de Serviços'),
@@ -1358,7 +1381,7 @@ export const notifyStandaloneActivityChange = onDocumentUpdated(
       recipientIds = [...activity.assigneeIds, activity.createdBy, ...acceptedCollaborators];
       title = '📎 Novo anexo na atividade avulsa';
     } else return;
-    await sendActivityPush({
+    await sendTargetedPush({
       database, appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId: '', messageId: activityId,
       eventId: `standalone-activity-change-${activityId}-${Number(after.updatedAt || Date.now())}`,
@@ -1599,7 +1622,7 @@ export const notifyConversationDeadlines = onSchedule({
 
     try {
       const copy = activityDeadlineNotificationCopy(activity.stage);
-      const delivery = await sendActivityPush({
+      const delivery = await sendTargetedPush({
         database, appId: activity.appId, companyId: activity.companyId,
         recipientIds: activity.recipientIds, actorId: '', title: copy.title,
         body: `${copy.prefix}: ${activity.subject}`, type: 'activity_deadline',
@@ -1686,7 +1709,7 @@ export const notifyPendingReminders = onSchedule({
       });
       if (!acquired) continue;
       try {
-        const delivery = await sendActivityPush({
+        const delivery = await sendTargetedPush({
           database, appId, companyId, recipientIds: reminder.recipientIds,
           actorId: '', title: reminder.title, body: reminder.body,
           type: reminder.kind === 'unread' ? 'message' : 'activity_update',
