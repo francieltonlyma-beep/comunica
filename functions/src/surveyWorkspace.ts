@@ -132,7 +132,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   const polls=await source(tx,base,v.groupId);if(signature(polls)!==v.signature)throw new HttpsError('failed-precondition','A pesquisa foi alterada. Solicite um novo link ao responsável.');
   const respondent=String(data.respondentId || '');
   if(v.audience==='public'&&!/^[a-zA-Z0-9_-]{16,128}$/.test(respondent))throw new HttpsError('invalid-argument','Não foi possível identificar este navegador.');
-  const responseId=hash(`${base.id}|${v.groupId}|${v.audience}|${v.sectorId||''}|${(v.audience==='sector'||v.audience==='team')?auth.uid:respondent}`),uid=(v.audience==='sector'||v.audience==='team')?auth.uid:`external-${responseId.slice(0,40)}`;
+  const responseKey=v.audience==='sector'?`${base.id}|${v.groupId}|sector|${v.sectorId}|${auth.uid}`:`${base.id}|${v.groupId}|${v.audience}|${v.audience==='team'?auth.uid:respondent}`,responseId=hash(responseKey),uid=(v.audience==='sector'||v.audience==='team')?auth.uid:`external-${responseId.slice(0,40)}`;
   const responseRef=base.collection('surveyResponses').doc(responseId),response=await tx.get(responseRef);
   const submitted=response.exists||polls.every(p=>p.votes?.[uid]!==undefined);
   if(action==='read')return {...publicView(polls,String(company.name || 'Comunica'),(v.audience==='sector'||v.audience==='team')?uid:undefined),submitted};
@@ -146,7 +146,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   }
   saveSuggestion(tx,base,v.groupId,data.suggestion);
   for(const p of polls)if(p.votes?.[uid]===undefined)tx.update(base.collection('polls').doc(p.id),new FieldPath('votes',uid),answers[p.id]);
-  tx.create(responseRef,{submittedAt:Date.now(),groupId:v.groupId,audience:v.audience,sectorId:v.sectorId||'',respondentUid:v.audience==='sector'?auth.uid:''});
+  tx.create(responseRef,{submittedAt:Date.now(),groupId:v.groupId,audience:v.audience,sectorId:v.sectorId||'',respondentUid:(v.audience==='sector'||v.audience==='team')?auth.uid:''});
   return {submitted:true};
  });
  }catch(error:any){if(error instanceof HttpsError)throw error;throw new HttpsError('invalid-argument',error.message || 'Não foi possível concluir a pesquisa.');}
