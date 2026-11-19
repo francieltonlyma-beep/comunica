@@ -3260,7 +3260,8 @@ const getStatusEmTempoReal = (colaborador) => {
       try {
         const pollsCollection = getTenantCollection('polls');
         if (!pollsCollection) throw new Error('Empresa indisponível.');
-        await updateDoc(doc(pollsCollection, poll.id), new FieldPath('votes', voteId), optionIndex);
+        if (poll.isAnonymous) await updateDoc(doc(pollsCollection, poll.id), new FieldPath('votes', voteId), optionIndex);
+        else await updateDoc(doc(pollsCollection, poll.id), new FieldPath('votes', currentUser.id), optionIndex);
       } catch (error) {
         console.error('Falha ao registrar voto', error);
         triggerNotification('Não foi possível registrar o voto. Atualize a enquete e tente novamente.', 'error');
