@@ -100,7 +100,7 @@ export default function SurveyAnalysis({ report, onClose }) {
         <div>
           <p className="survey-eyebrow">Análise de resultados · RH</p>
           <h2 className="survey-report-title" id={titleId}>{report.title}</h2>
-          <p>Resultados agregados por pesquisa, tópico e pergunta.</p>
+          <p>Resultados agregados por pesquisa, tópico e pergunta. {report.isAnonymous ? 'Esta pesquisa foi configurada como anônima.' : 'Esta pesquisa foi configurada para registrar a identificação interna dos participantes.'}</p>
         </div>
         <div className="survey-small-actions survey-report-actions">
           <button type="button" onClick={download}>Exportar CSV</button>
@@ -108,7 +108,7 @@ export default function SurveyAnalysis({ report, onClose }) {
         </div>
       </header>
 
-      {report.responseBreakdown&&<section className="survey-analysis-card" aria-label="Contagem de respostas por origem"><h3>Respostas por origem</h3><div className="survey-analysis-charts"><article><strong>Link público</strong><p>{number.format(report.responseBreakdown.public||0)} resposta(s)</p></article>{Object.entries(report.responseBreakdown.sectors||{}).sort(([a],[b])=>a.localeCompare(b,'pt-BR')).map(([sector,count])=><article key={sector}><strong>Setor · {sector}</strong><p>{number.format(count)} resposta(s)</p></article>)}{report.responseBreakdown.legacyInternal>0&&<article><strong>Colaboradores · histórico sem setor</strong><p>{number.format(report.responseBreakdown.legacyInternal)} resposta(s)</p></article>}</div><small>A origem é registrada para respostas enviadas pelos novos links. Respostas antigas sem essa classificação aparecem separadas.</small></section>}
+      {report.responseBreakdown&&<section className="survey-analysis-card" aria-label="Contagem de respostas por origem"><h3>Respostas por origem</h3><div className="survey-analysis-charts"><article><strong>Link público</strong><p>{number.format(report.responseBreakdown.public||0)} resposta(s)</p></article>{Object.entries(report.responseBreakdown.sectors||{}).sort(([a],[b])=>a.localeCompare(b,'pt-BR')).map(([sector,count])=><article key={sector}><strong>Setor · {sector}</strong><p>{number.format(count)} resposta(s)</p></article>)}{report.responseBreakdown.people>0&&<article><strong>Pessoas selecionadas</strong><p>{number.format(report.responseBreakdown.people)} resposta(s)</p></article>}{report.responseBreakdown.legacyInternal>0&&<article><strong>Colaboradores · histórico sem setor</strong><p>{number.format(report.responseBreakdown.legacyInternal)} resposta(s)</p></article>}</div><small>A origem é registrada para respostas enviadas pelos novos links. Respostas antigas sem essa classificação aparecem separadas.</small></section>}
 
       {selection && <div className="survey-chart-selection" aria-live="polite">
         <strong ref={selectionHeading} tabIndex={-1}>Filtro ativo · {selection.label}</strong>
