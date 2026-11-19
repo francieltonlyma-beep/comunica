@@ -8445,9 +8445,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
   {/* Aqui continua o restante do seu conteúdo do header */}
 
-        <div className="relative z-10 mx-auto flex h-[4.5rem] w-full max-w-7xl items-center justify-between gap-2 px-3 sm:px-4">
-          <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
-            <div className="flex h-14 w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
+        <div className="relative z-10 mx-auto grid min-h-[4.5rem] w-full max-w-7xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-3 pb-2 sm:flex sm:flex-wrap sm:justify-between sm:px-4 sm:py-1 lg:flex-nowrap">
+          <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group col-start-1 row-start-1 flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
+            <div className="flex h-10 w-11 sm:h-14 sm:w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
                <img
                  src="/assets/comunica-logo-transparent.png"
                  alt="Comunica"
@@ -8458,14 +8458,14 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
             </div>
           </button>
 
-          <nav aria-label="Produtos Comunica" className="flex shrink-0 items-center gap-1">
-            <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`rounded-lg border px-2 py-1.5 text-[10px] font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
-            {canOpenModule('integra') && <button type="button" title="Comunica Integra" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`rounded-lg border px-2 py-1.5 text-[10px] font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
+          <nav aria-label="Produtos Comunica" className="col-span-full row-start-2 flex min-w-0 items-center gap-2 border-t border-slate-200/70 pt-1.5 sm:shrink-0 sm:border-0 sm:pt-0">
+            <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
+            {canOpenModule('integra') && <button type="button" title="Comunica Integra" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
           </nav>
 
           <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
 
-          <div className="flex min-w-0 items-center justify-end gap-1 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
+          <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-0.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
             <button
               onClick={() => {
                 setMyProfileForm({
@@ -8480,7 +8480,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               className="flex items-center gap-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
               title="Meu Perfil de Colaborador"
             >
-              <span className="relative"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-9 w-9 rounded-xl border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
+              <span className="relative"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-7 w-7 rounded-xl sm:h-9 sm:w-9 border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
               <div className="hidden max-w-44 md:block">
                 <span className="text-xs font-bold block leading-tight text-slate-800">{currentUser.name}</span>
                 <span className="text-[9px] uppercase font-bold text-slate-500 block tracking-wider">
@@ -8489,13 +8489,13 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               </div>
             </button>
 
-            <div className="flex items-center gap-0.5 border-l border-slate-200 pl-1.5 sm:gap-1 sm:pl-2">
-              <button type="button" onClick={() => setIsDarkMode(value => !value)} className="rounded-lg p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-700" title={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-0.5 border-l border-slate-200 pl-1.5 sm:gap-1 sm:pl-2">
+              <button type="button" onClick={() => setIsDarkMode(value => !value)} className="rounded-lg p-1.5 sm:p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-700" title={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}>
                 {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
-              {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
-              {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
-              <button type="button" onClick={() => { setActiveTab('updates'); setShowNotificationsDropdown(false); }} className="relative rounded-lg p-2 text-cyan-700 transition hover:bg-cyan-50" title="Novidades do Comunica" aria-label="Novidades do Comunica">
+              {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-1.5 sm:p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
+              {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-1.5 sm:p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
+              <button type="button" onClick={() => { setActiveTab('updates'); setShowNotificationsDropdown(false); }} className="relative rounded-lg p-1.5 sm:p-2 text-cyan-700 transition hover:bg-cyan-50" title="Novidades do Comunica" aria-label="Novidades do Comunica">
                 <Sparkles className="h-4 w-4" />
                 {platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
               </button>
@@ -8503,7 +8503,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               <div className="relative">
                 <button
                   onClick={() => setActiveTab('inbox')}
-                  className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
+                  className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
                   title="Abrir Caixa de entrada" aria-label="Abrir Caixa de entrada"
                 >
                   <MessageSquare className="h-4.5 w-4.5" />
@@ -8519,7 +8519,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
 
   <button
     onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
-    className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
+    className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
     title="Notificações"
   >
     <Bell className="h-4.5 w-4.5" />
@@ -8532,7 +8532,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   </button>
 
   {showNotificationsDropdown && (
-    <div className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-50 mt-2 max-h-[calc(100dvh-5.5rem-env(safe-area-inset-top))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in slide-in-from-top-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-none">
+    <div className="fixed inset-x-3 top-[calc(7rem+env(safe-area-inset-top))] z-50 mt-2 max-h-[calc(100dvh-8rem-env(safe-area-inset-top))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-in fade-in slide-in-from-top-2 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80 sm:max-h-none">
 
       <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
         <h4 className="font-extrabold text-sm flex items-center gap-1.5">
@@ -8601,7 +8601,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 type="button"
                 onClick={() => { setControlCenterTab('permissions'); setShowControlCenter(true); }}
                 title="Configurações, permissões e auditoria"
-                className="p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-700 transition-all"
+                className="p-1.5 sm:p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-700 transition-all"
               >
                 <Lock className="h-4 w-4" />
               </button>}
@@ -8618,7 +8618,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   setShowProfileModal(true);
                 }}
                 title="Alterar PIN de Acesso"
-                className="p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all"
+                className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all"
                 type="button"
               >
                 <KeyRound className="h-4 w-4" />
@@ -8627,7 +8627,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
               <button
                 onClick={handleUserLogout}
                 title="Encerrar Sessão"
-                className="p-2 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-slate-500 transition-all flex items-center gap-1 text-xs font-semibold"
+                className="p-1.5 sm:p-2 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-slate-500 transition-all flex items-center gap-1 text-xs font-semibold"
                 type="button"
               >
                 <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sair</span>
@@ -8636,7 +8636,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           </div>
 
           <button
-            className="sm:hidden p-2 hover:bg-slate-100 rounded-lg ml-auto text-slate-600"
+            className="col-start-3 row-start-1 sm:hidden p-1.5 hover:bg-slate-100 rounded-lg text-slate-600"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label={mobileMenuOpen ? 'Fechar menu principal' : 'Abrir menu principal'}
             aria-expanded={mobileMenuOpen}
