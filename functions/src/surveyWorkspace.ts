@@ -53,7 +53,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
   return db.runTransaction(async tx=>{
    const company=await access(tx,base,auth,!['readInternal','submitInternal'].includes(action));
    const metaRef=base.collection('surveyLinks').doc(groupId),meta=await tx.get(metaRef);
-   if(action==='listSectors'){const [departments,users]=await Promise.all([tx.get(base.collection('departments')),tx.get(base.collection('users'))]);const named=new Map(departments.docs.map(doc=>[doc.id,String(doc.data().name||'').trim()]).filter(([,name])=>name));const used=new Set(users.docs.flatMap(doc=>profileSectors(doc.data())));const sectors=[...used].map(id=>({id,name:named.get(id)||id})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));return {sectors};}
+   if(action==='listSectors'){const [departments,users]=await Promise.all([tx.get(base.collection('departments')),tx.get(base.collection('users'))]);const named=new Map<string,string>(departments.docs.map(doc=>[doc.id,String(doc.data().name||'').trim()] as const).filter(([,name])=>name));const used=new Set(users.docs.flatMap(doc=>profileSectors(doc.data())));const sectors=[...used].map(id=>({id,name:named.get(id)||id})).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));return {sectors};}
    if(action==='revokeLink'){
     await revokeSurveyLinks(tx,db,base,groupId,meta.data());
     tx.set(metaRef,{revoked:true,updatedBy:auth.uid,updatedAt:Date.now()},{merge:true});return {revoked:true};
