@@ -10,7 +10,7 @@ test('caixa de entrada é um módulo próprio da navegação e das permissões',
   assert.match(app, /\{ id: 'inbox', label: 'Caixa de entrada' \}/);
   assert.match(navigation, /id:'inbox',label:'Caixa de entrada',description:'Conversas, demandas e prazos'/);
   assert.match(navigation, /badge:unreadCount \|\| null/);
-  assert.match(app, /unreadCount: unreadMessages\.length/);
+  assert.match(app, /unreadCount: unreadThreadCount/);
   assert.match(app, /activeTab === 'inbox' && inboxSurface/);
 });
 
@@ -62,4 +62,16 @@ test('painel da conversa reúne resumo, arquivos, histórico e gestão em massa'
   assert.match(app, /Selecionar visíveis/);
   assert.match(app, /handleBulkThreadAction/);
   assert.match(app, /Marcar como não lida/);
+});
+
+test('indicadores compartilham a contagem de conversas não arquivadas com mensagens pendentes', () => {
+  assert.match(app, /unreadThreadCount = \[\.\.\.new Set\(unreadMessages\.map\(message => message\.threadId\)\)\]\s*\.filter\(threadId => !isThreadArchived\(threadId\)\)\.length/);
+  assert.match(app, /id: 'unread', label: 'Não lidas', value: unreadThreadCount/);
+  assert.match(app, /\{unreadThreadCount > 9 \? '9\+' : unreadThreadCount\}/);
+});
+
+test('a leitura acompanha as mensagens recebidas enquanto a conversa está aberta', () => {
+  assert.match(app, /const readingThreadId = \(activeTab === 'inbox' \|\| showMessagesModal\) && !isComposingMsg/);
+  assert.match(app, /confirmOpenThreadReads\(\);\s*\}\s*\}, \[readerId, readCompanyId, dbUser, readingThreadId, openThreadUnreadIds\]/);
+  assert.match(app, /message\.isLegacy \? \{ read: true \} : \{ readBy: arrayUnion\(readerId\) \}/);
 });
