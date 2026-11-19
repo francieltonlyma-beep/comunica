@@ -1,4 +1,4 @@
-import { normalizeSurveyQuestions } from '../functions/src/surveyModel.mjs';
+import { normalizeSurveyQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
 export function pollVoteCount(poll) {
   return Object.keys(poll?.votes || {}).length;
 }
@@ -27,9 +27,11 @@ export function pollFormCompletion(polls, employeeIds) {
 
 export const normalizePollQuestions = normalizeSurveyQuestions;
 
-export function pollTimelineItems(polls) {
+export function pollTimelineItems(polls, profile) {
+  const sectors = [profile?.dept, profile?.department, ...(Array.isArray(profile?.departments) ? profile.departments : []), ...(Array.isArray(profile?.depts) ? profile.depts : [])].map(value => String(value || '').trim()).filter(Boolean);
   return (polls || [])
     .filter(poll => !poll.archived && (!poll.formId || Number(poll.formOrder || 0) === 1))
+    .filter(poll => !poll.surveySectorId || isSurveyManager(profile) || sectors.includes(String(poll.surveySectorId)))
     .map(poll => ({
       ...poll,
       notifType: 'poll',
