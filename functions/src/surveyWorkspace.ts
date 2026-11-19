@@ -63,7 +63,7 @@ export async function surveyWorkspaceAction(db:Firestore,data:Data,auth?:any,ip=
    if(action==='report'){
     const limit=200;
     const suggestions=await tx.get(suggestionCollection(base,groupId).orderBy('createdAt','desc').limit(limit+1));
-    const departments=await tx.get(base.collection('departments')),sectorNames=new Map(departments.docs.map(doc=>[doc.id,String(doc.data().name||'').trim()]).filter(([,name])=>name));
+    const departments=await tx.get(base.collection('departments')),sectorNames=new Map<string,string>(departments.docs.map(doc=>[doc.id,String(doc.data().name||'').trim()] as const).filter(([,name])=>name));
     const responses=await tx.get(base.collection('surveyResponses').where('groupId','==',groupId).limit(5000));
     const responseBreakdown={public:0,sectors:{} as Record<string,number>,people:0,legacyInternal:0};
     const attributedUsers=new Set<string>();
