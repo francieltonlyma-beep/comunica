@@ -1,5 +1,5 @@
 export const PURCHASE_STAGES = {
-  requested: 'Solicitada', quotation: 'Em cotação', approved: 'Aprovada pela alçada', ordered: 'Pedido emitido',
+  requested: 'Solicitada', quotation: 'Em cotação', approved: 'Aprovada', ordered: 'Pedido emitido',
   in_transit: 'Em transporte', received: 'Em conferência', exception: 'Divergência',
   stored: 'Armazenada', delivered: 'Entregue ao destino', finance_dispute: 'NF em correção', closed: 'Concluída pelo Financeiro',
   rejected: 'Recusada', cancelled: 'Cancelada',
@@ -219,7 +219,7 @@ export function pendingPurchaseRole(record) {
 export function purchaseOverdue(record, today) {
   return !['closed', 'cancelled', 'rejected', 'delivered'].includes(record.status) && Boolean(record.neededBy && record.neededBy < today);
 }
-export function filterPurchases(records, filters, search = '', stage = 'all', users = [], actorId = '', today = '') {
+export function filterPurchases(records, filters, search = '', stage = 'all', users = [], actorId = '', today = '', resolvePending = item => item[pendingPurchaseRole(item)]) {
   const names = new Map(users.map(person => [person.id, person.name]));
   const roles = ['buyerId', 'approverId', 'receiverId', 'recipientId', 'financeId'];
   const query = normalizedText(search);
@@ -233,8 +233,8 @@ export function filterPurchases(records, filters, search = '', stage = 'all', us
       && (!filters.priority || item.priority === filters.priority)
       && (!filters.from || item.neededBy >= filters.from) && (!filters.to || item.neededBy <= filters.to)
       && (!filters.view || (filters.view === 'overdue' ? purchaseOverdue(item, today)
-        : filters.view === 'mine' ? pending && item[pending] === actorId
-          : filters.view === 'unassigned' ? pending && !item[pending] : true))
+        : filters.view === 'mine' ? pending && resolvePending(item) === actorId
+          : filters.view === 'unassigned' ? pending && !resolvePending(item) : true))
       && (!filters.supplier || item.supplier === filters.supplier)
       && (!filters.minValue || Number(item.quotedPrice || 0)*Number(item.quantity) >= Number(filters.minValue))
       && (!filters.maxValue || Number(item.quotedPrice || 0)*Number(item.quantity) <= Number(filters.maxValue))

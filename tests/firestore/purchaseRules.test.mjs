@@ -269,5 +269,19 @@ await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...dele
 await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...delegated,participantIds:['admin','employee','finance']}));
 await assertFails(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'employee',approverId:'employee'}));
 await assertFails(addDoc(collection(managerDb,base+'/purchaseRequests'),{...delegated,participantIds:['employee','employee']}));
+await assertSucceeds(setDoc(doc(managerDb,base+'/settings/purchase-approval'),{
+ enabled:false, threshold:100, lowerApproverId:'', upperApproverId:'', requireRequesterReview:false,
+ buyerIds:['employee','finance'], defaultBuyerId:'finance', updatedAt:now+2100,updatedBy:'admin',
+}));
+await assertSucceeds(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'finance',participantIds:['employee','finance']}));
+const assignedBatch = writeBatch(db);
+for (const bundleIndex of [1,2]) {
+  assignedBatch.set(doc(db,base+'/purchaseRequests/default-buyer-'+bundleIndex),{
+    ...data, buyerId:'finance', participantIds:['employee','finance'],
+    bundleId:'default-buyer-1', bundleSize:2, bundleIndex,
+  });
+}
+await assertSucceeds(assignedBatch.commit());
+await assertFails(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'approver',participantIds:['employee','approver']}));
 console.log('PASS: comprador na abertura, sem atribuição indevida, acesso cruzado ou autoaprovação');
 await env.cleanup();

@@ -1664,7 +1664,7 @@ export const approvePurchaseQuote = onCall({region: 'us-central1', maxInstances:
   if (request.auth.token.companyId !== companyId || request.auth.token.isDeveloper === true) {
     throw new HttpsError('permission-denied', 'Sem acesso à empresa selecionada.');
   }
-  return approvePurchaseQuoteGroup(getFirestore(), companyId, String(request.data?.bundleId || ''), request.auth.uid);
+  return approvePurchaseQuoteGroup(getFirestore(), companyId, String(request.data?.bundleId || ''), request.auth.uid, String(request.data?.requestId || ''), request.data?.expectedItems);
 });
 
 /** Independent of deadlines: remind about unread messages and 24-hour inactivity. */
