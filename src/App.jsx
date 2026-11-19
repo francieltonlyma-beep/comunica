@@ -1746,9 +1746,10 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           }
           unsubscribeWebMessage = onMessage(messaging, (payload) => {
             const eventId = payload.data?.eventId || payload.messageId;
+            const isCareerNotification = payload.data?.type === 'career_application';
             if (shouldDisplayPush(eventId)) {
               triggerNotification(payload.notification?.title || 'Você recebeu uma nova notificação.', "success");
-              if (['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead', 'career_application'].includes(payload.data?.type) && 'Notification' in window && Notification.permission === 'granted') {
+              if ((isCareerNotification || ['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(payload.data?.type)) && 'Notification' in window && Notification.permission === 'granted') {
                 const desktopNotification = new Notification(payload.notification?.title || 'Atualização no Comunica', {
                   body: payload.notification?.body || 'Uma atividade exige sua atenção.',
                   icon: '/pwa/icon-192.png',
@@ -1757,7 +1758,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 desktopNotification.onclick = () => {
                   window.focus();
                   if (payload.data?.type === 'sales_lead') setPendingSalesLeadId(payload.data?.leadId || '');
-                  else if (payload.data?.type === 'career_application') setPendingCareerNavigation({ companyId: payload.data.companyId, vacancyId: payload.data.careerVacancyId });
+                  else if (isCareerNotification) setPendingCareerNavigation({ companyId: payload.data.companyId, vacancyId: payload.data.careerVacancyId });
                   else setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId, activityId: payload.data?.threadId ? '' : payload.data?.messageId});
                   desktopNotification.close();
                 };

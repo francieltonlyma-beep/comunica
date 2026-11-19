@@ -62,7 +62,8 @@ firebase.initializeApp({
 // Handle message clicks before the Firebase SDK consumes the click event.
 self.addEventListener('notificationclick', (event) => {
   const data = event.notification?.data?.FCM_MSG?.data;
-  if (!['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead', 'career_application'].includes(data?.type)) return;
+  const isCareerNotification = data?.type === 'career_application';
+  if (!isCareerNotification && !['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(data?.type)) return;
   event.stopImmediatePropagation();
   event.notification.close();
   event.waitUntil((async () => {
@@ -72,7 +73,7 @@ self.addEventListener('notificationclick', (event) => {
       await existing.focus();
       existing.postMessage(data.type === 'sales_lead'
         ? {type: 'comunica-open-sales-lead', leadId: data.leadId}
-        : data.type === 'career_application'
+        : isCareerNotification
           ? {type: 'comunica-open-career', companyId: data.companyId, vacancyId: data.careerVacancyId}
           : data.threadId
             ? {type: 'comunica-open-message', companyId: data.companyId, threadId: data.threadId, messageId: data.messageId}
@@ -81,7 +82,7 @@ self.addEventListener('notificationclick', (event) => {
       const url = new URL('/', self.location.origin);
       if (data.type === 'sales_lead') {
         url.searchParams.set('supportLead', data.leadId || '');
-      } else if (data.type === 'career_application') {
+      } else if (isCareerNotification) {
         url.searchParams.set('careerCompany', data.companyId || '');
         url.searchParams.set('careerVacancy', data.careerVacancyId || '');
       } else if (data.threadId) {
