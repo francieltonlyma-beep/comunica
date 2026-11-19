@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { purchaseFields, validatePurchase, purchaseQuoteNumber, purchaseDisplayReference } from '../src/purchaseFlow.js';
+import { defaultPurchaseBuyer } from '../functions/src/purchaseRouting.mjs';
 const source=readFileSync(new URL('../src/PurchaseManagement.jsx',import.meta.url),'utf8');
-const create=source.slice(source.indexOf('  async function createRequest('),source.indexOf('  async function saveGroupQuote(')).trim();
+const create=source.slice(source.indexOf('  async function createRequest('),source.indexOf('  async function submitQuote(')).trim();
 const base={item:'Coca cola',specification:'Garrafa',quantity:1,unit:'un',category:'Alimentos e bebidas',department:'Loja',destination:'Vila A',neededBy:'2026-11-23',reason:'Reposição',buyerId:'buyer'};
 function context(overrides={}) {
  let writes=[],commits=0;
- const ctx={getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{quoteNumber:'COT-000001'}}),setDuplicateSource(){},setFormAttempted(){},formRef:{current:null},form:base,extraItems:[{...base,item:'Água'}],sending:{current:false},user:{id:'admin',name:'Admin'},manager:true,buyerOptions:[{id:'buyer'}],policy:null,online:true,db:{},companyId:'company',appId:'comunica',currentTimestamp:()=>Date.UTC(2026,10,17,12),purchaseFields,validatePurchase,purchaseQuoteNumber,purchaseDisplayReference,INITIAL:{},
+ const ctx={getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{quoteNumber:'COT-000001'}}),setDuplicateSource(){},setFormAttempted(){},formRef:{current:null},form:base,extraItems:[{...base,item:'Água'}],sending:{current:false},user:{id:'admin',name:'Admin'},manager:true,buyerOptions:[{id:'buyer'}],policy:null,online:true,db:{},companyId:'company',appId:'comunica',currentTimestamp:()=>Date.UTC(2026,10,17,12),purchaseFields,validatePurchase,purchaseQuoteNumber,purchaseDisplayReference,defaultPurchaseBuyer,INITIAL:{},
   setError:message=>{ctx.error=message;},setBusy(){},setNotice(){},setSelectedId(){},setForm(){},setExtraItems(){},setFormOpen(){},resetFilters(){},collection:()=>({}),doc:()=>({id:'id-'+writes.length+'-'+Math.random()}),writeBatch:()=>({set:(ref,data)=>writes.push({ref,data}),commit:async()=>{commits++;}}),...overrides};
  return {ctx,writes,commits:()=>commits,call:vm.runInNewContext('('+create+')',ctx)};
 }
@@ -24,4 +25,11 @@ test('comprador autorizado pode iniciar por conta própria sem duplicar particip
 });
 test('solicitante não atribui outra pessoa nem comprador fora da política',async()=>{
  for(const overrides of [{manager:false,user:{id:'requester'}},{buyerOptions:[]}]){const run=context(overrides);await run.call({preventDefault(){}});assert.equal(run.commits(),0);assert.match(run.ctx.error,/autorizado/);}
+});
+
+test('solicitante encaminha todos os itens ao comprador padrão da empresa', async () => {
+  const run = context({ manager:false, user:{id:'requester'}, policy:{defaultBuyerId:'buyer',buyerIds:['buyer']} });
+  await run.call({preventDefault(){}});
+  assert.equal(run.commits(), 1);
+  assert.ok(run.writes.every(({data}) => data.buyerId === 'buyer' && data.participantIds.includes('requester')));
 });

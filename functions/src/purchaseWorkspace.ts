@@ -12,6 +12,8 @@ import {
 } from "./procurement.mjs";
 
 import { catalogProductFields } from "./purchaseProductCatalog.mjs";
+import { resolvePurchaseApprover } from "./purchaseQuoteApproval";
+import { purchaseApprovalFields } from "./purchaseRouting.mjs";
 
 type Data = Record<string, any>;
 const id = (value: unknown) => {
@@ -223,6 +225,52 @@ export async function purchaseWorkspaceAction(
       });
       return { confirmed: true };
     }
+    if (action === "sendQuoteForApproval") {
+      const docs = current.bundleId
+        ? (await tx.get(base.collection("purchaseRequests").where("bundleId", "==", current.bundleId))).docs
+        : [p];
+      const submitted = Array.isArray(data.items) && data.items.length <= 10 ? data.items : [];
+      const lines = new Map<string, Data>(submitted.map((item: Data) => [id(item?.id), item]));
+      if (docs.length !== lines.size || submitted.length !== docs.length || docs.length > 10 ||
+          docs.some(doc => !lines.has(doc.id) || doc.data()?.requesterId !== current.requesterId ||
+            (doc.data()?.bundleSize && doc.data()?.bundleSize !== docs.length)))
+        throw new HttpsError("failed-precondition", "Reabra a solicitação para carregar todos os itens.");
+      const changes = docs.map(doc => {
+        const record = doc.data()!;
+        const line = lines.get(doc.id)!;
+        if (record.updatedAt !== line.updatedAt)
+          throw new HttpsError("failed-precondition", "A solicitação mudou. Reabra a cotação.");
+        if (doc.id === p.id || line.included || record.quotedPrice > 0) {
+          if (!(record.status === "rejected" && !current.bundleId && !record.approvedAt &&
+              record.buyerId === uid && (!policy.buyerIds?.length || policy.buyerIds.includes(uid)))) buyer(doc, uid, policy);
+        }
+        if (record.procurement) return { doc, record, terms: null, included: true };
+        const supplier = line.included ? clean(line.supplier) : "";
+        const quotedPrice = line.included ? Number(line.quotedPrice) : 0;
+        const expectedDate = line.included ? clean(line.expectedDate, 10) : "";
+        if (line.included && (!supplier || !Number.isFinite(quotedPrice) || quotedPrice <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(expectedDate)))
+          throw new HttpsError("invalid-argument", "Informe fornecedor, valor unitário e previsão dos itens cotados.");
+        return { doc, record, terms: { supplier, quotedPrice, expectedDate }, included: Boolean(line.included) };
+      });
+      const quoted = changes.filter(line => line.included);
+      const total = Math.round(quoted.reduce((sum, { record, terms }) => sum + Number(terms?.quotedPrice ?? record.quotedPrice) * record.quantity, 0) * 100) / 100;
+      const approver = await resolvePurchaseApprover(tx, base, policy, total, quoted.map(line => line.record));
+      if (!approver)
+        throw new HttpsError("failed-precondition", total > 0 ? "Revise a alçada nas configurações de compras. Nenhum aprovador atende à regra para esta cotação." : "Informe pelo menos um item cotado.");
+      if (!(await tx.get(base.collection("users").doc(approver))).exists)
+        throw new HttpsError("failed-precondition", "O aprovador configurado não faz mais parte da empresa.");
+      for (const { doc, record, terms, included } of changes) {
+        if (!included && !(record.quotedPrice > 0)) continue;
+        const status = included ? "quotation" : "requested";
+        const updatedAt = tick(record);
+        tx.update(doc.ref, {
+          ...terms, ...purchaseApprovalFields(record, included ? approver : ""),
+          quoteTotal: included ? total : 0, status, updatedAt, updatedBy: uid,
+          history: event({ ...record, status }, uid, included ? "Cotação enviada para aprovação." : "Item retirado da cotação.", updatedAt),
+        });
+      }
+      return { approverId: approver };
+    }
     if (action === "revokeInvitation") {
       buyer(p, uid, policy);
       const hash = id(data.invitationId);
@@ -335,6 +383,8 @@ export async function purchaseWorkspaceAction(
       if (
         group?.docs.some(
           (d) =>
+            d.data().requesterId !== current.requesterId ||
+            (d.data().bundleSize && d.data().bundleSize !== group.size) ||
             d.data().approvedAt ||
             !["requested", "quotation"].includes(d.data().status),
         )
@@ -352,6 +402,12 @@ export async function purchaseWorkspaceAction(
             0,
           )
         : cost;
+      const roundedTotal = Math.round(total * 100) / 100;
+      const approvalItems = [current, ...(group?.docs || [])
+        .filter(other => other.id !== p.id && Number(other.data().quotedPrice) > 0).map(other => other.data())];
+      const approver = await resolvePurchaseApprover(tx, base, policy, roundedTotal, approvalItems);
+      if (!approver || !(await tx.get(base.collection("users").doc(approver))).exists)
+        throw new HttpsError("failed-precondition", "Revise a alçada nas configurações de compras. Nenhum aprovador atende à regra para esta cotação.");
       const now = tick(current);
       tx.update(ref, {
         orderNumber:
@@ -360,7 +416,8 @@ export async function purchaseWorkspaceAction(
         supplier: offerDoc.data()!.supplier,
         quotedPrice: cost / current.quantity,
         expectedDate: selected.expectedDate,
-        quoteTotal: Math.round(total * 100) / 100,
+        ...purchaseApprovalFields(current, approver),
+        quoteTotal: roundedTotal,
         status: "quotation",
         procurement,
         updatedAt: now,
@@ -378,7 +435,8 @@ export async function purchaseWorkspaceAction(
       for (const other of group?.docs || [])
         if (other.id !== p.id && Number(other.data().quotedPrice) > 0)
           tx.update(other.ref, {
-            quoteTotal: Math.round(total * 100) / 100,
+            ...purchaseApprovalFields(other.data(), approver),
+            quoteTotal: roundedTotal,
             updatedAt: tick(other.data()),
             updatedBy: uid,
           });

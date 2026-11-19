@@ -128,3 +128,27 @@ html.comunica-dark .pm{--pm-surface:#111c2e;--pm-raised:#18283c;--pm-border:#344
 @media(max-width:700px){.pm-product-layout,.pm-supplier-checks{grid-template-columns:1fr}.pm-product-form{padding:14px}.pm-products>summary span{display:block;margin-left:0}.pm-order-export .pm-supplier-actions{flex-wrap:wrap}.pm-supplier-actions button{min-height:44px}}
 .pm-modal[data-attempted=true] :is(input,textarea):invalid{border-color:#d66b56;box-shadow:0 0 0 2px #d66b5622}.pm-modal[data-attempted=true] .purchase-select:has(input:invalid) .purchase-select-trigger{border-color:#d66b56!important;box-shadow:0 0 0 2px #d66b5622}
 .pm-product-import{margin:14px 0;padding:14px;border:1px solid var(--pm-border,#d8e4e8);border-radius:12px;background:var(--pm-raised,#f6f9fa)}.pm-product-import p{font-size:13px;line-height:1.5}.pm-product-suppliers{border:1px solid var(--pm-border,#d8e4e8);border-radius:10px;padding:12px;min-width:0}.pm-product-suppliers legend{font-size:13px;font-weight:700}.pm-product-suppliers>div{display:grid;gap:8px;max-height:220px;overflow:auto;margin-top:10px}.pm-product-suppliers>div>label{display:flex;gap:10px;align-items:center;font-size:13px;min-height:38px}.pm-product-suppliers input[type=checkbox]{width:18px;min-height:18px;accent-color:#176578}.pm-product-form details>label{display:block;margin:10px 0}.pm-product-form summary{cursor:pointer;font-size:13px}
+
+.pm-request-buyer {
+  padding: 12px;
+  border: 1px solid var(--pm-border, #d8e4e8);
+  border-radius: 10px;
+  background: var(--pm-raised, #f3f8f9);
+}
+.pm-request-buyer > div { display: grid; gap: 4px; }
+.pm-request-buyer > div span { color: var(--pm-muted, #526c77); font-size: 12px; }
+.pm-request-buyer strong { overflow-wrap: anywhere; }
+.pm-detail-head .pm-duplicate { gap: 8px; }
+.pm-manual-quote > button {
+  margin-top: 14px;
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid #176578;
+  border-radius: 9px;
+  background: #176578;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pm :is(.pm-manual-quote, .pm-next-step) button:disabled { opacity: .55; cursor: not-allowed; }
+.pm-modal > footer { position: sticky; bottom: 0; z-index: 1; background: var(--pm-surface, #fff); }

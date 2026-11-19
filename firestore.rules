@@ -22,6 +22,22 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get(field, []).size() == 0
         || uid in get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get(field, []);
     }
+    function configuredPurchaseBuyer(app, company) {
+      let path = /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval;
+      let policy = exists(path) ? get(path).data : {};
+      let buyers = policy.get('buyerIds', []);
+      return policy.get('defaultBuyerId', '') != '' ? policy.defaultBuyerId : (buyers.size() == 1 ? buyers[0] : '');
+    }
+    function validPurchaseOpeningBuyer(app, company, data) {
+      let uid = request.auth.uid;
+      let buyer = data.buyerId;
+      let participants = data.participantIds;
+      return (buyer == uid ? participants == [uid]
+          : (participants == [uid, buyer] || participants == [buyer, uid]))
+        && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(buyer))
+        && purchaseRoleAllowed(app, company, 'buyerIds', buyer)
+        && (buyer == uid || buyer == configuredPurchaseBuyer(app, company) || manages(app, company));
+    }
     function validNotificationPreferences(data) {
       let preferences = data.get('notificationPreferences', {});
       return preferences is map
@@ -189,16 +205,16 @@ service cloud.firestore {
           && data.get('financeResolutionBy','') == data.receiverId));
     }
     function purchaseAuthority(app, company, data) {
-      return (!exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
-          || get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('preventSelfApproval',false) != true
-          || (data.approverId != data.requesterId && data.approverId != data.buyerId))
-        && (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval)
-        && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.get('enabled', false) == true
-        ? data.approverId == (data.quotedPrice * data.quantity <= get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.threshold
-          ? get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.lowerApproverId
-          : get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval).data.upperApproverId)
-        : (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId))
-          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(data.approverId)).data.get('isAdmin', false) == true));
+      let path = /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval;
+      let policy = exists(path) ? get(path).data : {};
+      let separate = policy.get('preventSelfApproval', false);
+      return (!separate || (data.approverId != data.requesterId && data.approverId != data.buyerId))
+        && (policy.get('enabled', false)
+          ? data.approverId == (math.round(data.quotedPrice * data.quantity * 100) / 100.0 <= policy.threshold
+            ? policy.lowerApproverId : policy.upperApproverId)
+          : ('requireRequesterReview' in policy && !separate
+            ? data.approverId == (policy.requireRequesterReview ? data.requesterId : data.buyerId)
+            : admin(app, company)));
     }
     function purchaseAction(app, company, before, after) {
       let changed = after.diff(before).affectedKeys();
@@ -551,11 +567,16 @@ service cloud.firestore {
         allow get: if access(company);
         allow list: if false;
         allow create, update: if manages(app, company)
-          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','requesterIds','buyerIds','updatedAt','updatedBy'])
+          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','requireRequesterReview','defaultBuyerId','requesterIds','buyerIds','updatedAt','updatedBy'])
           && request.resource.data.keys().hasAll(['enabled','threshold','lowerApproverId','upperApproverId','updatedAt','updatedBy'])
           && request.resource.data.enabled is bool
           && request.resource.data.threshold is number && request.resource.data.threshold > 0
           && request.resource.data.get('preventSelfApproval',false) is bool
+          && request.resource.data.get('requireRequesterReview',true) is bool
+          && request.resource.data.get('defaultBuyerId','') is string
+          && (request.resource.data.get('defaultBuyerId','') == ''
+            || (exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.defaultBuyerId))
+              && (request.resource.data.get('buyerIds',[]).size() == 0 || request.resource.data.defaultBuyerId in request.resource.data.buyerIds)))
           && request.resource.data.lowerApproverId is string && request.resource.data.upperApproverId is string
           && request.resource.data.get('requesterIds',[]) is list && request.resource.data.get('requesterIds',[]).size() <= 100
           && request.resource.data.get('buyerIds',[]) is list && request.resource.data.get('buyerIds',[]).size() <= 100
@@ -607,12 +628,7 @@ service cloud.firestore {
           && request.resource.data.workflowVersion == 2
           && (request.resource.data.buyerId == ''
             ? request.resource.data.participantIds == [request.auth.uid]
-            : ((manages(app, company) || request.resource.data.buyerId == request.auth.uid)
-              && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.buyerId))
-              && purchaseRoleAllowed(app, company, 'buyerIds', request.resource.data.buyerId)
-              && request.resource.data.participantIds.size() == (request.resource.data.buyerId == request.auth.uid ? 1 : 2)
-              && request.resource.data.participantIds.hasOnly([request.auth.uid, request.resource.data.buyerId])
-              && request.resource.data.participantIds.hasAll([request.auth.uid, request.resource.data.buyerId])))
+            : (validPurchaseOpeningBuyer(app, company, request.resource.data)))
           && request.resource.data.approverId == '' && request.resource.data.receiverId == ''
           && request.resource.data.recipientId == '' && request.resource.data.financeId == ''
           && request.resource.data.get('financeIssue','') == '' && request.resource.data.get('financeResolution','') == ''

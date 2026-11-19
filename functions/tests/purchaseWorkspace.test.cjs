@@ -50,10 +50,23 @@ test("fluxo: convites isolados, propostas concorrentes, escolha congelada e conf
     .set({ enabled: true });
   await base.collection("users").doc("buyer").set({ name: "Comprador" });
   await base.collection("users").doc("finance").set({ name: "Financeiro" });
+  await base.collection("users").doc("requester").set({ name: "Solicitante" });
   for (const id of ["supplier-a", "supplier-b"])
     await base.collection("purchaseSuppliers").doc(id).set({ name: id });
   await seed("r1");
   await seed("r2");
+  const manualQuote = {requestId:"r2", items:[{
+    id:"r2", updatedAt:1, included:true, supplier:"Fornecedor local", quotedPrice:15, expectedDate:"2026-12-01",
+  }]};
+  await assert.rejects(call("sendQuoteForApproval", manualQuote, {uid:"requester", token:{companyId:company}}),
+    /Somente o comprador/);
+  assert.deepEqual(await call("sendQuoteForApproval", manualQuote), {approverId:"requester"});
+  const sent = (await request("r2").get()).data();
+  assert.equal(sent.quoteTotal, 30);
+  assert.equal(sent.status, "quotation");
+  assert.ok(sent.participantIds.includes("requester"));
+  await assert.rejects(call("sendQuoteForApproval", manualQuote), /solicitação mudou/);
+
   await assert.rejects(
     call(
       "saveOffer",
@@ -125,6 +138,8 @@ test("fluxo: convites isolados, propostas concorrentes, escolha congelada e conf
   });
   let p = (await request("r1").get()).data();
   assert.equal(p.supplier, "supplier-a");
+  assert.equal(p.approverId, "requester");
+  assert.ok(p.participantIds.includes("requester"));
   assert.equal(p.quotedPrice * 2, 22);
   assert.equal(p.procurement.offer.paymentPlan.installments[0].amount, 22);
   assert.match(p.orderNumber, /^PC-/);

@@ -61,7 +61,15 @@ export default function PurchaseSelect({ label, value = '', options = [], onChan
       window.visualViewport?.removeEventListener('resize', resize);
     };
   }, [open]);
-  useEffect(() => { activeOption.current?.scrollIntoView({ block: 'nearest' }); }, [active, open, search]);
+  useEffect(() => {
+    const option = activeOption.current;
+    const list = option?.parentElement;
+    if (!list) return;
+    const bounds = list.getBoundingClientRect();
+    const row = option.getBoundingClientRect();
+    if (row.top < bounds.top) list.scrollTop -= bounds.top - row.top;
+    if (row.bottom > bounds.bottom) list.scrollTop += row.bottom - bounds.bottom;
+  }, [active, open, search]);
 
   function navigate(event) {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
