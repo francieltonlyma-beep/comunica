@@ -10,7 +10,7 @@ import ScheduleShiftEditor from './ScheduleShiftEditor.jsx';
 import { normalizeScheduleShifts, validateScheduleShifts } from './scheduleShifts.js';
 import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
 import { scopedScheduleSource } from './scheduleScope.js';
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useEffectEvent, useRef } from 'react';
 const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAudit.jsx'));
 import { useCompanyEmployees } from './useCompanyEmployees.js';
 import { useDialogFocus } from './useDialogFocus.js';
@@ -78,7 +78,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, FieldPath, serverTimestamp, runTransaction, getDocsFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove, FieldPath, serverTimestamp, runTransaction, getDocsFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -5645,6 +5645,9 @@ try {
   const isThreadPinned = (threadId) => hasThreadPreference(threadId, 'pinnedBy');
   const isThreadMuted = (threadId) => hasThreadPreference(threadId, 'mutedBy');
 
+  const unreadThreadCount = [...new Set(unreadMessages.map(message => message.threadId))]
+    .filter(threadId => !isThreadArchived(threadId)).length;
+
   const companyServiceCatalog = mergeServiceCatalogSettings(serviceCatalogSettings);
   const activeServiceCatalog = companyServiceCatalog.filter(category => category.active);
   const getCompanyServiceCategory = categoryId => companyServiceCatalog.find(category => category.id === categoryId) || getServiceCategory(categoryId);
@@ -6315,7 +6318,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     triggerNotification('Modelo de checklist criado.');
   };
 
-  const openThread = async (threadId, targetMessageId = '') => {
+  const openThread = (threadId, targetMessageId = '') => {
     setActiveThreadId(threadId);
     setActivityMessageTargetId(targetMessageId);
     setThreadHeaderExpanded(false);
@@ -6333,18 +6336,39 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setShowAddParticipant(false);
     setShowThreadInfoPanel(false);
     setThreadInfoTab('summary');
-
-    const unreadInThread = normMessages.filter(m => m.threadId === threadId && !m.readBy.includes(currentUser.id));
-
-    if (unreadInThread.length > 0) {
-      await saveRelatedRecords(unreadInThread.map(message => ({
-        collection: 'messages', id: message.id, operation: 'update',
-        data: message.isLegacy
-          ? { read: true }
-          : { readBy: [...new Set([...(message.readBy || []), currentUser.id])] },
-      })), 'A conversa abriu, mas não foi possível confirmar a leitura na nuvem. Tente novamente.');
-    }
   };
+
+  const readingThreadId = (activeTab === 'inbox' || showMessagesModal) && !isComposingMsg
+    ? activeThreadId
+    : null;
+  const openThreadUnreadIds = JSON.stringify(unreadMessages
+    .filter(message => message.threadId === readingThreadId)
+    .map(message => message.id).sort());
+  const attemptedReadIds = useRef(new Set());
+  const readerId = currentUser?.id;
+  const readCompanyId = activeCompany?.id;
+
+  const confirmOpenThreadReads = useEffectEvent(() => {
+    const unread = unreadMessages.filter(message => message.threadId === readingThreadId
+      && !attemptedReadIds.current.has(message.id));
+    unread.forEach(message => attemptedReadIds.current.add(message.id));
+    for (let index = 0; index < unread.length; index += 450) {
+      void saveRelatedRecords(unread.slice(index, index + 450).map(message => ({
+        collection: 'messages', id: message.id, operation: 'update',
+        data: message.isLegacy ? { read: true } : { readBy: arrayUnion(readerId) },
+      })), 'A conversa abriu, mas não foi possível confirmar a leitura na nuvem. Reabra a conversa para tentar novamente.');
+    }
+  });
+
+  useEffect(() => {
+    attemptedReadIds.current.clear();
+  }, [readerId, readCompanyId, readingThreadId]);
+
+  useEffect(() => {
+    if (readerId && readCompanyId && dbUser && readingThreadId && openThreadUnreadIds !== '[]') {
+      confirmOpenThreadReads();
+    }
+  }, [readerId, readCompanyId, dbUser, readingThreadId, openThreadUnreadIds]);
 
   const openActivityConversation = (message) => {
     setMessageFocusFilter('activities');
@@ -6692,11 +6716,11 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         const messages = selectedMessages.filter(message => message.threadId === threadId);
         if (!messages.length) return [];
         const latest = messages.reduce((current, message) => getMessageTimestamp(message) > getMessageTimestamp(current) ? message : current, messages[0]);
-        return [{ collection: 'messages', id: latest.id, operation: 'update', data: latest.isLegacy ? { read: false } : { readBy: (latest.readBy || []).filter(id => id !== currentUser.id) } }];
+        return [{ collection: 'messages', id: latest.id, operation: 'update', data: latest.isLegacy ? { read: false } : { readBy: arrayRemove(currentUser.id) } }];
       });
     } else {
       records = selectedMessages.map(message => {
-        if (action === 'read') return { collection: 'messages', id: message.id, operation: 'update', data: message.isLegacy ? { read: true } : { readBy: [...new Set([...(message.readBy || []), currentUser.id])] } };
+        if (action === 'read') return { collection: 'messages', id: message.id, operation: 'update', data: message.isLegacy ? { read: true } : { readBy: arrayUnion(currentUser.id) } };
         const field = action === 'pin' ? 'pinnedBy' : action === 'mute' ? 'mutedBy' : 'archivedBy';
         const restore = action === 'restore';
         return { collection: 'messages', id: message.id, operation: 'update', data: { [field]: restore ? (message[field] || []).filter(id => id !== currentUser.id) : [...new Set([...(message[field] || []), currentUser.id])] } };
@@ -7507,7 +7531,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
           ? 'Gestão operacional'
           : 'Meu dia no Comunica';
   const dashboardAttentionItems = [
-    unreadMessages.length > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadMessages.length} mensagem(ns) aguardando leitura`, tone: 'blue', icon: MessageSquare, action: () => { setInboxStatusFilter('unread'); setActiveTab('inbox'); } } : null,
+    unreadThreadCount > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadThreadCount} conversa(s) com mensagens não lidas`, tone: 'blue', icon: MessageSquare, action: () => { setInboxStatusFilter('unread'); setActiveTab('inbox'); } } : null,
     pendingDocumentReads > 0 ? { id: 'document-reads', label: 'Leituras obrigatórias', detail: `${pendingDocumentReads} documento(s) aguardando confirmação`, tone: 'amber', icon: FileText, action: () => { setDocumentReadingFilter('Pendentes'); setActiveTab('documents'); } } : null,
     pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: `${pendingPollResponses} votação(ões) disponíveis`, tone: 'cyan', icon: Activity, action: () => { setPollViewFilter('Ativas'); setActiveTab('polls'); } } : null,
     dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setActiveTab('inbox') } : null,
@@ -8283,18 +8307,17 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                     });
 
                     const inboxTotals = threadList.reduce((totals, thread) => {
-                      if (thread.unread > 0) totals.unread += 1;
                       if (thread.mine) totals.mine += 1;
                       if (thread.metadata.completedAt) totals.completed += 1;
                       else totals.open += 1;
                       if (!thread.metadata.completedAt && /atras/i.test(thread.deadline.label || '')) totals.overdue += 1;
                       return totals;
-                    }, { unread: 0, mine: 0, open: 0, overdue: 0, completed: 0 });
+                    }, { mine: 0, open: 0, overdue: 0, completed: 0 });
 
                     const summaryBar = !showArchivedThreads && (
                       <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-5" aria-label="Resumo da caixa de entrada">
                         {[
-                          { id: 'unread', label: 'Não lidas', value: inboxTotals.unread, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+                          { id: 'unread', label: 'Não lidas', value: unreadThreadCount, icon: Bell, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
                           { id: 'mine', label: 'Minhas demandas', value: inboxTotals.mine, icon: UserCheck, tone: 'text-cyan-700 bg-cyan-50 border-cyan-100' },
                           { id: 'open', label: 'Em andamento', value: inboxTotals.open, icon: MessageSquare, tone: 'text-violet-700 bg-violet-50 border-violet-100' },
                           { id: 'overdue', label: 'Em atraso', value: inboxTotals.overdue, icon: Clock, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
@@ -8375,7 +8398,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
   );
 
   const navigationSections = buildManagementNavigation({
-    unreadCount: unreadMessages.length,
+    unreadCount: unreadThreadCount,
     unreadUpdates: platformUpdates.filter(item => !platformUpdateReadIds.has(item.id)).length,
     pendingPollResponses,
     activeServices: serviceMetrics.active + serviceActivityMetrics.active,
@@ -8465,9 +8488,9 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                   title="Abrir Caixa de entrada" aria-label="Abrir Caixa de entrada"
                 >
                   <MessageSquare className="h-4.5 w-4.5" />
-                  {unreadMessages.length > 0 && (
+                  {unreadThreadCount > 0 && (
                     <span className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[8px] font-bold text-white shadow-sm ring-2 ring-white">
-                      {unreadMessages.length > 9 ? '9+' : unreadMessages.length}
+                      {unreadThreadCount > 9 ? '9+' : unreadThreadCount}
                     </span>
                   )}
                 </button>
@@ -8816,7 +8839,7 @@ const canManageWhistleblowing = Boolean(currentUser?.isAdmin || (isCareerManager
                 <div className="pointer-events-none absolute -bottom-24 left-1/4 h-56 w-56 rounded-full bg-blue-400/15 blur-3xl" />
                 <div className="relative grid gap-6 lg:grid-cols-[1.35fr_1fr] lg:items-end">
                   <div><span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[.16em] text-cyan-100"><Layers className="h-3.5 w-3.5" /> Central de Gestão</span><h2 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Olá, {String(currentUser?.name || 'colaborador').split(' ')[0]}.</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-blue-100/80">{dashboardRoleLabel} · acompanhe o que exige atenção e acesse rapidamente suas principais atividades em {activeCompany?.name || 'sua empresa'}.</p><button type="button" onClick={() => setActiveTutorial('dashboard')} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-[10px] font-bold text-white hover:bg-white/15"><BookOpen className="h-3.5 w-3.5" /> Entenda seu painel</button></div>
-                  <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => document.querySelector('[data-tour=\"dashboard-priorities\"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Alertas</span><strong className="mt-1 block text-2xl font-black">{dashboardAttentionItems.length}</strong></button><button type="button" onClick={() => { setInboxStatusFilter('unread'); setActiveTab('inbox'); }} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Não lidas</span><strong className="mt-1 block text-2xl font-black">{unreadMessages.length}</strong></button><button type="button" onClick={() => setActiveTab('scale')} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Próximos eventos</span><strong className="mt-1 block text-2xl font-black">{dashboardUpcomingEvents.length}</strong></button></div>
+                  <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => document.querySelector('[data-tour=\"dashboard-priorities\"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Alertas</span><strong className="mt-1 block text-2xl font-black">{dashboardAttentionItems.length}</strong></button><button type="button" onClick={() => { setInboxStatusFilter('unread'); setActiveTab('inbox'); }} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Não lidas</span><strong className="mt-1 block text-2xl font-black">{unreadThreadCount}</strong></button><button type="button" onClick={() => setActiveTab('scale')} className="rounded-2xl border border-white/10 bg-white/10 p-3 text-left backdrop-blur transition hover:bg-white/15"><span className="text-[8px] font-black uppercase tracking-wide text-blue-200">Próximos eventos</span><strong className="mt-1 block text-2xl font-black">{dashboardUpcomingEvents.length}</strong></button></div>
                 </div>
               </section>
 
