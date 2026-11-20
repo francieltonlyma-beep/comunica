@@ -287,3 +287,46 @@ test('importação de produtos preserva marca e vínculos, valida fornecedores d
  await assert.rejects(action('saveProduct',{name:'X',suggestedSupplierIds:['foreign-supplier']}),/empresa/);
  await assert.rejects(action('importProducts',{products:[{code:'1',name:'A'},{code:'1',name:'B'}]}),/repetidos/);
 });
+
+test("atribuição usa a conta autenticada, protege a etapa atual e impede dois responsáveis", async () => {
+  const companyId = "stage-team-fixture";
+  const companyRef = db.doc(`artifacts/comunica-salvador/public/data/companies/${companyId}`);
+  const config = companyRef.collection("settings");
+  const requests = companyRef.collection("purchaseRequests");
+  await companyRef.set({name:"Empresa de teste"});
+  await config.doc("integra-access").set({enabled:true});
+  await config.doc("purchase-approval").set({
+    receiverIds:["a","b"], recipientIds:["a"], financeIds:["b"], buyerIds:["a","b"],
+  });
+  for (const uid of ["a","b","unlisted"]) await companyRef.collection("users").doc(uid).set({name:uid});
+  const record = {workflowVersion:2, status:"in_transit", updatedAt:1, requesterId:"requester", buyerId:"buyer", approverId:"approver", receiverId:"", recipientId:"", financeId:""};
+  await requests.doc("transit").set(record);
+  const claim = (uid, requestId, expectedStage, expectedUpdatedAt = 1) => run(
+    db, {action:"claimStage",companyId,requestId,expectedStage,expectedUpdatedAt}, {uid,token:{companyId}},
+  );
+  await assert.rejects(claim("unlisted","transit","in_transit"),{code:"permission-denied"});
+  await assert.rejects(claim("a","transit","stored"),{code:"failed-precondition"});
+  const contenders = ["a","b"];
+  const results = await Promise.allSettled(contenders.map(uid => claim(uid,"transit","in_transit")));
+  const winner = contenders[results.findIndex(result => result.status === "fulfilled")];
+  assert.equal(results.filter(result => result.status === "fulfilled").length,1);
+  const saved = (await requests.doc("transit").get()).data();
+  assert.equal(saved.receiverId,winner);
+  assert.equal(saved.status,"in_transit");
+  assert.equal(saved.history.at(-1).by,winner);
+  assert.equal(saved.history.at(-1).byName,winner);
+  assert.deepEqual(saved.participantIds,["requester","buyer","approver",winner]);
+
+  for (const [status, uid, role] of [["stored","a","recipientId"],["delivered","b","financeId"]]) {
+    await requests.doc(status).set({...record,status,receiverId:winner});
+    assert.deepEqual(await claim(uid,status,status),{role});
+    assert.equal((await requests.doc(status).get()).get(role),uid);
+    assert.equal((await requests.doc(status).get()).get("receiverId"),winner);
+  }
+
+  for (const key of ["one","two"]) {
+    await requests.doc(key).set({...record,status:"requested",buyerId:"",approverId:"",bundleId:"one",bundleSize:2});
+  }
+  assert.deepEqual(await claim("a","one","requested"),{role:"buyerId"});
+  assert.deepEqual((await requests.where("bundleId","==","one").get()).docs.map(doc => doc.get("buyerId")),["a","a"]);
+});

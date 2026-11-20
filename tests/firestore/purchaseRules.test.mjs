@@ -1,5 +1,5 @@
 import {initializeTestEnvironment, assertSucceeds, assertFails} from '@firebase/rules-unit-testing';
-import {doc,setDoc, collection, addDoc, writeBatch} from 'firebase/firestore';
+import {doc,setDoc, collection, addDoc, writeBatch, getDocs, query, where} from 'firebase/firestore';
 import {readFileSync} from 'node:fs';
 import {purchaseFields, purchaseTransition, purchaseTransitionPatch, purchaseDataPatch} from '../../src/purchaseFlow.js';
 const env = await initializeTestEnvironment({projectId:'demo-comunica',firestore:{host:'127.0.0.1',port:8088,rules:readFileSync(new URL('../../firestore.rules', import.meta.url),'utf8')}});
@@ -284,4 +284,33 @@ for (const bundleIndex of [1,2]) {
 await assertSucceeds(assignedBatch.commit());
 await assertFails(addDoc(collection(db,base+'/purchaseRequests'),{...data,buyerId:'approver',participantIds:['employee','approver']}));
 console.log('PASS: comprador na abertura, sem atribuição indevida, acesso cruzado ou autoaprovação');
+const queueConfig = doc(managerDb,base+'/settings/purchase-approval');
+await assertSucceeds(updateDoc(queueConfig,{
+ receiverIds:['receiver'], recipientIds:['recipient'], financeIds:['finance'], updatedAt:now+2200,
+}));
+const queued = [
+ ['requested','buyerId','finance','recipient'],
+ ['in_transit','receiverId','receiver','finance'],
+ ['stored','recipientId','recipient','receiver'],
+ ['delivered','financeId','finance','recipient'],
+];
+await env.withSecurityRulesDisabled(async ctx => {
+ for (const [status,role] of queued) {
+  const target = doc(ctx.firestore(),base+'/purchaseRequests/queue-'+status);
+  await setDoc(target,{...adminData,status,[role]:'',updatedAt:now+2200});
+  await setDoc(doc(ctx.firestore(),target.path+'/files/nf'),{name:'Nota fiscal'});
+ }
+});
+for (const [status,role,authorized,other] of queued) {
+ const actorDb = uid => env.authenticatedContext(uid,{companyId:'company-a'}).firestore();
+ const requests = uid => collection(actorDb(uid),base+'/purchaseRequests');
+ const pending = uid => query(requests(uid),where('workflowVersion','==',2),where('status','==',status),where(role,'==',''));
+ const results = await assertSucceeds(getDocs(pending(authorized)));
+ if (!results.docs.some(item => item.id === 'queue-'+status)) throw new Error('Etapa disponível não encontrada.');
+ await assertFails(getDocs(pending(other)));
+ await assertFails(getDocs(requests(authorized)));
+ await assertFails(getDoc(doc(actorDb(authorized),base+'/purchaseRequests/queue-'+status+'/files/nf')));
+ await assertFails(updateDoc(doc(requests(authorized),'queue-'+status),{[role]:authorized,participantIds:['admin',authorized]}));
+}
+console.log('PASS: equipes consultam apenas as etapas vagas e atribuição direta permanece bloqueada');
 await env.cleanup();

@@ -13,7 +13,7 @@ import {
 
 import { catalogProductFields } from "./purchaseProductCatalog.mjs";
 import { resolvePurchaseApprover } from "./purchaseQuoteApproval";
-import { purchaseApprovalFields } from "./purchaseRouting.mjs";
+import { availablePurchaseAssignment, purchaseApprovalFields } from "./purchaseRouting.mjs";
 
 type Data = Record<string, any>;
 const id = (value: unknown) => {
@@ -29,8 +29,8 @@ const clean = (v: unknown, max = 160) =>
 const editable = (p: Data) =>
   !p.approvedAt && ["requested", "quotation"].includes(p.status);
 const tick = (p: Data) => Math.max(Date.now(), Number(p.updatedAt || 0) + 1);
-const event = (p: Data, uid: string, detail: string, at: number) =>
-  [...(p.history || []), { stage: p.status, by: uid, at, detail }].slice(-50);
+const event = (p: Data, uid: string, detail: string, at: number, byName?: string) =>
+  [...(p.history || []), { stage: p.status, by: uid, at, detail, ...(byName ? { byName } : {}) }].slice(-50);
 const digest = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 
@@ -180,6 +180,37 @@ export async function purchaseWorkspaceAction(
     if (!p.exists)
       throw new HttpsError("not-found", "Solicitação não encontrada.");
     const current = p.data()!;
+    if (action === "claimStage") {
+      const assignment = availablePurchaseAssignment(policy, current);
+      if (!assignment?.candidates.includes(uid))
+        throw new HttpsError("permission-denied", "A etapa já tem responsável ou não está disponível para você.");
+      if (current.status !== data.expectedStage || current.updatedAt !== data.expectedUpdatedAt)
+        throw new HttpsError("failed-precondition", "A compra mudou. Reabra a solicitação para conferir a etapa.");
+
+      const items = assignment.role === "buyerId" && current.bundleId
+        ? (await tx.get(base.collection("purchaseRequests").where("bundleId", "==", current.bundleId))).docs
+        : [p];
+      if (assignment.role === "buyerId" && current.bundleId && (
+        items.length !== current.bundleSize || items.some(item => {
+          const record = item.data()!;
+          return record.workflowVersion !== 2 || record.status !== "requested" || (record.buyerId && record.buyerId !== uid);
+        })
+      )) throw new HttpsError("failed-precondition", "A cotação tem itens em outra etapa ou com outro comprador. Confira os responsáveis com a administração.");
+
+      for (const item of items) {
+        const record = item.data()!;
+        if (record[assignment.role] === uid) continue;
+        const updatedAt = tick(record);
+        tx.update(item.ref, {
+          [assignment.role]: uid,
+          ...purchaseApprovalFields({ ...record, [assignment.role]: uid }, record.approverId || ""),
+          updatedAt,
+          updatedBy: uid,
+          history: event(record, uid, `Etapa assumida: ${assignment.label}.`, updatedAt, clean(profile.name)),
+        });
+      }
+      return { role: assignment.role };
+    }
     if (action === "confirmPayment") {
       if (current.financeId !== uid || current.status !== "delivered")
         throw new HttpsError(
