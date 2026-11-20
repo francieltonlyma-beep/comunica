@@ -18,7 +18,7 @@ import { loginErrorMessage } from './loginError';
 import { isLoginCompanyIdentified } from './loginCompany';
 import { loginDirectoryUsers, filterLoginEmployees, normalizeLoginName } from './loginDirectory.js';
 import { getPendingInstallPrompt, takeInstallPrompt, subscribeInstallPrompt } from './installPrompt.js';
-import ScheduleAiPanel from './ScheduleAiPanel.jsx';
+const ScheduleAiPanel = lazy(() => import('./ScheduleAiPanel.jsx'));
 import { commitAtomicRecords } from './atomicRecords';
 import { eventAnnouncementTitle, eventAnnouncementContent, linkedEventAnnouncementIds } from './calendarEventLinks';
 import { PLATFORM_SUPPORT, withPlatformSupport } from './platformSupportContact';
@@ -63,9 +63,9 @@ const IntegraAccessControl = lazy(() => import('./IntegraAccessControl.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
 import { activityDependencyCreatesCycle, activityProductivityMetrics, activityRecurrenceLabel, activityUpdateDescription, createActivityHistoryEntry, createMessageActivity, findMentionedParticipantIds, isMessageActivityOverdue, messageActivityProgress, messageActivitySchedule, messageReplySnapshot, normalizeActivityTemplate, normalizeMessageActivity, toggleMessageUser, unresolvedActivityDependencies } from './messageFeatures';
 import { ACTIVITY_KANBAN_COLUMNS, activityCalendarMonth, currentActivityCalendarMonth, groupActivityRowsByStatus, shiftActivityCalendarMonth } from './activityViews';
-import PlatformRecordMaintenance from './PlatformRecordMaintenance';
+const PlatformRecordMaintenance = lazy(() => import('./PlatformRecordMaintenance.jsx'));
 import { buildSupportTickets, filterSupportTickets, supportDashboardMetrics } from './platformSupportDashboard';
-import LoginShowcase from './LoginShowcase.jsx';
+const LoginShowcase = lazy(() => import('./LoginShowcase.jsx'));
 import InboxParticipantStack from './InboxParticipantStack.jsx';
 import { createPortal } from 'react-dom';
 import {
@@ -588,6 +588,25 @@ const formatAIText = (text) => String(text || '')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
 
+function handleMainNavigationKeys(event) {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+
+  const buttons = Array.from(event.currentTarget.querySelectorAll('button[data-navigation-item]:enabled'));
+  const currentIndex = buttons.indexOf(event.target);
+  if (currentIndex === -1) return;
+
+  const lastIndex = buttons.length - 1;
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowUp') nextIndex = Math.max(0, currentIndex - 1);
+  if (event.key === 'ArrowDown') nextIndex = Math.min(lastIndex, currentIndex + 1);
+  if (event.key === 'Home') nextIndex = 0;
+  if (event.key === 'End') nextIndex = lastIndex;
+
+  event.preventDefault();
+  buttons[nextIndex].focus();
+}
+
 export default function App() {
   const getRelativeDate = (dateString) => {
   return dateString;
@@ -862,6 +881,8 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [loginSelectedUserId, setLoginSelectedUserId] = useState('');
   const [loginSearchText, setLoginSearchText] = useState('');
   const [showLoginSuggestions, setShowLoginSuggestions] = useState(false);
+  const [loginSuggestionIndex, setLoginSuggestionIndex] = useState(-1);
+  const loginPinRef = useRef(null);
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState('');
   const loginUsers = loginDirectoryUsers(loginDirectory, activeCompany, companyCode);
@@ -870,6 +891,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     setLoginSearchText(person.name);
     setLoginSelectedUserId(person.id);
     setShowLoginSuggestions(false);
+    setLoginSuggestionIndex(-1);
     setLoginError('');
   };
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
@@ -7836,6 +7858,29 @@ const notificationsToShow = [...notificationItems]
 
   if (!currentUser) {
     const loginCompanyIdentified = isLoginCompanyIdentified(activeCompany, companyCode);
+    const loginSuggestionsOpen = showLoginSuggestions && loginCompanyIdentified && !companyLookupLoading;
+    const loginActiveSuggestion = loginSuggestionsOpen ? visibleLoginUsers[loginSuggestionIndex] : undefined;
+    const handleLoginSuggestionKeys = event => {
+      if (event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key === 'Escape' && loginSuggestionsOpen) {
+        event.preventDefault();
+        setShowLoginSuggestions(false);
+        setLoginSuggestionIndex(-1);
+      } else if (event.key === 'Enter' && loginActiveSuggestion) {
+        event.preventDefault();
+        selectLoginEmployee(loginActiveSuggestion);
+        loginPinRef.current?.focus();
+      } else if (['ArrowDown', 'ArrowUp'].includes(event.key) && !companyLookupLoading && visibleLoginUsers.length) {
+        event.preventDefault();
+        const lastIndex = visibleLoginUsers.length - 1;
+        const nextIndex = loginActiveSuggestion
+          ? Math.max(0, Math.min(lastIndex, loginSuggestionIndex + (event.key === 'ArrowDown' ? 1 : -1)))
+          : event.key === 'ArrowDown' ? 0 : lastIndex;
+        setShowLoginSuggestions(true);
+        setLoginSuggestionIndex(nextIndex);
+        requestAnimationFrame(() => document.getElementById(`login-employee-option-${nextIndex}`)?.scrollIntoView({block: 'nearest'}));
+      }
+    };
     return (
       <div className="login-page relative isolate min-h-screen overflow-x-clip bg-[#071a36] font-sans text-slate-800">
         <EnvironmentBadge />
@@ -7887,43 +7932,55 @@ const notificationsToShow = [...notificationItems]
     </div>
     {loginCompanyIdentified && <div className="flex items-center gap-3 rounded-2xl border border-emerald-200/25 bg-emerald-300/10 p-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-300 text-[#07382f] shadow-lg shadow-emerald-950/20"><Building className="h-5 w-5" /></span><div className="min-w-0 flex-1"><span className="block text-[9px] font-extrabold uppercase tracking-wider text-emerald-200">Empresa identificada</span><strong className="mt-0.5 block truncate text-xs text-white">{activeCompany.name}</strong></div><CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" /></div>}
     <div className="relative">
-      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75">Qual é o seu nome?</label>
+      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75" htmlFor="login-employee-name">Qual é o seu nome?</label>
       <div className="relative">
         <input
           type="text"
           required
           disabled={!loginCompanyIdentified || loginSubmitting}
+          id="login-employee-name"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={loginSuggestionsOpen}
+          aria-controls={loginSuggestionsOpen ? 'login-employee-options' : undefined}
+          aria-activedescendant={loginActiveSuggestion ? `login-employee-option-${loginSuggestionIndex}` : undefined}
+          onKeyDown={handleLoginSuggestionKeys}
           placeholder="Digite para buscar seu nome..."
           value={loginSearchText}
           onChange={(e) => {
             setLoginSearchText(e.target.value);
+            setLoginSuggestionIndex(-1);
             setLoginSelectedUserId(''); // Limpa ID caso o usuário mude o texto manualmente
             setShowLoginSuggestions(true);
             setLoginError('');
           }}
           onFocus={() => setShowLoginSuggestions(true)}
           onBlur={() => {
-            // Timeout rápido para permitir que o clique na sugestão seja computado antes de sumir o menu
-            setTimeout(() => setShowLoginSuggestions(false), 250);
+            setShowLoginSuggestions(false);
+            setLoginSuggestionIndex(-1);
           }}
           className="w-full rounded-xl border border-white/15 bg-white/[0.09] px-3 py-3 text-sm font-bold text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-40"
         />
 
         {/* LISTAGEM DE SUGESTÕES DINÂMICAS */}
-        {showLoginSuggestions && loginCompanyIdentified && !companyLookupLoading && (
+        {loginSuggestionsOpen && (
           <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-            {visibleLoginUsers.map((u) => (
-                <button
+            <div id="login-employee-options" role="listbox" aria-label="Colaboradores">
+              {visibleLoginUsers.map((u, index) => (
+                <div
                   key={u.id}
-                  type="button"
+                  id={`login-employee-option-${index}`}
+                  role="option"
+                  aria-selected={index === loginSuggestionIndex}
                   onPointerDown={event => { event.preventDefault(); selectLoginEmployee(u); }}
-                  onClick={() => selectLoginEmployee(u)}
-                  className="w-full border-b border-slate-100 px-4 py-2.5 text-left text-xs text-slate-600 transition-colors last:border-0 hover:bg-blue-50"
+                  onClick={() => { selectLoginEmployee(u); loginPinRef.current?.focus(); }}
+                  className={`w-full cursor-pointer border-b border-slate-100 px-4 py-2.5 text-left text-xs text-slate-600 last:border-0 hover:bg-blue-50 ${index === loginSuggestionIndex ? 'bg-blue-100' : ''}`}
                 >
                   <span className="block leading-tight font-extrabold text-slate-800">{u.name}</span>
                   <span className="mt-0.5 block text-[10px] text-slate-400">{u.role}</span>
-                </button>
+                </div>
               ))}
+            </div>
             {visibleLoginUsers.length === 0 && (
               <div className="p-3 text-xs text-slate-500 italic text-center">{loginUsers.length ? 'Nenhum colaborador encontrado. Confira o nome digitado.' : 'Nenhum colaborador disponível para esta empresa. Contate o suporte.'}</div>
             )}
@@ -7933,11 +7990,14 @@ const notificationsToShow = [...notificationItems]
     </div>
 
     <div>
-      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75">Seu PIN de acesso</label>
+      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75" htmlFor="login-access-pin">Seu PIN de acesso</label>
       <div className="relative">
         <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-cyan-100/55" />
         <input
+          ref={loginPinRef}
+          id="login-access-pin"
           type="password"
+          inputMode="numeric"
           maxLength="4"
           required
           disabled={!loginCompanyIdentified || loginSubmitting}
@@ -7991,7 +8051,7 @@ const notificationsToShow = [...notificationItems]
 
           </section>
           </div>
-          <LoginShowcase onSubmit={handleSalesContact} />
+          <Suspense fallback={null}><LoginShowcase onSubmit={handleSalesContact} /></Suspense>
         </main>
       </div>
     );
@@ -8887,9 +8947,9 @@ const notificationsToShow = [...notificationItems]
             <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}><div className="relative shrink-0"><img src={currentUser.avatar || DEFAULT_AVATAR} alt="Foto de perfil" className={`${sidebarCollapsed ? 'h-10 w-10' : 'h-12 w-12'} rounded-2xl border-2 border-white/40 object-cover shadow`} /><span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-blue-950 bg-emerald-400" /></div>{!sidebarCollapsed && <div className="min-w-0"><h4 className="truncate text-sm font-extrabold">{currentUser.name}</h4><p className="mt-0.5 truncate text-[10px] font-semibold text-blue-100/70">{currentUser.role}</p><span className="mt-2 inline-flex rounded-full bg-white/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-cyan-100">Sessão ativa</span></div>}</div>
           </div>
 
-          <nav className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
-            <div className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-2 pt-1'}`}>{!sidebarCollapsed && <div><span className="block text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Navegação</span><strong className="text-xs text-slate-800">Menu principal</strong></div>}<button type="button" onClick={() => setSidebarCollapsed(previous => !previous)} className="hidden rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:block" title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'} aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}>{sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</button></div>
-            <div className="space-y-3">{visibleNavigationSections.map(section => <section key={section.label}>{!sidebarCollapsed && <span className="mb-1 block px-3 text-[8px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{section.label}</span>}<div className="space-y-1">{section.items.map(item => { const Icon = item.icon; const active = activeTab === item.id; return <button key={item.id} type="button" title={sidebarCollapsed ? item.label : undefined} onClick={() => { if (item.action) item.action(); else setActiveTab(item.id); setMobileMenuOpen(false); }} className={`group relative flex w-full items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5 text-left'} ${active ? `bg-gradient-to-r ${item.activeClass} text-white shadow-md` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><span className={`grid shrink-0 place-items-center rounded-xl transition ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'} ${active ? 'bg-white/15 text-white' : `bg-slate-100 ${item.accent} group-hover:bg-white group-hover:shadow-sm`}`}><Icon className="h-4.5 w-4.5" /></span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-extrabold">{item.label}</strong><span className={`mt-0.5 block truncate text-[8px] font-medium ${active ? 'text-white/65' : 'text-slate-400'}`}>{item.description}</span></span>}{item.badge ? <span className={`${sidebarCollapsed ? 'absolute right-1 top-1' : ''} grid min-h-5 min-w-5 place-items-center rounded-full px-1 text-[8px] font-extrabold ${active ? 'bg-white text-slate-900' : 'bg-rose-100 text-rose-700'}`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}{active && !sidebarCollapsed && <ChevronRight className="h-3.5 w-3.5 text-white/70" />}</button>; })}</div></section>)}</div>
+          <nav aria-label="Menu principal" onKeyDown={handleMainNavigationKeys} className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+            <div className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-2 pt-1'}`}>{!sidebarCollapsed && <div><span className="block text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Navegação</span><strong className="text-xs text-slate-800">Menu principal</strong><span className="hidden text-[9px] text-slate-500 sm:block">↑ ↓ para navegar · Enter para abrir</span></div>}<button type="button" onClick={() => setSidebarCollapsed(previous => !previous)} className="hidden rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:block" title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'} aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}>{sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</button></div>
+            <div className="space-y-3">{visibleNavigationSections.map(section => <section key={section.label}>{!sidebarCollapsed && <span className="mb-1 block px-3 text-[8px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{section.label}</span>}<div className="space-y-1">{section.items.map(item => { const Icon = item.icon; const active = activeTab === item.id; return <button key={item.id} type="button" data-navigation-item aria-label={item.label} aria-current={active ? 'page' : undefined} title={sidebarCollapsed ? item.label : undefined} onClick={() => { if (item.action) item.action(); else setActiveTab(item.id); setMobileMenuOpen(false); }} className={`group relative flex w-full items-center rounded-2xl transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5 text-left'} ${active ? `bg-gradient-to-r ${item.activeClass} text-white shadow-md` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><span className={`grid shrink-0 place-items-center rounded-xl transition ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'} ${active ? 'bg-white/15 text-white' : `bg-slate-100 ${item.accent} group-hover:bg-white group-hover:shadow-sm`}`}><Icon className="h-4.5 w-4.5" /></span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-extrabold">{item.label}</strong><span className={`mt-0.5 block truncate text-[8px] font-medium ${active ? 'text-white/65' : 'text-slate-400'}`}>{item.description}</span></span>}{item.badge ? <span className={`${sidebarCollapsed ? 'absolute right-1 top-1' : ''} grid min-h-5 min-w-5 place-items-center rounded-full px-1 text-[8px] font-extrabold ${active ? 'bg-white text-slate-900' : 'bg-rose-100 text-rose-700'}`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}{active && !sidebarCollapsed && <ChevronRight className="h-3.5 w-3.5 text-white/70" />}</button>; })}</div></section>)}</div>
           </nav>
 
           {!isIntegraWorkspace && <div className={`relative mt-3 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}><div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-cyan-300/20 blur-xl" />{sidebarCollapsed ? <button type="button" onClick={handleGenerateWeeklySummary} title="Gerar boletim semanal" className="relative grid h-11 w-full place-items-center rounded-2xl bg-blue-900 text-white"><Sparkles className="h-4.5 w-4.5" /></button> : <div className="relative"><span className="flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wider text-blue-700"><Sparkles className="h-4 w-4" /> Inteligência do Comunica</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Boletim semanal</h4><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Compile os principais acontecimentos da empresa.</p><button onClick={handleGenerateWeeklySummary} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-900 px-3 py-2.5 text-[10px] font-extrabold text-white shadow transition hover:bg-blue-800" type="button"><Sparkles className="h-4 w-4" /> Gerar boletim</button></div>}</div>}
@@ -8975,7 +9035,7 @@ const notificationsToShow = [...notificationItems]
                 ].map(metric => { const MetricIcon = metric.icon; return <article key={metric.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className={`grid h-10 w-10 place-items-center rounded-xl ${metric.tone}`}><MetricIcon className="h-4.5 w-4.5" /></div><span className="mt-3 block text-[9px] font-black uppercase tracking-wide text-slate-400">{metric.label}</span><strong className="mt-1 block text-2xl font-black text-slate-900">{metric.value}</strong><span className="text-[9px] text-slate-500">{metric.detail}</span></article>; })}
               </div>
 
-              {!IS_STAGING && <PlatformRecordMaintenance companies={companies} functionsClient={functionsClient} />}
+              {!IS_STAGING && <Suspense fallback={<p role="status">Carregando manutenção de registros…</p>}><PlatformRecordMaintenance companies={companies} functionsClient={functionsClient} /></Suspense>}
 
               <section className="overflow-hidden rounded-[1.5rem] border border-emerald-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-2 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50 p-5 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Fale conosco</span><h3 className="mt-1 text-base font-extrabold text-slate-900">Contatos comerciais</h3><p className="mt-1 text-xs text-slate-500">Empresas que solicitaram uma apresentação na tela de acesso.</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[9px] font-bold text-emerald-800 shadow-sm">{newSalesLeads} novo(s) · {salesLeads.length} total</span></div>
@@ -11535,13 +11595,13 @@ const handleDownload = async (fileUrl, fileName) => {
               {automaticScheduleProposal.length > 0 && <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70">
                 <div className="flex flex-col gap-3 border-b border-emerald-100 bg-white p-4 lg:flex-row lg:items-center lg:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[.16em] text-emerald-700">Quadro diário da equipe</span><h4 className="mt-1 text-base font-extrabold text-slate-950">Revise horários e carga de trabalho</h4><p className="mt-1 text-[11px] text-slate-500">Ajuste os dias livres da prévia. Lançamentos manuais, ausências e dias fixos são preservados.</p></div><button type="button" disabled={isSavingScheduleProposal} onClick={() => saveAutomaticScheduleProposal()} className="disabled:cursor-not-allowed disabled:opacity-50 shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-800"><CheckCircle2 className="mr-1.5 inline h-4 w-4" />{isSavingScheduleProposal ? 'Publicando...' : 'Salvar e publicar no calendário'}</button></div>
                 <ScheduleCoverageApproval key={JSON.stringify({ input: automaticScheduleInput, rows: automaticScheduleProposal })} analysis={automaticScheduleCoverage} binding={JSON.stringify({ input: automaticScheduleInput, rows: automaticScheduleProposal })} canApprove={Boolean(currentUser.isAdmin || currentUser.isDeveloper)} disabled={isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleIssues.some(issue => issue.blocking)} departments={scheduleScope.departments} onAuthorize={saveAutomaticScheduleProposal} />
-                <ScheduleAiPanel rows={automaticScheduleProposal} requirements={scheduleScopedCoverageRequirements} context={{ ...schedulePlanningContext(), departments: departmentsList }} inputBinding={automaticScheduleInput} disabled={isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleInput !== automaticScheduleProposalInput || !isManager || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))} onAnalyze={callGemini} onApply={result => {
+                <Suspense fallback={<p role="status">Carregando análise de escalas…</p>}><ScheduleAiPanel rows={automaticScheduleProposal} requirements={scheduleScopedCoverageRequirements} context={{ ...schedulePlanningContext(), departments: departmentsList }} inputBinding={automaticScheduleInput} disabled={isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleInput !== automaticScheduleProposalInput || !isManager || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))} onAnalyze={callGemini} onApply={result => {
                   if (!isManager || isSavingScheduleProposal || !schedulePlanningDataReady() || automaticScheduleInput !== automaticScheduleProposalInput || (!currentUser.isAdmin && !currentUser.isDeveloper && (effectiveAccessProfile.canEdit === false || effectiveAccessProfile.canManageCalendar === false))) return;
                   setAutomaticScheduleProposal(result.rows);
                   setAutomaticScheduleOptimization({ before: result.before, swaps: result.swaps.length, limited: false });
                   setAutomaticSchedulePreviewDate(result.week);
                   triggerNotification('Sugestões da IA aplicadas e fixadas na prévia. Revise o mês antes de publicar.');
-                }} />
+                }} /></Suspense>
                 <ScheduleOptimizationSummary before={automaticScheduleOptimization?.before} analysis={automaticScheduleCoverage} swaps={automaticScheduleOptimization?.swaps || 0} limited={automaticScheduleOptimization?.limited} requirements={scheduleScopedCoverageRequirements} fixedDays={automaticScheduleProposal.filter(isFixedProposalRow).length} selectedDate={automaticScheduleVisibleDate} departments={scheduleScope.departments} rows={automaticScheduleProposal} onSelectDate={reviewAutomaticScheduleDay} onReviewRules={canConfigureScheduleRules ? () => { setAutomaticScheduleRuleTab('rules'); automaticScheduleDayEditorRef.current?.closest('form')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); } : undefined} onOptimize={reorganizeAutomaticSchedule} disabled={isSavingScheduleProposal || automaticScheduleInput !== automaticScheduleProposalInput} />
                 <ScheduleProposalCalendar rows={automaticScheduleProposal} analysis={automaticScheduleCoverage} issues={automaticScheduleIssues} selectedDate={automaticScheduleVisibleDate} onSelectDate={setAutomaticSchedulePreviewDate} onReviewIssue={openAutomaticScheduleProblem} onOpenDay={() => { automaticScheduleDayEditorRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }); automaticScheduleDayEditorRef.current?.focus({ preventScroll: true }); }} disabled={isSavingScheduleProposal} />
                 {automaticScheduleIssues.length > 0 && <div className="m-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3"><h5 className="text-xs font-bold text-amber-950">Validação da simulação · {automaticScheduleIssues.filter(issue => issue.blocking).length} bloqueio(s)</h5><ul className="max-h-44 space-y-1 overflow-auto text-[11px]">{automaticScheduleIssues.map((issue, index) => <li key={`${issue.key}-${index}`} className={issue.blocking ? 'text-rose-800' : 'text-amber-900'}><button type="button" className="text-left underline" onClick={() => openAutomaticScheduleProblem(issue)}>{issue.blocking ? 'Resolver: ' : 'Conferir: '}{issue.message}</button></li>)}</ul></div>}
