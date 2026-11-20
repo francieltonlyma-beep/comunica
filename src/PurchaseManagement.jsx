@@ -14,13 +14,13 @@ import { purchaseDisplayReference } from './purchaseFlow.js';
 import SupplierRegistry from './SupplierRegistry.jsx';
 import PurchaseWorkspace from './PurchaseWorkspace.jsx';
 import PurchaseProducts from './PurchaseProducts.jsx';
-import { defaultPurchaseBuyer, purchaseApprover } from '../functions/src/purchaseRouting.mjs';
+import { availablePurchaseAssignment, defaultPurchaseBuyer, purchaseApprover, purchaseStageCandidates, PURCHASE_STAGE_ASSIGNMENTS } from '../functions/src/purchaseRouting.mjs';
 import { findCatalogProduct, catalogProductSelection } from '../functions/src/purchaseProductCatalog.mjs';
 
 const INITIAL = { category: 'Outros', item: '', specification: '', quantity: 1, unit: 'un', department: '', destination: '', neededBy: '', reason: '', priority: 'normal', buyerId: '' };
 const INITIAL_POLICY = {
   enabled: false, threshold: 1000, lowerApproverId: '', upperApproverId: '', preventSelfApproval: false,
-  requireRequesterReview: true, defaultBuyerId: '', requesterIds: [], buyerIds: [],
+  requireRequesterReview: true, defaultBuyerId: '', requesterIds: [], buyerIds: [], receiverIds: [], recipientIds: [], financeIds: [],
 };
 const money = value => Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateBR = value => value ? new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR') : '—';
@@ -64,6 +64,9 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const navigationHandled = useRef('');
+  const queueStages = Object.keys(PURCHASE_STAGE_ASSIGNMENTS)
+    .filter(stage => purchaseStageCandidates(policy, stage).includes(user?.id)).join(',');
+
 
   useEffect(() => {
     if (!db || !companyId || !user?.id) return undefined;
@@ -82,7 +85,13 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     if (manager) return onSnapshot(ref, snapshot => { publish(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))); setError(''); },
       () => { publish([]); setError('Não foi possível carregar as compras.'); });
     const sources = { own: [], assigned: [] };
-    const refresh = () => publish([...new Map([...sources.own, ...sources.assigned].map(item => [item.id, item])).values()]);
+    const refresh = () => {
+      const latest = new Map();
+      for (const item of Object.values(sources).flat()) {
+        if (!latest.has(item.id) || latest.get(item.id).updatedAt <= item.updatedAt) latest.set(item.id, item);
+      }
+      publish([...latest.values()]);
+    };
     const onError = () => { setSnapshotState({ scope, records: [] }); setError('Não foi possível carregar as compras. Verifique as permissões.'); };
     const stopOwn = onSnapshot(query(ref, where('requesterId', '==', user.id)), snapshot => {
       sources.own = snapshot.docs.map(item => ({ id: item.id, ...item.data() })); refresh(); setError('');
@@ -90,8 +99,16 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     const stopAssigned = onSnapshot(query(ref, where('participantIds', 'array-contains', user.id)), snapshot => {
       sources.assigned = snapshot.docs.map(item => ({ id: item.id, ...item.data() })); refresh(); setError('');
     }, onError);
-    return () => { stopOwn(); stopAssigned(); };
-  }, [appId, companyId, db, manager, scope, user?.id, initialPurchaseId]);
+    const stopQueue = queueStages.split(',').filter(Boolean).map(stage => {
+      const role = PURCHASE_STAGE_ASSIGNMENTS[stage].role;
+      const pending = query(ref, where('workflowVersion', '==', 2), where('status', '==', stage), where(role, '==', ''));
+      return onSnapshot(pending, snapshot => {
+        sources[stage] = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+        refresh();
+      }, () => setError('Não foi possível carregar as etapas disponíveis para você.'));
+    });
+    return () => { stopOwn(); stopAssigned(); stopQueue.forEach(stop => stop()); };
+  }, [appId, companyId, db, manager, scope, user?.id, initialPurchaseId, queueStages]);
 
   useEffect(() => {
     if (!db || !companyId || !user?.id) return undefined;
@@ -103,12 +120,15 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     }, () => setError('Não foi possível consultar as alçadas de aprovação.'));
   }, [appId, companyId, db, user?.id]);
 
+  const selected = records.find(item => item.id === selectedId);
+  const canReadDetails = Boolean(selected && (manager || selected.requesterId === user?.id || selected.participantIds?.includes(user?.id)));
+
   useEffect(() => {
-    if (!db || !companyId || !selectedId) return undefined;
+    if (!db || !companyId || !selectedId || !canReadDetails) return undefined;
     return onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', selectedId, 'files'),
       snapshot => setFiles(snapshot.docs.map(item => ({id:item.id,...item.data()})).sort((a,b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))),
       () => setError('Não foi possível carregar os anexos desta compra.'));
-  }, [appId,companyId,db,selectedId]);
+  }, [appId,companyId,db,selectedId,canReadDetails]);
 
   useEffect(() => {
     if (!db || !companyId || !user?.id) return undefined;
@@ -118,7 +138,6 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     return () => { stopSuppliers(); stopProducts(); };
   }, [db,appId,companyId,user?.id]);
 
-  const selected = records.find(item => item.id === selectedId);
   const quoteItems = selected?.bundleId ? records.filter(item => item.bundleId === selected.bundleId).sort((a,b) => a.bundleIndex - b.bundleIndex) : [];
   const quoteValues = quoteDraft || Object.fromEntries(quoteItems.map(item => [item.id, { included: item.quotedPrice > 0, supplier: item.supplier || '', quotedPrice: item.quotedPrice || '', expectedDate: item.expectedDate || '' }]));
   const groupQuoteTotal = purchaseQuoteTotal(quoteItems.filter(item => quoteValues[item.id]?.included).map(item => ({ ...item, quotedPrice: quoteValues[item.id]?.quotedPrice })));
@@ -160,7 +179,13 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     if (item.status === 'quotation') return quotedItemsFor(item).length ? approverFor(item) : item.buyerId;
     return item[pendingPurchaseRole(item)];
   };
-  const visible = filterPurchases(records, filters, search, stageFilter, users, user?.id, today, resolvePending);
+  const assignmentFor = item => availablePurchaseAssignment(policy, item);
+  const canClaim = item => assignmentFor(item)?.candidates.includes(user?.id) ?? false;
+  const selectedAssignment = selected ? assignmentFor(selected) : null;
+  const filterResponsible = filters.view === 'mine' && !filters.responsible
+    ? item => canClaim(item) ? user.id : resolvePending(item)
+    : resolvePending;
+  const visible = filterPurchases(records, filters, search, stageFilter, users, user?.id, today, filterResponsible);
   const visibleGroupMap = new Map();
   for (const item of visible) if (!visibleGroupMap.has(item.bundleId || item.id)) visibleGroupMap.set(item.bundleId || item.id, item);
   const visibleGroups = [...visibleGroupMap.values()];
@@ -229,7 +254,8 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
         lowerApproverId: policyDraft.lowerApproverId, upperApproverId: policyDraft.upperApproverId,
         preventSelfApproval:Boolean(policyDraft.preventSelfApproval),
         requireRequesterReview: policyDraft.requireRequesterReview !== false, defaultBuyerId: policyDraft.defaultBuyerId,
-        requesterIds: policyDraft.requesterIds || [], buyerIds: policyDraft.buyerIds || [],
+        requesterIds: policyDraft.requesterIds, buyerIds: policyDraft.buyerIds,
+        receiverIds: policyDraft.receiverIds, recipientIds: policyDraft.recipientIds, financeIds: policyDraft.financeIds,
         updatedAt: Date.now(), updatedBy: user.id,
       });
       setPolicyOpen(false);
@@ -311,6 +337,20 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
       setSelectedId(''); setDraft(null); setQuoteDraft(null);
       setNotice('Cotação aprovada. O comprador pode emitir o pedido.');
     } catch (problem) { setError(problem?.message || 'Não foi possível aprovar a cotação.'); }
+    finally { setBusy(false); }
+  }
+
+  async function claimStage() {
+    if (!selected || !canClaim(selected) || busy || !online) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const { data } = await httpsCallable(getFunctions(db.app, 'us-central1'), 'purchaseWorkspace')({
+        action: 'claimStage', companyId, requestId: selected.id,
+        expectedStage: selected.status, expectedUpdatedAt: selected.updatedAt,
+      });
+      setDraft(previous => previous ? { ...previous, [data.role]: user.id } : previous);
+      setNotice(`Etapa assumida por ${displayUser(user.id)}.`);
+    } catch (problem) { setError(problem?.message || 'Não foi possível assumir a etapa.'); }
     finally { setBusy(false); }
   }
 
@@ -407,9 +447,10 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
   return <section className="pm" aria-label="Comunica Integra — gestão de compras">
     <header className="pm-hero"><div><span>COMUNICA INTEGRA · COMPRAS</span><h2>Gestão de compras</h2><p>Do pedido ao destino: acompanhe cada etapa, responsável, entrega e localização.</p></div><button type="button" disabled={!requestReady} onClick={() => { setDuplicateSource(''); setFormAttempted(false); setForm({...INITIAL,buyerId:defaultBuyerId}); setExtraItems([]); setFormOpen(true); setSelectedId(''); setError(''); }}><Plus size={18} /> Nova solicitação</button></header>
     {manager && <div className="pm-setup"><button type="button" className="pm-secondary" aria-expanded={policyOpen} onClick={() => setPolicyOpen(value => !value)}>Configurações de compras · {policy?.enabled ? 'alçada por valor' : policy?.preventSelfApproval ? 'aprovação independente' : policy?.requireRequesterReview === false ? 'aprovação pelo comprador' : 'aprovação pelo solicitante'}</button>
-      {policyOpen && <div className="pm-setup-fields"><p>Defina quem pode solicitar, cotar e aprovar compras. Sem seleção de solicitantes ou compradores, todos os colaboradores podem exercer o papel quando designados.</p>
+      {policyOpen && <div className="pm-setup-fields"><p>Cadastre os responsáveis por etapa. Quem estiver na equipe pode abrir a compra em Minha ação e assumir a etapa com a própria conta.</p>
         {[['requesterIds','Solicitantes'],['buyerIds','Compradores']].map(([key,title]) => <PurchasePeoplePicker key={key} title={title} users={users} value={policyDraft[key] || []} onChange={value => setPolicyDraft(previous => ({...previous,[key]:value}))} />)}
         <label className="pm-field"><span>Comprador padrão</span><PurchaseSelect label="Comprador padrão" value={policyDraft.defaultBuyerId} options={users.filter(person => !policyDraft.buyerIds.length || policyDraft.buyerIds.includes(person.id)).map(person => [person.id, person.name])} placeholder="Usar o único comprador autorizado, se houver" onChange={value => setField(setPolicyDraft, 'defaultBuyerId', value)} /></label>
+        {Object.values(PURCHASE_STAGE_ASSIGNMENTS).filter(({ role }) => role !== 'buyerId').map(({ policyKey, label }) => <PurchasePeoplePicker key={policyKey} title={label} users={users} value={policyDraft[policyKey]} availableToAll={false} onChange={value => setField(setPolicyDraft, policyKey, value)} />)}
         <label><input type="checkbox" checked={Boolean(policyDraft.enabled)} onChange={event => setPolicyDraft(prev => ({ ...prev, enabled: event.target.checked }))} /> Usar alçada por valor</label>
         {policyDraft.enabled && <div className="pm-fields"><label className="pm-field"><span>Limite em R$ (valor total)</span><input type="number" min="0.01" step="0.01" value={policyDraft.threshold} onChange={event => setPolicyDraft(prev => ({ ...prev, threshold: event.target.value }))} /></label>
           {[['lowerApproverId','Aprovador até o limite'],['upperApproverId','Aprovador acima do limite']].map(([key,label]) => <label key={key} className="pm-field"><span>{label}</span><PurchaseSelect label={label} value={policyDraft[key] || ''} options={users.map(person => [person.id, person.name])} onChange={value => setPolicyDraft(prev => ({ ...prev, [key]: value }))} /></label>)}</div>}
@@ -447,19 +488,22 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
           <button type="button" className="pm-clear" onClick={resetFilters}>Limpar filtros</button></div></details>
         </div>
         <p className="pm-hint pm-list-summary">{visibleGroups.length} cotações · {visible.length} itens de {records.length} · Total cotado: {visible.reduce((sum,item) => sum + Number(item.quotedPrice || 0) * Number(item.quantity || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visibleGroups.map(item => { const group = item.bundleId ? records.filter(entry => entry.bundleId === item.bundleId) : [item]; const cardStatus = group.find(entry => entry.status === 'quotation')?.status || item.status; const groupTotal = purchaseQuoteTotal(group); const responsible = resolvePending(item); const progress = Math.max(0,stagePosition(item.status)); const attention = responsible === user?.id && !['closed','cancelled','rejected'].includes(item.status); return <button key={item.id} type="button" onClick={() => beginDetail(item)} aria-current={(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'true' : undefined} className={`pm-card ${(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'pm-selected' : ''} ${attention ? 'pm-attention' : ''}`}><div className="pm-card-top"><span className={`pm-chip ${stageColor(cardStatus)}`}>{PURCHASE_STAGES[cardStatus] || cardStatus}</span>{attention && <span className="pm-attention-label">Aguardando você</span>}</div><strong className="pm-card-title">{item.bundleId ? group.map(entry => entry.item).slice(0,2).join(' + ') : item.item}</strong><span className="pm-reference">{purchaseDisplayReference(item)} · {group.length} {group.length === 1 ? 'item' : 'itens'}</span><span className="pm-card-requester">{item.requesterName} · {item.department}</span><div className="pm-card-meta"><span>{item.category || 'Sem categoria'}</span><span>{item.quantity} {item.unit}</span><span>{PRIORITIES[item.priority] || 'Normal'}</span>{item.bundleId && <span>{records.filter(entry => entry.bundleId === item.bundleId).map(entry => entry.item).join(', ')}</span>}</div><div className="pm-card-progress" aria-label={`Progresso: ${progress + 1} de ${TRACK_STAGES.length} etapas`}><span style={{width:`${((progress + 1) / TRACK_STAGES.length) * 100}%`}} /></div><div className="pm-card-bottom"><span>Necessário em <strong>{dateBR(item.neededBy)}</strong></span>{groupTotal > 0 && <span>{groupTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>}</div>{responsible && <p className="pm-next-action">Próxima ação <strong>{displayUser(responsible)}</strong></p>}{purchaseOverdue(item, today) && <b className="pm-flag">Prazo vencido</b>}{attention && purchasePendingDays(item) >= 2 && <b className="pm-flag">Parado há {purchasePendingDays(item)} dias</b>}{item.status === 'exception' && <b className="pm-flag">Conferir divergência</b>}{item.status === 'finance_dispute' && <b className="pm-flag">NF devolvida pelo Financeiro</b>}{item.status === 'rejected' && <b className="pm-flag">Pode ser reaberta para revisão</b>}</button>; })}</div>}
+        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visibleGroups.map(item => { const group = item.bundleId ? records.filter(entry => entry.bundleId === item.bundleId) : [item]; const cardStatus = group.find(entry => entry.status === 'quotation')?.status || item.status; const groupTotal = purchaseQuoteTotal(group); const responsible = resolvePending(item); const progress = Math.max(0,stagePosition(item.status)); const available = canClaim(item); const attention = (responsible === user?.id || available) && !['closed','cancelled','rejected'].includes(item.status); return <button key={item.id} type="button" onClick={() => beginDetail(item)} aria-current={(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'true' : undefined} className={`pm-card ${(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'pm-selected' : ''} ${attention ? 'pm-attention' : ''}`}><div className="pm-card-top"><span className={`pm-chip ${stageColor(cardStatus)}`}>{PURCHASE_STAGES[cardStatus] || cardStatus}</span>{attention && <span className="pm-attention-label">{available ? 'Disponível para você' : 'Aguardando você'}</span>}</div><strong className="pm-card-title">{item.bundleId ? group.map(entry => entry.item).slice(0,2).join(' + ') : item.item}</strong><span className="pm-reference">{purchaseDisplayReference(item)} · {group.length} {group.length === 1 ? 'item' : 'itens'}</span><span className="pm-card-requester">{item.requesterName} · {item.department}</span><div className="pm-card-meta"><span>{item.category || 'Sem categoria'}</span><span>{item.quantity} {item.unit}</span><span>{PRIORITIES[item.priority] || 'Normal'}</span>{item.bundleId && <span>{records.filter(entry => entry.bundleId === item.bundleId).map(entry => entry.item).join(', ')}</span>}</div><div className="pm-card-progress" aria-label={`Progresso: ${progress + 1} de ${TRACK_STAGES.length} etapas`}><span style={{width:`${((progress + 1) / TRACK_STAGES.length) * 100}%`}} /></div><div className="pm-card-bottom"><span>Necessário em <strong>{dateBR(item.neededBy)}</strong></span>{groupTotal > 0 && <span>{groupTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>}</div>{responsible && <p className="pm-next-action">Próxima ação <strong>{displayUser(responsible)}</strong></p>}{purchaseOverdue(item, today) && <b className="pm-flag">Prazo vencido</b>}{attention && purchasePendingDays(item) >= 2 && <b className="pm-flag">Parado há {purchasePendingDays(item)} dias</b>}{item.status === 'exception' && <b className="pm-flag">Conferir divergência</b>}{item.status === 'finance_dispute' && <b className="pm-flag">NF devolvida pelo Financeiro</b>}{item.status === 'rejected' && <b className="pm-flag">Pode ser reaberta para revisão</b>}</button>; })}</div>}
       </div>
       <div className="pm-detail">
         {!selected ? <div className="pm-prompt"><PackageCheck size={34}/><h3>Fluxo de ponta a ponta</h3><p>Selecione uma compra para acompanhar responsáveis, aprovação, recebimento, nota fiscal e aceite no destino. Cada pessoa confirma sua etapa; o Financeiro encerra após conferir os atestes.</p></div> : <>
-          <div className="pm-detail-head"><div><span className={`pm-chip ${stageColor(selected.status)}`}>{PURCHASE_STAGES[selected.status]}</span><h3>{selected.item}</h3><p className="pm-quote-code">{purchaseDisplayReference(selected)}</p><details className="pm-reference-full"><summary>Ver referência completa</summary><code>{selected.quoteNumber || purchaseQuoteNumber(selected.createdAt, selected.bundleId || selected.id)}</code></details><button type="button" className="pm-duplicate" disabled={!requestReady} onClick={duplicateRequest}><Copy size={16} aria-hidden="true" /> Duplicar solicitação</button><p>Solicitado por {selected.requesterName} · {selected.department}</p>{selected.bundleId && <p>Solicitação conjunta · item {selected.bundleIndex} de {selected.bundleSize}</p>}{roleFor(selected) && <p>Sua responsabilidade: {roleFor(selected)}</p>}</div><button type="button" aria-label="Fechar detalhes" onClick={() => { setSelectedId(''); setDraft(null); setError(''); }}><X size={18}/><span className="pm-back-label">Voltar às solicitações</span></button></div>
+          <div className="pm-detail-head"><div><span className={`pm-chip ${stageColor(selected.status)}`}>{PURCHASE_STAGES[selected.status]}</span><h3>{selected.item}</h3><p className="pm-quote-code">{purchaseDisplayReference(selected)}</p><details className="pm-reference-full"><summary>Ver referência completa</summary><code>{selected.quoteNumber || purchaseQuoteNumber(selected.createdAt, selected.bundleId || selected.id)}</code></details><button type="button" className="pm-duplicate" disabled={!requestReady || !canReadDetails} onClick={duplicateRequest}><Copy size={16} aria-hidden="true" /> Duplicar solicitação</button><p>Solicitado por {selected.requesterName} · {selected.department}</p>{selected.bundleId && <p>Solicitação conjunta · item {selected.bundleIndex} de {selected.bundleSize}</p>}{roleFor(selected) && <p>Sua responsabilidade: {roleFor(selected)}</p>}</div><button type="button" aria-label="Fechar detalhes" onClick={() => { setSelectedId(''); setDraft(null); setError(''); }}><X size={18}/><span className="pm-back-label">Voltar às solicitações</span></button></div>
           {hasPendingApproval ? <div className="pm-next-step">
             <div><span>Aprovação da cotação</span><strong>{approvalId ? displayUser(approvalId) : 'Configuração de aprovação pendente'}</strong><p>{money(approvalTotal)} · {policy?.enabled ? 'Alçada por valor' : policy?.preventSelfApproval ? 'Aprovação independente' : policy?.requireRequesterReview === false ? 'Comprador responsável' : 'Solicitante'}</p></div>
             {approvalId === user?.id && <button type="button" disabled={busy || !online || quoteModified} onClick={approveSelectedQuote}>Aprovar cotação <CheckCircle2 size={16} /></button>}
             {canRefreshApproval && approvalId && <button type="button" disabled={busy || !online} onClick={submitQuote}>Atualizar responsável</button>}
           </div> : pendingPurchaseRole(selected) && <div className="pm-next-step">
-            <div><span>{quoteOpen ? 'Comprador responsável' : 'Próxima ação'}</span><strong>{displayUser(resolvePending(selected))}</strong><p>{purchaseOverdue(selected,today) ? 'Prazo da solicitação vencido' : `Necessário em ${dateBR(selected.neededBy)}`}</p></div>
+            <div><span>{quoteOpen ? 'Comprador responsável' : 'Próxima ação'}</span><strong>{selectedAssignment ? selectedAssignment.label : displayUser(resolvePending(selected))}</strong><p>{purchaseOverdue(selected,today) ? 'Prazo da solicitação vencido' : `Necessário em ${dateBR(selected.neededBy)}`}</p></div>
+            {selectedAssignment && canClaim(selected) && <button type="button" disabled={busy || !online} onClick={claimStage}>Assumir etapa <ArrowRight size={15}/></button>}
+            {selectedAssignment && !canClaim(selected) && <p>Aguardando {selectedAssignment.candidates.map(displayUser).join(', ')}.</p>}
             {!quoteOpen && resolvePending(selected) === user?.id && <button type="button" onClick={() => document.querySelector('.pm-actions')?.scrollIntoView({behavior:'smooth',block:'center'})}>Ir para minhas ações <ArrowRight size={15}/></button>}
           </div>}
+          {canReadDetails && <>
           {hasPendingApproval && !selected.bundleId && <div className="pm-section"><h4>Resumo da cotação</h4><div className="pm-readonly">
             <div><span>Fornecedor</span><p>{selected.supplier}</p></div><div><span>Valor unitário</span><p>{money(selected.quotedPrice)}</p></div><div><span>Previsão de entrega</span><p>{dateBR(selected.expectedDate)}</p></div>
           </div></div>}
@@ -505,6 +549,7 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
             {(['approved','ordered','received','delivered','closed'].includes(selected.status) || (PURCHASE_NEXT[selected.status] || []).some(stage => ['ordered','received','delivered','closed'].includes(stage))) && <label className="pm-ack"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /> {(PURCHASE_NEXT[selected.status] || []).includes('closed') && selected.financeId === user?.id ? `Conferi a nota fiscal ${selected.invoiceNumber || 'pendente'}, a confirmação do comprador, o recebimento da mercadoria e o aceite do destinatário.` : 'Confirmo pessoalmente as informações e documentos desta etapa.'}</label>}
           </div>}
           <div className="pm-section"><h4>Linha do tempo</h4><ol className="pm-history">{[...(selected.history || [])].reverse().map((entry,index) => <li key={`${entry.at}-${index}`}><span className={`pm-chip ${stageColor(entry.stage)}`}>{PURCHASE_STAGES[entry.stage] || entry.stage}</span><strong>{entry.byName || 'Responsável'}</strong><small>{new Date(entry.at).toLocaleString('pt-BR')}</small>{entry.detail && <p>{entry.detail}</p>}</li>)}</ol></div>
+          </>}
         </>}
       </div>
     </div>

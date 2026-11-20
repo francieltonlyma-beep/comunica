@@ -27,3 +27,26 @@ export function purchaseApprovalFields(item, approverId) {
     ].filter(Boolean))],
   };
 }
+
+export const PURCHASE_STAGE_ASSIGNMENTS = {
+  requested: { role: 'buyerId', policyKey: 'buyerIds', label: 'Cotação' },
+  in_transit: { role: 'receiverId', policyKey: 'receiverIds', label: 'Recebimento e NF' },
+  stored: { role: 'recipientId', policyKey: 'recipientIds', label: 'Entrega ao destino' },
+  delivered: { role: 'financeId', policyKey: 'financeIds', label: 'Conferência financeira' },
+};
+
+export function purchaseStageCandidates(policy, stage) {
+  const assignment = PURCHASE_STAGE_ASSIGNMENTS[stage];
+  if (!assignment) return [];
+  const defaultBuyer = stage === 'requested' && defaultPurchaseBuyer(policy);
+  if (defaultBuyer) return [defaultBuyer];
+  const candidates = policy?.[assignment.policyKey];
+  return Array.isArray(candidates) ? candidates : [];
+}
+
+export function availablePurchaseAssignment(policy, item) {
+  const assignment = PURCHASE_STAGE_ASSIGNMENTS[item.status];
+  if (item.workflowVersion !== 2 || !assignment || item[assignment.role]) return null;
+  const candidates = purchaseStageCandidates(policy, item.status);
+  return candidates.length ? { ...assignment, candidates } : null;
+}

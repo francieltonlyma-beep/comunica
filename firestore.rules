@@ -28,6 +28,19 @@ service cloud.firestore {
       let buyers = policy.get('buyerIds', []);
       return policy.get('defaultBuyerId', '') != '' ? policy.defaultBuyerId : (buyers.size() == 1 ? buyers[0] : '');
     }
+    function canClaimPurchaseStage(app, company, item) {
+      let path = /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/settings/purchase-approval;
+      let config = exists(path) ? get(path).data : {};
+      let buyer = configuredPurchaseBuyer(app, company);
+      let uid = request.auth.uid;
+      return item.workflowVersion == 2 && (
+        (item.status == 'requested' && item.buyerId == ''
+          && (buyer == '' ? uid in config.get('buyerIds',[]) : uid == buyer))
+        || (item.status == 'in_transit' && item.receiverId == '' && uid in config.get('receiverIds',[]))
+        || (item.status == 'stored' && item.recipientId == '' && uid in config.get('recipientIds',[]))
+        || (item.status == 'delivered' && item.financeId == '' && uid in config.get('financeIds',[]))
+      );
+    }
     function validPurchaseOpeningBuyer(app, company, data) {
       let uid = request.auth.uid;
       let buyer = data.buyerId;
@@ -567,7 +580,7 @@ service cloud.firestore {
         allow get: if access(company);
         allow list: if false;
         allow create, update: if manages(app, company)
-          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','requireRequesterReview','defaultBuyerId','requesterIds','buyerIds','updatedAt','updatedBy'])
+          && request.resource.data.keys().hasOnly(['enabled','threshold','lowerApproverId','upperApproverId','preventSelfApproval','requireRequesterReview','defaultBuyerId','requesterIds','buyerIds','receiverIds','recipientIds','financeIds','updatedAt','updatedBy'])
           && request.resource.data.keys().hasAll(['enabled','threshold','lowerApproverId','upperApproverId','updatedAt','updatedBy'])
           && request.resource.data.enabled is bool
           && request.resource.data.threshold is number && request.resource.data.threshold > 0
@@ -580,6 +593,9 @@ service cloud.firestore {
           && request.resource.data.lowerApproverId is string && request.resource.data.upperApproverId is string
           && request.resource.data.get('requesterIds',[]) is list && request.resource.data.get('requesterIds',[]).size() <= 100
           && request.resource.data.get('buyerIds',[]) is list && request.resource.data.get('buyerIds',[]).size() <= 100
+          && request.resource.data.get('receiverIds',[]) is list && request.resource.data.get('receiverIds',[]).size() <= 100
+          && request.resource.data.get('recipientIds',[]) is list && request.resource.data.get('recipientIds',[]).size() <= 100
+          && request.resource.data.get('financeIds',[]) is list && request.resource.data.get('financeIds',[]).size() <= 100
           && (!request.resource.data.enabled || (request.resource.data.lowerApproverId.size() > 0 && request.resource.data.upperApproverId.size() > 0))
           && request.resource.data.updatedAt is int && request.resource.data.updatedBy == request.auth.uid;
         allow delete: if false;
@@ -621,6 +637,7 @@ service cloud.firestore {
       }
       match /purchaseRequests/{id} {
         allow get, list: if support() || (integraEnabled(app, company) && (admin(app, company) || (member(company) && (resource.data.get('requesterId','') == request.auth.uid || request.auth.uid in resource.data.get('participantIds',[])))));
+        allow get, list: if member(company) && integraEnabled(app, company) && canClaimPurchaseStage(app, company, resource.data);
         // The initial requested stage has no stage-specific requirements. Avoid evaluating
         // the full downstream workflow here: it exceeds Firestore's expression budget.
         allow create: if member(company) && integraEnabled(app, company) && purchaseRoleAllowed(app, company, 'requesterIds', request.auth.uid) && validPurchase(request.resource.data, false)
