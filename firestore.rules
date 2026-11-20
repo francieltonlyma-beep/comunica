@@ -756,6 +756,12 @@ service cloud.firestore {
         allow update: if kind == 'activities' && (canManageActivities(app, company) || respondsToActivityInvitation(company));
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
+        allow read, delete: if kind == 'careerVacancyLibrary' && (support() || careerManager(app, company));
+        allow create, update: if kind == 'careerVacancyLibrary' && (support() || careerManager(app, company))
+          && request.resource.data.keys().hasOnly(['category', 'text'])
+          && request.resource.data.category in ['experience', 'benefits', 'requirements', 'workSchedule', 'contractType']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 240;
         allow update: if kind == 'applications' && (support() || careerManager(app, company))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewNotes', 'recruitmentUpdate', 'decisionAt', 'decisionBy', 'discardReason', 'interview', 'interviewScheduledAt', 'interviewScheduledBy', 'candidateUpdatePending', 'candidateUpdateAcknowledgedAt', 'aiAssessment', 'aiAssessmentAt', 'aiAssessmentBy', 'aiAssessmentVacancyUpdatedAt'])
           && request.resource.data.get('status', '') in ['received', 'reviewing', 'preselected', 'interview', 'rejected', 'hired', 'closed'];
