@@ -33,5 +33,5 @@ export function buildManagementNavigation({unreadCount, unreadUpdates, pendingPo
 }
 
 export const integraNavigationSections = [{label:'Operações',items:[
-  {id:'integra',label:'Compras',description:'Pedidos, entregas e armazenagem',icon:Package,activeClass:'from-teal-900 to-cyan-700',accent:'text-teal-700'},
+  {id:'integra',label:'Compras e frota',description:'Compras, veículos e viagens',icon:Package,activeClass:'from-teal-900 to-cyan-700',accent:'text-teal-700'},
 ]}];
