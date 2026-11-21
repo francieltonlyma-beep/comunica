@@ -800,6 +800,176 @@ service cloud.firestore {
         allow create: if kind == 'absences' && access(company) && (manages(app, company) || (request.resource.data.get('userId', '') == request.auth.uid && canManageCalendar(app, company)) || (request.resource.data.get('createdBy', '') == request.auth.uid && ((scheduleManager(app, company) && canManageCalendar(app, company)) || canPublishAbsenceForOthers(app, company))));
         allow update, delete: if kind == 'absences' && access(company) && canManageCalendar(app, company) && (manages(app, company) || resource.data.get('userId', '') == request.auth.uid);
       }
+      function fleetManager() {
+        return app == 'comunica-salvador' && (support() || (integraEnabled(app, company) && admin(app, company)));
+      }
+      function fleetDriverPath(uid) {
+        return /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/fleetDrivers/$(uid);
+      }
+      function hasFleetDriverAccess(uid) {
+        return app == 'comunica-salvador' && member(company) && integraEnabled(app, company)
+          && request.auth.uid == uid && get(fleetDriverPath(uid)).data.active == true;
+      }
+      function fleetVehiclePath(vehicleId) {
+        return /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/fleetVehicles/$(vehicleId);
+      }
+      function fleetTripPath(tripId) {
+        return /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/fleetTrips/$(tripId);
+      }
+      function fleetTripLockPath(vehicleId) {
+        return /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/fleetTripLocks/$(vehicleId);
+      }
+      function hasFleetVehicleAccess(driverId, vehicleId) {
+        return hasFleetDriverAccess(driverId) && get(fleetDriverPath(driverId)).data.vehicleId == vehicleId;
+      }
+      function canRegisterFleetOperation(data) {
+        return hasFleetVehicleAccess(data.driverId, data.vehicleId) && get(fleetVehiclePath(data.vehicleId)).data.status == 'available';
+      }
+      function fleetText(value, max) { return value is string && value.size() > 0 && value.size() <= max; }
+      function fleetDay(value) { return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+      function fleetKm(value) { return value is number && value >= 0 && value <= 9999999; }
+      function fleetDatePart(value) { return (value < 10 ? '0' : '') + string(value); }
+      function isFleetToday(value) {
+        let local = request.time - duration.value(3, 'h');
+        return value == string(local.year()) + '-' + fleetDatePart(local.month()) + '-' + fleetDatePart(local.day());
+      }
+      function fleetMeterMatches(vehicleId, reading) {
+        return fleetKm(reading) && reading >= get(fleetVehiclePath(vehicleId)).data.currentKm
+          && getAfter(fleetVehiclePath(vehicleId)).data.currentKm == reading;
+      }
+      function validFleetMeterEvent(vehicleId, meter) {
+        let source = meter.meterEvent;
+        let name = source.collection;
+        let entryId = source.id;
+        let event = getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/$(name)/$(entryId)).data;
+        return source.keys().hasOnly(['collection','id'])
+          && name in ['fleetFuel','fleetChecks','fleetTrips'] && event.vehicleId == vehicleId
+          && (fleetManager() || event.driverId == request.auth.uid)
+          && (name == 'fleetTrips'
+            ? ((event.status == 'active' && event.createdAt == request.time && event.startKm == meter.currentKm)
+              || (event.status == 'finished' && event.finishedAt == request.time && event.endKm == meter.currentKm))
+            : event.createdAt == request.time && event.km == meter.currentKm);
+      }
+      function fleetMoney(value) { return value is number && value >= 0 && value <= 1000000; }
+      function fleetCheckPassed(check) {
+        return check.tires == 'ok' && check.lights == 'ok' && check.brakes == 'ok' && check.fluids == 'ok' && check.equipment == 'ok';
+      }
+      function validFleetCheck(data, checkId) {
+        return data.keys().hasOnly(['vehicleId','driverId','date','km','items','notes','createdAt'])
+          && data.items.keys().hasOnly(['tires','lights','brakes','fluids','equipment'])
+          && data.items.tires in ['ok','issue'] && data.items.lights in ['ok','issue']
+          && data.items.brakes in ['ok','issue'] && data.items.fluids in ['ok','issue'] && data.items.equipment in ['ok','issue']
+          && data.notes is string && data.notes.size() <= 500 && (fleetCheckPassed(data.items) || data.notes.size() > 0)
+          && isFleetToday(data.date) && checkId == data.driverId + '_' + data.vehicleId + '_' + data.date
+          && data.createdAt == request.time && canRegisterFleetOperation(data) && fleetMeterMatches(data.vehicleId, data.km);
+      }
+      function validFleetStart(data, tripId) {
+        let checkId = data.driverId + '_' + data.vehicleId + '_' + data.date;
+        let check = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/fleetChecks/$(checkId)).data;
+        let lock = getAfter(fleetTripLockPath(data.vehicleId)).data;
+        return data.keys().hasOnly(['vehicleId','driverId','origin','destination','startKm','status','date','createdAt'])
+          && fleetText(data.origin, 180) && fleetText(data.destination, 180)
+          && data.status == 'active' && data.createdAt == request.time && isFleetToday(data.date)
+          && canRegisterFleetOperation(data) && fleetMeterMatches(data.vehicleId, data.startKm)
+          && fleetCheckPassed(check.items) && data.startKm >= check.km
+          && get(fleetDriverPath(data.driverId)).data.licenseExpiry >= data.date
+          && lock.tripId == tripId && lock.driverId == data.driverId;
+      }
+      function validFleetFinish(before, after, tripId) {
+        return (fleetManager() || hasFleetDriverAccess(before.driverId))
+          && before.status == 'active' && after.status == 'finished'
+          && after.diff(before).affectedKeys().hasOnly(['status','endKm','finishedAt'])
+          && fleetMeterMatches(before.vehicleId, after.endKm) && after.endKm >= before.startKm && after.finishedAt == request.time
+          && get(fleetTripLockPath(before.vehicleId)).data.tripId == tripId
+          && !existsAfter(fleetTripLockPath(before.vehicleId));
+      }
+      function mayReadFleetTrip(trip) {
+        return fleetManager() || hasFleetDriverAccess(trip.driverId);
+      }
+
+      match /fleetVehicles/{vehicleId} {
+        allow get: if fleetManager() || (request.auth != null && hasFleetVehicleAccess(request.auth.uid, vehicleId));
+        allow list: if fleetManager();
+        allow create, update: if fleetManager()
+          && request.resource.data.keys().hasOnly(['plate','model','status','initialKm','currentKm','updatedAt','meterEvent'])
+          && request.resource.data.plate == vehicleId && vehicleId.matches('^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$')
+          && fleetText(request.resource.data.model, 100) && request.resource.data.status in ['available','maintenance','inactive']
+          && fleetKm(request.resource.data.initialKm) && request.resource.data.updatedAt == request.time
+          && (resource == null
+            ? request.resource.data.currentKm == request.resource.data.initialKm && !request.resource.data.keys().hasAny(['meterEvent'])
+            : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['model','status','updatedAt']));
+        allow update: if (fleetManager() || hasFleetVehicleAccess(request.auth.uid, vehicleId))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentKm','updatedAt','meterEvent'])
+          && validFleetMeterEvent(vehicleId, request.resource.data)
+          && fleetKm(request.resource.data.currentKm) && request.resource.data.currentKm >= resource.data.currentKm
+          && request.resource.data.updatedAt == request.time;
+      }
+      match /fleetDrivers/{uid} {
+        allow get: if fleetManager() || (app == 'comunica-salvador' && member(company) && integraEnabled(app, company) && request.auth.uid == uid);
+        allow list: if fleetManager();
+        allow create, update: if fleetManager()
+          && request.resource.data.keys().hasOnly(['vehicleId','licenseExpiry','active','updatedAt'])
+          && request.resource.data.active is bool && fleetDay(request.resource.data.licenseExpiry)
+          && request.resource.data.updatedAt == request.time
+          && exists(fleetVehiclePath(request.resource.data.vehicleId))
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid));
+      }
+      match /fleetFuel/{recordId} {
+        allow get, list: if fleetManager() || hasFleetDriverAccess(resource.data.driverId);
+        allow create: if request.resource.data.keys().hasOnly(['vehicleId','driverId','km','liters','cost','fuelType','supplier','fullTank','createdAt'])
+          && canRegisterFleetOperation(request.resource.data) && fleetMeterMatches(request.resource.data.vehicleId, request.resource.data.km)
+          && request.resource.data.liters is number && request.resource.data.liters > 0 && request.resource.data.liters <= 10000
+          && fleetMoney(request.resource.data.cost) && request.resource.data.cost > 0
+          && request.resource.data.fuelType in ['Diesel','Gasolina','Etanol','Outro']
+          && fleetText(request.resource.data.supplier, 120) && request.resource.data.fullTank is bool
+          && request.resource.data.createdAt == request.time;
+      }
+      match /fleetChecks/{checkId} {
+        allow get, list: if fleetManager() || hasFleetDriverAccess(resource.data.driverId);
+        allow create, update: if validFleetCheck(request.resource.data, checkId)
+          && (resource == null || request.resource.data.km >= resource.data.km);
+      }
+      match /fleetTrips/{tripId} {
+        allow get, list: if mayReadFleetTrip(resource.data);
+        allow create: if validFleetStart(request.resource.data, tripId);
+        allow update: if validFleetFinish(resource.data, request.resource.data, tripId);
+        match /points/{pointId} {
+          allow get, list: if mayReadFleetTrip(get(fleetTripPath(tripId)).data);
+          allow create: if request.resource.data.keys().hasOnly(['driverId','lat','lng','accuracy','recordedAt'])
+            && hasFleetDriverAccess(request.resource.data.driverId)
+            && get(fleetTripPath(tripId)).data.driverId == request.resource.data.driverId && get(fleetTripPath(tripId)).data.status == 'active'
+            && request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+            && request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
+            && request.resource.data.accuracy is number && request.resource.data.accuracy >= 0 && request.resource.data.accuracy <= 100000
+            && request.resource.data.recordedAt == request.time;
+        }
+      }
+      match /fleetTripLocks/{vehicleId} {
+        allow create: if request.resource.data.keys().hasOnly(['tripId','driverId'])
+          && hasFleetVehicleAccess(request.resource.data.driverId, vehicleId)
+          && getAfter(fleetTripPath(request.resource.data.tripId)).data.vehicleId == vehicleId
+          && getAfter(fleetTripPath(request.resource.data.tripId)).data.driverId == request.auth.uid
+          && getAfter(fleetTripPath(request.resource.data.tripId)).data.status == 'active'
+          && getAfter(fleetTripPath(request.resource.data.tripId)).data.createdAt == request.time;
+        allow delete: if (fleetManager() || hasFleetDriverAccess(resource.data.driverId))
+          && getAfter(fleetTripPath(resource.data.tripId)).data.finishedAt == request.time
+          && getAfter(fleetTripPath(resource.data.tripId)).data.status == 'finished';
+      }
+      match /fleetMaintenance/{recordId} {
+        allow get, list: if fleetManager();
+        allow create: if fleetManager()
+          && request.resource.data.keys().hasOnly(['vehicleId','kind','title','dueDate','dueKm','status','createdAt'])
+          && exists(fleetVehiclePath(request.resource.data.vehicleId))
+          && request.resource.data.kind in ['preventive','corrective'] && fleetText(request.resource.data.title, 160)
+          && (request.resource.data.dueDate == '' || fleetDay(request.resource.data.dueDate))
+          && fleetKm(request.resource.data.dueKm) && (request.resource.data.dueDate != '' || request.resource.data.dueKm > 0)
+          && request.resource.data.status == 'planned' && request.resource.data.createdAt == request.time;
+        allow update: if fleetManager() && resource.data.status == 'planned'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','cost','finishedAt'])
+          && request.resource.data.status == 'done' && fleetMoney(request.resource.data.cost)
+          && request.resource.data.finishedAt == request.time;
+      }
+
       match /messages/{id} {
         allow read: if support()
           || (manages(app, company) && (resource.data.get('serviceRequest', false) == true

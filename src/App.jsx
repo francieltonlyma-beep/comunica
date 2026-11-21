@@ -58,7 +58,7 @@ import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
 import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
-const PurchaseManagement = lazy(() => import('./PurchaseManagement.jsx'));
+const PurchaseManagement = lazy(() => import('./IntegraWorkspace.jsx'));
 const SurveyTopicsEditor = lazy(() => import('./SurveyTopicsEditor.jsx'));
 const SurveyLibrary = lazy(() => import('./SurveyLibrary.jsx'));
 const SurveyRespondent = lazy(() => import('./SurveyRespondent.jsx'));
