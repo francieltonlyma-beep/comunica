@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { addDoc, collection, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { ClipboardCheck, Fuel, Gauge, MapPin, Truck, Users, Wrench } from 'lucide-react';
+import { Gauge } from 'lucide-react';
+import FleetOverview from './FleetOverview.jsx';
 import { CHECK_ITEMS, fleetChecklistId, fleetDate, fleetDirectionsUrl, fleetFuelMetrics, fleetMaintenanceState, fleetPointUrl } from './fleetOperations.js';
 import { useFleetLocation, useFleetRecords } from './useFleet.js';
 
@@ -12,7 +13,7 @@ const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: '
 const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
 const dateLabel = value => value.split('-').reverse().join('/');
 const dateAndTime = value => value?.toDate ? value.toDate().toLocaleString('pt-BR') : 'Sincronizando…';
-const newest = (a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0);
+const newest = (a, b) => ((b.createdAt || b.updatedAt)?.toMillis() ?? 0) - ((a.createdAt || a.updatedAt)?.toMillis() ?? 0);
 
 function Field({ label, children, ...props }) {
   return <label className="block text-xs font-semibold text-slate-700">{label}
@@ -39,10 +40,17 @@ function Form({ onSubmit, saving, label, children }) {
   </form>;
 }
 
-function RecordList({ rows, render, empty }) {
-  return rows.length ? <ul className="divide-y divide-slate-100">{[...rows].sort(newest).map(row =>
-    <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">{render(row)}</li>
-  )}</ul> : <p className="text-sm text-slate-500">{empty}</p>;
+function RecordList({ rows, render, empty, sort = newest }) {
+  const [visibleCount, setVisibleCount] = useState(15);
+  if (!rows.length) return <p className="text-sm text-slate-500">{empty}</p>;
+  return <>
+    <ul className="divide-y divide-slate-100">{[...rows].sort(sort).slice(0, visibleCount).map(row =>
+      <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">{render(row)}</li>
+    )}</ul>
+    {visibleCount < rows.length && <button type="button" className={`mt-3 ${SECONDARY}`} onClick={() => setVisibleCount(count => count + 15)}>
+      Mostrar mais ({Math.min(visibleCount, rows.length)} de {rows.length})
+    </button>}
+  </>;
 }
 
 function TripHistory({ db, root, trip }) {
@@ -64,11 +72,12 @@ function TripHistory({ db, root, trip }) {
   </div>;
 }
 
-export default function FleetWorkspace({ db, appId, companyId, user, users = [] }) {
+export default function FleetWorkspace({ db, appId, companyId, user, users = [], activeTab, onNavigate }) {
   const root = ['artifacts', appId, 'public', 'data', 'companies', companyId];
   const manager = Boolean(user?.isAdmin || user?.isDeveloper);
   const uid = user?.id;
-  const [tab, setTab] = useState('trips');
+  const tab = activeTab === 'fleet' ? 'overview' : activeTab.slice(6);
+  const [historyMonth, setHistoryMonth] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [expandedTrip, setExpandedTrip] = useState('');
   const [editingVehicleId, setEditingVehicleId] = useState('');
@@ -91,6 +100,10 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
   const fuelRows = fuel.rows.filter(row => row.vehicleId === vehicle?.id);
   const tripRows = trips.rows.filter(row => row.vehicleId === vehicle?.id);
   const checkRows = checks.rows.filter(row => row.vehicleId === vehicle?.id);
+  const matchesMonth = row => !historyMonth || (row.date || (row.createdAt?.toDate && fleetDate(row.createdAt.toDate())))?.startsWith(historyMonth);
+  const visibleFuel = fuelRows.filter(matchesMonth);
+  const visibleTrips = tripRows.filter(row => row.status === 'active' || matchesMonth(row));
+  const visibleChecks = checkRows.filter(matchesMonth);
   const maintenanceRows = maintenance.rows.filter(row => row.vehicleId === vehicle?.id);
   const km = vehicle?.currentKm ?? 0;
   const today = fleetDate();
@@ -102,6 +115,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
   const location = useFleetLocation(db, root, ownTrip?.id, uid);
   const metrics = manager ? fleetFuelMetrics(fuelRows) : null;
   const overdueCount = maintenanceRows.filter(record => fleetMaintenanceState(record, km, today) === 'Vencida').length;
+  const loading = [vehicles, fuel, checks, trips, maintenance].some(item => item.loading);
   const issues = [drivers, vehicles, fuel, checks, trips, maintenance].find(item => item.error)?.error;
   const ref = (name, id) => doc(db, ...root, name, id);
   const records = name => collection(db, ...root, name);
@@ -113,12 +127,12 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
     setFeedback(null);
     try {
       await operation();
-      setFeedback({ message });
+      setFeedback({ message, tab });
       return true;
     } catch (error) {
       setFeedback({ message: error.code === 'permission-denied'
         ? 'Operação recusada. Confira sua permissão, a disponibilidade do veículo e os dados informados.'
-        : error.code ? 'Não foi possível salvar. Verifique a conexão e tente novamente.' : error.message, error: true });
+        : error.code ? 'Não foi possível salvar. Verifique a conexão e tente novamente.' : error.message, error: true, tab });
       return false;
     } finally {
       savingRef.current = false;
@@ -228,10 +242,6 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
   if (drivers.error) return <p role="alert" className={PANEL}>{drivers.error}</p>;
   if (!manager && !driver) return <p className={PANEL}>Peça ao administrador da empresa para vincular seu login a um cadastro de motorista ativo.</p>;
 
-  const tabs = [
-    ['trips', 'Viagens e rotas', MapPin], ['checks', 'Checklist diário', ClipboardCheck], ['fuel', 'Abastecimentos', Fuel],
-    ...(manager ? [['maintenance', 'Manutenção', Wrench], ['vehicles', 'Veículos', Truck], ['drivers', 'Motoristas', Users]] : []),
-  ];
   return <div className="space-y-4">
     <header className="rounded-2xl bg-slate-950 p-5 text-white sm:p-6">
       <h2 className="text-xl font-bold">Controle de frota</h2>
@@ -250,13 +260,22 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
       </div>
     </header>
 
-    <nav aria-label="Ferramentas da frota" className="flex flex-wrap gap-2">
-      {tabs.map(([id, label, Icon]) => <button type="button" aria-pressed={tab === id} key={id} onClick={() => { setTab(id); setFeedback(null); }}
-        className={`inline-flex items-center gap-2 ${tab === id ? BUTTON : SECONDARY}`}><Icon className="h-4 w-4" />{label}</button>)}
-    </nav>
+    {location.tracking && tab !== 'trips' && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-teal-50 p-3 text-sm text-teal-950">
+      <p role="status">Compartilhamento de localização ativo.</p>
+      <button type="button" className={SECONDARY} onClick={() => onNavigate('fleet-trips')}>Abrir viagem</button>
+    </div>}
+    {vehicle && ['fuel', 'checks', 'trips'].includes(tab) && <div className={`flex flex-wrap items-end gap-3 ${PANEL}`}>
+      <Field label="Mês do histórico" type="month" value={historyMonth} onChange={event => setHistoryMonth(event.target.value)} />
+      {historyMonth && <button type="button" className={SECONDARY} onClick={() => setHistoryMonth('')}>Ver todos os meses</button>}
+    </div>}
     {!manager && driver?.licenseExpiry < today && <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">CNH vencida. Solicite ao gestor a atualização da validade para registrar novas operações.</p>}
     {issues && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{issues}</p>}
-    {feedback && <p role={feedback.error ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${feedback.error ? 'bg-rose-50 text-rose-900' : 'bg-emerald-50 text-emerald-900'}`}>{feedback.message}</p>}
+    {feedback?.tab === tab && <p role={feedback.error ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${feedback.error ? 'bg-rose-50 text-rose-900' : 'bg-emerald-50 text-emerald-900'}`}>{feedback.message}</p>}
+
+    {tab === 'overview' && (loading ? <p className={PANEL}>Carregando indicadores da frota…</p> :
+      <FleetOverview vehicle={vehicle} manager={manager} canDrive={canDrive} ownTrip={ownTrip} vehicleTrip={vehicleTrip}
+        check={check} checkRows={checkRows} today={today} overdueCount={overdueCount} metrics={metrics}
+        fuelRows={fuelRows} tripRows={tripRows} onNavigate={onNavigate} />)}
 
     {tab === 'vehicles' && manager && <Section title="Cadastro de veículos">
       <Form key={editingVehicleId || 'new'} onSubmit={form => act(() => saveVehicle(form), 'Veículo salvo.')} saving={saving} label={editingVehicle ? 'Salvar alterações' : 'Cadastrar veículo'}>
@@ -288,7 +307,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
       </>} /></div>
     </Section>}
 
-    {!vehicle && !['drivers', 'vehicles'].includes(tab) && <p className={PANEL}>Cadastre ou vincule um veículo para iniciar os registros.</p>}
+    {!vehicle && !['drivers', 'vehicles', 'overview'].includes(tab) && <p className={PANEL}>Cadastre ou vincule um veículo para iniciar os registros.</p>}
     {vehicle && tab === 'fuel' && <>
       {canDrive && <Section title="Registrar abastecimento">
         <Form key={vehicle.id} onSubmit={form => act(() => saveFuel(form), 'Abastecimento registrado.')} saving={saving} label="Registrar abastecimento">
@@ -302,7 +321,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
       </Section>}
       <Section title="Histórico de abastecimentos">
         {metrics && <p className="mb-3 rounded-xl bg-teal-50 p-3 text-sm text-teal-900">Último ciclo completo · {number.format(metrics.consumption)} km/L · {currency.format(metrics.costPerKm)}/km</p>}
-        <RecordList rows={fuelRows} empty="Nenhum abastecimento registrado." render={row => <>
+        <RecordList key={vehicle.id + historyMonth} rows={visibleFuel} empty="Nenhum abastecimento para o período." render={row => <>
           <span className="text-sm"><strong>{row.supplier}</strong> · {row.fuelType}<small className="block text-slate-500">{dateAndTime(row.createdAt)} · {number.format(row.km)} km</small></span>
           <span className="text-sm">{number.format(row.liters)} L · {currency.format(row.cost)}</span>
         </>} />
@@ -318,7 +337,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
         </Form>
       </Section>}
       <Section title="Histórico de checklists">
-        <RecordList rows={checkRows} empty="Nenhum checklist registrado." render={row => <span className="text-sm">
+        <RecordList key={vehicle.id + historyMonth} rows={visibleChecks} empty="Nenhum checklist para o período." render={row => <span className="text-sm">
           <strong>{dateLabel(row.date)}</strong> · {number.format(row.km)} km · {Object.values(row.items).includes('issue') ? 'Irregularidade' : 'Em ordem'}
           {row.notes && <small className="block text-slate-500">{row.notes}</small>}
         </span>} />
@@ -334,7 +353,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
         {location.message && <p className="mt-2 text-sm text-slate-600" role="status">{location.message}</p>}
       </Section>}
       {canDrive && !vehicleTrip && <Section title="Iniciar viagem">
-        {!check || Object.values(check.items).includes('issue') ? <p className="text-sm text-slate-600">Para começar, envie o checklist de hoje com todos os itens em ordem.</p>
+        {!check || Object.values(check.items).includes('issue') ? <div><p className="mb-3 text-sm text-slate-600">Para começar, envie o checklist de hoje com todos os itens em ordem.</p><button type="button" className={SECONDARY} onClick={() => onNavigate('fleet-checks')}>Abrir checklist diário</button></div>
           : <Form key={vehicle.id} onSubmit={form => act(() => startTrip(form), 'Viagem iniciada.')} saving={saving} label="Iniciar viagem">
             <Field label="Origem" name="origin" required maxLength={180} />
             <Field label="Destino" name="destination" required maxLength={180} />
@@ -342,7 +361,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [] 
           </Form>}
       </Section>}
       <Section title="Viagens do veículo">
-        <RecordList rows={tripRows} empty="Nenhuma viagem registrada." render={row => <article className="w-full">
+        <RecordList key={vehicle.id + historyMonth} rows={visibleTrips} sort={(a, b) => Number(b.status === 'active') - Number(a.status === 'active') || newest(a, b)} empty="Nenhuma viagem para o período." render={row => <article className="w-full">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span><strong>{row.origin} → {row.destination}</strong>
             <small className="block text-slate-500">{dateLabel(row.date)} · {row.status === 'active' ? 'Em andamento' : `${number.format(row.endKm - row.startKm)} km percorridos`}</small>
           </span><button type="button" className={SECONDARY} aria-expanded={expandedTrip === row.id} onClick={() => setExpandedTrip(previous => previous === row.id ? '' : row.id)}>Rota e posições</button></div>

@@ -1,9 +1,11 @@
+import { isFleetTab } from './managementNavigation.js';
+
 export const APP_NAVIGATION_HISTORY_KEY = 'comunicaNavigation';
 
 const APP_TABS = new Set([
   'dashboard', 'inbox', 'updates', 'announcements', 'sectors', 'polls',
   'services', 'documents', 'scale', 'productivity', 'careers',
-  'whistleblowing', 'management', 'support',
+  'whistleblowing', 'management', 'support', 'integra',
 ]);
 const SERVICE_WORKSPACES = new Set(['requests', 'activities', 'management']);
 const DASHBOARD_DETAILS = new Set(['active', 'offDuty', 'vacation']);
@@ -14,7 +16,7 @@ export const normalizeAppNavigation = value => {
   const source = value && typeof value === 'object' ? value : {};
   const threadId = safeString(source.threadId);
   return {
-    tab: APP_TABS.has(source.tab) ? source.tab : 'dashboard',
+    tab: (APP_TABS.has(source.tab) || isFleetTab(source.tab)) ? source.tab : 'dashboard',
     threadId,
     composing: Boolean(source.composing),
     messagesModal: Boolean(source.messagesModal),

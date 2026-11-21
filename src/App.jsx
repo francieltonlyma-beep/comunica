@@ -58,7 +58,7 @@ import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
 import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
-const PurchaseManagement = lazy(() => import('./IntegraWorkspace.jsx'));
+const IntegraWorkspace = lazy(() => import('./IntegraWorkspace.jsx'));
 const SurveyTopicsEditor = lazy(() => import('./SurveyTopicsEditor.jsx'));
 const SurveyLibrary = lazy(() => import('./SurveyLibrary.jsx'));
 const SurveyRespondent = lazy(() => import('./SurveyRespondent.jsx'));
@@ -96,7 +96,7 @@ import { clearLegacyCompanyCache, readSessionIdentity, sessionIdentity } from '.
 import { publicDirectoryProfile, directoryFields } from './userDirectory.js';
 import { employeeAccessLabel, employeeAccessMillis } from './employeeAccess.js';
 import { sortCollectionRecords } from './companyCollections.js';
-import { buildManagementNavigation, integraNavigationSections } from './managementNavigation.js';
+import { buildIntegraNavigation, buildManagementNavigation, canOpenFleetTab, isFleetTab } from './managementNavigation.js';
 import {
   getAppleMobileVersion,
   getPushActivationDiagnosticCode,
@@ -7199,8 +7199,10 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   const canManageActivityTemplates = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canManageActivityTemplates === true);
   const canViewActivityInsights = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.canViewActivityInsights === true);
   const integraSupport = Boolean(currentUser?.isDeveloper && dbUser?.uid === PLATFORM_SUPPORT.id);
-  const canOpenModule = moduleId => moduleId === 'integra'
-    ? (integraEnabled || integraSupport) && userHasIntegraAccess(currentUser)
+  const fleetManager = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper);
+  const canOpenIntegra = (integraEnabled || integraSupport) && userHasIntegraAccess(currentUser);
+  const canOpenModule = moduleId => moduleId === 'integra' || isFleetTab(moduleId)
+    ? canOpenIntegra && (moduleId === 'integra' || canOpenFleetTab(moduleId, fleetManager))
     : moduleId === 'careers'
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
     : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false;
@@ -8792,8 +8794,8 @@ const notificationsToShow = [...notificationItems]
     isDeveloper: currentUser.isDeveloper,
     openPlatformSupport,
   });
-  const isIntegraWorkspace = activeTab === 'integra';
-  const visibleNavigationSections = (isIntegraWorkspace ? integraNavigationSections : navigationSections)
+  const isIntegraWorkspace = activeTab === 'integra' || isFleetTab(activeTab);
+  const visibleNavigationSections = (isIntegraWorkspace ? buildIntegraNavigation(fleetManager) : navigationSections)
     .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
     .filter(section => section.items.length);
   const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
@@ -9108,8 +9110,8 @@ const notificationsToShow = [...notificationItems]
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
-          {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement key={activeCompany?.id} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
-          {!['dashboard', 'inbox', 'integra'].includes(activeTab) && workspaceToolbar}
+          {isIntegraWorkspace && canOpenModule(activeTab) && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando Comunica Integra...</div>}><IntegraWorkspace activeTab={activeTab} onNavigate={setActiveTab} key={activeCompany?.id} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
+          {!isIntegraWorkspace && !['dashboard', 'inbox'].includes(activeTab) && workspaceToolbar}
 
           {/* TAB: SUPPORT */}
           {activeTab === 'updates' && (
