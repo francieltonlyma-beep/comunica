@@ -29,8 +29,9 @@ const PRIORITIES = { normal: 'Normal', high: 'Alta', urgent: 'Urgente' };
 const TRACK_STAGES = ['requested','quotation','approved','ordered','in_transit','received','stored','delivered','closed'];
 const stagePosition = status => status === 'exception' ? TRACK_STAGES.indexOf('received') : status === 'finance_dispute' ? TRACK_STAGES.indexOf('delivered') : TRACK_STAGES.indexOf(status);
 const currentTimestamp = () => Date.now();
+const PURCHASE_PAGE_SIZE = 20;
 
-export default function PurchaseManagement({ db, appId, companyId, companyCode, companyName, user, departments = [], users = [], online = true, initialPurchaseId, uploadAttachment, downloadAttachment, approveQuote }) {
+export default function PurchaseManagement({ db, appId, companyId, companyCode, companyName, user, departments = [], users = [], online = true, active = true, initialPurchaseId, uploadAttachment, downloadAttachment, approveQuote }) {
   const manager = Boolean(user?.isAdmin || user?.isDeveloper);
   const scope = JSON.stringify([appId, companyId, user?.id, manager]);
   const [snapshotState, setSnapshotState] = useState({ scope: '', records: [] });
@@ -41,7 +42,7 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
   const [formOpen, setFormOpen] = useState(false);
   const [formAttempted, setFormAttempted] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState('');
-  const formRef = useDialogFocus(formOpen, () => { if (!busy) setFormOpen(false); });
+  const formRef = useDialogFocus(active && formOpen, () => { if (!busy) setFormOpen(false); });
   const [form, setForm] = useState(INITIAL);
   const [extraItems, setExtraItems] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -52,6 +53,7 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
   const [filters, setFilters] = useState(PURCHASE_FILTERS);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
+  const [purchasePage, setPurchasePage] = useState({ filterKey: '', size: PURCHASE_PAGE_SIZE });
   const [policy, setPolicy] = useState(null);
   const [policyDraft, setPolicyDraft] = useState(INITIAL_POLICY);
   const [policyLoaded, setPolicyLoaded] = useState(false);
@@ -69,7 +71,7 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
 
 
   useEffect(() => {
-    if (!db || !companyId || !user?.id) return undefined;
+    if (!active || !db || !companyId || !user?.id) return undefined;
     const ref = collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests');
     const publish = (items) => {
       setSnapshotState({ scope, records: items.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)) });
@@ -84,8 +86,9 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     };
     if (manager) return onSnapshot(ref, snapshot => { publish(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))); setError(''); },
       () => { publish([]); setError('Não foi possível carregar as compras.'); });
-    const sources = { own: [], assigned: [] };
+    const sources = { own: null, assigned: null };
     const refresh = () => {
+      if (!sources.own || !sources.assigned) return;
       const latest = new Map();
       for (const item of Object.values(sources).flat()) {
         if (!latest.has(item.id) || latest.get(item.id).updatedAt <= item.updatedAt) latest.set(item.id, item);
@@ -108,35 +111,37 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
       }, () => setError('Não foi possível carregar as etapas disponíveis para você.'));
     });
     return () => { stopOwn(); stopAssigned(); stopQueue.forEach(stop => stop()); };
-  }, [appId, companyId, db, manager, scope, user?.id, initialPurchaseId, queueStages]);
+  }, [active, appId, companyId, db, manager, scope, user?.id, initialPurchaseId, queueStages]);
 
   useEffect(() => {
-    if (!db || !companyId || !user?.id) return undefined;
+    if (!active || !db || !companyId || !user?.id) return undefined;
     return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'settings', 'purchase-approval'), snapshot => {
       const config = snapshot.exists() ? snapshot.data() : null;
       setPolicy(config);
       setPolicyDraft({ ...INITIAL_POLICY, ...config });
       setPolicyLoaded(true);
     }, () => setError('Não foi possível consultar as alçadas de aprovação.'));
-  }, [appId, companyId, db, user?.id]);
+  }, [active, appId, companyId, db, user?.id]);
 
   const selected = records.find(item => item.id === selectedId);
   const canReadDetails = Boolean(selected && (manager || selected.requesterId === user?.id || selected.participantIds?.includes(user?.id)));
 
   useEffect(() => {
-    if (!db || !companyId || !selectedId || !canReadDetails) return undefined;
+    if (!active || !db || !companyId || !selectedId || !canReadDetails) return undefined;
     return onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'companies', companyId, 'purchaseRequests', selectedId, 'files'),
       snapshot => setFiles(snapshot.docs.map(item => ({id:item.id,...item.data()})).sort((a,b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))),
       () => setError('Não foi possível carregar os anexos desta compra.'));
-  }, [appId,companyId,db,selectedId,canReadDetails]);
+  }, [active,appId,companyId,db,selectedId,canReadDetails]);
 
   useEffect(() => {
-    if (!db || !companyId || !user?.id) return undefined;
+    if (!active || !db || !companyId || !user?.id) return undefined;
     const base = ['artifacts', appId, 'public', 'data', 'companies', companyId];
     const stopSuppliers = onSnapshot(collection(db,...base,'purchaseSuppliers'), snapshot => setSuppliers(snapshot.docs.map(d=>({id:d.id,...d.data()}))), () => setError('Não foi possível carregar os fornecedores.'));
     const stopProducts = onSnapshot(collection(db,...base,'purchaseProducts'), snapshot => setProducts(snapshot.docs.map(d=>({id:d.id,...d.data()}))), () => setError('Não foi possível carregar os produtos.'));
     return () => { stopSuppliers(); stopProducts(); };
-  }, [db,appId,companyId,user?.id]);
+  }, [active,db,appId,companyId,user?.id]);
+
+  if (!active) return null;
 
   const quoteItems = selected?.bundleId ? records.filter(item => item.bundleId === selected.bundleId).sort((a,b) => a.bundleIndex - b.bundleIndex) : [];
   const quoteValues = quoteDraft || Object.fromEntries(quoteItems.map(item => [item.id, { included: item.quotedPrice > 0, supplier: item.supplier || '', quotedPrice: item.quotedPrice || '', expectedDate: item.expectedDate || '' }]));
@@ -196,6 +201,15 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
     }
   }
   const visibleGroups = [...visibleGroupMap.values()];
+  const purchaseFilterKey = JSON.stringify([scope, filters, search, stageFilter]);
+  const visibleLimit = purchasePage.filterKey === purchaseFilterKey ? purchasePage.size : PURCHASE_PAGE_SIZE;
+  const orderBundles = new Map();
+  for (const record of records) {
+    if (!record.bundleId) continue;
+    if (!orderBundles.has(record.bundleId)) orderBundles.set(record.bundleId, []);
+    orderBundles.get(record.bundleId).push(record);
+  }
+  const showMorePurchases = () => setPurchasePage({ filterKey: purchaseFilterKey, size: visibleLimit + PURCHASE_PAGE_SIZE });
   const categories = [...new Set([...PURCHASE_CATEGORIES, ...records.map(item => item.category || 'Sem categoria')])].sort();
   const requesters = [...new Map(records.map(item => [item.requesterId, item.requesterName])).entries()];
   const responsibleIds = new Set(records.flatMap(item => [item.buyerId, item.approverId, item.receiverId, item.recipientId, item.financeId]).filter(Boolean));
@@ -495,7 +509,8 @@ export default function PurchaseManagement({ db, appId, companyId, companyCode, 
           <button type="button" className="pm-clear" onClick={resetFilters}>Limpar filtros</button></div></details>
         </div>
         <p className="pm-hint pm-list-summary">{visibleGroups.length} cotações · {visible.length} itens de {records.length} · Total cotado: {visible.reduce((sum,item) => sum + Number(item.quotedPrice || 0) * Number(item.quantity || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visibleGroups.map(item => { const group = item.bundleId ? records.filter(entry => entry.bundleId === item.bundleId) : [item]; const cardStatus = item.status; const groupTotal = purchaseQuoteTotal(group); const responsible = resolvePending(item); const progress = Math.max(0,stagePosition(item.status)); const available = canClaim(item); const attention = (responsible === user?.id || available) && !['closed','cancelled','rejected'].includes(item.status); return <button key={item.id} type="button" onClick={() => beginDetail(item)} aria-current={(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'true' : undefined} className={`pm-card ${(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'pm-selected' : ''} ${attention ? 'pm-attention' : ''}`}><div className="pm-card-top"><span className={`pm-chip ${stageColor(cardStatus)}`}>{PURCHASE_STAGES[cardStatus] || cardStatus}</span>{attention && <span className="pm-attention-label">{available ? 'Disponível para você' : 'Aguardando você'}</span>}</div><strong className="pm-card-title">{item.bundleId ? group.map(entry => entry.item).slice(0,2).join(' + ') : item.item}</strong><span className="pm-reference">{purchaseDisplayReference(item)} · {group.length} {group.length === 1 ? 'item' : 'itens'}</span><span className="pm-card-requester">{item.requesterName} · {item.department}</span><div className="pm-card-meta"><span>{item.category || 'Sem categoria'}</span><span>{item.quantity} {item.unit}</span><span>{PRIORITIES[item.priority] || 'Normal'}</span>{item.bundleId && <span>{records.filter(entry => entry.bundleId === item.bundleId).map(entry => entry.item).join(', ')}</span>}</div><div className="pm-card-progress" aria-label={`Progresso: ${progress + 1} de ${TRACK_STAGES.length} etapas`}><span style={{width:`${((progress + 1) / TRACK_STAGES.length) * 100}%`}} /></div><div className="pm-card-bottom"><span>Necessário em <strong>{dateBR(item.neededBy)}</strong></span>{groupTotal > 0 && <span>{groupTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>}</div>{responsible && <p className="pm-next-action">Próxima ação <strong>{displayUser(responsible)}</strong></p>}{purchaseOverdue(item, today) && <b className="pm-flag">Prazo vencido</b>}{attention && purchasePendingDays(item) >= 2 && <b className="pm-flag">Parado há {purchasePendingDays(item)} dias</b>}{item.status === 'exception' && <b className="pm-flag">Conferir divergência</b>}{item.status === 'finance_dispute' && <b className="pm-flag">NF devolvida pelo Financeiro</b>}{item.status === 'rejected' && <b className="pm-flag">Pode ser reaberta para revisão</b>}</button>; })}</div>}
+        {loading ? <p className="pm-empty">Carregando compras...</p> : visible.length === 0 ? <p className="pm-empty">Nenhuma solicitação com esses filtros.</p> : <div className="pm-cards">{visibleGroups.slice(0, visibleLimit).map(item => { const group = orderBundles.get(item.bundleId) || [item]; const cardStatus = item.status; const groupTotal = purchaseQuoteTotal(group); const responsible = resolvePending(item); const progress = Math.max(0,stagePosition(item.status)); const available = canClaim(item); const attention = (responsible === user?.id || available) && !['closed','cancelled','rejected'].includes(item.status); return <button key={item.id} type="button" onClick={() => beginDetail(item)} aria-current={(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'true' : undefined} className={`pm-card ${(selectedId === item.id || (item.bundleId && selected?.bundleId === item.bundleId)) ? 'pm-selected' : ''} ${attention ? 'pm-attention' : ''}`}><div className="pm-card-top"><span className={`pm-chip ${stageColor(cardStatus)}`}>{PURCHASE_STAGES[cardStatus] || cardStatus}</span>{attention && <span className="pm-attention-label">{available ? 'Disponível para você' : 'Aguardando você'}</span>}</div><strong className="pm-card-title">{item.bundleId ? group.map(entry => entry.item).slice(0,2).join(' + ') : item.item}</strong><span className="pm-reference">{purchaseDisplayReference(item)} · {group.length} {group.length === 1 ? 'item' : 'itens'}</span><span className="pm-card-requester">{item.requesterName} · {item.department}</span><div className="pm-card-meta"><span>{item.category || 'Sem categoria'}</span><span>{item.quantity} {item.unit}</span><span>{PRIORITIES[item.priority] || 'Normal'}</span>{item.bundleId && <span>{group.map(entry => entry.item).join(', ')}</span>}</div><div className="pm-card-progress" aria-label={`Progresso: ${progress + 1} de ${TRACK_STAGES.length} etapas`}><span style={{width:`${((progress + 1) / TRACK_STAGES.length) * 100}%`}} /></div><div className="pm-card-bottom"><span>Necessário em <strong>{dateBR(item.neededBy)}</strong></span>{groupTotal > 0 && <span>{groupTotal.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>}</div>{responsible && <p className="pm-next-action">Próxima ação <strong>{displayUser(responsible)}</strong></p>}{purchaseOverdue(item, today) && <b className="pm-flag">Prazo vencido</b>}{attention && purchasePendingDays(item) >= 2 && <b className="pm-flag">Parado há {purchasePendingDays(item)} dias</b>}{item.status === 'exception' && <b className="pm-flag">Conferir divergência</b>}{item.status === 'finance_dispute' && <b className="pm-flag">NF devolvida pelo Financeiro</b>}{item.status === 'rejected' && <b className="pm-flag">Pode ser reaberta para revisão</b>}</button>; })}</div>}
+        {visibleGroups.length > visibleLimit && <button type="button" className="pm-secondary" onClick={showMorePurchases}>Mostrar mais solicitações ({visibleLimit} de {visibleGroups.length})</button>}
       </div>
       <div className="pm-detail">
         {!selected ? <div className="pm-prompt"><PackageCheck size={34}/><h3>Fluxo de ponta a ponta</h3><p>Selecione uma compra para acompanhar responsáveis, aprovação, recebimento, nota fiscal e aceite no destino. Cada pessoa confirma sua etapa; o Financeiro encerra após conferir os atestes.</p></div> : <>
