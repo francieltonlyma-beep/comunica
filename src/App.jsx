@@ -9166,18 +9166,21 @@ const notificationsToShow = [...notificationItems]
           {/* TAB: DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div data-tour="dashboard" className="flex flex-col gap-6 animate-in fade-in duration-300">
-              <section data-tour="dashboard-overview" aria-label="Visão geral" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5">
-                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <section data-tour="dashboard-overview" aria-label="Visão geral" className="rounded-2xl border border-slate-200 border-t-[3px] border-t-teal-500 bg-white px-4 py-3 shadow-sm sm:px-5">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h2 className="text-xl font-bold tracking-tight text-slate-900">Visão geral</h2>
+                    <h2 className="break-words text-xl font-bold tracking-tight text-slate-900">{[new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 18 ? 'Boa tarde' : 'Boa noite', currentUser?.name?.trim().split(/\s+/)[0]].filter(Boolean).join(', ')}!</h2>
                     <p className="break-words text-xs text-slate-600">{[activeCompany?.name, dashboardRoleLabel].filter(Boolean).join(' · ')}</p>
                   </div>
-                  <div className="flex flex-wrap gap-x-4 text-xs font-semibold text-blue-700">
+                  <details className="relative shrink-0 text-xs font-semibold text-blue-700">
+                    <summary aria-label="Ajuda do painel" title="Ajuda do painel" className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full border border-slate-200"><BookOpen className="h-4 w-4" /></summary>
+                    <div className="absolute right-0 z-10 grid w-36 rounded-xl border border-slate-200 bg-white px-3 py-1 shadow-lg">
                     <button type="button" onClick={() => setActiveTutorial('dashboard')} className="inline-flex min-h-9 items-center gap-1.5 hover:underline"><BookOpen className="h-4 w-4" /> Guia do painel</button>
                     <button type="button" onClick={() => setActiveTutorial('platform')} className="min-h-9 hover:underline">Tour completo</button>
-                  </div>
+                    </div>
+                  </details>
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-1 border-t border-slate-200 pt-2">
+                <div className="mt-3 grid grid-cols-3 divide-x divide-slate-200 border-t border-slate-200 pt-2">
                   {[
                     { label: 'Alertas', count: dashboardAttentionItems.length, action: () => document.querySelector('[data-tour="dashboard-priorities"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
                     { label: 'Não lidas', count: unreadThreadCount, action: () => { setInboxStatusFilter('unread'); setActiveTab('inbox'); } },
