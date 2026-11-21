@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {clearLegacyCompanyCache,readSessionIdentity,sessionIdentity,legacyCompanyCacheKeys} from '../src/sessionPrivacy.js';
 import {publicDirectoryProfile} from '../src/userDirectory.js';
 import {collectionRecordTime,sortCollectionRecords} from '../src/companyCollections.js';
-import {buildManagementNavigation,integraNavigationSections} from '../src/managementNavigation.js';
+import {buildManagementNavigation,buildIntegraNavigation,canOpenFleetTab} from '../src/managementNavigation.js';
 
 test('o diretório inclui dados operacionais, sem contatos, PIN ou token', () => {
   assert.deepEqual(publicDirectoryProfile({id:'u1',name:'Teste',depts:['A'],birthDate:'2000-11-08',
@@ -39,5 +39,14 @@ test('menu de gestão oculta controles administrativos de colaboradores', () => 
   assert.equal(entries.find(item=>item.id==='inbox').badge,2);
   assert.equal(entries.some(item=>item.id==='management' || item.id==='support'),false);
   assert.equal(entries.some(item=>item.id==='platform-support'),true);
-  assert.equal(integraNavigationSections[0].items[0].id,'integra');
+
+});
+
+test('Integra organiza compras e frota no menu principal e restringe a gestão', () => {
+  const operator = buildIntegraNavigation(false).flatMap(section => section.items.map(item => item.id));
+  assert.deepEqual(operator, ['integra', 'fleet', 'fleet-trips', 'fleet-checks', 'fleet-fuel']);
+  const manager = buildIntegraNavigation(true).flatMap(section => section.items.map(item => item.id));
+  assert.deepEqual(manager.slice(-3), ['fleet-maintenance', 'fleet-vehicles', 'fleet-drivers']);
+  assert.equal(canOpenFleetTab('fleet-maintenance', false), false);
+  assert.equal(canOpenFleetTab('fleet-maintenance', true), true);
 });

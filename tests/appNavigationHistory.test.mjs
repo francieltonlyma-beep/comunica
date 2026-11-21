@@ -27,3 +27,10 @@ test('navigation keys change for modules and nested inbox screens', () => {
   assert.notEqual(appNavigationKey({ tab: 'inbox' }), appNavigationKey({ tab: 'inbox', threadId: 'thread-1' }));
   assert.notEqual(appNavigationKey({ tab: 'inbox', threadId: 'thread-1' }), appNavigationKey({ tab: 'inbox', threadId: 'thread-1', composing: true }));
 });
+
+test('browser history restores purchases and individual fleet screens', () => {
+  for (const tab of ['integra', 'fleet', 'fleet-trips', 'fleet-checks', 'fleet-maintenance']) {
+    assert.equal(readAppNavigation(appHistoryState(null, { tab })).tab, tab);
+  }
+  assert.equal(normalizeAppNavigation({ tab: 'fleet-unknown' }).tab, 'dashboard');
+});

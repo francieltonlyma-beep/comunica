@@ -1,6 +1,6 @@
 import {
-  Activity, Briefcase, Building, Calendar, CheckCircle2, FileText, KeyRound,
-  Layers, Lock, Megaphone, MessageSquare, Package, Sparkles, TrendingUp, Users,
+  Activity, Briefcase, Building, Calendar, CheckCircle2, ClipboardCheck, FileText, Fuel, Gauge, KeyRound, MapPin,
+  Layers, Lock, Megaphone, MessageSquare, Package, Sparkles, TrendingUp, Truck, Users, Wrench,
 } from 'lucide-react';
 
 export function buildManagementNavigation({unreadCount, unreadUpdates, pendingPollResponses,
@@ -32,6 +32,36 @@ export function buildManagementNavigation({unreadCount, unreadUpdates, pendingPo
   ];
 }
 
-export const integraNavigationSections = [{label:'Operações',items:[
-  {id:'integra',label:'Compras e frota',description:'Compras, veículos e viagens',icon:Package,activeClass:'from-teal-900 to-cyan-700',accent:'text-teal-700'},
-]}];
+const fleetSections = [
+  {label:'Operação da frota',items:[
+    {id:'fleet',label:'Visão geral da frota',description:'Indicadores e pendências',icon:Gauge},
+    {id:'fleet-trips',label:'Viagens e rotas',description:'Saídas, chegadas e GPS',icon:MapPin},
+    {id:'fleet-checks',label:'Checklist diário',description:'Inspeções e irregularidades',icon:ClipboardCheck},
+    {id:'fleet-fuel',label:'Abastecimentos',description:'Consumo e custo por quilômetro',icon:Fuel},
+  ]},
+  {label:'Gestão da frota',requiresManager:true,items:[
+    {id:'fleet-maintenance',label:'Manutenção',description:'Serviços e vencimentos',icon:Wrench},
+    {id:'fleet-vehicles',label:'Veículos',description:'Cadastro e disponibilidade',icon:Truck},
+    {id:'fleet-drivers',label:'Motoristas',description:'Vínculos e validade da CNH',icon:Users},
+  ]},
+];
+
+export function isFleetTab(tab) {
+  return fleetSections.some(section => section.items.some(item => item.id === tab));
+}
+
+export function canOpenFleetTab(tab, manager) {
+  return fleetSections.some(section => (!section.requiresManager || manager) && section.items.some(item => item.id === tab));
+}
+
+export function buildIntegraNavigation(manager) {
+  return [
+    {label:'Compras',items:[
+      {id:'integra',label:'Compras',description:'Solicitações, cotações e recebimento',icon:Package},
+    ]},
+    ...fleetSections.filter(section => !section.requiresManager || manager),
+  ].map(section => ({
+    label:section.label,
+    items:section.items.map(item => ({ ...item, activeClass:'from-teal-900 to-cyan-700', accent:'text-teal-700' })),
+  }));
+}
