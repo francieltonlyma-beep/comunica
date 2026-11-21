@@ -1,4 +1,3 @@
-import React from 'react';
 import { formattedMessageParts, MESSAGE_STYLES } from './messageFormatting.js';
 
 export function InboxFormattingToolbar({ onFormat }) {
