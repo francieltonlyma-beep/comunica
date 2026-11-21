@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
 test('central de gestão reúne prioridades e atalhos por perfil', () => {
-  assert.match(appSource, /Central de Gestão/);
+  assert.match(appSource, /data-tour="dashboard-overview" aria-label="Visão geral"/);
   assert.match(appSource, /dashboardAttentionItems/);
   assert.match(appSource, /dashboardQuickActions/);
   assert.match(appSource, /Ferramentas para o seu perfil/);
