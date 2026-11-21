@@ -5594,13 +5594,19 @@ try {
   const upcomingDocumentReviews = accessibleDocuments.filter(item => documentReviewStatus(item.reviewDate, todayStr) === 'proxima').length;
   const pollEmployeeIds = employeesList.map(employee => employee.id).filter(Boolean);
   const surveySectors = departmentsList.filter(department => department?.id && department?.name).map(department => ({ id: String(department.id), name: String(department.name) })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  const pollVisibleToUser = poll => isSurveyManager(currentUser) || (Array.isArray(poll.surveyUserIds) && poll.surveyUserIds.includes(currentUser?.id)) || Boolean(poll.surveySectorId && [currentUser?.dept, currentUser?.department, ...(Array.isArray(currentUser?.departments) ? currentUser.departments : []), ...(Array.isArray(currentUser?.depts) ? currentUser.depts : [])].map(value => String(value || '').trim()).includes(String(poll.surveySectorId)));
-  const eligiblePollsList = pollsList.filter(pollVisibleToUser);
+  const pollTargetsCurrentUser = poll => (Array.isArray(poll.surveyUserIds) && poll.surveyUserIds.includes(currentUser?.id)) || Boolean(poll.surveySectorId && [currentUser?.dept, currentUser?.department, ...(Array.isArray(currentUser?.departments) ? currentUser.departments : []), ...(Array.isArray(currentUser?.depts) ? currentUser.depts : [])].map(value => String(value || '').trim()).includes(String(poll.surveySectorId)));
+  const eligiblePollsList = pollsList.filter(poll => isSurveyManager(currentUser) || pollTargetsCurrentUser(poll));
   const pollTimelineEntries = pollTimelineItems(eligiblePollsList.filter(poll=>!poll.archived), currentUser);
   const activePollsCount = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr)).length;
   const pollParticipationValues = eligiblePollsList.map(poll => pollParticipation(poll, pollEmployeeIds));
   const pollAverageParticipation = pollParticipationValues.length ? Math.round(pollParticipationValues.reduce((sum, value) => sum + value, 0) / pollParticipationValues.length) : 0;
-  const pendingPollResponses = eligiblePollsList.filter(poll => !poll.archived && (!poll.expiresAt || poll.expiresAt >= todayStr) && poll.votes?.[poll.isAnonymous ? `anon-${anonymousSurveyHash}` : currentUser?.id] === undefined).length;
+  const currentPollVote = poll => poll.votes?.[poll.isAnonymous ? `anon-${anonymousSurveyHash}` : currentUser?.id];
+  const isPendingPollResponse = poll => !poll.archived
+    && (!poll.expiresAt || poll.expiresAt >= todayStr)
+    && pollTargetsCurrentUser(poll)
+    && (!poll.isAnonymous || Boolean(anonymousSurveyHash))
+    && currentPollVote(poll) === undefined;
+  const pendingPollResponses = eligiblePollsList.filter(isPendingPollResponse).length;
   const pollFormGroups = Object.values(eligiblePollsList.filter(poll => poll.formId && !poll.archived).reduce((groups, poll) => {
     (groups[poll.formId] ||= []).push(poll);
     return groups;
@@ -5611,7 +5617,7 @@ try {
     const matchesStatus = pollViewFilter === 'Todas'
       || (pollViewFilter === 'Ativas' && !expired)
       || (pollViewFilter === 'Encerradas' && expired)
-      || (pollViewFilter === 'Pendentes' && !expired && poll.votes?.[poll.isAnonymous ? `anon-${anonymousSurveyHash}` : currentUser?.id] === undefined)
+      || (pollViewFilter === 'Pendentes' && isPendingPollResponse(poll))
       || (pollViewFilter === 'Formulários' && Boolean(poll.formId));
     const matchesSearch = `${poll.formTitle || ''} ${poll.question || ''}`.toLocaleLowerCase('pt-BR').includes(pollSearch.trim().toLocaleLowerCase('pt-BR'));
     return matchesStatus && matchesSearch;
@@ -7784,24 +7790,32 @@ const notificationsToShow = [...notificationItems]
         : isManager
           ? 'Gestão operacional'
           : 'Meu dia no Comunica';
+  const openDashboardInbox = status => {
+    setInboxSearch('');
+    setShowArchivedThreads(false);
+    setIsComposingMsg(false);
+    setActiveThreadId(null);
+    setInboxStatusFilter(status);
+    setActiveTab('inbox');
+  };
   const dashboardAttentionItems = [
-    unreadThreadCount > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadThreadCount} conversa(s) com mensagens não lidas`, tone: 'blue', icon: MessageSquare, action: () => { setInboxStatusFilter('unread'); setActiveTab('inbox'); } } : null,
+    unreadThreadCount > 0 ? { id: 'unread-messages', label: 'Mensagens não lidas', detail: `${unreadThreadCount} conversa(s) com mensagens não lidas`, tone: 'blue', icon: MessageSquare, action: () => { openDashboardInbox('unread'); } } : null,
     pendingDocumentReads > 0 ? { id: 'document-reads', label: 'Leituras obrigatórias', detail: `${pendingDocumentReads} documento(s) aguardando confirmação`, tone: 'amber', icon: FileText, action: () => { setDocumentReadingFilter('Pendentes'); setActiveTab('documents'); } } : null,
-    pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: `${pendingPollResponses} votação(ões) disponíveis`, tone: 'cyan', icon: Activity, action: () => { setPollViewFilter('Ativas'); setActiveTab('polls'); } } : null,
-    dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: `${dashboardOverdueConversations} demanda(s) com prazo ultrapassado`, tone: 'rose', icon: Clock, action: () => setActiveTab('inbox') } : null,
+    pendingPollResponses > 0 ? { id: 'poll-responses', label: 'Enquetes pendentes', detail: pendingPollResponses === 1 ? '1 pergunta para responder' : `${pendingPollResponses} perguntas para responder`, tone: 'cyan', icon: Activity, action: () => { setPollSearch(''); setPollViewFilter('Pendentes'); setActiveTab('polls'); } } : null,
+    dashboardOverdueConversations > 0 ? { id: 'overdue-conversations', label: 'Conversas vencidas', detail: dashboardOverdueConversations === 1 ? '1 conversa fora do prazo' : `${dashboardOverdueConversations} conversas fora do prazo`, tone: 'rose', icon: Clock, action: () => openDashboardInbox('overdue') } : null,
     serviceMetrics.overdue > 0 ? { id: 'overdue-services', label: 'Serviços em atraso', detail: `${serviceMetrics.overdue} chamado(s) fora do prazo`, tone: 'rose', icon: CheckCircle2, action: () => { setServiceWorkspace('requests'); setServiceStatusFilter('overdue'); setActiveTab('services'); } } : null,
     serviceActivityMetrics.today > 0 ? { id: 'today-activities', label: 'Atividades para hoje', detail: `${serviceActivityMetrics.today} atividade(s) vencem hoje`, tone: 'amber', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('today'); setActiveTab('services'); } } : null,
     serviceActivityMetrics.overdue > 0 ? { id: 'overdue-activities', label: 'Atividades em atraso', detail: `${serviceActivityMetrics.overdue} atividade(s) com prazo ultrapassado`, tone: 'rose', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('overdue'); setActiveTab('services'); } } : null,
     (currentUser?.isAdmin || currentUser?.isDeveloper) && serviceMetrics.unassigned > 0 ? { id: 'unassigned-services', label: 'Chamados sem responsável', detail: `${serviceMetrics.unassigned} solicitação(ões) precisam de atribuição`, tone: 'violet', icon: UserPlus, action: () => { setServiceWorkspace('requests'); setServiceAssigneeFilter('unassigned'); setServiceStatusFilter('active'); setActiveTab('services'); } } : null,
     canOpenModule('careers') && careerPendingCandidateUpdates > 0 ? { id: 'candidate-updates', label: 'Currículos atualizados', detail: `${careerPendingCandidateUpdates} candidatura(s) precisam de nova análise`, tone: 'fuchsia', icon: Briefcase, action: () => setActiveTab('careers') } : null,
-  ].filter(Boolean);
+  ].filter(Boolean).sort((first, second) => Number(second.tone === 'rose') - Number(first.tone === 'rose'));
   const dashboardAttentionTone = {
-    blue: 'border-blue-100 bg-blue-50 text-blue-800',
-    amber: 'border-amber-100 bg-amber-50 text-amber-800',
-    cyan: 'border-cyan-100 bg-cyan-50 text-cyan-800',
-    rose: 'border-rose-100 bg-rose-50 text-rose-800',
-    violet: 'border-violet-100 bg-violet-50 text-violet-800',
-    fuchsia: 'border-fuchsia-100 bg-fuchsia-50 text-fuchsia-800',
+    blue: 'text-blue-800',
+    amber: 'text-amber-800',
+    cyan: 'text-cyan-800',
+    rose: 'text-rose-800',
+    violet: 'text-violet-800',
+    fuchsia: 'text-fuchsia-800',
   };
   const dashboardQuickActions = [
     canOpenModule('services') && activeServiceCatalog.length ? { id: 'new-service', label: 'Abrir solicitação', detail: 'Novo chamado interno', icon: Plus, action: () => openServiceRequestForm(activeServiceCatalog[0].id) } : null,
@@ -8720,6 +8734,43 @@ const notificationsToShow = [...notificationItems]
     .filter(section => section.items.length);
   const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
 
+  const workspaceToolbar = (
+    <div className={`flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:flex-row sm:items-center`}>
+      <div className="relative w-full">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <input
+          type="search"
+          aria-label="Buscar no Comunica"
+          placeholder="Buscar no Comunica"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="min-h-11 pl-10 pr-3 w-full rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-slate-400/50"
+        />
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto justify-end">
+        {currentUser.isAdmin && (
+          <button
+            onClick={() => setShowAnnModal(true)}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs min-h-11 px-2 sm:px-4 rounded-xl flex items-center gap-1.5 min-w-0 flex-1 sm:flex-initial justify-center transition-all"
+            type="button"
+          >
+            <Plus className="h-4 w-4 shrink-0" /> Novo comunicado
+          </button>
+        )}
+        <button
+          onClick={() => {
+            setNewPost(prev => ({ ...prev, depts: [getUserDepts(currentUser)[0] || 'rh'] }));
+            setShowPostModal(true);
+          }}
+          className="bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-xs min-h-11 px-2 sm:px-4 rounded-xl flex items-center gap-1.5 min-w-0 flex-1 sm:flex-initial justify-center transition-all border border-slate-200"
+          type="button"
+        >
+          <Share2 className="h-4 w-4 shrink-0 text-slate-600" /> Publicar no setor
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className={`min-h-[100dvh] bg-slate-100 text-slate-800 flex flex-col font-sans relative ${isDarkMode ? 'comunica-dark' : ''}`}>
       <EnvironmentBadge />
@@ -8994,39 +9045,7 @@ const notificationsToShow = [...notificationItems]
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
           {activeTab === 'integra' && canOpenModule('integra') && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando gestão de compras...</div>}><PurchaseManagement key={activeCompany?.id} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
-          <div className={`${['inbox', 'integra'].includes(activeTab) ? 'hidden' : 'flex'} flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row`}>
-            <div className="relative w-full">
-              <Search className="canais de setor left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Pesquisar comunicados, setores ou palavras-chave..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
-              />
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto justify-end">
-              {currentUser.isAdmin && (
-                <button
-                  onClick={() => setShowAnnModal(true)}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow-md flex-1 sm:flex-initial justify-center transition-all"
-                  type="button"
-                >
-                  <Plus className="h-4.5 w-4.5" /> Novo Comunicado
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setNewPost(prev => ({ ...prev, depts: [getUserDepts(currentUser)[0] || 'rh'] }));
-                  setShowPostModal(true);
-                }}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow-sm flex-1 sm:flex-initial justify-center transition-all border border-slate-350"
-                type="button"
-              >
-                <Share2 className="h-4.5 w-4.5 text-slate-600" /> Publicar no Setor
-              </button>
-            </div>
-          </div>
+          {!['dashboard', 'inbox', 'integra'].includes(activeTab) && workspaceToolbar}
 
           {/* TAB: SUPPORT */}
           {activeTab === 'updates' && (
@@ -9165,15 +9184,18 @@ const notificationsToShow = [...notificationItems]
 
           {/* TAB: DASHBOARD */}
           {activeTab === 'dashboard' && (
-            <div data-tour="dashboard" className="flex flex-col gap-6 animate-in fade-in duration-300">
-              <section data-tour="dashboard-overview" aria-label="Visão geral" className="rounded-2xl border border-slate-200 border-t-[3px] border-t-teal-500 bg-white px-4 py-3 shadow-sm sm:px-5">
+            <div data-tour="dashboard" className="flex flex-col gap-3 sm:gap-4 animate-in fade-in duration-300">
+              <section data-tour="dashboard-overview" aria-label="Visão geral" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h2 className="break-words text-xl font-bold tracking-tight text-slate-900">{[new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 18 ? 'Boa tarde' : 'Boa noite', currentUser?.name?.trim().split(/\s+/)[0]].filter(Boolean).join(', ')}!</h2>
                     <p className="break-words text-xs text-slate-600">{[activeCompany?.name, dashboardRoleLabel].filter(Boolean).join(' · ')}</p>
                   </div>
+                  <button type="button" aria-label="Abrir ComunicaAI" aria-expanded={isChatOpen} onClick={() => setIsChatOpen(open => !open)} className="ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-full border border-slate-200 text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 sm:hidden">
+                    <Sparkles className="h-4 w-4" />
+                  </button>
                   <details className="relative shrink-0 text-xs font-semibold text-blue-700">
-                    <summary aria-label="Ajuda do painel" title="Ajuda do painel" className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full border border-slate-200"><BookOpen className="h-4 w-4" /></summary>
+                    <summary aria-label="Ajuda do painel" title="Ajuda do painel" className="focus-visible:ring-2 focus-visible:ring-blue-600 grid h-11 w-11 cursor-pointer list-none place-items-center rounded-full border border-slate-200"><BookOpen className="h-4 w-4" /></summary>
                     <div className="absolute right-0 z-10 grid w-36 rounded-xl border border-slate-200 bg-white px-3 py-1 shadow-lg">
                     <button type="button" onClick={() => setActiveTutorial('dashboard')} className="inline-flex min-h-9 items-center gap-1.5 hover:underline"><BookOpen className="h-4 w-4" /> Guia do painel</button>
                     <button type="button" onClick={() => setActiveTutorial('platform')} className="min-h-9 hover:underline">Tour completo</button>
@@ -9183,10 +9205,10 @@ const notificationsToShow = [...notificationItems]
                 <div className="mt-3 grid grid-cols-3 divide-x divide-slate-200 border-t border-slate-200 pt-2">
                   {[
                     { label: 'Alertas', count: dashboardAttentionItems.length, action: () => document.querySelector('[data-tour="dashboard-priorities"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
-                    { label: 'Não lidas', count: unreadThreadCount, action: () => { setInboxStatusFilter('unread'); setActiveTab('inbox'); } },
-                    { label: 'Próximos eventos', count: dashboardUpcomingEvents.length, action: () => setActiveTab('scale') },
+                    { label: 'Não lidas', count: unreadThreadCount, action: () => { openDashboardInbox('unread'); } },
+                    { label: 'Próximos eventos', count: dashboardUpcomingEvents.length, action: () => document.getElementById('dashboard-upcoming-events')?.scrollIntoView({ block: 'start' }) },
                   ].map(({ label, count, action }) => (
-                    <button key={label} type="button" onClick={action} className="flex min-w-0 flex-col items-start justify-center rounded-lg px-2 py-1 text-left hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-600 sm:flex-row sm:items-center sm:justify-start sm:gap-2">
+                    <button key={label} type="button" onClick={action} className="flex min-w-0 flex-col items-start justify-center min-h-11 rounded-lg px-2 py-1 text-left hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-600 sm:flex-row sm:items-center sm:justify-start sm:gap-2">
                       <strong className="text-xl font-bold tabular-nums text-slate-900">{count}</strong>
                       <span className="text-xs font-medium text-slate-600">{label}</span>
                     </button>
@@ -9194,12 +9216,37 @@ const notificationsToShow = [...notificationItems]
                 </div>
               </section>
 
-              <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
-                <section data-tour="dashboard-priorities" className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="flex items-end justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-[.14em] text-rose-600">Prioridades</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">O que precisa da sua atenção</h3></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-bold text-slate-600">Atualização em tempo real</span></div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">{dashboardAttentionItems.map(item => { const ItemIcon = item.icon; return <button key={item.id} type="button" onClick={item.action} className={`group flex min-w-0 items-center gap-3 rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${dashboardAttentionTone[item.tone]}`}><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/80 shadow-sm"><ItemIcon className="h-4.5 w-4.5" /></span><span className="min-w-0 flex-1"><strong className="block text-xs">{item.label}</strong><span className="mt-0.5 block break-words text-[10px] opacity-75 [overflow-wrap:anywhere]">{item.detail}</span></span><ChevronRight className="h-4 w-4 shrink-0 opacity-40 transition group-hover:translate-x-0.5" /></button>; })}{dashboardAttentionItems.length === 0 && <div className="col-span-full flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-800"><span className="grid h-10 w-10 place-items-center rounded-xl bg-white"><CheckCircle2 className="h-5 w-5" /></span><div><strong className="block text-xs">Tudo em ordem por aqui</strong><span className="mt-0.5 block text-[10px] text-emerald-700">Você não possui pendências importantes neste momento.</span></div></div>}</div>
+              {workspaceToolbar}
+
+              <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.25fr_.75fr]">
+                <section data-tour="dashboard-priorities" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                  <h3 className="text-sm font-bold text-slate-900">O que precisa da sua atenção</h3>
+                  <div className="mt-2 grid gap-2">
+                    {dashboardAttentionItems.map(({ id, icon: Icon, action, tone, label, detail }) => (
+                      <button key={id} type="button" onClick={action} className="flex min-h-14 w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-left hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-600">
+                        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white ${dashboardAttentionTone[tone]}`}><Icon className="h-4 w-4" /></span>
+                        <span className="min-w-0 flex-1 break-words">
+                          <strong className="block text-sm text-slate-900">{label}</strong>
+                          <span className={`block text-xs ${tone === 'rose' ? dashboardAttentionTone.rose : 'text-slate-600'}`}>{detail}</span>
+                        </span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                      </button>
+                    ))}
+                    {dashboardAttentionItems.length === 0 && <p className="flex items-center gap-2 py-2 text-sm text-slate-600"><CheckCircle2 className="h-4 w-4 text-emerald-700" /> Tudo em ordem por aqui.</p>}
+                  </div>
                 </section>
-                <section data-tour="dashboard-actions" className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><span className="text-[9px] font-black uppercase tracking-[.14em] text-blue-600">Acesso rápido</span><h3 className="mt-1 text-sm font-extrabold text-slate-900">Ferramentas para o seu perfil</h3><div className="mt-4 grid grid-cols-2 gap-2">{dashboardQuickActions.slice(0, 6).map(item => { const ItemIcon = item.icon; return <button key={item.id} type="button" onClick={item.action} className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white text-blue-700 shadow-sm"><ItemIcon className="h-4 w-4" /></span><strong className="mt-2 block text-[10px] text-slate-800">{item.label}</strong><span className="mt-0.5 block text-[9px] leading-4 text-slate-500">{item.detail}</span></button>; })}</div></section>
+                <section data-tour="dashboard-actions" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                  <h3 className="text-sm font-bold text-slate-900">Acesso rápido</h3>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {dashboardQuickActions.slice(0, 6).map(({ id, icon: Icon, action, label, detail }) => (
+                      <button key={id} type="button" onClick={action} className="min-w-0 break-words rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-left hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-600">
+                        <Icon className="h-4 w-4 text-blue-700" />
+                        <strong className="mt-1 block text-xs text-slate-900">{label}</strong>
+                        <span className="mt-0.5 block text-xs text-slate-600">{detail}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -9346,8 +9393,8 @@ const notificationsToShow = [...notificationItems]
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                    <Calendar className="h-5 w-5 text-slate-700" /> Eventos Pendentes
+                  <h3 id="dashboard-upcoming-events" className="scroll-mt-36 font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-slate-700" /> Próximos eventos
                   </h3>
 
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
@@ -9981,7 +10028,7 @@ const handleDownload = async (fileUrl, fileName) => {
 
               <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={pollSearch} onChange={event => setPollSearch(event.target.value)} aria-label="Buscar enquete ou formulário" placeholder="Buscar por título ou pergunta" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs focus:border-cyan-500 focus:outline-none" /></div><select value={pollViewFilter} onChange={event => setPollViewFilter(event.target.value)} aria-label="Filtrar enquetes" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option>Todas</option><option>Ativas</option><option>Encerradas</option><option>Pendentes</option><option>Formulários</option></select>{(pollSearch || pollViewFilter !== 'Todas') && <button type="button" onClick={() => { setPollSearch(''); setPollViewFilter('Todas'); }} className="rounded-xl px-3 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100">Limpar</button>}</div>
 
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{visiblePolls.map(poll => { const votes = poll.votes || {}; const total = pollVoteCount(poll); const voted = votes[currentUser.id]; const expired = poll.expiresAt && poll.expiresAt < todayStr; const results = pollOptionResults(poll); const showResults = currentUser.isAdmin || voted !== undefined || expired; return <article id={`notification-item-${poll.id}`} key={poll.id} className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${voted !== undefined ? 'border-emerald-200' : expired ? 'border-slate-200 opacity-90' : 'border-cyan-200'}`}><div className={`h-1.5 ${voted !== undefined ? 'bg-emerald-500' : expired ? 'bg-slate-300' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`} /><div className="p-5"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-cyan-800">{poll.category || 'Enquete'}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-bold text-slate-600">{POLL_QUESTION_TYPES[poll.type]?.label || 'Escolha única'}</span>{poll.formTitle && <span className="ml-auto text-[9px] font-bold uppercase text-blue-700">Pergunta {poll.formOrder}/{poll.formQuestionCount}</span>}</div>{poll.formTitle && <h4 className="mt-3 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{poll.formTitle}{poll.topicTitle && ` · ${poll.topicTitle}`}</h4>}<h5 className="mt-2 break-words text-base font-extrabold leading-snug text-slate-900">{poll.question}</h5><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500"><span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {total} voto(s)</span>{poll.expiresAt && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> até {formatDate(poll.expiresAt)}</span>}{currentUser.isAdmin && <span>{pollParticipation(poll, pollEmployeeIds)}% da equipe</span>}</div><div className="mt-5 flex flex-col gap-2.5">{poll.options.map((option, index) => <button disabled={voted !== undefined || expired} type="button" onClick={() => handleVotePoll(poll, index)} key={`${poll.id}-${index}`} className={`group relative overflow-hidden rounded-xl border px-3.5 py-3 text-left text-xs font-semibold transition-all ${voted === index ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-100' : 'border-slate-200 text-slate-700 hover:border-cyan-400 hover:bg-cyan-50/40'} disabled:cursor-default`}><span className={`absolute inset-y-0 left-0 ${voted === index ? 'bg-emerald-100/70' : 'bg-cyan-50'}`} style={{ width: `${showResults ? results[index].percentage : 0}%` }} /><span className="relative flex items-center justify-between gap-3"><span className="flex items-center gap-2"><span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[9px] ${voted === index ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-500'}`}>{voted === index ? '✓' : index + 1}</span><TextoComEmojis texto={option} /></span>{showResults && <span className="shrink-0 font-extrabold text-slate-700">{results[index].count} · {results[index].percentage}%</span>}</span></button>)}</div><div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><p className={`text-[10px] font-semibold ${expired ? 'text-slate-400' : voted !== undefined ? 'text-emerald-700' : 'text-cyan-800'}`}>{expired ? 'Votação encerrada' : voted !== undefined ? 'Resposta registrada com sucesso' : 'Escolha uma alternativa para participar'}</p><span className="text-[9px] text-slate-400">por {poll.author || 'Equipe responsável'}</span></div></div></article>; })}</div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{visiblePolls.map(poll => { const total = pollVoteCount(poll); const voted = currentPollVote(poll); const expired = poll.expiresAt && poll.expiresAt < todayStr; const results = pollOptionResults(poll); const showResults = currentUser.isAdmin || voted !== undefined || expired; return <article id={`notification-item-${poll.id}`} key={poll.id} className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${voted !== undefined ? 'border-emerald-200' : expired ? 'border-slate-200 opacity-90' : 'border-cyan-200'}`}><div className={`h-1.5 ${voted !== undefined ? 'bg-emerald-500' : expired ? 'bg-slate-300' : 'bg-gradient-to-r from-blue-600 to-cyan-400'}`} /><div className="p-5"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-cyan-800">{poll.category || 'Enquete'}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-bold text-slate-600">{POLL_QUESTION_TYPES[poll.type]?.label || 'Escolha única'}</span>{poll.formTitle && <span className="ml-auto text-[9px] font-bold uppercase text-blue-700">Pergunta {poll.formOrder}/{poll.formQuestionCount}</span>}</div>{poll.formTitle && <h4 className="mt-3 text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{poll.formTitle}{poll.topicTitle && ` · ${poll.topicTitle}`}</h4>}<h5 className="mt-2 break-words text-base font-extrabold leading-snug text-slate-900">{poll.question}</h5><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500"><span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {total} voto(s)</span>{poll.expiresAt && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> até {formatDate(poll.expiresAt)}</span>}{currentUser.isAdmin && <span>{pollParticipation(poll, pollEmployeeIds)}% da equipe</span>}</div><div className="mt-5 flex flex-col gap-2.5">{poll.options.map((option, index) => <button disabled={voted !== undefined || expired} type="button" onClick={() => handleVotePoll(poll, index)} key={`${poll.id}-${index}`} className={`group relative overflow-hidden rounded-xl border px-3.5 py-3 text-left text-xs font-semibold transition-all ${voted === index ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-100' : 'border-slate-200 text-slate-700 hover:border-cyan-400 hover:bg-cyan-50/40'} disabled:cursor-default`}><span className={`absolute inset-y-0 left-0 ${voted === index ? 'bg-emerald-100/70' : 'bg-cyan-50'}`} style={{ width: `${showResults ? results[index].percentage : 0}%` }} /><span className="relative flex items-center justify-between gap-3"><span className="flex items-center gap-2"><span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[9px] ${voted === index ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-500'}`}>{voted === index ? '✓' : index + 1}</span><TextoComEmojis texto={option} /></span>{showResults && <span className="shrink-0 font-extrabold text-slate-700">{results[index].count} · {results[index].percentage}%</span>}</span></button>)}</div><div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><p className={`text-[10px] font-semibold ${expired ? 'text-slate-400' : voted !== undefined ? 'text-emerald-700' : 'text-cyan-800'}`}>{expired ? 'Votação encerrada' : voted !== undefined ? 'Resposta registrada com sucesso' : 'Escolha uma alternativa para participar'}</p><span className="text-[9px] text-slate-400">por {poll.author || 'Equipe responsável'}</span></div></div></article>; })}</div>
               {visiblePolls.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Activity className="mx-auto h-8 w-8 text-slate-300" /><strong className="mt-3 block text-sm text-slate-600">Nenhuma enquete encontrada</strong><span className="mt-1 block text-xs text-slate-400">Ajuste a busca ou os filtros para visualizar outras publicações.</span></div>}
             </div>
           )}
@@ -10871,7 +10918,9 @@ const handleDownload = async (fileUrl, fileName) => {
         <button
           type="button"
           onClick={() => setIsChatOpen(!isChatOpen)}
-          className="bg-slate-900 text-white p-3.5 rounded-full shadow-2xl flex items-center gap-2 hover:bg-slate-800 transition-all border border-slate-850 hover:scale-105 active:scale-95"
+          aria-label="ComunicaAI"
+          aria-expanded={isChatOpen}
+          className={`bg-slate-900 text-white p-3.5 rounded-full shadow-2xl items-center gap-2 hover:bg-slate-800 transition-all border border-slate-850 hover:scale-105 active:scale-95 ${activeTab === 'dashboard' ? 'hidden sm:flex' : 'flex'}`}
         >
           <Sparkles className="h-5.5 w-5.5 text-slate-300" />
           <span className="hidden text-xs font-bold pr-1 sm:inline">ComunicaAI</span>

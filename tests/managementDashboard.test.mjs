@@ -8,14 +8,14 @@ test('central de gestão reúne prioridades e atalhos por perfil', () => {
   assert.match(appSource, /data-tour="dashboard-overview" aria-label="Visão geral"/);
   assert.match(appSource, /dashboardAttentionItems/);
   assert.match(appSource, /dashboardQuickActions/);
-  assert.match(appSource, /Ferramentas para o seu perfil/);
+  assert.match(appSource, /Acesso rápido/);
 });
 
 test('indicadores levam diretamente à área correspondente', () => {
   assert.match(appSource, /setDocumentReadingFilter\('Pendentes'\)/);
   assert.match(appSource, /setServiceStatusFilter\('overdue'\)/);
   assert.match(appSource, /setServiceAssigneeFilter\('unassigned'\)/);
-  assert.match(appSource, /setPollViewFilter\('Ativas'\)/);
+  assert.match(appSource, /setPollViewFilter\('Pendentes'\)/);
 });
 
 test('eventos do painel consideram somente datas futuras', () => {

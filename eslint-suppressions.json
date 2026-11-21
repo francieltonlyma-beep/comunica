@@ -14,9 +14,6 @@
     "no-useless-assignment": {
       "count": 2
     },
-    "no-useless-escape": {
-      "count": 2
-    },
     "react-hooks/immutability": {
       "count": 4
     },
