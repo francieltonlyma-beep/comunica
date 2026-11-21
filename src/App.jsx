@@ -58,7 +58,14 @@ import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
 import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
-const IntegraWorkspace = lazy(() => import('./IntegraWorkspace.jsx'));
+const loadIntegraWorkspace = () => import('./IntegraWorkspace.jsx');
+const IntegraWorkspace = lazy(loadIntegraWorkspace);
+const preloadIntegra = () => {
+  const connection = navigator.connection;
+  if (navigator.onLine && !connection?.saveData && !['slow-2g', '2g'].includes(connection?.effectiveType)) {
+    loadIntegraWorkspace().catch(() => {});
+  }
+};
 const SurveyTopicsEditor = lazy(() => import('./SurveyTopicsEditor.jsx'));
 const SurveyLibrary = lazy(() => import('./SurveyLibrary.jsx'));
 const SurveyRespondent = lazy(() => import('./SurveyRespondent.jsx'));
@@ -862,6 +869,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   useEffect(() => { let active = true; if (!currentUser?.id) { setAnonymousSurveyHash(''); return () => { active = false; }; } hashSurveyRespondent(currentUser.id).then(hash => { if (active) setAnonymousSurveyHash(hash); }).catch(() => { if (active) setAnonymousSurveyHash(''); }); return () => { active = false; }; }, [currentUser?.id]);
 
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [visitedIntegraScope, setVisitedIntegraScope] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
   const [mgmtSubTab, setMgmtSubTab] = useState('employees');
   const [mgmtSectorFilter, setMgmtSectorFilter] = useState('all');
@@ -7201,6 +7209,13 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   const integraSupport = Boolean(currentUser?.isDeveloper && dbUser?.uid === PLATFORM_SUPPORT.id);
   const fleetManager = Boolean(currentUser?.isAdmin || currentUser?.isDeveloper);
   const canOpenIntegra = (integraEnabled || integraSupport) && userHasIntegraAccess(currentUser);
+  useEffect(() => {
+    if (!canOpenIntegra) return undefined;
+    const delay = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') preloadIntegra();
+    }, 3500);
+    return () => window.clearTimeout(delay);
+  }, [canOpenIntegra]);
   const canOpenModule = moduleId => moduleId === 'integra' || isFleetTab(moduleId)
     ? canOpenIntegra && (moduleId === 'integra' || canOpenFleetTab(moduleId, fleetManager))
     : moduleId === 'careers'
@@ -8795,6 +8810,10 @@ const notificationsToShow = [...notificationItems]
     openPlatformSupport,
   });
   const isIntegraWorkspace = activeTab === 'integra' || isFleetTab(activeTab);
+  const integraOpen = isIntegraWorkspace && canOpenModule(activeTab);
+  const integraScope = JSON.stringify([activeCompany?.id, currentUser?.id, dbUser?.uid, fleetManager]);
+  if (integraOpen && visitedIntegraScope !== integraScope) setVisitedIntegraScope(integraScope);
+  const keepIntegra = canOpenIntegra && (integraOpen || visitedIntegraScope === integraScope);
   const visibleNavigationSections = (isIntegraWorkspace ? buildIntegraNavigation(fleetManager) : navigationSections)
     .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
     .filter(section => section.items.length);
@@ -8870,7 +8889,7 @@ const notificationsToShow = [...notificationItems]
 
           <nav aria-label="Produtos Comunica" className="col-span-full row-start-2 flex min-w-0 items-center gap-2 border-t border-slate-200/70 pt-1.5 sm:shrink-0 sm:border-0 sm:pt-0">
             <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
-            {canOpenModule('integra') && <button type="button" title="Comunica Integra" aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
+            {canOpenModule('integra') && <button type="button" title="Comunica Integra" onPointerEnter={preloadIntegra} onFocus={preloadIntegra} aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
           </nav>
 
           <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
@@ -9110,7 +9129,7 @@ const notificationsToShow = [...notificationItems]
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
           {activeTab === 'inbox' && inboxSurface}
-          {isIntegraWorkspace && canOpenModule(activeTab) && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando Comunica Integra...</div>}><IntegraWorkspace activeTab={activeTab} onNavigate={setActiveTab} key={activeCompany?.id} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
+          {keepIntegra && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando Comunica Integra...</div>}><IntegraWorkspace active={integraOpen} activeTab={activeTab} onNavigate={setActiveTab} key={integraScope} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
           {!isIntegraWorkspace && !['dashboard', 'inbox'].includes(activeTab) && workspaceToolbar}
 
           {/* TAB: SUPPORT */}
