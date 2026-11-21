@@ -1,3 +1,5 @@
+import { InboxFormattedText, InboxFormattingPreview, InboxFormattingToolbar } from './InboxMessageFormatting.jsx';
+import { MESSAGE_STYLES, toggleMessageStyle, updateMessageFormatting } from './messageFormatting.js';
 import { scheduleOperationIssue, scheduleOperationDraft } from './scheduleOperationIssue.js';
 import { planManualScheduleEdit } from './scheduleManualEdit.js';
 import { coverageChangeError, coverageChangesForDates } from './scheduleCoverageChange.js';
@@ -991,7 +993,33 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [showMsgSuggestions, setShowMsgSuggestions] = useState(false);
   const [msgSubject, setMsgSubject] = useState('');
   const [msgDueDate, setMsgDueDate] = useState('');
-  const [msgText, setMsgText] = useState('');
+  const [{ text: msgText, ranges: msgFormatting }, setMessageDraft] = useState({ text: '', ranges: [] });
+  const messageEditorRef = useRef(null);
+  const threadCompletionDialogRef = useRef(null);
+  const threadCompletionInFlight = useRef(false);
+  const setMsgText = (value, caret) => setMessageDraft(previous =>
+    updateMessageFormatting(previous, typeof value === 'function' ? value(previous.text) : value, caret)
+  );
+  const applyMessageStyle = bit => {
+    const editor = messageEditorRef.current;
+    if (!editor) return;
+    const { selectionStart, selectionEnd } = editor;
+    editor.focus();
+    editor.setSelectionRange(selectionStart, selectionEnd);
+    if (selectionStart === selectionEnd) return;
+    setMessageDraft(previous => ({
+      ...previous,
+      ranges: toggleMessageStyle(previous.text, previous.ranges, selectionStart, selectionEnd, bit),
+    }));
+  };
+  const handleMessageFormattingKey = event => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return false;
+    const style = MESSAGE_STYLES.find(item => item.shortcut === event.key.toLowerCase());
+    if (!style) return false;
+    event.preventDefault();
+    applyMessageStyle(style.bit);
+    return true;
+  };
   const [msgAttachment, setMsgAttachment] = useState(null);
   const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [checklistDrafts, setChecklistDrafts] = useState({});
@@ -1530,7 +1558,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   useEffect(() => {
     const handleEscape = (event) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || threadCompletionDialogRef.current?.open) return;
       if (showAddParticipant) return setShowAddParticipant(false);
       if (showMsgSuggestions) return setShowMsgSuggestions(false);
       if (showMessagesModal || activeTab === 'inbox') {
@@ -6205,6 +6233,7 @@ try {
       senderId: currentUser.id,
       senderName: currentUser.name,
       content: msgText,
+      ...(msgFormatting.length ? { contentFormatting: msgFormatting } : {}),
       attachment: msgAttachment || null,
 date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       timestamp: Date.now(),
@@ -6637,7 +6666,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const systemMessage = createThreadSystemMessage(threadId, {
       ...metadata,
       ...nextMetadata,
-      archivedBy: unarchiveForEveryone ? [] : (archiveForUserId ? [archiveForUserId] : []),
+      archivedBy: archiveForMessage(metadata.messages.at(-1)),
     }, systemText);
     try {
       if (!await saveRelatedRecords([
@@ -6783,22 +6812,28 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     triggerNotification('Previsão e andamento atualizados para todos os participantes.');
   };
 
-  const handleCompleteThread = async () => {
-    if (!activeThreadId) return;
-    const metadata = getThreadMetadata(activeThreadId);
+  const handleCompleteThread = async (archive) => {
+    const threadId = activeThreadId;
+    if (!threadId || threadCompletionInFlight.current) return;
+    const metadata = getThreadMetadata(threadId);
     if (metadata.completedAt) return;
     if (metadata.serviceRequest && metadata.serviceRequiresApproval && !metadata.serviceDecision) {
       triggerNotification('Esta solicitação precisa ser aprovada ou recusada antes da conclusão.', 'error');
       return;
     }
-    if (!await saveThreadMetadata(
-      activeThreadId,
-      { completedAt: Date.now(), completedBy: currentUser.name, ...(metadata.serviceRequest ? { serviceStatus: 'completed' } : {}) },
-      `${currentUser.name} marcou esta conversa como concluída em ${new Date().toLocaleDateString('pt-BR')}.`,
-      { archiveForUserId: currentUser.id }
-    )) return;
-    setActiveThreadId(null);
-    triggerNotification('Conversa concluída e arquivada apenas para você. Os demais participantes continuam com ela pendente.');
+    threadCompletionInFlight.current = true;
+    try {
+      if (!await saveThreadMetadata(
+        threadId,
+        { completedAt: Date.now(), completedBy: currentUser.name, ...(metadata.serviceRequest ? { serviceStatus: 'completed' } : {}) },
+        `${currentUser.name} marcou esta conversa como concluída em ${new Date().toLocaleDateString('pt-BR')}.`,
+        { archiveForUserId: archive ? currentUser.id : '' }
+      )) return;
+      if (archive) setActiveThreadId(previous => previous === threadId ? null : previous);
+      triggerNotification(archive ? 'Conversa concluída e arquivada para você.' : 'Conversa concluída e mantida na Caixa de entrada.');
+    } finally {
+      threadCompletionInFlight.current = false;
+    }
   };
 
   const handleReopenThread = async () => {
@@ -6839,7 +6874,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   };
 
   const handleArchiveThread = async (threadId) => {
-    if (!currentUser) return;
+    if (!currentUser || !window.confirm('Deseja arquivar esta conversa para você?')) return;
     const messagesInThread = normMessages.filter(message => message.threadId === threadId);
     try {
       if (!await saveRelatedRecords(messagesInThread.map(message => ({
@@ -6886,6 +6921,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
 
   const handleBulkThreadAction = async (threadIds, action) => {
     if (!currentUser || !threadIds.length) return;
+    if (action === 'archive' && !window.confirm(`Deseja arquivar as conversas selecionadas (${threadIds.length}) para você?`)) return;
     const selected = new Set(threadIds);
     const selectedMessages = normMessages.filter(message => selected.has(message.threadId));
     let records = [];
@@ -8246,15 +8282,20 @@ const notificationsToShow = [...notificationItems]
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mensagem ou Descrição</label>
+                      <label htmlFor="inbox-new-message" className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mensagem ou Descrição</label>
+                      <InboxFormattingToolbar onFormat={applyMessageStyle} />
                       <textarea
+                        id="inbox-new-message"
+                        ref={messageEditorRef}
                         rows="3"
+                        onKeyDown={handleMessageFormattingKey}
                         placeholder="Descreva sua dúvida, envie um documento..."
                         value={msgText}
-                        onChange={(e) => setMsgText(e.target.value)}
+                        onChange={event => setMsgText(event.target.value, event.target.selectionEnd)}
                         className="px-3.5 py-3 w-full rounded-xl border border-slate-200 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-blue-100"
                       ></textarea>
                       <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
+                      <InboxFormattingPreview text={msgText} ranges={msgFormatting} />
                       <PreviaEmojis texto={msgText} />
                     </div>
 
@@ -8397,7 +8438,7 @@ const notificationsToShow = [...notificationItems]
                             </div>
                           )}
                           {!metadata.completedAt && (
-                            <button type="button" onClick={handleCompleteThread} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                            <button type="button" onClick={() => threadCompletionDialogRef.current?.showModal()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
                               Concluir
                             </button>
                           )}
@@ -8427,6 +8468,21 @@ const notificationsToShow = [...notificationItems]
                       </form>
                     )}
                   </div>
+
+                  <dialog ref={threadCompletionDialogRef} key={activeThreadId} aria-labelledby="inbox-completion-title"
+                    className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-white p-5 text-slate-900 shadow-xl backdrop:bg-slate-950/60">
+                    <h3 id="inbox-completion-title" className="text-base font-bold">Arquivar ao concluir a conversa?</h3>
+                    <p className="mt-2 text-sm text-slate-600">Se você arquivar, a conversa será movida para os Arquivados apenas na sua caixa.</p>
+                    <form method="dialog" className="mt-5 flex flex-wrap justify-end gap-2"
+                      onSubmit={event => {
+                        const choice = event.nativeEvent.submitter?.value;
+                        if (choice === 'keep' || choice === 'archive') void handleCompleteThread(choice === 'archive');
+                      }}>
+                      <button type="submit" value="cancel" autoFocus className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Cancelar</button>
+                      <button type="submit" value="keep" className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-100">Concluir e manter</button>
+                      <button type="submit" value="archive" className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800">Concluir e arquivar</button>
+                    </form>
+                  </dialog>
 
                   {/* ÁREA DE MENSAGENS */}
                   <div ref={messageListRef} className="relative isolate min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,#ffffff_0%,#f8fafc_55%,#eff6ff_100%)] px-3 py-5 sm:px-8 sm:py-7 comunica-thread-timeline">
@@ -8466,7 +8522,7 @@ const notificationsToShow = [...notificationItems]
                               <article data-message-id={msg.id} className={`group w-fit max-w-[86%] overflow-hidden rounded-[18px] border px-3.5 py-3 shadow-[0_10px_28px_-22px_rgba(15,23,42,.42)] sm:max-w-[min(58%,38rem)] ${(msg.highlightedBy || []).includes(currentUser.id) ? 'ring-2 ring-amber-300' : ''} ${isMine ? 'rounded-br-md border-blue-200/90 bg-gradient-to-br from-blue-50 via-white to-cyan-50/80 text-slate-900' : 'rounded-bl-md border-slate-200/90 bg-white/95 text-slate-900'}`}>
                                 {!isMine && <div className="mb-1.5"><strong className="block break-words text-[11px] font-extrabold leading-4 text-slate-900 [overflow-wrap:anywhere]">{msg.senderName}</strong>{messageAuthor?.role && <span className="block text-[9px] font-medium text-slate-400">{messageAuthor.role}</span>}</div>}
                                 {msg.replyTo && <button type="button" className={`mb-2 block w-full rounded-xl border-l-4 px-3 py-2 text-left text-[10px] ${isMine ? 'border-blue-300 bg-white/70 text-slate-600' : 'border-blue-400 bg-slate-50 text-slate-600'}`}><strong className="block">Em resposta a {msg.replyTo.senderName}</strong><span className="mt-0.5 block truncate">{msg.replyTo.content || msg.replyTo.attachmentName || 'Mensagem'}</span></button>}
-                                {msg.content && <p className="whitespace-pre-wrap break-words text-[13px] leading-[1.35rem] text-slate-800 [overflow-wrap:anywhere]"><TextoComEmojis texto={msg.content} /></p>}
+                                {msg.content && <p className="whitespace-pre-wrap break-words text-[13px] leading-[1.35rem] text-slate-800 [overflow-wrap:anywhere]"><InboxFormattedText text={msg.content} ranges={msg.contentFormatting} /></p>}
                                 {mentionedNames.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] font-bold text-blue-700"><AtSign className="h-3 w-3" />{mentionedNames.map(name => <span key={name} className={`rounded-full px-1.5 py-0.5 ${isMine ? 'bg-white/70' : 'bg-blue-50'}`}>{name}</span>)}</div>}
                                 {msg.attachment && (
                                   <button type="button" onClick={(e) => { e.preventDefault(); handleDownload(msg.attachment, msg.attachment.name); }} className="flex w-full sm:w-auto max-w-full items-center gap-2 mt-2.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors">
@@ -8530,18 +8586,25 @@ const notificationsToShow = [...notificationItems]
                       return <div className="mx-auto mb-2 w-full max-w-4xl rounded-xl border border-blue-100 bg-white p-2 shadow-lg"><span className="px-2 text-[9px] font-black uppercase text-blue-700">Marcar participante</span><div className="mt-1 flex flex-wrap gap-1">{suggestions.map(user => <button key={user.id} type="button" onClick={() => setMsgText(previous => previous.replace(/(?:^|\s)@([^\s@]*)$/u, match => `${match.startsWith(' ') ? ' ' : ''}@${user.name} `))} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-800 hover:bg-blue-100"><AtSign className="h-3 w-3" />{user.name}</button>)}</div></div>;
                     })()}
 
+                    <div className="mx-auto w-full max-w-4xl"><InboxFormattingToolbar onFormat={applyMessageStyle} /></div>
                     <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-4xl min-w-0 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 transition-all focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-50">
                       <label className="p-2.5 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer transition-colors border border-slate-200">
                         <Paperclip className="h-5 w-5" />
                         <input type="file" onChange={handleMessageAttachment} disabled={isUploadingMessageAttachment} className="hidden" />
                       </label>
                       <textarea
+                        ref={messageEditorRef}
                         rows="1"
                         aria-label="Escrever resposta"
                         placeholder="Escreva uma resposta · use @ para marcar alguém"
                         value={msgText}
-                        onChange={(e) => setMsgText(e.target.value)}
-                        onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
+                        onChange={event => setMsgText(event.target.value, event.target.selectionEnd)}
+                        onKeyDown={event => {
+                          if (!handleMessageFormattingKey(event) && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                            event.preventDefault();
+                            handleSendMessage(event);
+                          }
+                        }}
                         className="min-h-12 max-h-32 min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2.5 py-2.5 text-sm leading-6 focus:outline-none focus:ring-0"
                       ></textarea>
                       <BotaoEmoji aoSelecionar={(emoji) => setMsgText(prev => prev + emoji)} />
@@ -8549,6 +8612,7 @@ const notificationsToShow = [...notificationItems]
                         {isSendingMessage ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <Send className="h-4.5 w-4.5" />}
                       </button>
                     </form>
+                    <InboxFormattingPreview text={msgText} ranges={msgFormatting} />
                     <PreviaEmojis texto={msgText} />
                     </>}
                   </div>
