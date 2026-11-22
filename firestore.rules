@@ -904,6 +904,60 @@ service cloud.firestore {
           && fleetKm(request.resource.data.currentKm) && request.resource.data.currentKm >= resource.data.currentKm
           && request.resource.data.updatedAt == request.time;
       }
+      function personnelAccess(confidential) {
+        let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data;
+        return app == 'comunica-salvador' && member(company) && (profile.get('isAdmin', false) ||
+          (profile.get('permissions', {}).get('personnel', false) &&
+          (!confidential || profile.get('permissions', {}).get('personnelPrivate', false))));
+      }
+      function hrSource(source) { return source in ['hrCases','hrConfidential']; }
+      function hrAllowed(source) { return hrSource(source) && personnelAccess(source == 'hrConfidential'); }
+      function hrDate(value) { return value == '' || value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+      function hrRecord(source, id, d) {
+        return d.keys().hasOnly(['employeeId','employeeName','kind','title','owner','due','effective','nextDate','status','checks','note','revision','updatedBy','updatedAt','previous','hasFile','instruction','planned'])
+          && (source == 'hrConfidential' ? d.kind in ['exam','warning'] : d.kind in ['admission','experience','termination','transfer','leave'])
+          && d.employeeId is string && d.employeeName is string && d.employeeName.size() <= 200
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 160 && d.note is string && d.note.size() <= 3000
+          && d.checks is list && d.checks.size() <= 8 && d.status is string && d.status.size() <= 80
+          && hrDate(d.get('planned','')) && d.due != '' && hrDate(d.due) && hrDate(d.effective) && hrDate(d.nextDate) && d.hasFile is bool
+          && d.updatedAt == request.time && d.updatedBy == request.auth.uid && d.revision.matches('^[A-Za-z0-9_-]{1,64}$')
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(d.owner))
+          && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/$(source)/$(id)/history/$(d.revision)).data == d;
+      }
+      match /{source}/{caseId} {
+        allow read: if hrAllowed(source);
+        allow create: if hrAllowed(source) && request.resource.data.previous == ''
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.employeeId))
+          && hrRecord(source, caseId, request.resource.data);
+        allow update: if hrAllowed(source) && request.resource.data.previous == resource.data.revision
+          && request.resource.data.employeeId == resource.data.employeeId && request.resource.data.kind == resource.data.kind
+          && hrRecord(source, caseId, request.resource.data);
+        match /history/{revision} {
+          allow read: if hrAllowed(source);
+          allow create: if hrAllowed(source) && request.resource.data.revision == revision
+            && request.resource.data.updatedAt == request.time
+            && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/$(source)/$(caseId)).data == request.resource.data;
+        }
+        match /files/{revision} {
+          allow get: if hrAllowed(source);
+          allow create: if hrAllowed(source) && request.resource.data.keys().hasOnly(['pdf'])
+            && request.resource.data.pdf is bytes && request.resource.data.pdf.size() <= 716800
+            && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/$(source)/$(caseId)/history/$(revision)).data.updatedAt == request.time
+            && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/$(source)/$(caseId)/history/$(revision)).data.hasFile == true;
+        }
+      }
+      match /hrAssignments/{assignment} {
+        allow read: if member(company) && resource.data.owner == request.auth.uid;
+        allow get: if hrAllowed(resource.data.source);
+        allow create, update: if hrAllowed(request.resource.data.source)
+          && (resource == null || resource.data.source == request.resource.data.source)
+          && request.resource.data.keys().hasOnly(['source','owner','employeeName','due','instruction','completed'])
+          && request.resource.data.instruction in ['Conferir documentação','Liberar para compromisso','Dar retorno ao RH','Conferir equipamentos','']
+          && request.resource.data.completed is bool
+          && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/$(request.resource.data.source)/$(assignment)).data.owner == request.resource.data.owner;
+        allow update: if member(company) && resource.data.owner == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['completed']) && request.resource.data.completed == true;
+      }
       match /fleetDrivers/{uid} {
         allow get: if fleetManager() || (app == 'comunica-salvador' && member(company) && integraEnabled(app, company) && request.auth.uid == uid);
         allow list: if fleetManager();

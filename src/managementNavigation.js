@@ -5,7 +5,7 @@ import {
 
 export function buildManagementNavigation({unreadCount, unreadUpdates, pendingPollResponses,
   activeServices, pendingDocumentReads, canAccessProductivity, canManageCareers,
-  careerPendingCandidateUpdates, canManageWhistleblowing, isAdmin, isDeveloper,
+  careerPendingCandidateUpdates, canManageWhistleblowing, canUsePersonnel, isAdmin, isDeveloper,
   openPlatformSupport}) {
   return [
     {label:'Comunicação',items:[
@@ -25,7 +25,7 @@ export function buildManagementNavigation({unreadCount, unreadUpdates, pendingPo
     {label:'Gestão e suporte',items:[
       canManageCareers ? {id:'careers',label:'Banco de talentos',description:'Vagas e candidaturas',icon:Briefcase,badge:careerPendingCandidateUpdates || null,activeClass:'from-fuchsia-800 to-violet-700',accent:'text-fuchsia-600'} : null,
       canManageWhistleblowing ? {id:'whistleblowing',label:'Central de Denúncias',description:'Relatos confidenciais',icon:Lock,activeClass:'from-rose-900 to-red-700',accent:'text-rose-600'} : null,
-      isAdmin ? {id:'management',label:'Gestão da equipe',description:'Pessoas e permissões',icon:Users,activeClass:'from-rose-800 to-orange-700',accent:'text-rose-600'} : null,
+      (isAdmin || canUsePersonnel) ? {id:'management',label:'Gestão da equipe',description:'Pessoas e permissões',icon:Users,activeClass:'from-rose-800 to-orange-700',accent:'text-rose-600'} : null,
       isDeveloper ? {id:'support',label:'Central de suporte',description:'Demandas da plataforma',icon:KeyRound,activeClass:'from-slate-900 to-slate-700',accent:'text-slate-600'}
         : {id:'platform-support',label:'Suporte da plataforma',description:'Solicitar atendimento',icon:MessageSquare,action:openPlatformSupport,activeClass:'from-slate-900 to-blue-900',accent:'text-blue-600'},
     ].filter(Boolean)},
