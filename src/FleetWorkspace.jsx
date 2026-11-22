@@ -115,7 +115,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [],
   const location = useFleetLocation(db, root, ownTrip?.id, uid);
   const metrics = manager ? fleetFuelMetrics(fuelRows) : null;
   const overdueCount = maintenanceRows.filter(record => fleetMaintenanceState(record, km, today) === 'Vencida').length;
-  const loading = [vehicles, fuel, checks, trips, maintenance].some(item => item.loading);
+  const vehiclePlaceholder = vehicles.loading ? 'Carregando veículo…' : vehicles.error ? 'Veículo indisponível' : '';
   const issues = [drivers, vehicles, fuel, checks, trips, maintenance].find(item => item.error)?.error;
   const ref = (name, id) => doc(db, ...root, name, id);
   const records = name => collection(db, ...root, name);
@@ -238,7 +238,7 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [],
     });
   };
 
-  if (!db || !companyId || drivers.loading) return <p className={PANEL}>Carregando acesso à frota…</p>;
+  if (!db || !companyId || (drivers.loading && (!manager || tab !== 'overview'))) return <p className={PANEL}>Carregando acesso à frota…</p>;
   if (drivers.error) return <p role="alert" className={PANEL}>{drivers.error}</p>;
   if (!manager && !driver) return <p className={PANEL}>Peça ao administrador da empresa para vincular seu login a um cadastro de motorista ativo.</p>;
 
@@ -248,10 +248,10 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [],
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {manager ? <label className="text-xs font-semibold text-teal-100">Veículo
           <select className={INPUT} value={vehicle?.id || ''} onChange={event => setSelectedVehicle(event.target.value)}>
-            {!vehicles.rows.length && <option value="">Nenhum veículo cadastrado</option>}
+            {!vehicles.rows.length && <option value="">{vehiclePlaceholder || 'Nenhum veículo cadastrado'}</option>}
             {vehicles.rows.map(row => <option key={row.id} value={row.id}>{row.plate} · {row.model}</option>)}
           </select>
-        </label> : <p className="my-auto text-sm">{vehicle ? `${vehicle.plate} · ${vehicle.model}` : 'Nenhum veículo vinculado'}</p>}
+        </label> : <p className="my-auto text-sm">{vehicle ? `${vehicle.plate} · ${vehicle.model}` : vehiclePlaceholder || 'Nenhum veículo vinculado'}</p>}
         {vehicle && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/10 px-3 py-2 text-sm">
           <Gauge className="h-4 w-4" /> <strong>{number.format(km)} km</strong>
           {overdueCount > 0 && <span className="rounded-md bg-amber-300 px-2 py-1 font-semibold text-amber-950">{overdueCount} manutenção(ões) vencida(s)</span>}
@@ -272,10 +272,10 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [],
     {issues && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{issues}</p>}
     {feedback?.tab === tab && <p role={feedback.error ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${feedback.error ? 'bg-rose-50 text-rose-900' : 'bg-emerald-50 text-emerald-900'}`}>{feedback.message}</p>}
 
-    {tab === 'overview' && (loading ? <p className={PANEL}>Carregando indicadores da frota…</p> :
+    {tab === 'overview' && (vehiclePlaceholder ? <p className={PANEL}>{vehiclePlaceholder}</p> :
       <FleetOverview vehicle={vehicle} manager={manager} canDrive={canDrive} ownTrip={ownTrip} vehicleTrip={vehicleTrip}
         check={check} checkRows={checkRows} today={today} overdueCount={overdueCount} metrics={metrics}
-        fuelRows={fuelRows} tripRows={tripRows} onNavigate={onNavigate} />)}
+        sources={{ checks, trips, fuel, maintenance }} fuelRows={fuelRows} tripRows={tripRows} onNavigate={onNavigate} />)}
 
     {tab === 'vehicles' && manager && <Section title="Cadastro de veículos">
       <Form key={editingVehicleId || 'new'} onSubmit={form => act(() => saveVehicle(form), 'Veículo salvo.')} saving={saving} label={editingVehicle ? 'Salvar alterações' : 'Cadastrar veículo'}>

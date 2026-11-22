@@ -5,7 +5,7 @@ const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: '
 const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
 
 export default function FleetOverview({
-  vehicle, manager, canDrive, ownTrip, vehicleTrip, check, checkRows, today, overdueCount, metrics, fuelRows, tripRows, onNavigate,
+  vehicle, manager, canDrive, ownTrip, vehicleTrip, check, checkRows, today, overdueCount, metrics, fuelRows, tripRows, sources, onNavigate,
 }) {
   if (!vehicle) return <section className="rounded-2xl border border-slate-200 bg-white p-5">
     <h3 className="font-bold text-slate-900">Nenhum veículo disponível</h3>
@@ -22,13 +22,13 @@ export default function FleetOverview({
   const hasIssue = todayChecks.some(row => Object.values(row.items).includes('issue'));
   const checklistStatus = hasIssue ? 'Com irregularidade' : todayChecks.length ? 'Em ordem' : 'Pendente';
   const cards = [
-    { title: 'Checklist de hoje', value: checklistStatus, icon: ClipboardCheck, destination: 'fleet-checks',
+    { title: 'Checklist de hoje', source: sources.checks, value: checklistStatus, icon: ClipboardCheck, destination: 'fleet-checks',
       action: canDrive ? 'Abrir checklist' : 'Ver inspeções' },
-    { title: 'Viagens no mês', value: `${number.format(distance)} km`, icon: MapPin, destination: 'fleet-trips',
+    { title: 'Viagens no mês', source: sources.trips, value: `${number.format(distance)} km`, icon: MapPin, destination: 'fleet-trips',
       action: ownTrip || vehicleTrip ? 'Abrir viagem em andamento' : 'Ver viagens e rotas' },
-    { title: 'Combustível no mês', value: currency.format(spent), icon: Fuel, destination: 'fleet-fuel',
+    { title: 'Combustível no mês', source: sources.fuel, value: currency.format(spent), icon: Fuel, destination: 'fleet-fuel',
       action: 'Ver abastecimentos', detail: metrics && `Último ciclo completo · ${number.format(metrics.consumption)} km/L` },
-    ...(manager ? [{ title: 'Manutenções vencidas', value: number.format(overdueCount), icon: Wrench,
+    ...(manager ? [{ title: 'Manutenções vencidas', source: sources.maintenance, value: number.format(overdueCount), icon: Wrench,
       destination: 'fleet-maintenance', action: 'Ver manutenções' }] : []),
   ];
 
@@ -38,9 +38,9 @@ export default function FleetOverview({
       <h3 id="fleet-overview-title" className="font-bold text-slate-900">Visão geral · {vehicle.plate}</h3>
     </div>
     <div className="grid gap-3 sm:grid-cols-2">
-      {cards.map(({ title, value, icon: Icon, destination, action, detail }) => <article key={title} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      {cards.map(({ title, source, value, icon: Icon, destination, action, detail }) => <article key={title} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-600"><Icon className="h-4 w-4 text-teal-800" aria-hidden="true" />{title}</div>
-        <p className="mt-2 text-lg font-bold text-slate-900">{value}</p>
+        <p className="mt-2 text-lg font-bold text-slate-900" aria-busy={Boolean(source.loading)}>{source.loading ? 'Carregando…' : source.error ? 'Indisponível' : value}</p>
         {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
         <button type="button" className="mt-2 inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-teal-800 underline-offset-2 hover:underline" onClick={() => onNavigate(destination)}>
           {action} <ArrowRight className="h-4 w-4" aria-hidden="true" />
