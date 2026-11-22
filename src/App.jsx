@@ -58,6 +58,10 @@ import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
 import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
+import { activeHeadcount } from './personnelModel.js';
+import { usePersonnelRows, usePersonnelDay } from './usePersonnelRows.js';
+const PersonnelWorkspace = lazy(() => import('./PersonnelWorkspace.jsx'));
+const AssignedPersonnelTasks = lazy(() => import('./PersonnelWorkspace.jsx').then(module => ({default: module.AssignedPersonnelTasks})));
 const loadIntegraWorkspace = () => import('./IntegraWorkspace.jsx');
 const IntegraWorkspace = lazy(loadIntegraWorkspace);
 const preloadIntegra = () => {
@@ -871,6 +875,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [visitedIntegraScope, setVisitedIntegraScope] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
+  const [personnelEmployee, setPersonnelEmployee] = useState('');
   const [mgmtSubTab, setMgmtSubTab] = useState('employees');
   const [mgmtSectorFilter, setMgmtSectorFilter] = useState('all');
   const [headcountDrafts, setHeadcountDrafts] = useState({});
@@ -7102,12 +7107,18 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, 100);
   };
   const sectorCounts = departmentsList.map(d => ({ ...d, count: employeesList.filter(u => getUserDepts(u).includes(d.id)).length }));
+  const canUsePersonnel = Boolean(!currentUser?.isDeveloper && (currentUser?.isAdmin || currentUser?.permissions?.personnel === true));
+  const confidentialPersonnel = Boolean(canUsePersonnel && (currentUser?.isAdmin || currentUser?.permissions?.personnelPrivate === true));
+  const employment = usePersonnelRows(dbUser ? db : null, activeCompany?.id,
+    activeTab === 'management' && mgmtSubTab === 'headcount' && currentUser?.isAdmin && !currentUser?.isDeveloper ? 'hrCases' : '', 'employment', dbUser?.uid);
+  const headcountDay = usePersonnelDay(activeTab === 'management' && mgmtSubTab === 'headcount');
+  const headcountPeople = activeTab === 'management' && mgmtSubTab === 'headcount' ? activeHeadcount(employeesList, employment.rows, headcountDay) : employeesList;
   const headcountRows = departmentsList
     .filter(department => mgmtSectorFilter === 'all' || department.id === mgmtSectorFilter)
     .flatMap(department => rolesList
       .filter(role => getRoleDepts(role).includes(department.id))
       .map(role => {
-        const current = employeesList.filter(user => user.role === role.name && getUserDepts(user).includes(department.id)).length;
+        const current = headcountPeople.filter(user => user.role === role.name && getUserDepts(user).includes(department.id)).length;
         const plannedValue = role.approvedHeadcountByDept?.[department.id];
         const planned = plannedValue === '' || plannedValue === undefined || plannedValue === null ? null : Math.max(0, Number(plannedValue) || 0);
         return {
@@ -7131,7 +7142,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }
     return totals;
   }, { planned: 0, vacancies: 0, excess: 0, configuredRoles: 0 });
-  const headcountVisibleEmployees = employeesList.filter(user =>
+  const headcountVisibleEmployees = headcountPeople.filter(user =>
     mgmtSectorFilter === 'all' || getUserDepts(user).includes(mgmtSectorFilter));
   const uniqueRoles = [...new Set(employeesList.map(u => u.role).filter(Boolean))];
   const roleCounts = uniqueRoles.map(role => ({ name: role, count: employeesList.filter(u => u.role === role).length }));
@@ -7216,7 +7227,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, 3500);
     return () => window.clearTimeout(delay);
   }, [canOpenIntegra]);
-  const canOpenModule = moduleId => moduleId === 'integra' || isFleetTab(moduleId)
+  const canOpenModule = moduleId => moduleId === 'management' ? currentUser?.isAdmin || canUsePersonnel : moduleId === 'integra' || isFleetTab(moduleId)
     ? canOpenIntegra && (moduleId === 'integra' || canOpenFleetTab(moduleId, fleetManager))
     : moduleId === 'careers'
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
@@ -8802,6 +8813,7 @@ const notificationsToShow = [...notificationItems]
     activeServices: serviceMetrics.active + serviceActivityMetrics.active,
     pendingDocumentReads,
     canAccessProductivity,
+    canUsePersonnel,
     canManageCareers: isCareerManagerUser(currentUser),
     careerPendingCandidateUpdates,
     canManageWhistleblowing,
@@ -9527,6 +9539,7 @@ const notificationsToShow = [...notificationItems]
           {/* TAB: CENTRAL DE SERVIÇOS */}
           {activeTab === 'services' && (
             <div data-tour="services" className="flex flex-col gap-6 animate-in fade-in duration-300">
+              {dbUser && activeCompany?.id && !currentUser?.isDeveloper && <Suspense fallback={null}><AssignedPersonnelTasks key={activeCompany.id+dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}/></Suspense>}
               <section data-tour="services-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-5 text-white shadow-xl shadow-blue-950/10 sm:p-6">
                 <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-300/15 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-blue-400/15 blur-3xl" />
@@ -10363,11 +10376,21 @@ const handleDownload = async (fileUrl, fileName) => {
             /></Suspense>
           )}
 
+          {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && (!currentUser.isAdmin || ['hr-pending','hr-file'].includes(mgmtSubTab)) && (
+            <div className="space-y-3">
+              {currentUser.isAdmin && <button className="text-sm font-semibold text-blue-800" onClick={()=>setMgmtSubTab('employees')}>← Voltar à equipe</button>}
+              <Suspense fallback={<p>Carregando acompanhamento do RH…</p>}><PersonnelWorkspace
+                key={JSON.stringify([activeCompany.id,dbUser.uid,confidentialPersonnel])}
+                db={db} company={activeCompany.id} uid={dbUser.uid} employees={employeesList} departments={departmentsList}
+                confidential={confidentialPersonnel} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee}
+                view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>
+            </div>
+          )}
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
-          {activeTab === 'management' && currentUser.isAdmin && (
+          {activeTab === 'management' && currentUser.isAdmin && (!canUsePersonnel || !['hr-pending','hr-file'].includes(mgmtSubTab)) && (
             <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
 
-              <div className="flex border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
+              <div className="flex flex-wrap border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
                 <button
                   type="button"
                   onClick={() => setMgmtSubTab('overview')}
@@ -10423,6 +10446,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 >
                   🏢 Setores ({departmentsList.length})
                 </button>
+                {canUsePersonnel && <button type="button" onClick={()=>setMgmtSubTab('hr-pending')} className="px-4 py-2 text-xs font-bold text-blue-800">Pendências do RH</button>}
               </div>
 
               {mgmtSubTab === 'overview' && (
@@ -10448,7 +10472,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 </div>
               )}
 
-              {mgmtSubTab === 'headcount' && (
+              {mgmtSubTab === 'headcount' && (employment.error || employment.loading ? <p role="status">{employment.error || 'Consultando vínculos efetivos…'}</p> :
                 <div className="flex flex-col gap-5 animate-in fade-in duration-200">
                   <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 to-blue-950 p-6 text-white shadow-sm">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-200">Planejamento de pessoas</span>
@@ -10597,6 +10621,7 @@ const handleDownload = async (fileUrl, fileName) => {
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-2">
+                                {canUsePersonnel && <button type="button" className="rounded-lg border px-2 py-1 text-blue-800" onClick={()=>{setPersonnelEmployee(user.id);setMgmtSubTab('hr-file');}}>Ficha do RH</button>}
                                 <button type="button" onClick={() => handleResetUserPin(user.id, user.name)} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-blue-700 transition-all border border-transparent hover:border-blue-100" title="Redefinir PIN"><KeyRound className="h-4 w-4" /></button>
                                 <button
                                   type="button"
@@ -11036,6 +11061,10 @@ const handleDownload = async (fileUrl, fileName) => {
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                   <h3 className="text-sm font-extrabold text-slate-900">Áreas e ações permitidas</h3><p className="mt-1 text-xs text-slate-500">Selecione apenas o necessário para o trabalho dessa pessoa ou setor.</p>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2">{ACCESS_MODULES.map(module => <label key={module.id} className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-semibold ${permissionDraft.tabs?.[module.id] !== false ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>{module.label}</span><input type="checkbox" checked={permissionDraft.tabs?.[module.id] !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, tabs: { ...previous.tabs, [module.id]: event.target.checked } }))} className="accent-blue-700" /></label>)}</div>
+                  <fieldset className="mt-4 flex flex-wrap gap-4 rounded-xl border p-3 text-sm"><legend className="px-1 font-bold">Ficha e pendências do RH</legend>
+                    <label><input type="checkbox" checked={permissionDraft.personnel === true} onChange={e=>setPermissionDraft(p=>({...p,personnel:e.target.checked,personnelPrivate:e.target.checked && p.personnelPrivate === true}))}/> Gerenciar acompanhamentos</label>
+                    <label><input type="checkbox" disabled={!permissionDraft.personnel} checked={permissionDraft.personnelPrivate === true} onChange={e=>setPermissionDraft(p=>({...p,personnelPrivate:e.target.checked}))}/> Acessar exames e advertências</label>
+                  </fieldset>
                   <div className="mt-4 grid gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2"><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canEdit ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar informações</span><input type="checkbox" checked={permissionDraft.canEdit !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canEdit: event.target.checked, ...(!event.target.checked ? { canManageActivities: false, canManageActivityTemplates: false } : {}) }))} className="accent-emerald-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageCalendar ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Alterar escalas e calendário</span><input type="checkbox" checked={permissionDraft.canManageCalendar !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageCalendar: event.target.checked, ...(!event.target.checked ? { canManageScheduleRules: false } : {}) }))} className="accent-amber-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageScheduleRules !== false ? 'border-cyan-200 bg-cyan-50 text-cyan-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageCalendar === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Configurar regras da escala inteligente</span><input type="checkbox" disabled={permissionDraft.canManageCalendar === false} checked={permissionDraft.canManageScheduleRules !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageScheduleRules: event.target.checked }))} className="accent-cyan-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageActivities !== false ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canEdit === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Criar e alterar atividades</span><input type="checkbox" disabled={permissionDraft.canEdit === false} checked={permissionDraft.canManageActivities !== false} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageActivities: event.target.checked, ...(!event.target.checked ? { canManageActivityTemplates: false } : {}) }))} className="accent-violet-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canManageActivityTemplates ? 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-900' : 'border-slate-200 bg-slate-50 text-slate-500'} ${permissionDraft.canManageActivities === false ? 'cursor-not-allowed opacity-60' : ''}`}><span>Administrar modelos de checklist</span><input type="checkbox" disabled={permissionDraft.canManageActivities === false} checked={permissionDraft.canManageActivityTemplates === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canManageActivityTemplates: event.target.checked }))} className="accent-fuchsia-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewActivityInsights ? 'border-indigo-200 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver indicadores das atividades</span><input type="checkbox" checked={permissionDraft.canViewActivityInsights === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewActivityInsights: event.target.checked }))} className="accent-indigo-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canPublishAbsenceForOthers ? 'border-sky-200 bg-sky-50 text-sky-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Publicar ausência de outras pessoas</span><input type="checkbox" checked={permissionDraft.canPublishAbsenceForOthers === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canPublishAbsenceForOthers: event.target.checked }))} className="accent-sky-700" /></label><label className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 text-xs font-bold ${permissionDraft.canViewEngagement ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>Ver confirmações e curtidas</span><input type="checkbox" checked={permissionDraft.canViewEngagement === true} onChange={event => setPermissionDraft(previous => ({ ...previous, canViewEngagement: event.target.checked }))} className="accent-violet-700" /></label></div>
                   <div className="mt-5 flex justify-end"><button type="button" onClick={savePermissionTarget} disabled={!permissionTargetId} className="rounded-xl bg-slate-900 px-5 py-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Salvar permissões</button></div>
                 </section>
