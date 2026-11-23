@@ -910,6 +910,38 @@ service cloud.firestore {
           (profile.get('permissions', {}).get('personnel', false) &&
           (!confidential || profile.get('permissions', {}).get('personnelPrivate', false))));
       }
+      function timePilotEnabled() {
+        return get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/timePilot/config).data.enabled == true;
+      }
+      match /timePilot/config {
+        allow get: if app == 'comunica-salvador' && member(company);
+        allow create, update: if app == 'comunica-salvador' && admin(app, company)
+          && request.resource.data.keys().hasOnly(['enabled', 'updatedAt', 'updatedBy'])
+          && request.resource.data.enabled is bool
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.updatedBy == request.auth.uid;
+      }
+      match /timePilotUsers/{uid}/records/{recordId} {
+        function pilotMember() { return app == 'comunica-salvador' && member(company); }
+        function validPilotRecord(d) {
+          return d.createdAt == request.time && (
+            (d.kind == 'punch' && d.keys().hasOnly(['kind', 'createdAt', 'occurredAt'])
+              && d.occurredAt == request.time)
+            || (d.kind == 'adjustment' && d.keys().hasOnly(['kind', 'createdAt', 'occurredAt', 'reason', 'status'])
+              && d.occurredAt is timestamp && d.occurredAt <= request.time
+              && d.status == 'pending' && d.reason is string && d.reason.size() >= 4 && d.reason.size() <= 500)
+          );
+        }
+        allow read: if pilotMember() && (request.auth.uid == uid || personnelAccess(false));
+        allow create: if pilotMember() && request.auth.uid == uid && timePilotEnabled()
+          && recordId.matches("^[A-Za-z0-9]{20}$") && validPilotRecord(request.resource.data);
+        allow update: if personnelAccess(false) && timePilotEnabled() && request.auth.uid != uid
+          && resource.data.kind == 'adjustment' && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedBy'])
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.reviewedAt == request.time
+          && request.resource.data.reviewedBy == request.auth.uid;
+      }
       function hrSource(source) { return source in ['hrCases','hrConfidential']; }
       function hrAllowed(source) { return hrSource(source) && personnelAccess(source == 'hrConfidential'); }
       function hrDate(value) { return value == '' || value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
