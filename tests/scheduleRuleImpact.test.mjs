@@ -18,3 +18,17 @@ test('prévia sem diferença operacional não indica pessoas afetadas', () => {
   const impact = compareScheduleRules({ savedRules: base, draftRules: { ...base, name: 'Nova descrição' }, dates, users });
   assert.equal(impact.changes.length, 0);
 });
+
+test('mudança só no mínimo aparece na cobertura mesmo sem alterar jornadas', () => {
+  const requirement = { id: 'morning', department: 'loja', weekdays: [1], start: '08:00', end: '12:00', minimum: 2 };
+  const impact = compareScheduleRules({
+    savedRules: { ...base, coverageRequirements: [requirement] },
+    draftRules: { ...base, coverageRequirements: [{ ...requirement, minimum: 3 }] },
+    dates, users, getDepartment: () => 'loja',
+    coverageContext: { employees: users, getDepartments: () => ['loja'] },
+  });
+  assert.equal(impact.changes.length, 0);
+  const monday = impact.coverageDays[0];
+  assert.equal(monday.before.rules[0].segments[0].missing, 0);
+  assert.equal(monday.after.rules[0].segments[0].missing, 1);
+});
