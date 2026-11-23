@@ -4269,6 +4269,7 @@ const submitPresence = async (e) => {
     const nextVersion = Number(automaticScheduleRules.version || 1) + 1;
     const savedAt = Date.now();
     const persisted = { ...normalized, version: nextVersion, versionHistory: [...(normalized.versionHistory || []), { version: nextVersion, savedAt, savedBy: currentUser.name, summary: `${normalized.workDaysPerWeek} dias · ${scheduleDurationToText(normalized.hoursPerWeek)}h semanais · descanso mínimo ${normalized.minRestHours}h` }].slice(-12) };
+    if (!window.confirm('Salvar as regras de jornada da empresa para as próximas escalas?')) return;
     setIsSavingScheduleRules(true);
     const saved = await saveDoc('settings', 'schedule-rules', {
       ...persisted,
@@ -4765,6 +4766,7 @@ const submitPresence = async (e) => {
     let plan;
     try { plan = planPublishedDayEdit(edit.source, draft, edit.date, { history: workSchedules, absences, rules: automaticScheduleRules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts, publicationId: globalThis.crypto.randomUUID(), now: Date.now(), actor: { id: currentUser.id || dbUser.uid, name: currentUser.name } }); }
     catch (error) { triggerNotification(error.message, 'error'); return false; }
+    if (!window.confirm('Confirmar a alteração deste dia na escala publicada e na referência do ponto?')) return false;
     setIsSavingPublishedSchedule(true);
     try {
       if (!await saveRelatedRecords(plan.records, 'Não foi possível salvar o ajuste. Nenhum dia foi alterado; sua edição foi preservada.', { companyId: edit.companyId, history: edit.history, replaced: plan.replaced })) return false;
@@ -5064,6 +5066,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       const {pin: ignoredOldPin, ...existingProfile} = editingUser;
       const {pin: ignoredFormPin, ...formProfile} = userForm;
       const updatedData = { ...existingProfile, ...formProfile, updatedAt: Date.now() };
+      if (!window.confirm('Salvar as alterações no cadastro de ' + editingUser.name + '? Os módulos que usam esse cadastro serão atualizados.')) return;
       if (!await saveDoc('users', editingUser.id, updatedData)) return;
       setUsersList(prev => prev.map(user => user.id === editingUser.id ? updatedData : user));
       triggerNotification('Ficha de cadastro atualizada!');
@@ -10355,6 +10358,9 @@ const handleDownload = async (fileUrl, fileName) => {
             <Suspense fallback={<ModuleLoading label="o ponto e jornada" />}>
               <TimePilotWorkspace key={`${timePilotCompany}:${dbUser.uid}`} db={db} appId={appId}
                 company={timePilotCompany} uid={dbUser.uid} employees={employeesList}
+                schedules={scheduleScopedSchedules} absences={scheduleScopedAbsences} departments={departmentsList} getDepartments={getUserDepts}
+                onCalendar={canOpenModule('scale') ? date => { setSelectedCalendarDay(date); setActiveTab('scale'); } : null}
+                onEmployee={currentUser.isAdmin ? person => { setActiveTab('management'); setMgmtSubTab('employees'); handleEditUser(person); } : null}
                 admin={currentUser.isAdmin} canReview={canUsePersonnel}
                 settings={timePilotSetting?.company === timePilotCompany ? timePilotSetting : null} />
             </Suspense>

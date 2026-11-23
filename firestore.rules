@@ -913,6 +913,14 @@ service cloud.firestore {
       function timePilotEnabled() {
         return get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/timePilot/config).data.enabled == true;
       }
+      match /timePilot/parameters {
+        allow get: if app == 'comunica-salvador' && member(company);
+        allow create, update: if app == 'comunica-salvador' && admin(app, company)
+          && request.resource.data.keys().hasOnly(['adjustmentDays','reasonLength','updatedAt','updatedBy'])
+          && request.resource.data.adjustmentDays is int && request.resource.data.adjustmentDays >= 0 && request.resource.data.adjustmentDays <= 365
+          && request.resource.data.reasonLength is int && request.resource.data.reasonLength >= 4 && request.resource.data.reasonLength <= 500
+          && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
+      }
       match /timePilot/config {
         allow get: if app == 'comunica-salvador' && member(company);
         allow create, update: if app == 'comunica-salvador' && admin(app, company)
@@ -923,13 +931,19 @@ service cloud.firestore {
       }
       match /timePilotUsers/{uid}/records/{recordId} {
         function pilotMember() { return app == 'comunica-salvador' && member(company); }
+        function adjustmentAllowed(d) {
+          let path = /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/timePilot/parameters;
+          return !exists(path) || (d.reason.size() >= get(path).data.reasonLength
+            && (get(path).data.adjustmentDays == 0 || d.occurredAt >= request.time - duration.value(get(path).data.adjustmentDays, 'd')));
+        }
         function validPilotRecord(d) {
           return d.createdAt == request.time && (
-            (d.kind == 'punch' && d.keys().hasOnly(['kind', 'createdAt', 'occurredAt'])
+            (d.kind == 'punch' && d.keys().hasOnly(['kind', 'createdAt', 'occurredAt', 'punchType'])
+              && d.get('punchType', 'entry') in ['entry','breakStart','breakEnd','exit']
               && d.occurredAt == request.time)
             || (d.kind == 'adjustment' && d.keys().hasOnly(['kind', 'createdAt', 'occurredAt', 'reason', 'status'])
               && d.occurredAt is timestamp && d.occurredAt <= request.time
-              && d.status == 'pending' && d.reason is string && d.reason.size() >= 4 && d.reason.size() <= 500)
+              && d.status == 'pending' && d.reason is string && d.reason.size() >= 4 && d.reason.size() <= 500 && adjustmentAllowed(d))
           );
         }
         allow read: if pilotMember() && (request.auth.uid == uid || personnelAccess(false));

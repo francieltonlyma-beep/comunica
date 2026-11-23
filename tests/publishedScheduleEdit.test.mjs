@@ -73,7 +73,7 @@ function savingContext(ok = true) {
     publishedScheduleEdit: { source, date, companyId: 'company', history: [source], absences: [], rules: context.rules }, isSavingPublishedSchedule: false,
     activeCompany: { id: 'company' }, workSchedules: [source], absences: [], automaticScheduleRules: context.rules,
     schedulePlanningDataReady: () => true, scheduleSignature, planPublishedDayEdit, canEditPublishedSchedule, crypto: webcrypto,
-    notifications: [], writes: [], setIsSavingPublishedSchedule() {},
+    window: { confirm: () => true }, notifications: [], writes: [], setIsSavingPublishedSchedule() {},
   };
   ctx.triggerNotification = message => ctx.notifications.push(message);
   ctx.saveRelatedRecords = async (...args) => { ctx.writes.push(args); return ok; };
@@ -90,6 +90,14 @@ test('salvamento real usa operação conjunta e só muda a tela após confirmaç
     assert.equal(ctx.writes[0][0].length, 4); assert.equal(ctx.writes[0][2].companyId, 'company');
     assert.equal(ctx.updated, undefined); assert.equal(ctx.closed, ok ? null : undefined);
   }
+});
+
+test('cancelar a confirmação preserva a escala publicada', async () => {
+  const ctx = savingContext();
+  ctx.window.confirm = () => false;
+  const saved = await extract('savePublishedScheduleEdit', 'handleDeleteSchedule', ctx)({ ...publishedScheduleDraft(source), status: 'Folga' });
+  assert.equal(saved, false);
+  assert.equal(ctx.writes.length, 0);
 });
 
 test('mudança de empresa, versão desatualizada ou perda de permissão impedem escrita', async () => {
