@@ -60,6 +60,7 @@ import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../func
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
 import { activeHeadcount } from './personnelModel.js';
 import { usePersonnelRows, usePersonnelDay } from './usePersonnelRows.js';
+const TimePilotWorkspace = lazy(() => import('./TimePilotWorkspace.jsx'));
 const PersonnelWorkspace = lazy(() => import('./PersonnelWorkspace.jsx'));
 const AssignedPersonnelTasks = lazy(() => import('./PersonnelWorkspace.jsx').then(module => ({default: module.AssignedPersonnelTasks})));
 const loadIntegraWorkspace = () => import('./IntegraWorkspace.jsx');
@@ -7225,7 +7226,20 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, 3500);
     return () => window.clearTimeout(delay);
   }, [canOpenIntegra]);
-  const canOpenModule = moduleId => moduleId === 'management' ? currentUser?.isAdmin || canUsePersonnel : moduleId === 'integra' || isFleetTab(moduleId)
+  const timePilotCompany = authReady && db && appId === 'comunica-salvador' && dbUser
+    && currentUser?.id === dbUser.uid && !currentUser?.isDeveloper
+    && authScope.companyId === activeCompany?.id ? activeCompany.id : '';
+  const [timePilotSetting, setTimePilotSetting] = useState(null);
+  useEffect(() => {
+    if (!timePilotCompany) return undefined;
+    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'companies', timePilotCompany, 'timePilot', 'config');
+    return onSnapshot(ref, snapshot => {
+      setTimePilotSetting({ company: timePilotCompany, enabled: snapshot.data()?.enabled === true });
+    }, () => setTimePilotSetting({ company: timePilotCompany, error: true }));
+  }, [timePilotCompany]);
+  const timePilotEnabled = timePilotSetting?.company === timePilotCompany && timePilotSetting.enabled;
+  const canOpenModule = moduleId => moduleId === 'time-pilot'
+    ? Boolean(timePilotCompany && (currentUser?.isAdmin || timePilotEnabled)) : moduleId === 'management' ? currentUser?.isAdmin || canUsePersonnel : moduleId === 'integra' || isFleetTab(moduleId)
     ? canOpenIntegra && (moduleId === 'integra' || canOpenFleetTab(moduleId, fleetManager))
     : moduleId === 'careers'
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
@@ -10335,6 +10349,15 @@ const handleDownload = async (fileUrl, fileName) => {
               {filteredSectorPosts.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-xs text-slate-500">Nenhuma publicação encontrada com os filtros selecionados.</div>}
               {visibleSectorPosts.length < filteredSectorPosts.length && <button type="button" onClick={() => setSectorPostLimit(previous => previous + 8)} className="self-center rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-extrabold text-blue-700 shadow-sm hover:border-blue-200 hover:bg-blue-50">Mostrar mais {Math.min(8, filteredSectorPosts.length - visibleSectorPosts.length)} publicação(ões)</button>}
             </div>
+          )}
+
+          {activeTab === 'time-pilot' && canOpenModule('time-pilot') && (
+            <Suspense fallback={<ModuleLoading label="o ponto e jornada" />}>
+              <TimePilotWorkspace key={`${timePilotCompany}:${dbUser.uid}`} db={db} appId={appId}
+                company={timePilotCompany} uid={dbUser.uid} employees={employeesList}
+                admin={currentUser.isAdmin} canReview={canUsePersonnel}
+                settings={timePilotSetting?.company === timePilotCompany ? timePilotSetting : null} />
+            </Suspense>
           )}
 
           {/* TAB: SCALE & CALENDAR */}

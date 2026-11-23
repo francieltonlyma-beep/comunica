@@ -1,5 +1,5 @@
 import {
-  Activity, Briefcase, Building, Calendar, CheckCircle2, ClipboardCheck, FileText, Fuel, Gauge, KeyRound, MapPin,
+  Activity, Briefcase, Building, Calendar, CheckCircle2, ClipboardCheck, Clock, FileText, Fuel, Gauge, KeyRound, MapPin,
   Layers, Lock, Megaphone, MessageSquare, Package, Sparkles, TrendingUp, Truck, Users, Wrench,
 } from 'lucide-react';
 
@@ -20,6 +20,7 @@ export function buildManagementNavigation({unreadCount, unreadUpdates, pendingPo
       {id:'services',label:'Central de serviços',description:'Solicitações, atividades e checklists',icon:CheckCircle2,badge:activeServices || null,activeClass:'from-blue-900 to-cyan-700',accent:'text-blue-600'},
       {id:'documents',label:'Documentos',description:'Arquivos e políticas',icon:FileText,badge:pendingDocumentReads || null,activeClass:'from-emerald-800 to-teal-700',accent:'text-emerald-600'},
       {id:'scale',label:'Escalas e calendário',description:'Agenda e disponibilidade',icon:Calendar,activeClass:'from-orange-700 to-amber-600',accent:'text-orange-600'},
+      {id:'time-pilot',label:'Ponto e jornada',description:'Batidas e ajustes do piloto',icon:Clock,activeClass:'from-blue-900 to-cyan-700',accent:'text-blue-700'},
       canAccessProductivity ? {id:'productivity',label:'Produtividade',description:'Registros de produção',icon:TrendingUp,activeClass:'from-indigo-800 to-violet-700',accent:'text-indigo-600'} : null,
     ].filter(Boolean)},
     {label:'Gestão e suporte',items:[
