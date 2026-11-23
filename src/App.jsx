@@ -3935,7 +3935,7 @@ const submitPresence = async (e) => {
       status: statusFinalDeHoje,
       notes: newPresence?.notes || '',
       dept: newPresence?.dept || '',
-      name: userToSubmit,
+      name: targetUser.name,
       userId: targetUser.id,
     };
 
