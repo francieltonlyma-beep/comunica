@@ -135,6 +135,7 @@ export default function ScheduleCalendar({
           <div><span className="sc-eyebrow">PLANEJAMENTO DA EQUIPE</span><h2>Calendário de escalas</h2><p>Selecione um dia para consultar e organizar a equipe.</p></div>
         </div>
         <div className="sc-header-actions">
+          {canWrite && <button type="button" className="sc-button" onClick={() => onPresence(selectedDate)}><Plus size={16} /> Registrar status</button>}
           {canManage && canWrite && <button type="button" className="sc-primary" onClick={() => onPlan('month')}><Plus size={16} /> Gerar escala do mês</button>}
           <button type="button" className="sc-button" aria-expanded={swapRequestsOpen} onClick={() => setSwapRequestsOpen(value => !value)}><ArrowLeftRight size={16}/> Trocas{pendingSwapRequests > 0 ? ` (${pendingSwapRequests})` : ''}</button>
           <button type="button" className="sc-button" aria-expanded={needsOpen} onClick={() => setNeedsOpen(value => !value)}><Users size={16} /> Necessidade</button>

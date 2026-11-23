@@ -1160,7 +1160,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     image: ''
   });
   const [editingProdId, setEditingProdId] = useState(null);
-  const [newPresence, setNewPresence] = useState({ name: '', dept: 'rh', status: 'Presencial', notes: '', startDate: todayStr, endDate: todayStr });
+  const [newPresence, setNewPresence] = useState({ userId: '', name: '', dept: 'rh', status: 'Presencial', notes: '', startDate: todayStr, endDate: todayStr });
   const [newAbsence, setNewAbsence] = useState({ targetUserId: '', startDate: todayStr, endDate: todayStr, startTime: '09:00', endTime: '12:00', reason: '' });
   const [bulkSchedule, setBulkSchedule] = useState({
     startDate: todayStr, endDate: todayStr, status: 'Folga', dept: 'Todos', userIds: [], notes: '',
@@ -3888,9 +3888,7 @@ const submitPresence = async (e) => {
   try {
     if (!currentUser) return;
 
-    // Blindagem de strings: previne o erro "Cannot read properties of undefined (reading 'toLowerCase')"
-    const userToSubmit = newPresence?.name || '';
-    const targetUser = usersList.find(u => String(u?.name || '').toLowerCase() === String(userToSubmit).toLowerCase());
+    const targetUser = usersList.find(user => String(user.id) === String(newPresence.userId));
 
     if (!targetUser) {
       triggerNotification('Usuário não encontrado na lista.', 'error');
@@ -3904,7 +3902,7 @@ const submitPresence = async (e) => {
       return;
     }
 
-    const existing = presenceList.find(p => String(p?.name || '').toLowerCase() === String(userToSubmit).toLowerCase());
+    const existing = presenceList.find(p => p.userId ? String(p.userId) === String(targetUser.id) : normalizedText(p.name) === normalizedText(targetUser.name));
 
     let statusFinalDeHoje = newPresence?.status || 'Presencial';
     let isFeriasFuturas = false;
@@ -10369,8 +10367,8 @@ const handleDownload = async (fileUrl, fileName) => {
                 setShowEventModal(true);
               }}
               onPresence={date => {
-                const existingPresence = presenceList.find(item => item.name.toLowerCase() === currentUser.name.toLowerCase());
-                setNewPresence({ name: currentUser.name, dept: getUserDepts(currentUser)[0] || 'rh', status: existingPresence?.status || 'Presencial', notes: existingPresence?.notes || '', startDate: date, endDate: date });
+                const existingPresence = presenceList.find(item => item.userId ? String(item.userId) === String(currentUser.id) : normalizedText(item.name) === normalizedText(currentUser.name));
+                setNewPresence({ userId: currentUser.id, name: currentUser.name, dept: getUserDepts(currentUser)[0] || 'rh', status: date !== todayStr || !(currentUser.isAdmin || currentUser.isDeveloper || isManager) ? 'Férias' : existingPresence?.status || 'Presencial', notes: existingPresence?.notes || '', startDate: date, endDate: date });
                 setShowPresenceModal(true);
               }}
             /></Suspense>
@@ -11603,7 +11601,7 @@ const handleDownload = async (fileUrl, fileName) => {
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="font-extrabold flex items-center gap-2 text-sm">
-                <UserCheck className="h-5 w-5 text-slate-300" /> Registrar Escala de Trabalho Diária
+                <UserCheck className="h-5 w-5 text-slate-300" /> Registrar status do colaborador
               </h3>
               <button type="button" onClick={() => setShowPresenceModal(false)} className="p-1 hover:bg-slate-800 rounded">
                 <X className="h-5 w-5" />
@@ -11615,27 +11613,27 @@ const handleDownload = async (fileUrl, fileName) => {
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Colaborador</label>
                 {currentUser.isAdmin || currentUser.isDeveloper || isManager || effectiveAccessProfile.canPublishAbsenceForOthers === true ? (
                   <select
-                    value={newPresence.name}
+                    value={newPresence.userId}
                     onChange={(e) => {
-                      const selectedUser = usersList.find(u => u.name === e.target.value);
-                      const existingPres = presenceList.find(p => p.name === e.target.value);
+                      const selectedUser = employeesList.find(user => String(user.id) === e.target.value);
+                      if (!selectedUser) return;
+                      const existingPres = presenceList.find(p => p.userId ? String(p.userId) === String(selectedUser.id) : normalizedText(p.name) === normalizedText(selectedUser.name));
                       const primaryDept = selectedUser && selectedUser.depts && selectedUser.depts.length > 0
                         ? selectedUser.depts[0]
                         : (selectedUser?.dept || 'rh');
 
-                      setNewPresence({
-                        name: e.target.value,
+                      setNewPresence(previous => ({
+                        ...previous,
+                        userId: selectedUser.id,
+                        name: selectedUser.name,
                         dept: primaryDept,
-                        status: existingPres ? existingPres.status : 'Presencial',
-                        notes: existingPres ? existingPres.notes : '',
-                        startDate: todayStr,
-                        endDate: todayStr
-                      });
+                        notes: existingPres?.notes || ''
+                      }));
                     }}
                     className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
                   >
                     {employeesList.map(u => (
-                      <option key={u.id} value={u.name}>{u.name}</option>
+                      <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
                 ) : (
@@ -11667,7 +11665,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     onChange={(e) => setNewPresence({ ...newPresence, status: e.target.value })}
                     className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
                   >
-                    {currentUser.isAdmin || currentUser.isDeveloper || isManager ? <>
+                    {selectedCalendarDay === todayStr && (currentUser.isAdmin || currentUser.isDeveloper || isManager) ? <>
                       <option value="Presencial">Presencial (Sede)</option>
                       <option value="Home Office">Home Office (Remoto)</option>
                       <option value="Folga">Folga Escalonada</option>
