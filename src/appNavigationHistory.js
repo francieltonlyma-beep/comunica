@@ -4,7 +4,7 @@ export const APP_NAVIGATION_HISTORY_KEY = 'comunicaNavigation';
 
 const APP_TABS = new Set([
   'dashboard', 'inbox', 'updates', 'announcements', 'sectors', 'polls',
-  'services', 'documents', 'scale', 'productivity', 'careers',
+  'services', 'documents', 'scale', 'time-pilot', 'productivity', 'careers',
   'whistleblowing', 'management', 'support', 'integra',
 ]);
 const SERVICE_WORKSPACES = new Set(['requests', 'activities', 'management']);

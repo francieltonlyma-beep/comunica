@@ -169,15 +169,6 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
         <h1 className="text-2xl font-bold">Ponto e jornada</h1>
         <p className="mt-2 max-w-xl text-sm text-slate-200">Piloto para testar batidas, ajustes e o espelho mensal. Continue usando o controle oficial da empresa.</p>
       </header>
-      {admin && (
-        <div className={`${panel} flex flex-wrap items-center justify-between gap-3`}>
-          <div><h2 className="font-bold">Piloto da empresa</h2><p className="mt-1 text-sm text-slate-600">Ative para disponibilizar a área aos colaboradores desta empresa.</p></div>
-          <button className={button} type="button" disabled={saving || !settings || settings.error} onClick={() => window.confirm((enabled ? 'Desativar' : 'Ativar') + ' o piloto para esta empresa?') && void save(
-            () => setDoc(doc(db, ...base, 'timePilot', 'config'), { enabled: !enabled, updatedAt: serverTimestamp(), updatedBy: uid }),
-            enabled ? 'Piloto desativado.' : 'Piloto ativado para a empresa.',
-          )}>{enabled ? 'Desativar piloto' : 'Ativar piloto'}</button>
-        </div>
-      )}
       {message && <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950" role="status">{message}</p>}
       {settings?.error && <p role="alert">Não foi possível consultar a configuração do piloto.</p>}
       {admin && <details className={panel}><summary className="cursor-pointer font-bold">Parâmetros do ponto</summary>

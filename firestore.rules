@@ -565,6 +565,14 @@ service cloud.firestore {
         && request.auth.token.get('companyId', '') == company
         && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid));
       allow write: if false;
+      match /platformAccess/tabs {
+        allow get: if app == 'comunica-salvador' && access(company);
+        allow create, update: if app == 'comunica-salvador' && support()
+          && request.resource.data.keys().hasOnly(['defaultEnabled','tabs','updatedAt','updatedBy'])
+          && request.resource.data.defaultEnabled is bool && request.resource.data.tabs is map
+          && request.resource.data.tabs.values().hasOnly([true, false])
+          && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
+      }
       match /settings/integra-access {
         allow get: if access(company);
         allow list: if false;
@@ -916,6 +924,7 @@ service cloud.firestore {
       match /timePilot/parameters {
         allow get: if app == 'comunica-salvador' && member(company);
         allow create, update: if app == 'comunica-salvador' && admin(app, company)
+          && timePilotEnabled()
           && request.resource.data.keys().hasOnly(['adjustmentDays','reasonLength','updatedAt','updatedBy','deviceVerification'])
           && request.resource.data.get('deviceVerification', false) is bool
           && request.resource.data.adjustmentDays is int && request.resource.data.adjustmentDays >= 0 && request.resource.data.adjustmentDays <= 365
@@ -923,8 +932,8 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
       }
       match /timePilot/config {
-        allow get: if app == 'comunica-salvador' && member(company);
-        allow create, update: if app == 'comunica-salvador' && admin(app, company)
+        allow get: if app == 'comunica-salvador' && access(company);
+        allow create, update: if app == 'comunica-salvador' && support()
           && request.resource.data.keys().hasOnly(['enabled', 'updatedAt', 'updatedBy'])
           && request.resource.data.enabled is bool
           && request.resource.data.updatedAt == request.time
