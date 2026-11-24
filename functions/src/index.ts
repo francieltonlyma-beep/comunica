@@ -1755,3 +1755,8 @@ export const surveyWorkspace = onCall({region:'us-central1',invoker:'public',max
  const {surveyWorkspaceAction}=await import('./surveyWorkspace.js');
  return surveyWorkspaceAction(getFirestore(),request.data || {},request.auth,request.rawRequest.ip || 'unknown');
 });
+
+export const timeDeviceVerification = onCall({invoker: 'public', maxInstances: 2}, async request => {
+  const {timeDevice} = await import('./timeDevice.js');
+  return timeDevice(getFirestore(), request);
+});

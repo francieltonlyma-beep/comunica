@@ -63,6 +63,20 @@ try {
   const records = collection(hr, base, 'timePilotUsers', 'person', 'records');
   await assertSucceeds(getDocs(query(records, where('occurredAt', '>=', new Date(0)), orderBy('occurredAt', 'desc'))));
 
+  await assertFails(setDoc(record(person, 'person', 'fakeproof'), { ...punch(), verification: 'webauthn' }));
+  await assertFails(setDoc(doc(admin, '_timeDeviceKeys', 'foreign'), { credential: {} }));
+  const parameters = db => doc(db, base, 'timePilot', 'parameters');
+  const limits = { adjustmentDays: 7, reasonLength: 12, updatedAt: serverTimestamp(), updatedBy: 'admin' };
+  await assertFails(setDoc(parameters(person), { ...limits, updatedBy: 'person' }));
+  await assertFails(setDoc(parameters(admin), { ...limits, adjustmentDays: -1 }));
+  await assertSucceeds(setDoc(parameters(admin), limits));
+  await assertFails(getDoc(parameters(outside)));
+  const recent = { ...adjustment(), occurredAt: new Date(Date.now() - 60000) };
+  await assertFails(setDoc(record(person, 'person', 'short'), { ...recent, reason: 'curto' }));
+  await assertFails(setDoc(record(person, 'person', 'expired'), { ...recent, occurredAt: new Date(0) }));
+  await assertSucceeds(setDoc(record(person, 'person', 'recent'), recent));
+  await assertSucceeds(setDoc(record(person, 'person', 'entry'), { ...punch(), punchType: 'entry' }));
+  await assertFails(setDoc(record(person, 'person', 'invalidtype'), { ...punch(), punchType: 'invalid' }));
   await assertSucceeds(setDoc(config(admin), pilot('admin', false)));
   await assertFails(setDoc(record(person, 'person', 'disabled'), punch()));
   await assertSucceeds(getDoc(record(person, 'person', 'mark')));
