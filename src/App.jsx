@@ -74,6 +74,8 @@ const preloadIntegra = () => {
 const SurveyTopicsEditor = lazy(() => import('./SurveyTopicsEditor.jsx'));
 const SurveyLibrary = lazy(() => import('./SurveyLibrary.jsx'));
 const SurveyRespondent = lazy(() => import('./SurveyRespondent.jsx'));
+import { allowsCompanyTab } from './companyTabAccess.js';
+import { useCompanyTabAccess } from './useCompanyTabAccess.js';
 import { useIntegraAccess } from './useIntegraAccess.js';
 const IntegraAccessControl = lazy(() => import('./IntegraAccessControl.jsx'));
 import { SERVICE_CATALOG, SERVICE_PRIORITIES, emptyServiceRequest, getServiceCategory, mergeServiceCatalogSettings, sanitizeServiceCatalogSettings, serviceDueDate, serviceRequestStatus, serviceStatusLabel } from './serviceCatalog';
@@ -873,7 +875,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [anonymousSurveyHash, setAnonymousSurveyHash] = useState('');
   useEffect(() => { let active = true; if (!currentUser?.id) { setAnonymousSurveyHash(''); return () => { active = false; }; } hashSurveyRespondent(currentUser.id).then(hash => { if (active) setAnonymousSurveyHash(hash); }).catch(() => { if (active) setAnonymousSurveyHash(''); }); return () => { active = false; }; }, [currentUser?.id]);
 
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [requestedTab, setActiveTab] = useState('dashboard');
   const [visitedIntegraScope, setVisitedIntegraScope] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('comunica_theme') === 'dark');
   const [personnelEmployee, setPersonnelEmployee] = useState('');
@@ -887,6 +889,13 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     const saved = localStorage.getItem('comunica_active_company');
     return saved ? JSON.parse(saved) : null;
   });
+  const [dbUser, setDbUser] = useState(null);
+  const companyTabAccess = useCompanyTabAccess(db, appId, activeCompany?.id, dbUser?.uid);
+  const supportSession = currentUser?.isDeveloper && dbUser?.uid === PLATFORM_SUPPORT.id;
+  const tabReleased = id => supportSession || !isFirebaseAvailable || (
+    id === 'time-pilot' || (id === 'platform-support' ? allowsCompanyTab(companyTabAccess?.policy, 'inbox') : allowsCompanyTab(companyTabAccess?.policy, id))
+  );
+  const activeTab = tabReleased(requestedTab) ? requestedTab : 'tab-unavailable';
   const [companyCode, setCompanyCode] = useState('');
   const [loginDirectory, setLoginDirectory] = useState(null);
   // Impede que uma consulta antiga (por exemplo, "082") apague o resultado
@@ -1378,7 +1387,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryContent, setSummaryContent] = useState('');
 
-  const [dbUser, setDbUser] = useState(null);
+
   const [authReady, setAuthReady] = useState(!isFirebaseAvailable);
   const [sessionStartupError, setSessionStartupError] = useState(false);
   const dbLoading = isFirebaseAvailable && !authReady && !sessionStartupError;
@@ -7241,12 +7250,12 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, () => setTimePilotSetting({ company: timePilotCompany, error: true }));
   }, [timePilotCompany]);
   const timePilotEnabled = timePilotSetting?.company === timePilotCompany && timePilotSetting.enabled;
-  const canOpenModule = moduleId => moduleId === 'time-pilot'
-    ? Boolean(timePilotCompany && (currentUser?.isAdmin || timePilotEnabled)) : moduleId === 'management' ? currentUser?.isAdmin || canUsePersonnel : moduleId === 'integra' || isFleetTab(moduleId)
+  const canOpenModule = moduleId => tabReleased(moduleId) && (moduleId === 'time-pilot'
+    ? Boolean(timePilotCompany && timePilotEnabled) : moduleId === 'management' ? currentUser?.isAdmin || canUsePersonnel : moduleId === 'integra' || isFleetTab(moduleId)
     ? canOpenIntegra && (moduleId === 'integra' || canOpenFleetTab(moduleId, fleetManager))
     : moduleId === 'careers'
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
-    : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false;
+    : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false);
   const canOpenCareers = canOpenModule('careers');
   const careerLibraryCompany = activeCompany?.id;
   const careerLibraryUid = dbUser?.uid;
@@ -8837,12 +8846,13 @@ const notificationsToShow = [...notificationItems]
     openPlatformSupport,
   });
   const isIntegraWorkspace = activeTab === 'integra' || isFleetTab(activeTab);
+  const firstIntegraTab = buildIntegraNavigation(fleetManager).flatMap(section => section.items).find(item => canOpenModule(item.id))?.id;
   const integraOpen = isIntegraWorkspace && canOpenModule(activeTab);
   const integraScope = JSON.stringify([activeCompany?.id, currentUser?.id, dbUser?.uid, fleetManager]);
   if (integraOpen && visitedIntegraScope !== integraScope) setVisitedIntegraScope(integraScope);
   const keepIntegra = canOpenIntegra && (integraOpen || visitedIntegraScope === integraScope);
   const visibleNavigationSections = (isIntegraWorkspace ? buildIntegraNavigation(fleetManager) : navigationSections)
-    .map(section => ({ ...section, items: section.items.filter(item => item.action || canOpenModule(item.id)) }))
+    .map(section => ({ ...section, items: section.items.filter(item => (item.action && tabReleased(item.id)) || canOpenModule(item.id)) }))
     .filter(section => section.items.length);
   const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
 
@@ -8860,7 +8870,7 @@ const notificationsToShow = [...notificationItems]
         />
       </div>
       <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto justify-end">
-        {currentUser.isAdmin && (
+        {currentUser.isAdmin && tabReleased('announcements') && (
           <button
             onClick={() => setShowAnnModal(true)}
             className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs min-h-11 px-2 sm:px-4 rounded-xl flex items-center gap-1.5 min-w-0 flex-1 sm:flex-initial justify-center transition-all"
@@ -8869,7 +8879,7 @@ const notificationsToShow = [...notificationItems]
             <Plus className="h-4 w-4 shrink-0" /> Novo comunicado
           </button>
         )}
-        <button
+        {tabReleased('sectors') && <button
           onClick={() => {
             setNewPost(prev => ({ ...prev, depts: [getUserDepts(currentUser)[0] || 'rh'] }));
             setShowPostModal(true);
@@ -8878,7 +8888,7 @@ const notificationsToShow = [...notificationItems]
           type="button"
         >
           <Share2 className="h-4 w-4 shrink-0 text-slate-600" /> Publicar no setor
-        </button>
+        </button>}
       </div>
     </div>
   );
@@ -8916,7 +8926,7 @@ const notificationsToShow = [...notificationItems]
 
           <nav aria-label="Produtos Comunica" className="col-span-full row-start-2 flex min-w-0 items-center gap-2 border-t border-slate-200/70 pt-1.5 sm:shrink-0 sm:border-0 sm:pt-0">
             <button type="button" title="Comunica Gestão" aria-current={!isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${!isIntegraWorkspace ? 'border-blue-700 bg-blue-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400'}`}>Gestão</button>
-            {canOpenModule('integra') && <button type="button" title="Comunica Integra" onPointerEnter={preloadIntegra} onFocus={preloadIntegra} aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab('integra'); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
+            {firstIntegraTab && <button type="button" title="Comunica Integra" onPointerEnter={preloadIntegra} onFocus={preloadIntegra} aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab(firstIntegraTab); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
           </nav>
 
           <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
@@ -9155,9 +9165,10 @@ const notificationsToShow = [...notificationItems]
 
         {/* CONTAINER DE CONTEÚDO PRINCIPAL */}
         <main id="main-content" tabIndex="-1" className="flex-1 flex flex-col gap-6 overflow-hidden pb-20 outline-none sm:pb-0">
+          {(activeTab === 'tab-unavailable' || (activeTab === 'time-pilot' && !timePilotEnabled)) && <p className="rounded-xl border bg-white p-4" role="status">{companyTabAccess?.error ? 'Não foi possível consultar as abas desta empresa.' : !companyTabAccess?.policy ? 'Consultando liberações da empresa…' : 'Esta aba está indisponível para a empresa. Selecione uma aba liberada no menu.'}</p>}
           {activeTab === 'inbox' && inboxSurface}
           {keepIntegra && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando Comunica Integra...</div>}><IntegraWorkspace active={integraOpen} activeTab={activeTab} onNavigate={setActiveTab} key={integraScope} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
-          {!isIntegraWorkspace && !['dashboard', 'inbox'].includes(activeTab) && workspaceToolbar}
+          {!isIntegraWorkspace && !['dashboard', 'inbox','tab-unavailable'].includes(activeTab) && canOpenModule(activeTab) && workspaceToolbar}
 
           {/* TAB: SUPPORT */}
           {activeTab === 'updates' && (
@@ -11496,7 +11507,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* REGISTRO DE PRODUTIVIDADE */}
-{showProdModal && (
+{showProdModal && tabReleased('productivity') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -11625,7 +11636,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* REGISTRO DE PRESENÇA DIÁRIA */}
-      {showPresenceModal && (
+      {showPresenceModal && tabReleased('scale') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -11759,10 +11770,10 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
-      {publishedScheduleEdit && publishedScheduleEdit.companyId === activeCompany?.id && <PublishedScheduleEditor key={`${publishedScheduleEdit.source.id}|${publishedScheduleEdit.date}`} edit={publishedScheduleEdit} context={{ history: publishedScheduleEdit.history, absences: publishedScheduleEdit.absences, rules: publishedScheduleEdit.rules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts }} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleEdit.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleEdit.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleEdit.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleEdit} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleEdit(null); }} />}
-      {publishedScheduleSwap && publishedScheduleSwap.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwap.source.id}|${publishedScheduleSwap.date}`} mode={publishedScheduleSwap.requestId ? 'approval' : 'apply'} swap={publishedScheduleSwap} context={{ history: publishedScheduleSwap.history, absences: publishedScheduleSwap.absences, rules: publishedScheduleSwap.rules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts }} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} employees={scheduleScope.employees} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwap.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwap.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleSwap} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleSwap(null); }} />}
-      {publishedScheduleSwapRequest && publishedScheduleSwapRequest.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwapRequest.source.id}|${publishedScheduleSwapRequest.date}|request`} mode="request" swap={publishedScheduleSwapRequest} context={{ history: publishedScheduleSwapRequest.history, absences: publishedScheduleSwapRequest.absences, rules: publishedScheduleSwapRequest.rules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts }} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} employees={scheduleScope.employees} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwapRequest.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwapRequest.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwapRequest.rules)} disabled={isSavingScheduleSwapRequest} onSave={submitPublishedScheduleSwapRequest} onClose={() => { if (!isSavingScheduleSwapRequest) setPublishedScheduleSwapRequest(null); }} />}
-      {showBulkScheduleModal && (
+      {publishedScheduleEdit && tabReleased('scale') && publishedScheduleEdit.companyId === activeCompany?.id && <PublishedScheduleEditor key={`${publishedScheduleEdit.source.id}|${publishedScheduleEdit.date}`} edit={publishedScheduleEdit} context={{ history: publishedScheduleEdit.history, absences: publishedScheduleEdit.absences, rules: publishedScheduleEdit.rules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts }} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleEdit.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleEdit.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleEdit.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleEdit} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleEdit(null); }} />}
+      {publishedScheduleSwap && tabReleased('scale') && publishedScheduleSwap.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwap.source.id}|${publishedScheduleSwap.date}`} mode={publishedScheduleSwap.requestId ? 'approval' : 'apply'} swap={publishedScheduleSwap} context={{ history: publishedScheduleSwap.history, absences: publishedScheduleSwap.absences, rules: publishedScheduleSwap.rules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts }} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} employees={scheduleScope.employees} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwap.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwap.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwap.rules)} disabled={isSavingPublishedSchedule} onSave={savePublishedScheduleSwap} onClose={() => { if (!isSavingPublishedSchedule) setPublishedScheduleSwap(null); }} />}
+      {publishedScheduleSwapRequest && tabReleased('scale') && publishedScheduleSwapRequest.companyId === activeCompany?.id && <PublishedScheduleSwap key={`${publishedScheduleSwapRequest.source.id}|${publishedScheduleSwapRequest.date}|request`} mode="request" swap={publishedScheduleSwapRequest} context={{ history: publishedScheduleSwapRequest.history, absences: publishedScheduleSwapRequest.absences, rules: publishedScheduleSwapRequest.rules, events: calendarEvents, employees: scheduleScope.employees, getDepartments: getUserDepts }} requirements={scheduleScopedCoverageRequirements} departments={scheduleScope.departments} employees={scheduleScope.employees} ready={schedulePlanningDataReady()} stale={scheduleSignature(workSchedules) !== scheduleSignature(publishedScheduleSwapRequest.history) || JSON.stringify(absences) !== JSON.stringify(publishedScheduleSwapRequest.absences) || JSON.stringify(automaticScheduleRules) !== JSON.stringify(publishedScheduleSwapRequest.rules)} disabled={isSavingScheduleSwapRequest} onSave={submitPublishedScheduleSwapRequest} onClose={() => { if (!isSavingScheduleSwapRequest) setPublishedScheduleSwapRequest(null); }} />}
+      {showBulkScheduleModal && tabReleased('scale') && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white">
@@ -11888,7 +11899,7 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
-      {showBulkScheduleModal && bulkScheduleOperationIssue?.companyId === activeCompany?.id && (
+      {showBulkScheduleModal && tabReleased('scale') && bulkScheduleOperationIssue?.companyId === activeCompany?.id && (
         <div className="fixed inset-0 z-[1005] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="manual-operation-title">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 text-slate-800 shadow-2xl">
             <div className="flex items-start justify-between gap-3"><div><h3 id="manual-operation-title" className="text-base font-extrabold">Confirme o funcionamento deste dia</h3>
@@ -11915,7 +11926,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* REGISTRO DE AUSÊNCIA DETALHADO */}
-      {showAbsenceModal && (
+      {showAbsenceModal && tabReleased('scale') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -12009,7 +12020,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* REGISTRO DE EVENTO DE CALENDÁRIO */}
-      {showEventModal && (
+      {showEventModal && tabReleased('scale') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -12142,7 +12153,7 @@ const handleDownload = async (fileUrl, fileName) => {
           </div>
         </div>
       )}
-      {showUserModal && (
+      {showUserModal && tabReleased('management') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -12373,7 +12384,7 @@ const handleDownload = async (fileUrl, fileName) => {
       {/* ENQUETE */}
       {currentUser && dbUser && (surveyResponseGroup || linkedSurveyToken) && <Suspense fallback={<div className="fixed inset-0 z-[100100] bg-slate-950/80 p-10 text-white">Carregando pesquisa...</div>}><SurveyRespondent key={linkedSurveyToken || surveyResponseGroup} functionsClient={functionsClient} companyId={activeCompany?.id} groupId={surveyResponseGroup} token={linkedSurveyToken || undefined} onClose={()=>{setSurveyResponseGroup('');setLinkedSurveyToken('');const url=new URL(window.location.href);url.searchParams.delete('pesquisa');window.history.replaceState(null,'',url.toString());}}/></Suspense>}
 
-      {showPollModal && (
+      {showPollModal && tabReleased('polls') && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/70 p-3 sm:p-4">
           <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-slate-950 via-blue-950 to-cyan-800 px-5 py-4 text-white sm:px-6"><div><h3 className="text-sm font-extrabold">Criar pesquisa</h3><p className="mt-0.5 text-[10px] text-blue-100/75">Monte as perguntas e escolha o setor ou os colaboradores que poderão respondê-las.</p></div><button type="button" disabled={pollSaving} onClick={() => setShowPollModal(false)} aria-label="Fechar" className="rounded-lg p-1.5 hover:bg-white/10"><X className="h-5 w-5" /></button></div>
@@ -12413,7 +12424,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* CENTRAL DE DOCUMENTOS */}
-      {showDocumentModal && (
+      {showDocumentModal && tabReleased('documents') && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white"><h3 className="flex items-center gap-2 text-sm font-extrabold"><FileText className="h-5 w-5 text-slate-300" /> Adicionar documento</h3><button type="button" disabled={isUploadingDocument || isSavingDocument} onClick={() => setShowDocumentModal(false)} className="rounded p-1 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"><X className="h-5 w-5" /></button></div>
@@ -12436,7 +12447,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* PUBLICADOR DE COMUNICADO COM INTEGRAÇÃO DE COPILOTO */}
-      {showAnnModal && (
+      {showAnnModal && tabReleased('announcements') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -12575,7 +12586,7 @@ const handleDownload = async (fileUrl, fileName) => {
       )}
 
       {/* PUBLICADOR DE COMPARTILHAMENTO SETORIAL */}
-      {showPostModal && (
+      {showPostModal && tabReleased('sectors') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -12738,7 +12749,7 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
-      {showMessagesModal && activeTab !== 'inbox' && inboxSurface}
+      {showMessagesModal && tabReleased('inbox') && activeTab !== 'inbox' && inboxSurface}
 
       {showCompanyRegistration && currentUser.isDeveloper && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4">

@@ -11,6 +11,7 @@ const env = await initializeTestEnvironment({
   },
 });
 
+const supportId = 'platform-support-francielton';
 const company = 'time-pilot-company';
 const base = 'artifacts/comunica-salvador/public/data/companies/' + company;
 const client = (uid, companyId = company) => env.authenticatedContext(uid, { companyId }).firestore();
@@ -28,6 +29,7 @@ try {
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
     await setDoc(doc(db, base), {});
+    await setDoc(doc(db, '_platformSupport', supportId), {enabled:true,appId:'comunica-salvador'});
     for (const uid of ['admin', 'person', 'peer', 'hr']) {
       await setDoc(doc(db, base, 'users', uid), { isAdmin: uid === 'admin', permissions: { personnel: uid === 'hr' } });
     }
@@ -43,7 +45,15 @@ try {
   await assertFails(setDoc(config(person), pilot('person', true)));
   await assertFails(setDoc(record(person, 'person', 'mark'), punch()));
 
-  await assertSucceeds(setDoc(config(admin), pilot('admin', true)));
+  const support = client(supportId);
+  const tabs = db => doc(db, base, 'platformAccess', 'tabs');
+  const tabPolicy = {defaultEnabled:false, tabs:{scale:true},updatedBy:supportId,updatedAt:serverTimestamp()};
+  await assertFails(setDoc(tabs(admin), {...tabPolicy,updatedBy:'admin'}));
+  await assertSucceeds(setDoc(tabs(support),tabPolicy));
+  await assertSucceeds(getDoc(tabs(person)));
+  await assertFails(getDoc(tabs(outside)));
+  await assertFails(setDoc(config(admin), pilot('admin', true)));
+  await assertSucceeds(setDoc(config(support), pilot(supportId, true)));
   await assertFails(setDoc(record(person, 'peer', 'mark'), punch()));
   await assertFails(setDoc(record(outside, 'person', 'mark'), punch()));
   await assertFails(setDoc(record(person, 'person', 'invalid'), { ...punch(), occurredAt: new Date(0) }));
@@ -77,7 +87,7 @@ try {
   await assertSucceeds(setDoc(record(person, 'person', 'recent'), recent));
   await assertSucceeds(setDoc(record(person, 'person', 'entry'), { ...punch(), punchType: 'entry' }));
   await assertFails(setDoc(record(person, 'person', 'invalidtype'), { ...punch(), punchType: 'invalid' }));
-  await assertSucceeds(setDoc(config(admin), pilot('admin', false)));
+  await assertSucceeds(setDoc(config(support), pilot(supportId, false)));
   await assertFails(setDoc(record(person, 'person', 'disabled'), punch()));
   await assertSucceeds(getDoc(record(person, 'person', 'mark')));
 } finally {

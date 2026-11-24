@@ -772,6 +772,9 @@ export const registerCompany = onCall({invoker: "public"}, async (request) => {
     const exists = await transaction.get(companyCollection.where('code', '==', code).limit(1));
     if (!exists.empty) throw new HttpsError('already-exists', 'Este codigo de empresa ja esta em uso.');
     transaction.set(companyCollection.doc(company.id), {...company, createdAt: now});
+    transaction.create(companyCollection.doc(company.id).collection('platformAccess').doc('tabs'), {
+      defaultEnabled: false, tabs: {}, updatedBy: SUPPORT_UID, updatedAt: FieldValue.serverTimestamp(),
+    });
     transaction.set(companyCollection.doc(company.id).collection("users").doc(administrator.id), administrator);
     transaction.set(companyCollection.doc(company.id).collection('userDirectory').doc(administrator.id), publicDirectoryProfile(administrator));
     transaction.create(companyCollection.doc(company.id).collection('departments').doc('rh'), {id:'rh', name:'Administrativo', color:'slate'});
