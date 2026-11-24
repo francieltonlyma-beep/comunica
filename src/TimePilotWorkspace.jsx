@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, Clock, Download } from 'lucide-react';
 import { collection, doc, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 
+import TimeDeviceButton from './TimeDeviceButton.jsx';
 import TimeRecordParameters from './TimeRecordParameters.jsx';
 import { calendarRecordsForDay } from './scheduleCalendarModel.js';
 
@@ -39,7 +40,7 @@ function receipt(row) {
     'text/plain;charset=utf-8');
 }
 
-export default function TimePilotWorkspace({ db, appId, company, uid, admin, canReview, employees, settings, schedules, absences, departments, getDepartments, onCalendar, onEmployee }) {
+export default function TimePilotWorkspace({ functionsClient, db, appId, company, uid, admin, canReview, employees, settings, schedules, absences, departments, getDepartments, onCalendar, onEmployee }) {
   const [now, setNow] = useState(() => new Date());
   const [view, setView] = useState('self');
   const [policy, setPolicy] = useState(null);
@@ -83,11 +84,11 @@ export default function TimePilotWorkspace({ db, appId, company, uid, admin, can
     snap => setPolicy(snap.data() || defaultPolicy), () => setPolicy(null)), [db, appId, company]);
 
   function savePolicy(next) {
-    if (!window.confirm('Aplicar aos novos pedidos de toda a empresa? Prazo: ' + (next.adjustmentDays || 'sem limite') + (next.adjustmentDays ? ' dias' : '') + '. Justificativa mínima: ' + next.reasonLength + ' caracteres.')) return;
+    if (!window.confirm('Aplicar aos novos pedidos de toda a empresa? Prazo: ' + (next.adjustmentDays || 'sem limite') + (next.adjustmentDays ? ' dias' : '') + '. Justificativa mínima: ' + next.reasonLength + ' caracteres. Verificação pelo aparelho: ' + (next.deviceVerification ? 'ativada' : 'desativada') + '.')) return;
     const ref = doc(db, ...base, 'timePilot', 'parameters');
     void save(() => runTransaction(db, async transaction => {
       const latest = (await transaction.get(ref)).data() || defaultPolicy;
-      if (latest.adjustmentDays !== policy.adjustmentDays || latest.reasonLength !== policy.reasonLength) throw new Error('stale');
+      if (latest.adjustmentDays !== policy.adjustmentDays || latest.reasonLength !== policy.reasonLength || Boolean(latest.deviceVerification) !== Boolean(policy.deviceVerification)) throw new Error('stale');
       transaction.set(ref, { ...next, updatedAt: serverTimestamp(), updatedBy: uid });
     }), 'Parâmetros salvos.');
   }
@@ -102,10 +103,12 @@ export default function TimePilotWorkspace({ db, appId, company, uid, admin, can
     setSaving(true);
     setMessage('');
     try {
-      await action();
-      setMessage(success);
+      const result = await action();
+      setMessage(typeof result === 'string' ? result : success);
       return true;
     } catch (error) {
+      if (error.name === 'NotAllowedError' || error.code === 'ERROR_CEREMONY_ABORTED') { setMessage('Verificação cancelada ou indisponível.'); return false; }
+      if (error.code?.startsWith('functions/')) { setMessage(error.message); return false; }
       if (error.message === 'stale') { setMessage('Os parâmetros mudaram. Revise os valores atuais.'); return false; }
       setMessage('Não foi possível concluir. Confira sua conexão e tente novamente.');
       return false;
@@ -155,8 +158,8 @@ export default function TimePilotWorkspace({ db, appId, company, uid, admin, can
 
   function exportMonth() {
     const marks = rows.filter(row => row.kind === 'punch' || row.status === 'approved');
-    const csv = ['Data e hora (Brasília);Origem;Identificador', ...marks.map(row =>
-      `${datetime.format(row.occurredAt.toDate())};${row.kind === 'punch' ? (punchTypes[row.punchType] || 'Batida original') : 'Ajuste aprovado'};${row.id}`)];
+    const csv = ['Data e hora (Brasília);Origem;Verificação;Identificador', ...marks.map(row =>
+      `${datetime.format(row.occurredAt.toDate())};${row.kind === 'punch' ? (punchTypes[row.punchType] || 'Batida original') : 'Ajuste aprovado'};${row.verification === 'webauthn' ? 'Aparelho' : '—'};${row.id}`)];
     download(`espelho-piloto-${month}.csv`, ['\uFEFF', csv.join('\r\n')], 'text/csv;charset=utf-8');
   }
 
@@ -178,7 +181,7 @@ export default function TimePilotWorkspace({ db, appId, company, uid, admin, can
       {message && <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950" role="status">{message}</p>}
       {settings?.error && <p role="alert">Não foi possível consultar a configuração do piloto.</p>}
       {admin && <details className={panel}><summary className="cursor-pointer font-bold">Parâmetros do ponto</summary>
-        {policy ? <TimeRecordParameters key={JSON.stringify([policy.adjustmentDays, policy.reasonLength])} policy={policy} busy={saving} onSave={savePolicy} /> : <p>Parâmetros indisponíveis.</p>}
+        {policy ? <TimeRecordParameters key={JSON.stringify([policy.adjustmentDays, policy.reasonLength, policy.deviceVerification])} policy={policy} busy={saving} onSave={savePolicy} /> : <p>Parâmetros indisponíveis.</p>}
       </details>}
       {enabled && <>
         {canReview && (
@@ -207,6 +210,7 @@ export default function TimePilotWorkspace({ db, appId, company, uid, admin, can
               <p className="mt-1 text-sm text-slate-600">{day.format(now)} · Horário de Brasília</p>
               <label className="mt-3 block text-sm">Tipo de batida<select className={field} value={type} onChange={event => setType(event.target.value)}>{Object.entries(punchTypes).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
               <button className={`${primary} mt-5 w-full sm:w-auto`} disabled={saving} onClick={registerPunch} type="button">Bater ponto de teste</button>
+              {policy?.deviceVerification && <TimeDeviceButton functionsClient={functionsClient} company={company} punchType={type} busy={saving} save={save} onMonth={() => setMonth(currentMonth)} />}
               <p className="mt-2 text-xs text-slate-600">A batida salva usa o horário confirmado pelo servidor.</p>
             </div>
             <form className={`${panel} grid content-start gap-3`} onSubmit={requestAdjustment}>
@@ -253,6 +257,7 @@ export default function TimePilotWorkspace({ db, appId, company, uid, admin, can
               <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
                 <div className="min-w-0">
                   <p className="font-semibold">{datetime.format(row.occurredAt.toDate())}</p>
+                  {row.verification === 'webauthn' && <small>Verificada pelo aparelho</small>}
                   <p className="break-words text-sm text-slate-600">{row.kind === 'punch' ? (punchTypes[row.punchType] || 'Batida original') : `Ajuste · ${states[row.status]} · ${row.reason}`}</p>
                 </div>
                 {row.kind === 'punch' && !isTeam && <button type="button" className={button} onClick={() => receipt(row)}>Comprovante de teste</button>}

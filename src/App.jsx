@@ -10356,7 +10356,7 @@ const handleDownload = async (fileUrl, fileName) => {
 
           {activeTab === 'time-pilot' && canOpenModule('time-pilot') && (
             <Suspense fallback={<ModuleLoading label="o ponto e jornada" />}>
-              <TimePilotWorkspace key={`${timePilotCompany}:${dbUser.uid}`} db={db} appId={appId}
+              <TimePilotWorkspace functionsClient={functionsClient} key={`${timePilotCompany}:${dbUser.uid}`} db={db} appId={appId}
                 company={timePilotCompany} uid={dbUser.uid} employees={employeesList}
                 schedules={scheduleScopedSchedules} absences={scheduleScopedAbsences} departments={departmentsList} getDepartments={getUserDepts}
                 onCalendar={canOpenModule('scale') ? date => { setSelectedCalendarDay(date); setActiveTab('scale'); } : null}

@@ -916,7 +916,8 @@ service cloud.firestore {
       match /timePilot/parameters {
         allow get: if app == 'comunica-salvador' && member(company);
         allow create, update: if app == 'comunica-salvador' && admin(app, company)
-          && request.resource.data.keys().hasOnly(['adjustmentDays','reasonLength','updatedAt','updatedBy'])
+          && request.resource.data.keys().hasOnly(['adjustmentDays','reasonLength','updatedAt','updatedBy','deviceVerification'])
+          && request.resource.data.get('deviceVerification', false) is bool
           && request.resource.data.adjustmentDays is int && request.resource.data.adjustmentDays >= 0 && request.resource.data.adjustmentDays <= 365
           && request.resource.data.reasonLength is int && request.resource.data.reasonLength >= 4 && request.resource.data.reasonLength <= 500
           && request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;

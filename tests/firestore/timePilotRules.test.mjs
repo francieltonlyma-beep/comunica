@@ -63,6 +63,8 @@ try {
   const records = collection(hr, base, 'timePilotUsers', 'person', 'records');
   await assertSucceeds(getDocs(query(records, where('occurredAt', '>=', new Date(0)), orderBy('occurredAt', 'desc'))));
 
+  await assertFails(setDoc(record(person, 'person', 'fakeproof'), { ...punch(), verification: 'webauthn' }));
+  await assertFails(setDoc(doc(admin, '_timeDeviceKeys', 'foreign'), { credential: {} }));
   const parameters = db => doc(db, base, 'timePilot', 'parameters');
   const limits = { adjustmentDays: 7, reasonLength: 12, updatedAt: serverTimestamp(), updatedBy: 'admin' };
   await assertFails(setDoc(parameters(person), { ...limits, updatedBy: 'person' }));
