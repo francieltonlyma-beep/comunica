@@ -368,6 +368,15 @@ const formatDate = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR');
 };
+const formatSectorPostDate = (value, today, yesterday) => {
+  const match = /^(\d{1,2}\/\d{1,2}\/\d{4})(?=\s|$)/.exec(value || '');
+  if (!match) return value;
+  const [day, month, year] = match[1].split('/');
+  const date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  if (date === today) return `Hoje${value.slice(match[1].length)}`;
+  if (date === yesterday) return `Ontem${value.slice(match[1].length)}`;
+  return value;
+};
 const VACANCY_QUESTION_TYPES = {
   single: { label: 'Escolha única', hint: 'O candidato escolhe uma alternativa.', options: ['', ''] },
   yesNo: { label: 'Sim ou não', hint: 'Resposta objetiva para requisitos básicos.', options: ['Sim', 'Não'] },
@@ -5668,6 +5677,7 @@ try {
   });
   const openedPost = sectorPosts.find(post => post.id === openPostId && userAllowedDepts.includes(post.dept));
   const visibleSectorPosts = filteredSectorPosts.slice(0, sectorPostLimit);
+  const yesterday = civilDateShift(todayStr, { days: -1 });
   const accessibleDocuments = documentsList.filter(item => canAccessDocument(item, { allowedDepartments: userAllowedDepts, userId: currentUser?.id, isAdmin: currentUser?.isAdmin }));
   const availableDocumentFolders = documentFolders(accessibleDocuments);
   const visibleDocuments = filterDocuments(documentsList, {
@@ -10356,12 +10366,12 @@ const handleDownload = async (fileUrl, fileName) => {
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-4">
                 {visibleSectorPosts.map((post) => (
                   <div id={`notification-item-${post.id}`} key={post.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-1.5"><span className="bg-slate-100 text-slate-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded border border-slate-200 uppercase">{departmentsList.find(d => d.id === post.dept)?.name || post.dept}</span>{isAutomaticSectorPost(post) && <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-extrabold uppercase text-amber-700">Aviso automático</span>}</div>
-                      <span className="text-[10px] text-slate-400 font-semibold">{post.date}</span>
+                      <span className="text-[10px] text-slate-500 font-semibold" title={post.date}>{formatSectorPostDate(post.date, todayStr, yesterday)}</span>
                     </div>
                     <div>
                       <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{post.title}</h4>
