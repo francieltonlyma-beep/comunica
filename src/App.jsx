@@ -15,6 +15,7 @@ import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
 import { scopedScheduleSource } from './scheduleScope.js';
 import React, { Suspense, lazy, useState, useEffect, useEffectEvent, useRef, useCallback } from 'react';
 const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAudit.jsx'));
+import { employeeRoleOptions, getRoleDepts, getRoleUsers, matchingRoles, mergeRoleFields, roleNameKey } from './roleCatalog.js';
 import { useCompanyEmployees } from './useCompanyEmployees.js';
 import { useDialogFocus } from './useDialogFocus.js';
 import { loginErrorMessage } from './loginError';
@@ -584,18 +585,6 @@ const getUserDepts = (user) => {
   if (user.department) return [user.department];
   if (user.dept) return [user.dept];
   return [];
-};
-const getRoleDepts = (role) => {
-  if (!role) return [];
-  if (Array.isArray(role.depts) && role.depts.length) return [...new Set(role.depts.filter(Boolean))];
-  if (role.dept) return [role.dept];
-  return [];
-};
-const getRoleUsers = (role, roles, users) => {
-  const hasSameName = roles.some(other => other.id !== role.id && other.name === role.name);
-  const roleDepts = getRoleDepts(role);
-  return users.filter(user => user.role === role.name && !user.isDeveloper && user.id !== 'platform-support-francielton'
-    && (!hasSameName || getUserDepts(user).some(dept => roleDepts.includes(dept))));
 };
 const isHumanResourcesUser = user => {
   if (!user) return false;
@@ -1275,6 +1264,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [editingSectorName, setEditingSectorName] = useState('');
   const [editingSectorColor, setEditingSectorColor] = useState('bg-slate-900 text-white border-slate-800');
 
+  const [linkingEmployeeRole, setLinkingEmployeeRole] = useState(false);
   const [newRoleValue, setNewRoleValue] = useState('');
   const [newRoleDepts, setNewRoleDepts] = useState([]);
   const [newRoleDescription, setNewRoleDescription] = useState('');
@@ -1621,7 +1611,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       if (showEventModal) return setShowEventModal(false);
       if (pendingContentDeletion && !isDeletingContent) return setPendingContentDeletion(null);
       if (pendingUserRemoval && !isRemovingUser) return setPendingUserRemoval(null);
-      if (showUserModal) return setShowUserModal(false);
+      if (showUserModal) return linkingEmployeeRole ? undefined : setShowUserModal(false);
       if (showAnnModal) return setShowAnnModal(false);
       if (showDocumentModal) return setShowDocumentModal(false);
       if (engagementDetail) return setEngagementDetail(null);
@@ -1636,7 +1626,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, activeTab, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingContentDeletion, isDeletingContent, pendingUserRemoval, isRemovingUser, showUserModal, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
+  }, [showAddParticipant, showMsgSuggestions, showMessagesModal, activeTab, isComposingMsg, activeThreadId, showSummaryModal, serviceFormOpen, showChangePinModal, forcePinChange, showControlCenter, showProfileModal, showProdModal, showPresenceModal, showAbsenceModal, showEventModal, pendingContentDeletion, isDeletingContent, pendingUserRemoval, isRemovingUser, showUserModal, linkingEmployeeRole, showAnnModal, showDocumentModal, engagementDetail, showPollModal, showVacancyModal, showPostModal, showGoalModal, showCompanyRegistration, isChatOpen, showNotificationsDropdown, mobileMenuOpen]);
 
   // Refs para controle de Notificações em Segundo Plano
   const sessionStartTime = useRef(Date.now());
@@ -2256,7 +2246,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             const publicProfiles = sorted.map(({pin: ignoredPin, ...profile}) => profile);
             setState(publicProfiles);
           } else {
-            setState(sorted);
+            setState(collectionName === 'roles' ? sorted.filter(role => !role.mergedIntoRoleId) : sorted);
           }
         } else {
           // Usuários nunca são repovoados automaticamente por dados de demonstração
@@ -5120,7 +5110,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
 
   const submitUserForm = async (e) => {
     e.preventDefault();
-    if (userSaveInFlight.current) return;
+    if (userSaveInFlight.current || linkingEmployeeRole) return;
     userSaveInFlight.current = true;
     try {
     if (!currentUser || !currentUser.isAdmin) {
@@ -5166,29 +5156,100 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }
   };
 
+  const linkRoleDepartments = async (role, departments) => {
+    const missing = departments.filter(id => !getRoleDepts(role).includes(id));
+    if (!missing.length) return true;
+    const names = missing.map(id => departmentsList.find(dept => dept.id === id)?.name || id).join(', ');
+    if (!window.confirm(`O cargo "${role.name}" já existe. Deseja vinculá-lo também a ${names}?`)) return false;
+    try {
+      const reference = doc(getTenantCollection('roles'), role.id);
+      const changes = await runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(reference);
+        const stored = snapshot.data();
+        if (!stored || stored.mergedIntoRoleId || roleNameKey(stored.name) !== roleNameKey(role.name)) throw new Error('Cargo alterado');
+        const depts = [...new Set([...getRoleDepts(stored), ...departments])];
+        const update = { depts, dept: depts[0] };
+        transaction.update(reference, update);
+        return update;
+      });
+      setRolesList(prev => prev.map(item => item.id === role.id ? { ...item, ...changes } : item));
+      void recordAuditEvent({ action: 'record.updated', collectionName: 'roles', documentId: role.id, fields: ['depts', 'dept'] });
+      triggerNotification(`Cargo "${role.name}" vinculado também a ${names}.`);
+      return true;
+    } catch {
+      triggerNotification('Não foi possível vincular o cargo aos setores. Confira os dados e tente novamente.', 'error');
+      return false;
+    }
+  };
+
+  const selectEmployeeRole = async (roleId) => {
+    const role = rolesList.find(item => item.id === roleId);
+    if (!role || !currentUser?.isAdmin || linkingEmployeeRole || userSaveInFlight.current) return;
+    setLinkingEmployeeRole(true);
+    try {
+      if (await linkRoleDepartments(role, userForm.depts)) {
+        setUserForm(previous => ({ ...previous, role: role.name }));
+      }
+    } finally {
+      setLinkingEmployeeRole(false);
+    }
+  };
+
   const handleAddRole = async (e) => {
     e.preventDefault();
-    if (!currentUser || !currentUser.isAdmin) return;
-    const trimmed = newRoleValue.trim();
+    if (!currentUser?.isAdmin || roleSaveInFlight.current) return;
+    const trimmed = newRoleValue.trim().replace(/\s+/g, ' ');
     if (!trimmed) return;
     const selectedDepartments = newRoleDepts.filter(id => departmentsList.some(dept => dept.id === id));
     if (!selectedDepartments.length) {
       triggerNotification('Selecione pelo menos um setor para o cargo.', 'error');
       return;
     }
-    if (rolesList.some(r => r.name.toLowerCase() === trimmed.toLowerCase())) {
-      triggerNotification('Este cargo já existe. Edite-o para acrescentar novos setores.', 'error');
-      return;
+    roleSaveInFlight.current = true;
+    setSavingRole(true);
+    try {
+      const reference = getTenantCollection('roles');
+      const snapshot = await getDocsFromServer(reference);
+      const existing = matchingRoles(snapshot.docs.map(item => ({ ...item.data(), id: item.id })), trimmed, selectedDepartments)[0];
+      if (existing) {
+        if (selectedDepartments.every(id => getRoleDepts(existing).includes(id))) {
+          triggerNotification(`O cargo "${existing.name}" já existe nos setores selecionados.`, 'error');
+          return;
+        }
+        if (!await linkRoleDepartments(existing, selectedDepartments)) return;
+      } else {
+        const key = roleNameKey(trimmed);
+        if (!key) return;
+        const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+        const prefix = 'role-name-' + Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+        const result = await runTransaction(db, async transaction => {
+          for (let suffix = 0; ; suffix += 1) {
+            const roleRef = doc(reference, suffix ? `${prefix}-${suffix}` : prefix);
+            const current = await transaction.get(roleRef);
+            const stored = current.data();
+            if (!stored) {
+              const data = { id: roleRef.id, name: trimmed, description: newRoleDescription.trim(), depts: selectedDepartments, dept: selectedDepartments[0] };
+              transaction.set(roleRef, data);
+              return { created: data };
+            }
+            if (!stored.mergedIntoRoleId && roleNameKey(stored.name) === key) return { existing: { ...stored, id: current.id } };
+          }
+        });
+        if (result.existing && !await linkRoleDepartments(result.existing, selectedDepartments)) return;
+        if (result.created) {
+          void recordAuditEvent({ action: 'record.created', collectionName: 'roles', documentId: result.created.id, fields: Object.keys(result.created) });
+          triggerNotification(`Cargo "${trimmed}" vinculado a ${selectedDepartments.length} setor(es).`);
+        }
+      }
+      setNewRoleValue('');
+      setNewRoleDepts([]);
+      setNewRoleDescription('');
+    } catch {
+      triggerNotification('Não foi possível confirmar o cadastro do cargo. Tente novamente.', 'error');
+    } finally {
+      roleSaveInFlight.current = false;
+      setSavingRole(false);
     }
-
-    const roleId = `role-${Date.now()}`;
-    const data = { id: roleId, name: trimmed, description: newRoleDescription.trim(), depts: selectedDepartments, dept: selectedDepartments[0] };
-
-    if (!await saveDoc('roles', roleId, data)) return;
-    setNewRoleValue('');
-    setNewRoleDepts([]);
-    setNewRoleDescription('');
-    triggerNotification(`Cargo "${trimmed}" vinculado a ${selectedDepartments.length} setor(es).`);
   };
 
   const handleSaveHeadcount = async (row) => {
@@ -5232,7 +5293,11 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const targetRole = rolesList[index];
     const oldRoleName = targetRole.name;
 
-    if (trimmed !== oldRoleName && rolesList.some((r, i) => i !== index && r.name.toLowerCase() === trimmed.toLowerCase())) {
+    if (trimmed !== oldRoleName && matchingRoles(rolesList, oldRoleName).length > 1) {
+      triggerNotification('Unifique os cargos duplicados antes de renomear.', 'error');
+      return;
+    }
+    if (trimmed !== oldRoleName && matchingRoles(rolesList.filter(role => role.id !== targetRole.id), trimmed).length) {
       triggerNotification('Outro cargo com esse mesmo nome já existe.', 'error');
       return;
     }
@@ -5243,9 +5308,9 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     try {
       let affectedUsers = [];
       if (trimmed !== oldRoleName) {
-        const snapshot = await getDocsFromServer(query(getTenantCollection('users'), where('role', '==', oldRoleName)));
+        const snapshot = await getDocsFromServer(getTenantCollection('users'));
         const matchingUsers = snapshot.docs.map(record => ({ ...record.data(), id: record.id }));
-        affectedUsers = getRoleUsers(targetRole, rolesList, matchingUsers);
+        affectedUsers = getRoleUsers(targetRole, rolesList, matchingUsers, getUserDepts);
       }
       if (!await saveRelatedRecords([
         { collection: 'roles', id: targetRole.id, data: roleChanges, operation: 'update' },
@@ -5270,17 +5335,93 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }
   };
 
-  const handleDeleteRole = async (index) => {
-    if (!currentUser || !currentUser.isAdmin) return;
-    const roleToDelete = rolesList[index];
-    const isUsed = getRoleUsers(roleToDelete, rolesList, usersList).length > 0;
-    if (isUsed) {
-      triggerNotification(`Não é possível excluir pois existem colaboradores ativos associados a ele.`, 'error');
-      return;
-    }
+  const handleMergeRole = async (source, target) => {
+    if (!currentUser?.isAdmin || roleSaveInFlight.current) return;
+    const sectorNames = role => getRoleDepts(role).map(id => departmentsList.find(dept => dept.id === id)?.name || id).join(', ') || 'sem setor';
+    if (!window.confirm(`Unificar "${source.name}" (${sectorNames(source)}) com "${target.name}" (${sectorNames(target)})? Os setores e os cadastros dos colaboradores serão preservados.`)) return;
+    roleSaveInFlight.current = true;
+    setSavingRole(true);
+    try {
+      const roles = getTenantCollection('roles');
+      const users = getTenantCollection('users');
+      const directory = getTenantCollection('userDirectory');
+      const vacancies = getTenantCollection('vacancies');
+      const [userSnapshot, vacancySnapshot] = await Promise.all([
+        source.name === target.name ? null : getDocsFromServer(users),
+        getDocsFromServer(query(vacancies, where('roleId', '==', source.id))),
+      ]);
+      const userRefs = (userSnapshot?.docs || [])
+        .filter(item => item.data().role === source.name)
+        .map(item => item.ref);
 
-    if (!await removeDoc('roles', roleToDelete.id)) return;
-    triggerNotification(`Cargo "${roleToDelete.name}" removido do sistema.`);
+      if (2 + 2 * userRefs.length + vacancySnapshot.size > 500) throw new Error('Há muitos vínculos para unificar de uma vez.');
+      await runTransaction(db, async transaction => {
+        const sourceRef = doc(roles, source.id);
+        const targetRef = doc(roles, target.id);
+        const vacancyRefs = vacancySnapshot.docs.map(item => item.ref);
+        const [from, to, ...records] = await Promise.all([sourceRef, targetRef, ...userRefs, ...vacancyRefs].map(ref => transaction.get(ref)));
+        const sourceRole = from.data();
+        const targetRole = to.data();
+        if (!sourceRole || !targetRole || sourceRole.mergedIntoRoleId || targetRole.mergedIntoRoleId
+          || sourceRole.name !== source.name || targetRole.name !== target.name) throw new Error('Os cargos mudaram. Confira a lista e tente novamente.');
+        const changes = mergeRoleFields(sourceRole, targetRole);
+        const mergedRole = { ...source, depts: changes.depts };
+        transaction.update(targetRef, changes);
+        transaction.update(sourceRef, { mergedIntoRoleId: target.id });
+        for (const user of records.slice(0, userRefs.length)) {
+          const data = user.data();
+          if (!data || data.role !== source.name || !getRoleUsers(mergedRole, [source, target], [{ ...data, id: user.id }], getUserDepts).length) continue;
+          transaction.update(user.ref, { role: target.name });
+          transaction.set(doc(directory, user.id), publicDirectoryProfile({ id: user.id, role: target.name }), { merge: true });
+        }
+        for (const vacancy of records.slice(userRefs.length)) {
+          if (vacancy.data()?.roleId === source.id) transaction.update(vacancy.ref, { roleId: target.id, roleName: target.name });
+        }
+      });
+      void recordAuditEvent({ action: 'record.updated', collectionName: 'roles', documentId: source.id, fields: ['mergedIntoRoleId'] });
+      triggerNotification(`Cargos unificados em "${target.name}".`);
+    } catch (error) {
+      const message = error?.code ? 'Não foi possível unificar os cargos. Confira sua conexão e tente novamente.' : error?.message;
+      triggerNotification(message || 'Não foi possível unificar os cargos.', 'error');
+    } finally {
+      roleSaveInFlight.current = false;
+      setSavingRole(false);
+    }
+  };
+
+  const handleDeleteRole = async (role) => {
+    if (!currentUser?.isAdmin || roleSaveInFlight.current) return;
+    roleSaveInFlight.current = true;
+    setSavingRole(true);
+    try {
+      const [roles, users, vacancies] = await Promise.all([
+        getDocsFromServer(getTenantCollection('roles')),
+        getDocsFromServer(getTenantCollection('users')),
+        getDocsFromServer(query(getTenantCollection('vacancies'), where('roleId', '==', role.id))),
+      ]);
+      const catalog = roles.docs.map(item => ({ ...item.data(), id: item.id }));
+      const current = catalog.find(item => item.id === role.id && !item.mergedIntoRoleId);
+      if (!current) return;
+      const duplicate = matchingRoles(catalog, current.name).some(item => item.id !== current.id);
+      if (duplicate) {
+        triggerNotification('Use “Unificar duplicado” para reunir os setores e os vínculos desse cargo.', 'error');
+        return;
+      }
+      const linked = getRoleUsers(current, catalog, users.docs.map(item => ({ ...item.data(), id: item.id })), getUserDepts);
+      if (linked.length || !vacancies.empty || catalog.some(item => item.mergedIntoRoleId === current.id)) {
+        triggerNotification(linked.length
+          ? 'Abra a lista de colaboradores no cartão do cargo e atualize os cadastros antes de excluir.'
+          : 'Este cargo mantém vínculos com vagas ou cargos unificados.', 'error');
+        return;
+      }
+      if (!window.confirm(`Excluir o cargo "${current.name}"?`)) return;
+      if (await removeDoc('roles', current.id)) triggerNotification(`Cargo "${current.name}" removido do sistema.`);
+    } catch {
+      triggerNotification('Não foi possível verificar os vínculos do cargo. Tente novamente.', 'error');
+    } finally {
+      roleSaveInFlight.current = false;
+      setSavingRole(false);
+    }
   };
 
   const handleAddSector = async (e) => {
@@ -7175,6 +7316,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, 100);
   };
   const sectorCounts = departmentsList.map(d => ({ ...d, count: employeesList.filter(u => getUserDepts(u).includes(d.id)).length }));
+  const formRoleOptions = showUserModal ? employeeRoleOptions(rolesList, userForm.depts || [], userForm.role) : [];
   const roleSearchTerm = normalizedText(roleSearch);
   const visibleRoles = activeTab === 'management' && mgmtSubTab === 'roles'
     ? rolesList.map((role, idx) => ({ role, idx, roleDepartments: getRoleDepts(role) }))
@@ -7193,7 +7335,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     .flatMap(department => rolesList
       .filter(role => getRoleDepts(role).includes(department.id))
       .map(role => {
-        const current = headcountPeople.filter(user => user.role === role.name && getUserDepts(user).includes(department.id)).length;
+        const current = headcountPeople.filter(user => roleNameKey(user.role) === roleNameKey(role.name) && getUserDepts(user).includes(department.id)).length;
         const plannedValue = role.approvedHeadcountByDept?.[department.id];
         const planned = plannedValue === '' || plannedValue === undefined || plannedValue === null ? null : Math.max(0, Number(plannedValue) || 0);
         return {
@@ -10812,7 +10954,9 @@ const handleDownload = async (fileUrl, fileName) => {
                       )}
                       {visibleRoles.map(({ role, idx, roleDepartments }) => {
                         const isEditing = editingRoleId !== null && editingRoleId === role.id;
-                        const count = getRoleUsers(role, rolesList, employeesList).length;
+                        const linkedUsers = getRoleUsers(role, rolesList, employeesList, getUserDepts);
+                        const duplicates = matchingRoles(rolesList, role.name);
+                        const mergeTarget = duplicates[0]?.id !== role.id ? duplicates[0] : null;
 
                         return (
                           <div
@@ -10861,10 +11005,19 @@ const handleDownload = async (fileUrl, fileName) => {
                                   <span className="font-extrabold text-slate-800">{role.name}</span>
                                   <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                     {roleDepartments.map(deptId => <span key={deptId} className="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded border border-slate-200">{departmentsList.find(d => d.id === deptId)?.name || deptId}</span>)}
-                                    <span className="text-[10px] text-slate-400 font-bold">
-                                      • {count} {count === 1 ? 'colaborador' : 'colaboradores'}
-                                    </span>
+                                    {duplicates.length > 1 && <span className="text-[10px] font-bold text-amber-800">Nome duplicado</span>}
                                   </div>
+                                  <details className="mt-1 text-[10px] text-slate-600">
+                                    <summary className="cursor-pointer font-bold">{linkedUsers.length} {linkedUsers.length === 1 ? 'colaborador vinculado' : 'colaboradores vinculados'}</summary>
+                                    {linkedUsers.length ? <ul className="mt-1 space-y-1">
+                                      {linkedUsers.map(user => (
+                                        <li key={user.id}>
+                                          <button type="button" onClick={() => handleEditUser(user)} className="text-left font-semibold text-blue-700 hover:underline">{user.name}</button>
+                                          <span> · {getUserDepts(user).map(id => departmentsList.find(dept => dept.id === id)?.name || id).join(', ') || 'Sem setor'}</span>
+                                        </li>
+                                      ))}
+                                    </ul> : <p className="mt-1">Nenhum cadastro encontrado para este cargo.</p>}
+                                  </details>
                                   <p className="mt-2 max-w-2xl whitespace-pre-wrap break-words text-[10px] leading-4 text-slate-500 [overflow-wrap:anywhere]">{role.description || 'Descrição das atividades ainda não cadastrada.'}</p>
                                 </div>
 
@@ -10878,15 +11031,22 @@ const handleDownload = async (fileUrl, fileName) => {
                                   >
                                     <Edit2 className="h-3.5 w-3.5" />
                                   </button>
-                                  <button
+                                  {mergeTarget ? <button
                                     type="button"
                                     disabled={savingRole}
-                                    onClick={() => handleDeleteRole(idx)}
+                                    onClick={() => handleMergeRole(role, mergeTarget)}
+                                    className="rounded-lg px-2 py-1 font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                                  >
+                                    Unificar duplicado
+                                  </button> : <button
+                                    type="button"
+                                    disabled={savingRole}
+                                    onClick={() => handleDeleteRole(role)}
                                     className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-rose-600 transition-all"
                                     title="Remover Cargo"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
+                                  </button>}
                                 </div>
                               </>
                             )}
@@ -10910,6 +11070,7 @@ const handleDownload = async (fileUrl, fileName) => {
                           required
                           placeholder="Ex: Desenvolvedor Senior"
                           value={newRoleValue}
+                          maxLength={120}
                           onChange={(e) => setNewRoleValue(e.target.value)}
                           className="px-3.5 py-2 w-full rounded-xl bg-slate-50 border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400/50"
                         />
@@ -10921,7 +11082,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         <span className="mt-1 block text-[10px] text-slate-400">Selecionados: {newRoleDepts.length}</span>
                       </div>
                       <button
-                        type="submit"
+                        type="submit" disabled={savingRole}
                         className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-1 shadow mt-1"
                       >
                         <Plus className="h-4 w-4" /> Adicionar Cargo
@@ -12276,7 +12437,7 @@ const handleDownload = async (fileUrl, fileName) => {
               <h3 className="font-extrabold flex items-center gap-2 text-sm">
                 <Users className="h-5 w-5 text-slate-300" /> {editingUser ? 'Atualizar Perfil de Funcionário' : 'Cadastrar Novo Integrante na Empresa'}
               </h3>
-              <button type="button" onClick={() => setShowUserModal(false)} className="p-1 hover:bg-slate-800 rounded">
+              <button type="button" disabled={linkingEmployeeRole} onClick={() => setShowUserModal(false)} className="p-1 hover:bg-slate-800 rounded">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -12314,6 +12475,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         <input
                           type="checkbox"
                           checked={(userForm.depts || []).includes(dept.id)}
+                          disabled={linkingEmployeeRole}
                           onChange={(e) => {
                             const newDepts = e.target.checked
                               ? [...(userForm.depts || []), dept.id]
@@ -12332,28 +12494,21 @@ const handleDownload = async (fileUrl, fileName) => {
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 font-black text-slate-900">Cargo Principal Atribuído</label>
+                  <label htmlFor="employee-role" className="text-[10px] font-bold uppercase block mb-1 text-slate-900">Cargo principal</label>
                   <select
+                    id="employee-role"
                     required
                     value={userForm.role}
-                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                    onChange={event => selectEmployeeRole(formRoleOptions.find(role => role.name === event.target.value)?.id)}
                     className="px-3.5 py-2.5 w-full rounded-xl border border-slate-200 text-xs focus:outline-none bg-white font-semibold text-slate-700"
-                    disabled={(userForm.depts || []).length === 0}
+                    disabled={linkingEmployeeRole || (userForm.depts || []).length === 0}
                   >
-                    <option value="" disabled>Selecione um cargo...</option>
-                    {rolesList
-                      .filter(role => getRoleDepts(role).some(deptId => (userForm.depts || []).includes(deptId)))
-                      .map((role) => {
-                        const deptNames = getRoleDepts(role)
-                          .filter(deptId => (userForm.depts || []).includes(deptId))
-                          .map(deptId => departmentsList.find(d => d.id === deptId)?.name || deptId)
-                          .join(', ');
-                        return (
-                          <option key={role.id || role.name} value={role.name}>
-                            {role.name} ({deptNames})
-                          </option>
-                        );
-                      })}
+                    <option value="" disabled>{linkingEmployeeRole ? 'Vinculando…' : 'Selecione um cargo'}</option>
+                    {formRoleOptions.map(role => {
+                      const needsLink = userForm.depts.some(id => !getRoleDepts(role).includes(id));
+                      return <option key={role.id} value={role.name}>{role.name}{needsLink && role.name !== userForm.role ? ' — vincular aos setores selecionados' : ''}</option>;
+                    })}
+                    {userForm.role && !formRoleOptions.some(role => role.name === userForm.role) && <option value={userForm.role}>{userForm.role}</option>}
                   </select>
                 </div>
 
@@ -12485,10 +12640,10 @@ const handleDownload = async (fileUrl, fileName) => {
               </div>
 
               <div className="flex justify-end gap-2 mt-2">
-                <button type="button" onClick={() => setShowUserModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
+                <button type="button" disabled={linkingEmployeeRole} onClick={() => setShowUserModal(false)} className="px-4 py-2 text-slate-500 text-xs font-bold">
                   Cancelar
                 </button>
-                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+                <button type="submit" disabled={linkingEmployeeRole} className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
                   {editingUser ? 'Salvar Alterações' : 'Cadastrar Colaborador'}
                 </button>
               </div>
