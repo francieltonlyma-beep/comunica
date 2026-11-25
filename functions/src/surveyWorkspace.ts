@@ -11,9 +11,15 @@ async function assertSurveyParticipant(tx:Transaction,base:DocumentReference,aut
 function surveyChannelId(audience:string,sectorId='',recipientIds:string[]=[]){return audience==='public'?'public':audience==='people'?`people-${hash([...recipientIds].sort().join('|')).slice(0,24)}`:`sector-${hash(sectorId).slice(0,24)}`;}
 function surveyChannelRef(base:DocumentReference,groupId:string,audience:string,sectorId='',recipientIds:string[]=[]){return base.collection('surveyLinks').doc(groupId).collection('channels').doc(surveyChannelId(audience,sectorId,recipientIds));}
 async function revokeSurveyLinks(tx:Transaction,db:Firestore,base:DocumentReference,groupId:string,legacy:any){
- if(legacy?.tokenHash)tx.update(db.collection('_surveyLinks').doc(legacy.tokenHash),{revoked:true});
  const channels=await tx.get(base.collection('surveyLinks').doc(groupId).collection('channels'));
- for(const channel of channels.docs){const hashValue=channel.data().tokenHash;if(hashValue)tx.update(db.collection('_surveyLinks').doc(hashValue),{revoked:true});tx.set(channel.ref,{revoked:true,updatedAt:Date.now()},{merge:true});}
+ const hashes=new Set([legacy?.tokenHash,...channels.docs.map(channel=>channel.data().tokenHash)]
+  .filter((value):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)));
+ const refs=[...hashes].map(tokenHash=>db.collection('_surveyLinks').doc(tokenHash));
+ // Firestore exige que todas as leituras ocorram antes da primeira escrita da transação.
+ const links=refs.length?await tx.getAll(...refs):[];
+ const updatedAt=Date.now();
+ for(const link of links)if(link.exists)tx.update(link.ref,{revoked:true});
+ for(const channel of channels.docs)tx.set(channel.ref,{revoked:true,updatedAt},{merge:true});
 }
 async function access(tx:Transaction,base:DocumentReference,auth:any,admin=false){
  if(!auth||auth.token.companyId!==base.id)throw new HttpsError('permission-denied','Entre no Comunica com uma conta desta empresa.');
