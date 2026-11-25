@@ -434,9 +434,20 @@ export const bulkImportEmployees = onCall({invoker: 'public', maxInstances: 1}, 
 
   const existingNames = new Set(usersSnapshot.docs.map(item => normalizeImportText(item.data().name)));
   const departmentsByName = new Map(departmentsSnapshot.docs.map(item => [normalizeImportText(item.data().name), item.id]));
-  const rolesByKey = new Set(rolesSnapshot.docs.map(item => `${item.data().dept || ''}|${normalizeImportText(item.data().name)}`));
+  const rolesByName = new Map<string, {id: string; name: string; depts: string[]; created?: boolean}>();
+  for (const item of rolesSnapshot.docs) {
+    const role = item.data();
+    const name = normalizeImportText(role.name);
+    if (!name || role.mergedIntoRoleId) continue;
+    const depts = Array.isArray(role.depts) ? role.depts.filter(Boolean) : [];
+    if (!depts.length && role.dept) depts.push(role.dept);
+    if ((rolesByName.get(name)?.depts.length ?? -1) < depts.length) {
+      rolesByName.set(name, {id: item.id, name: role.name, depts});
+    }
+  }
   const now = Date.now();
-  const docs: Array<{ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown>}> = [];
+  const docs: Array<{ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown>; update?: boolean}> = [];
+  const changedRoles = new Set<string>();
   const importedUsers: string[] = [];
   let skippedExisting = 0;
   let createdDepartments = 0;
@@ -458,15 +469,19 @@ export const bulkImportEmployees = onCall({invoker: 'public', maxInstances: 1}, 
       docs.push({ref: companyRef.collection('departments').doc(id), data: {id, name: employee.department, color: '#2563eb'}});
       createdDepartments += 1;
     }
-    const roleKey = `${departmentId}|${normalizeImportText(employee.role)}`;
-    if (!rolesByKey.has(roleKey)) {
-      const roleId = importDocumentId('role-import', `${departmentId}-${employee.role}`);
-      docs.push({ref: companyRef.collection('roles').doc(roleId), data: {id: roleId, name: employee.role, dept: departmentId}});
-      rolesByKey.add(roleKey);
+    const roleKey = normalizeImportText(employee.role);
+    let role = rolesByName.get(roleKey);
+    if (!role) {
+      role = {id: importDocumentId('role-import', employee.role), name: employee.role, depts: [departmentId], created: true};
+      changedRoles.add(roleKey);
+      rolesByName.set(roleKey, role);
       createdRoles += 1;
+    } else if (!role.depts.includes(departmentId)) {
+      role.depts.push(departmentId);
+      changedRoles.add(roleKey);
     }
     const userId = `user-${randomUUID()}`;
-    const user = {id: userId, name: employee.name, role: employee.role, avatar: '', birthDate: '', hireDate: '',
+    const user = {id: userId, name: employee.name, role: role.name, avatar: '', birthDate: '', hireDate: '',
       emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', companyId, depts: [departmentId],
       isAdmin: false, isDeveloper: false, isEmployee: true, mustChangePin: true, createdAt: now, updatedAt: now};
     const presence = {id: `pres-${userId}`, userId, name: employee.name, dept: departmentId, status: 'Presencial', notes: ''};
@@ -478,10 +493,19 @@ export const bulkImportEmployees = onCall({invoker: 'public', maxInstances: 1}, 
     importedUsers.push(userId);
   }
 
-  // Firestore batches hold at most 500 operations. Chunks leave headroom for future fields.
-  for (let start = 0; start < docs.length; start += 400) {
+  const roleWrites = [...changedRoles].map(key => {
+    const {id, name, depts, created} = rolesByName.get(key)!;
+    const ref = companyRef.collection('roles').doc(id);
+    return created ? {ref, data: {id, name, depts, dept: depts[0]}} : {ref, data: {depts: FieldValue.arrayUnion(...depts)}, update: true};
+  });
+  const writes = [...roleWrites, ...docs];
+  // Firestore batches hold at most 500 operations. Put shared roles before employee records.
+  for (let start = 0; start < writes.length; start += 400) {
     const batch = database.batch();
-    for (const item of docs.slice(start, start + 400)) batch.create(item.ref, item.data);
+    for (const item of writes.slice(start, start + 400)) {
+      if (item.update) batch.update(item.ref, item.data);
+      else batch.create(item.ref, item.data);
+    }
     await batch.commit();
   }
   return {imported: importedUsers.length, skippedExisting, createdDepartments, createdRoles};
