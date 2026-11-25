@@ -591,6 +591,12 @@ const getRoleDepts = (role) => {
   if (role.dept) return [role.dept];
   return [];
 };
+const getRoleUsers = (role, roles, users) => {
+  const hasSameName = roles.some(other => other.id !== role.id && other.name === role.name);
+  const roleDepts = getRoleDepts(role);
+  return users.filter(user => user.role === role.name && !user.isDeveloper && user.id !== 'platform-support-francielton'
+    && (!hasSameName || getUserDepts(user).some(dept => roleDepts.includes(dept))));
+};
 const isHumanResourcesUser = user => {
   if (!user) return false;
   const values = [user.role, ...getUserDepts(user)].map(value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR'));
@@ -1272,7 +1278,11 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   const [newRoleValue, setNewRoleValue] = useState('');
   const [newRoleDepts, setNewRoleDepts] = useState([]);
   const [newRoleDescription, setNewRoleDescription] = useState('');
-  const [editingRoleIdx, setEditingRoleIdx] = useState(null);
+  const [roleSearch, setRoleSearch] = useState('');
+  const [roleSectorFilter, setRoleSectorFilter] = useState('');
+  const [editingRoleId, setEditingRoleId] = useState(null);
+  const roleSaveInFlight = useRef(false);
+  const [savingRole, setSavingRole] = useState(false);
   const [editingRoleValue, setEditingRoleValue] = useState('');
   const [editingRoleDepts, setEditingRoleDepts] = useState([]);
   const [editingRoleDescription, setEditingRoleDescription] = useState('');
@@ -5205,14 +5215,14 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
 
   const handleEditRole = (index) => {
     if (!currentUser || !currentUser.isAdmin) return;
-    setEditingRoleIdx(index);
+    setEditingRoleId(rolesList[index].id);
     setEditingRoleValue(rolesList[index].name);
     setEditingRoleDepts(getRoleDepts(rolesList[index]));
     setEditingRoleDescription(rolesList[index].description || '');
   };
 
   const handleSaveRole = async (index) => {
-    if (!currentUser || !currentUser.isAdmin) return;
+    if (!currentUser?.isAdmin || roleSaveInFlight.current) return;
     const trimmed = editingRoleValue.trim();
     if (!trimmed) return;
     if (!editingRoleDepts.length) {
@@ -5222,36 +5232,48 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const targetRole = rolesList[index];
     const oldRoleName = targetRole.name;
 
-    if (rolesList.some((r, i) => i !== index && r.name.toLowerCase() === trimmed.toLowerCase())) {
+    if (trimmed !== oldRoleName && rolesList.some((r, i) => i !== index && r.name.toLowerCase() === trimmed.toLowerCase())) {
       triggerNotification('Outro cargo com esse mesmo nome já existe.', 'error');
       return;
     }
 
-    const updatedRoleData = { ...targetRole, name: trimmed, description: editingRoleDescription.trim(), depts: editingRoleDepts, dept: editingRoleDepts[0] };
+    const roleChanges = { name: trimmed, description: editingRoleDescription.trim(), depts: editingRoleDepts, dept: editingRoleDepts[0] };
+    roleSaveInFlight.current = true;
+    setSavingRole(true);
+    try {
+      let affectedUsers = [];
+      if (trimmed !== oldRoleName) {
+        const snapshot = await getDocsFromServer(query(getTenantCollection('users'), where('role', '==', oldRoleName)));
+        const matchingUsers = snapshot.docs.map(record => ({ ...record.data(), id: record.id }));
+        affectedUsers = getRoleUsers(targetRole, rolesList, matchingUsers);
+      }
+      if (!await saveRelatedRecords([
+        { collection: 'roles', id: targetRole.id, data: roleChanges, operation: 'update' },
+        ...affectedUsers.map(user => ({ collection: 'users', id: user.id, data: { role: trimmed }, operation: 'update' })),
+        ...affectedUsers.map(user => ({ collection: 'userDirectory', id: user.id, data: publicDirectoryProfile({ id: user.id, role: trimmed }) })),
+      ], 'Não foi possível alterar o cargo e os colaboradores juntos. Nenhuma mudança foi confirmada.')) return;
+      const affectedIds = new Set(affectedUsers.map(user => user.id));
+      setRolesList(prev => prev.map(role => role.id === targetRole.id ? { ...role, ...roleChanges } : role));
+      setUsersList(prev => prev.map(user => affectedIds.has(user.id) ? { ...user, role: trimmed } : user));
 
-    const affectedUsers = usersList.filter(user =>
-      user.role === oldRoleName && getUserDepts(user).some(deptId => getRoleDepts(targetRole).includes(deptId))
-    );
-    if (!await saveRelatedRecords([
-      { collection: 'roles', id: targetRole.id, data: updatedRoleData, operation: 'update' },
-      ...affectedUsers.map(user => ({ collection: 'users', id: user.id, data: { role: trimmed }, operation: 'update' })),
-    ], 'Não foi possível alterar o cargo e os colaboradores juntos. Nenhuma mudança foi confirmada.')) return;
-    setRolesList(prev => prev.map(role => role.id === targetRole.id ? updatedRoleData : role));
-    setUsersList(prev => prev.map(user =>
-      affectedUsers.some(affected => affected.id === user.id) ? { ...user, role: trimmed } : user
-    ));
-
-    setEditingRoleIdx(null);
-    setEditingRoleValue('');
-    setEditingRoleDepts([]);
-    setEditingRoleDescription('');
-    triggerNotification(`Cargo alterado e atualizado em cascata nos colaboradores!`);
+      setEditingRoleId(null);
+      setEditingRoleValue('');
+      setEditingRoleDepts([]);
+      setEditingRoleDescription('');
+      const count = affectedUsers.length;
+      triggerNotification(count ? `Cargo atualizado em ${count} ${count === 1 ? 'cadastro de colaborador' : 'cadastros de colaboradores'}.` : 'Cargo atualizado.');
+    } catch {
+      triggerNotification('Não foi possível consultar os colaboradores vinculados ao cargo. Tente novamente.', 'error');
+    } finally {
+      roleSaveInFlight.current = false;
+      setSavingRole(false);
+    }
   };
 
   const handleDeleteRole = async (index) => {
     if (!currentUser || !currentUser.isAdmin) return;
     const roleToDelete = rolesList[index];
-    const isUsed = usersList.some(u => u.role === roleToDelete.name && getUserDepts(u).some(deptId => getRoleDepts(roleToDelete).includes(deptId)));
+    const isUsed = getRoleUsers(roleToDelete, rolesList, usersList).length > 0;
     if (isUsed) {
       triggerNotification(`Não é possível excluir pois existem colaboradores ativos associados a ele.`, 'error');
       return;
@@ -7153,6 +7175,13 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, 100);
   };
   const sectorCounts = departmentsList.map(d => ({ ...d, count: employeesList.filter(u => getUserDepts(u).includes(d.id)).length }));
+  const roleSearchTerm = normalizedText(roleSearch);
+  const visibleRoles = activeTab === 'management' && mgmtSubTab === 'roles'
+    ? rolesList.map((role, idx) => ({ role, idx, roleDepartments: getRoleDepts(role) }))
+      .filter(({ role, roleDepartments }) => normalizedText(role.name).includes(roleSearchTerm)
+        && (!roleSectorFilter || roleDepartments.includes(roleSectorFilter)))
+      .sort((a, b) => a.role.name.localeCompare(b.role.name, 'pt-BR', { sensitivity: 'base', numeric: true }))
+    : [];
   const canUsePersonnel = Boolean(!currentUser?.isDeveloper && (currentUser?.isAdmin || currentUser?.permissions?.personnel === true));
   const confidentialPersonnel = Boolean(canUsePersonnel && (currentUser?.isAdmin || currentUser?.permissions?.personnelPrivate === true));
   const employment = usePersonnelRows(dbUser ? db : null, activeCompany?.id,
@@ -10742,11 +10771,48 @@ const handleDownload = async (fileUrl, fileName) => {
                       <p className="text-slate-500 text-xs">Cargos atualmente configurados por setor de trabalho na Comunica.</p>
                     </div>
 
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="relative">
+                        <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="search"
+                          aria-label="Buscar por nome do cargo"
+                          placeholder="Buscar por nome do cargo"
+                          value={roleSearch}
+                          onChange={event => setRoleSearch(event.target.value)}
+                          className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs text-slate-700 focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <select
+                        aria-label="Filtrar cargos por setor"
+                        value={roleSectorFilter}
+                        onChange={event => setRoleSectorFilter(event.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">Todos os setores</option>
+                        {[...departmentsList].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(dept => (
+                          <option key={dept.id} value={dept.id}>{dept.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                      <p role="status">{visibleRoles.length} de {rolesList.length} cargos</p>
+                      {(roleSearch || roleSectorFilter) && (
+                        <button type="button" onClick={() => { setRoleSearch(''); setRoleSectorFilter(''); }} className="font-bold text-blue-700 hover:underline">
+                          Limpar filtros
+                        </button>
+                      )}
+                    </div>
+
                     <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1">
-                      {rolesList.map((role, idx) => {
-                        const isEditing = editingRoleIdx === idx;
-                        const roleDepartments = getRoleDepts(role);
-                        const count = employeesList.filter(u => u.role === role.name && getUserDepts(u).some(deptId => roleDepartments.includes(deptId))).length;
+                      {visibleRoles.length === 0 && (
+                        <p className="rounded-xl border border-slate-200 px-4 py-6 text-center text-xs text-slate-500">
+                          {rolesList.length ? 'Nenhum cargo encontrado com estes filtros.' : 'Nenhum cargo cadastrado.'}
+                        </p>
+                      )}
+                      {visibleRoles.map(({ role, idx, roleDepartments }) => {
+                        const isEditing = editingRoleId !== null && editingRoleId === role.id;
+                        const count = getRoleUsers(role, rolesList, employeesList).length;
 
                         return (
                           <div
@@ -10755,13 +10821,17 @@ const handleDownload = async (fileUrl, fileName) => {
                           >
                             {isEditing ? (
                               <div className="flex flex-col gap-2 w-full">
-                                <input
-                                  type="text"
-                                  value={editingRoleValue}
-                                  onChange={(e) => setEditingRoleValue(e.target.value)}
-                                  className="px-2 py-1 w-full bg-white border border-slate-200 rounded-lg text-xs focus:outline-none"
-                                  autoFocus
-                                />
+                                <label className="flex flex-col gap-1 font-bold text-slate-700">
+                                  Nome do cargo
+                                  <input
+                                    type="text"
+                                    value={editingRoleValue}
+                                    onChange={(e) => setEditingRoleValue(e.target.value)}
+                                    className="px-2 py-1 w-full bg-white border border-slate-200 rounded-lg text-xs focus:outline-none"
+                                    autoFocus
+                                  />
+                                </label>
+                                <p className="text-[10px] text-slate-500">Ao salvar um novo nome, os cadastros dos colaboradores vinculados serão atualizados automaticamente.</p>
                                 <textarea value={editingRoleDescription} onChange={(event) => setEditingRoleDescription(event.target.value)} rows="4" maxLength="2000" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs leading-5 outline-none focus:border-blue-400" placeholder="Descreva as principais atividades, responsabilidades e requisitos do cargo." />
                                 <div className="rounded-xl border border-slate-200 bg-white p-2"><span className="mb-1.5 block text-[9px] font-bold uppercase text-slate-400">Setores vinculados</span><div className="flex flex-wrap gap-1.5">{departmentsList.map(dept => <label key={dept.id} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[10px] font-bold ${editingRoleDepts.includes(dept.id) ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-slate-200 text-slate-600'}`}><input type="checkbox" checked={editingRoleDepts.includes(dept.id)} onChange={event => setEditingRoleDepts(previous => event.target.checked ? [...new Set([...previous, dept.id])] : previous.filter(id => id !== dept.id))} className="accent-blue-700" />{dept.name}</label>)}</div></div>
                                 <div className="flex items-center gap-1.5 w-full justify-end">
@@ -10769,13 +10839,15 @@ const handleDownload = async (fileUrl, fileName) => {
                                     <button
                                       type="button"
                                       onClick={() => handleSaveRole(idx)}
-                                      className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-2.5 py-1 rounded-lg text-[10px]"
+                                      disabled={savingRole}
+                                      className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] disabled:opacity-50"
                                     >
-                                      Salvar
+                                      {savingRole ? 'Salvando…' : 'Salvar'}
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => { setEditingRoleIdx(null); setEditingRoleDepts([]); setEditingRoleDescription(''); }}
+                                      disabled={savingRole}
+                                      onClick={() => { setEditingRoleId(null); setEditingRoleDepts([]); setEditingRoleDescription(''); }}
                                       className="text-slate-400 hover:text-slate-600 text-[10px]"
                                     >
                                       Sair
@@ -10799,6 +10871,7 @@ const handleDownload = async (fileUrl, fileName) => {
                                 <div className="flex items-center gap-1.5">
                                   <button
                                     type="button"
+                                    disabled={savingRole}
                                     onClick={() => handleEditRole(idx)}
                                     className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-900 transition-all"
                                     title="Editar Nome do Cargo"
@@ -10807,6 +10880,7 @@ const handleDownload = async (fileUrl, fileName) => {
                                   </button>
                                   <button
                                     type="button"
+                                    disabled={savingRole}
                                     onClick={() => handleDeleteRole(idx)}
                                     className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-rose-600 transition-all"
                                     title="Remover Cargo"
