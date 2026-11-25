@@ -5927,28 +5927,7 @@ try {
 
   const getAllowedMessageRecipients = () => {
     if (!currentUser) return [];
-    if (currentUser.isAdmin) return messageContacts.filter(u => u.id !== currentUser.id);
-
-    const myDepts = getUserDepts(currentUser);
-    const allowedIds = new Set();
-
-    messageContacts.forEach(u => {
-      if (u.id !== currentUser.id && u.isDeveloper) {
-        allowedIds.add(u.id);
-        return;
-      }
-      if (u.id !== currentUser.id && u.isAdmin) {
-        if (getUserDepts(u).some(d => myDepts.includes(d))) allowedIds.add(u.id);
-      }
-    });
-
-    normMessages.forEach(m => {
-      if (m.participants.includes(currentUser.id)) {
-        m.participants.forEach(p => { if (p !== currentUser.id) allowedIds.add(p); });
-      }
-    });
-
-    return messageContacts.filter(u => allowedIds.has(u.id));
+    return messageContacts.filter(contact => contact.id !== currentUser.id);
   };
 
   const getMessageRecipientDepartments = (user) => getUserDepts(user)
@@ -8353,7 +8332,7 @@ const notificationsToShow = [...notificationItems]
                       <div className="mb-2 flex items-end justify-between gap-3">
                         <div>
                           <label htmlFor="message-recipient-search" className="block text-[10px] font-bold uppercase text-slate-500">Participantes da conversa</label>
-                          <p className="mt-1 text-[10px] text-slate-400">Pesquise e selecione uma ou mais pessoas antes de iniciar.</p>
+                          <p className="mt-1 text-[10px] text-slate-400">Busque colegas de qualquer setor da sua empresa ou o suporte da plataforma.</p>
                         </div>
                         <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[9px] font-bold text-blue-700">{msgRecipientIds.length} selecionado(s)</span>
                       </div>
@@ -8376,7 +8355,6 @@ const notificationsToShow = [...notificationItems]
                         )}
                       </div>
                       {msgRecipientIds.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{msgRecipientIds.map(userId => { const selectedUser = getAllowedMessageRecipients().find(user => user.id === userId) || messageContacts.find(user => user.id === userId); if (!selectedUser) return null; return <span key={userId} className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 py-1.5 pl-3 pr-1.5 text-[10px] font-bold text-emerald-900"><span className="truncate">{selectedUser.name}</span><button type="button" onClick={() => setMsgRecipientIds(previous => previous.filter(id => id !== userId))} className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white text-emerald-700 hover:bg-emerald-100" aria-label={`Remover ${selectedUser.name}`}><X className="h-3 w-3" /></button></span>; })}</div>}
-                      {!currentUser.isAdmin && <span className="mt-2 block text-[9px] text-slate-400">Você pode selecionar os gestores do seu setor, o suporte e pessoas com quem já possui contato.</span>}
                     </div>
 
                     <div>

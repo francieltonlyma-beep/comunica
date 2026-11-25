@@ -11,14 +11,15 @@ test('support is a unique contact, never an employee, with or without legacy pro
     assert.equal(contacts.filter(isCompanyEmployee).length,1);
   }
 });
-test('regular employees and administrators can select support without a company profile',()=>{
+test('employees and administrators can start a first conversation across company departments or with support',()=>{
   const start=source.indexOf('  const getAllowedMessageRecipients =');
   const end=source.indexOf('  const openPlatformSupport =',start);
   const declaration=source.slice(start,end);
   const evaluate=new Function('currentUser','usersList','messageContacts','normMessages','getUserDepts',declaration+'; return getAllowedMessageRecipients();');
   for(const isAdmin of [false,true]){
     const user={id:'employee',isAdmin,depts:['production']};
-    const recipients=evaluate(user,[user],withPlatformSupport([user]),[],u=>u.depts||[]);
-    assert.deepEqual(recipients.map(u=>u.id),[PLATFORM_SUPPORT.id]);
+    const users=[user, {id:'peer', depts:['production']}, {id:'finance', depts:['finance']}, {id:'manager', isAdmin:true, depts:['sales']}];
+    const recipients=evaluate(user,users,withPlatformSupport(users),[],u=>u.depts||[]);
+    assert.deepEqual(recipients.map(u=>u.id),['peer','finance','manager',PLATFORM_SUPPORT.id]);
   }
 });
