@@ -1,3 +1,4 @@
+import SectorPostDetail from './SectorPostDetail.jsx';
 import { InboxFormattedText, InboxFormattingPreview, InboxFormattingToolbar } from './InboxMessageFormatting.jsx';
 import { MESSAGE_STYLES, toggleMessageStyle, updateMessageFormatting } from './messageFormatting.js';
 import { scheduleOperationIssue, scheduleOperationDraft } from './scheduleOperationIssue.js';
@@ -952,6 +953,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
   const [announcementFilter, setAnnouncementFilter] = useState('Todos');
   const [sectorFilter, setSectorFilter] = useState('all');
+  const [openPostId, setOpenPostId] = useState(null);
   const [sectorPostType, setSectorPostType] = useState('all');
   const [sectorPostLimit, setSectorPostLimit] = useState(8);
   const [expandedAnnouncements, setExpandedAnnouncements] = useState({});
@@ -2191,7 +2193,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
     if (!isFirebaseAvailable || !authReady || !isMatchingSession) {
       setDepartmentsList([]); setUsersList([]); setRolesList([]); setAnnouncements([]);
-      setSectorPosts([]); setProductivityLogs([]); setPrivateMessages([]);
+      setOpenPostId(null); setSectorPosts([]); setProductivityLogs([]); setPrivateMessages([]);
       setStandaloneActivities([]); setActivityTemplates([]); setPresenceList([]);
       setCalendarEvents([]); setAbsences([]); setWorkSchedules([]);
       setScheduleSwapRequests([]); setPollsList([]);
@@ -3642,24 +3644,58 @@ const getStatusEmTempoReal = (colaborador) => {
   const handleLikePost = async (id) => {
     if (!currentUser) return;
     const post = sectorPosts.find(p => p.id === id);
-    if (!post) return;
-
-    const hasLiked = post.likedBy?.includes(currentUser.id);
-    const updatedLikes = hasLiked ? post.likes - 1 : post.likes + 1;
-    const updatedLikedBy = hasLiked
-      ? post.likedBy.filter(uid => uid !== currentUser.id)
-      : [...(post.likedBy || []), currentUser.id];
-
+    if (!post || post.allowLikes === false) return;
+    const uid = currentUser.id;
+    const liked = post.likedBy?.includes(uid);
+    function toggle(data) {
+      const previous = data.likedBy || [];
+      if (Boolean(previous.includes(uid)) !== Boolean(liked)) return null;
+      const likedBy = liked ? previous.filter(id => id !== uid) : [...previous, uid];
+      return { likedBy, likes: Math.max(0, (data.likes || 0) + (liked ? -1 : 1)) };
+    }
     if (isFirebaseAvailable && dbUser) {
-      if (!await updateDocField('posts', id, { likes: updatedLikes, likedBy: updatedLikedBy })) return;
+      try {
+        const ref = doc(getTenantCollection('posts'), id);
+        await runTransaction(db, async transaction => {
+          const snapshot = await transaction.get(ref);
+          if (!snapshot.exists() || snapshot.data().allowLikes === false) return;
+          const change = toggle(snapshot.data());
+          if (change) transaction.update(ref, change);
+        });
+      } catch {
+        triggerNotification('Não foi possível atualizar a curtida.', 'error');
+      }
     } else {
-      setSectorPosts(prev => prev.map(p => p.id === id ? { ...p, likes: updatedLikes, likedBy: updatedLikedBy } : p));
+      setSectorPosts(previous => previous.map(item => item.id === id ? { ...item, ...toggle(item) } : item));
     }
   };
 
-  const handleAddComment = async (id, type) => {
+  const recordPostVisit = async (post, confirm = false) => {
+    const uid = currentUser.id;
+    const fields = ['openedBy', ...(confirm ? ['readBy'] : [])].filter(key => !post[key]?.includes(uid));
+    if (!fields.length) return;
+    if (isFirebaseAvailable && dbUser) {
+      try {
+        await updateDoc(doc(getTenantCollection('posts'), post.id), Object.fromEntries(fields.map(key => [key, arrayUnion(uid)])));
+      } catch {
+        triggerNotification('Não foi possível registrar a ' + (confirm ? 'confirmação de leitura.' : 'abertura.'), 'error');
+      }
+    } else {
+      setSectorPosts(previous => previous.map(item => item.id === post.id ? {
+        ...item, ...Object.fromEntries(fields.map(key => [key, [...new Set([...(item[key] || []), uid])]]))
+      } : item));
+    }
+  };
+
+  const openSectorPublication = post => {
+    if (!tabReleased('sectors') || !userAllowedDepts.includes(post.dept)) return;
+    setOpenPostId(post.id);
+    void recordPostVisit(post);
+  };
+
+  const handleAddComment = async (id, type, body, parentId = '') => {
     if (!currentUser) return;
-    const text = commentText[id]?.trim();
+    const text = body ?? commentText[id]?.trim();
     if (!text) return;
 
     const commentObj = { author: currentUser.name, text: text, date: 'Agora' };
@@ -3676,17 +3712,18 @@ const getStatusEmTempoReal = (colaborador) => {
       }
     } else {
       const post = sectorPosts.find(p => p.id === id);
-      if (post) {
-        const commentsList = [...(post.comments || []), commentObj];
-        if (isFirebaseAvailable && dbUser) {
-          if (!await updateDocField('posts', id, { comments: commentsList })) return;
-        } else {
-          setSectorPosts(prev => prev.map(p => p.id === id ? { ...p, comments: commentsList } : p));
-        }
+      if (!post?.allowComments) return false;
+      Object.assign(commentObj, { id: crypto.randomUUID(), authorId: currentUser.id, parentId, date: new Date().toISOString() });
+      const commentsList = arrayUnion(commentObj);
+      if (isFirebaseAvailable && dbUser) {
+        if (!await updateDocField('posts', id, { comments: commentsList })) return;
+      } else {
+        setSectorPosts(prev => prev.map(p => p.id === id ? { ...p, comments: [...(p.comments || []), commentObj] } : p));
       }
     }
     setCommentText(prev => ({ ...prev, [id]: '' }));
     triggerNotification('Comentário publicado!');
+    return true;
   };
 
   const submitAnnouncement = async (e) => {
@@ -3752,6 +3789,11 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         likes: 0,
         likedBy: [],
         comments: [],
+        allowLikes: newPost.allowLikes !== false,
+        allowComments: Boolean(newPost.allowComments),
+        allowPrivate: Boolean(newPost.allowPrivate),
+        openedBy: [],
+        readBy: [],
         tags: tagsArray
       };
       createdPosts.push(created);
@@ -5624,6 +5666,7 @@ try {
     const automatic = isAutomaticSectorPost(post);
     return sectorPostType === 'all' || (sectorPostType === 'automatic' ? automatic : !automatic);
   });
+  const openedPost = sectorPosts.find(post => post.id === openPostId && userAllowedDepts.includes(post.dept));
   const visibleSectorPosts = filteredSectorPosts.slice(0, sectorPostLimit);
   const accessibleDocuments = documentsList.filter(item => canAccessDocument(item, { allowedDepartments: userAllowedDepts, userId: currentUser?.id, isAdmin: currentUser?.isAdmin }));
   const availableDocumentFolders = documentFolders(accessibleDocuments);
@@ -6122,14 +6165,14 @@ try {
     }
   };
 
-  const openPlatformSupport = () => {
+  const openPrivateDraft = (recipientId, subject) => {
     if (!currentUser || currentUser.isDeveloper) return;
     setActiveThreadId(null);
     setIsComposingMsg(true);
-    setMsgRecipientIds([PLATFORM_SUPPORT.id]);
+    setMsgRecipientIds([recipientId]);
     setConversationDraftThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
     setMsgSearchText('');
-    setMsgSubject(`Suporte — ${activeCompany?.name || 'Minha empresa'}`);
+    setMsgSubject(subject);
     setMsgText('');
     setMsgAttachment(null);
     setMsgDueDate('');
@@ -6138,6 +6181,8 @@ try {
     setMobileMenuOpen(false);
     setActiveTab('inbox');
   };
+
+  const openPlatformSupport = () => openPrivateDraft(PLATFORM_SUPPORT.id, `Suporte — ${activeCompany?.name || 'Minha empresa'}`);
 
   const handleMessageAttachment = async (e) => {
     const file = e.target.files[0];
@@ -7107,6 +7152,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       setActiveTab('polls');
     } else {
       setSectorFilter(notification.dept || 'all');
+      if (notification.notifType === 'post') openSectorPublication(notification);
       setActiveTab('sectors');
     }
 
@@ -9494,7 +9540,8 @@ const notificationsToShow = [...notificationItems]
                               <Trash2 className="h-4 w-4" />
                             </button>
                           )}
-                          {item.notifType !== 'poll' && <button
+                          {item.notifType === 'post' && tabReleased('sectors') && <button onClick={() => openSectorPublication(item)} className="text-xs font-bold text-blue-700">Abrir publicação</button>}
+                          {item.notifType !== 'poll' && (item.notifType !== 'post' || item.allowLikes !== false) && <button
                             onClick={() => item.notifType === 'announcement' ? handleLikeAnnouncement(item.id) : handleLikePost(item.id)}
                             className={`flex items-center gap-1 text-xs font-semibold ${
                               item.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'
@@ -10328,7 +10375,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     </div>
                     <div>
                       <h4 className="font-extrabold text-slate-800 text-base break-words [overflow-wrap:anywhere]">{post.title}</h4>
-                      <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]"><TextoComEmojis texto={post.content} /></p>
+                      <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] line-clamp-3"><TextoComEmojis texto={post.content} /></p>
                       {post.tags && post.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
                           {post.tags.map(t => <span key={t} className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">#{t}</span>)}
@@ -10347,14 +10394,7 @@ const handleDownload = async (fileUrl, fileName) => {
                         {(currentUser.isAdmin || currentUser.id === post.authorId) && (
                           <button onClick={() => handleDeletePost(post.id)} className="text-rose-500 hover:text-rose-700"><Trash2 className="h-4 w-4"/></button>
                         )}
-                        <button
-                          onClick={() => handleLikePost(post.id)}
-                          className={`flex items-center gap-1 text-xs font-semibold ${post.likedBy?.includes(currentUser.id) ? 'text-blue-900' : 'text-slate-400 hover:text-blue-900'}`}
-                          type="button"
-                        >
-                          <Heart className={`h-4 w-4 ${post.likedBy?.includes(currentUser.id) ? 'fill-blue-900 text-blue-900' : ''}`} /> {post.likes}
-                        </button>
-                        {canViewEngagement && <button type="button" onClick={() => setEngagementDetail({ title: post.title, readIds: [], likedIds: post.likedBy || [] })} className="text-[10px] font-bold text-blue-700 hover:underline">Ver pessoas</button>}
+                        <button type="button" onClick={() => openSectorPublication(post)} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">Abrir publicação</button>
                       </div>
                     </div>
                   </div>
@@ -12585,6 +12625,13 @@ const handleDownload = async (fileUrl, fileName) => {
         </div>
       )}
 
+      {openedPost && tabReleased('sectors') && <SectorPostDetail key={openedPost.id} post={openedPost} userId={currentUser.id}
+        onClose={() => setOpenPostId(null)} onRead={() => recordPostVisit(openedPost, true)}
+        onComment={handleAddComment} onLike={() => handleLikePost(openedPost.id)}
+        onPrivate={openedPost.allowPrivate && openedPost.authorId !== currentUser.id && tabReleased('inbox') && !currentUser.isDeveloper
+          ? () => { setOpenPostId(null); openPrivateDraft(openedPost.authorId, `Re: ${openedPost.title}`); } : null}
+        canSeePeople={canViewEngagement || currentUser.id === openedPost.authorId} personName={engagementUserName}
+        renderText={text => <TextoComEmojis texto={text} />} />}
       {/* PUBLICADOR DE COMPARTILHAMENTO SETORIAL */}
       {showPostModal && tabReleased('sectors') && (
         <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-4 z-[999]">
@@ -12678,6 +12725,11 @@ const handleDownload = async (fileUrl, fileName) => {
                 </div>
               </div>
 
+              <fieldset className="grid gap-2 rounded-xl border border-slate-200 p-3 text-xs">
+                <legend className="px-1 font-bold">Como a equipe pode interagir?</legend>
+                {[['allowComments', 'Comentar e responder no canal'], ['allowLikes', 'Curtir a publicação'], ['allowPrivate', 'Responder em particular na minha caixa de entrada']].map(([key, label]) =>
+                  <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={newPost[key] ?? (key === 'allowLikes')} onChange={event => setNewPost({ ...newPost, [key]: event.target.checked })} />{label}</label>)}
+              </fieldset>
               {newPost.image && (
                 <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
                   <img src={newPost.image} className="w-full h-full object-cover" alt="Prévia do Anexo" />

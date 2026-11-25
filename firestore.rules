@@ -478,6 +478,34 @@ service cloud.firestore {
         && !(request.auth.uid in before)
         && after == before.concat([request.auth.uid]);
     }
+    function validPostReceipt() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldOpened = resource.data.get('openedBy', []);
+      let opened = request.resource.data.get('openedBy', []);
+      let oldRead = resource.data.get('readBy', []);
+      let read = request.resource.data.get('readBy', []);
+      let uid = request.auth.uid;
+      return changed.hasOnly(['openedBy', 'readBy'])
+        && uid in opened && (opened == oldOpened || (!(uid in oldOpened) && opened == oldOpened.concat([uid])))
+        && (read == oldRead || (!(uid in oldRead) && read == oldRead.concat([uid])));
+    }
+    function validPostLike() {
+      let before = resource.data.get('likedBy', []);
+      let after = request.resource.data.get('likedBy', []);
+      let uid = request.auth.uid;
+      let likes = resource.data.get('likes', 0);
+      return resource.data.get('allowLikes', true) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes','likedBy'])
+        && ((!(uid in before) && after == before.concat([uid]) && request.resource.data.likes == likes + 1)
+          || (uid in before && after == before.removeAll([uid]) && request.resource.data.likes == (likes > 0 ? likes - 1 : 0)));
+    }
+    function validPostComment() {
+      let before = resource.data.get('comments', []);
+      let after = request.resource.data.get('comments', []);
+      return resource.data.get('allowComments', false) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments'])
+        && after.size() == before.size() + 1 && after == before.concat([after[before.size()]])
+        && after[before.size()].authorId == request.auth.uid
+        && after[before.size()].text is string && after[before.size()].text.size() > 0 && after[before.size()].text.size() <= 2000;
+    }
     function addsOwnVote() {
       let before = resource.data.get('votes', {});
       let after = request.resource.data.get('votes', {});
@@ -801,9 +829,10 @@ service cloud.firestore {
         allow update: if kind == 'polls' && access(company) && (
           (manages(app, company) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['votes']))
           || addsOwnVote());
-        allow create: if kind == 'posts' && access(company) && ((canEdit(app, company) && (manages(app, company) || request.resource.data.get('authorId', '') == request.auth.uid)) || (request.resource.data.get('authorId', '') == 'system' && absencePostOwnerAfter(app, company, id)));
-        allow update: if kind == 'posts' && access(company) && (manages(app, company)
-          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy', 'comments']));
+        allow create: if kind == 'posts' && access(company) && request.resource.data.get('openedBy', []) == [] && request.resource.data.get('readBy', []) == [] && ((canEdit(app, company) && (manages(app, company) || request.resource.data.get('authorId', '') == request.auth.uid)) || (request.resource.data.get('authorId', '') == 'system' && absencePostOwnerAfter(app, company, id)));
+        allow update: if kind == 'posts' && access(company) && (
+          (manages(app, company) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['likes','likedBy','comments','openedBy','readBy']))
+          || (scheduleDepartmentInScope(app, company, resource.data) && (validPostReceipt() || validPostLike() || validPostComment())));
         allow delete: if kind == 'posts' && access(company) && canEdit(app, company) && (manages(app, company) || resource.data.get('authorId', '') == request.auth.uid || absencePostOwner(app, company, id));
         allow create: if kind == 'absences' && access(company) && (manages(app, company) || (request.resource.data.get('userId', '') == request.auth.uid && canManageCalendar(app, company)) || (request.resource.data.get('createdBy', '') == request.auth.uid && ((scheduleManager(app, company) && canManageCalendar(app, company)) || canPublishAbsenceForOthers(app, company))));
         allow update, delete: if kind == 'absences' && access(company) && canManageCalendar(app, company) && (manages(app, company) || resource.data.get('userId', '') == request.auth.uid);
