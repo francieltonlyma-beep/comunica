@@ -9004,6 +9004,18 @@ const notificationsToShow = [...notificationItems]
                   )}
                 </button>
               </div>
+              {activeTab === 'inbox' && (
+                <button
+                  type="button"
+                  onClick={() => setIsChatOpen(open => !open)}
+                  title="ComunicaAI"
+                  aria-label="ComunicaAI"
+                  aria-expanded={isChatOpen}
+                  className="rounded-lg p-1.5 text-slate-500 transition hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 sm:p-2"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              )}
               {/* O container pai DEVE ter "relative" para ancorar o dropdown */}
 <div className="relative">
 
@@ -11081,16 +11093,18 @@ const handleDownload = async (fileUrl, fileName) => {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={() => setIsChatOpen(!isChatOpen)}
-          aria-label="ComunicaAI"
-          aria-expanded={isChatOpen}
-          className={`bg-slate-900 text-white p-3.5 rounded-full shadow-2xl items-center gap-2 hover:bg-slate-800 transition-all border border-slate-850 hover:scale-105 active:scale-95 ${activeTab === 'dashboard' ? 'hidden sm:flex' : 'flex'}`}
-        >
-          <Sparkles className="h-5.5 w-5.5 text-slate-300" />
-          <span className="hidden text-xs font-bold pr-1 sm:inline">ComunicaAI</span>
-        </button>
+        {activeTab !== 'inbox' && (
+          <button
+            type="button"
+            onClick={() => setIsChatOpen(open => !open)}
+            aria-label="ComunicaAI"
+            aria-expanded={isChatOpen}
+            className={`bg-slate-900 text-white p-3.5 rounded-full shadow-2xl items-center gap-2 hover:bg-slate-800 transition-all border border-slate-850 hover:scale-105 active:scale-95 ${activeTab === 'dashboard' ? 'hidden sm:flex' : 'flex'}`}
+          >
+            <Sparkles className="h-5.5 w-5.5 text-slate-300" />
+            <span className="hidden text-xs font-bold pr-1 sm:inline">ComunicaAI</span>
+          </button>
+        )}
       </div>
 
       {showControlCenter && (currentUser.isAdmin || currentUser.isDeveloper) && (
