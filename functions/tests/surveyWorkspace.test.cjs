@@ -1,5 +1,6 @@
 const {test,after}=require('node:test');
 const assert=require('node:assert/strict');
+const {createHash}=require('node:crypto');
 const {initializeApp,deleteApp}=require('firebase-admin/app');
 const {getFirestore}=require('firebase-admin/firestore');
 const {surveyWorkspaceAction:run}=require('../lib/surveyWorkspace.js');
@@ -97,4 +98,41 @@ test('edição sem respostas permite incluir e remover perguntas com validação
  await call('edit',{groupId:'draft',draft});
  const view=await call('readInternal',{groupId:'draft'},member);assert.equal(view.questions.length,2);assert.equal(view.questions[0].id,'draft-1');assert.notEqual(view.questions[1].id,'draft-2');assert.equal((await base.collection('polls').doc('draft-3').get()).exists,false);
  draft.questions[0].id='unknown';await assert.rejects(call('edit',{groupId:'draft',draft}),/Identificação/);assert.equal((await call('readInternal',{groupId:'draft'},member)).questions.length,2);
+});
+
+test('arquiva e restaura pesquisa com link legado, canal ativo e referência sem documento',async()=>{
+ const groupId='legacy-archive';
+ await seed(groupId);
+ const link=await call('createLink',{groupId,audience:'public'});
+ const respondentId='browser-legacy-archive-001';
+ await call('submit',{token:link.token,respondentId,answers:{
+  [`${groupId}-1`]:0,[`${groupId}-2`]:1,[`${groupId}-3`]:0
+ }},undefined);
+
+ const meta=base.collection('surveyLinks').doc(groupId);
+ const legacyHash=createHash('sha256').update('legacy-link').digest('hex');
+ const missingHash=createHash('sha256').update('removed-link').digest('hex');
+ const legacy=db.collection('_surveyLinks').doc(legacyHash);
+ const missing=db.collection('_surveyLinks').doc(missingHash);
+ await legacy.set({companyId,groupId,revoked:false});
+ await meta.set({tokenHash:legacyHash},{merge:true});
+ await meta.collection('channels').doc('removed-channel').set({tokenHash:missingHash,revoked:false});
+
+ assert.deepEqual(await call('archive',{groupId}),{archived:true});
+ assert.equal((await legacy.get()).data().revoked,true);
+ assert.equal((await missing.get()).exists,false);
+ const channels=await meta.collection('channels').get();
+ assert.equal(channels.size,2);
+ assert.ok(channels.docs.every(channel=>channel.data().revoked));
+ let report=await call('report',{groupId});
+ assert.equal(report.archived,true);
+ assert.equal(report.completed,1);
+ assert.equal(report.answers,3);
+ await assert.rejects(call('read',{token:link.token,respondentId},undefined),/encerrado/);
+
+ assert.deepEqual(await call('restore',{groupId}),{archived:false});
+ report=await call('report',{groupId});
+ assert.equal(report.archived,false);
+ assert.equal(report.completed,1);
+ await assert.rejects(call('read',{token:link.token,respondentId},undefined),/encerrado/);
 });
