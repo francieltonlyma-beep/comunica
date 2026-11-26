@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {Archive, BarChart3, Briefcase, CalendarDays, CheckCircle2, FileText, Headphones, ListChecks, LockKeyhole, MessageSquare, Send, ShieldCheck, Users} from 'lucide-react';
 
 const solutions = [
@@ -27,6 +27,12 @@ export default function LoginShowcase({onSubmit}) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (window.location.hash === '#fale-conosco') {
+      document.getElementById('fale-conosco')?.scrollIntoView();
+    }
+  }, []);
+
   const update = (field, value) => setForm(previous => ({...previous, [field]: value}));
   const submit = async event => {
     event.preventDefault();
@@ -36,6 +42,8 @@ export default function LoginShowcase({onSubmit}) {
     try {
       await onSubmit(form);
       setSent(true);
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({event: 'comunica_contact_submitted'});
       setForm({companyName: '', contactName: '', cnpj: '', phone: '', email: '', interest: '', message: '', website: ''});
     } catch (submitError) {
       const code = String(submitError?.code || '');
