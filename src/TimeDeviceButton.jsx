@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { httpsCallable } from 'firebase/functions';
 
-export default function TimeDeviceButton({ functionsClient, company, punchType, busy, save, onMonth }) {
+export default function TimeDeviceButton({ functionsClient, company, busy, save, onPunch }) {
   const [available, setAvailable] = useState(false);
   useEffect(() => {
     let active = true;
@@ -11,16 +11,15 @@ export default function TimeDeviceButton({ functionsClient, company, punchType, 
     return () => { active = false; };
   }, []);
   async function verify() {
-    if (!window.confirm('Continuar com a verificação do aparelho? No primeiro uso, você cadastra a chave. Nos próximos, confirma a batida selecionada.')) return;
+    if (!window.confirm('Continuar com a verificação do aparelho? No primeiro uso, você cadastra a chave. Nos próximos, confirma a batida de ponto.')) return;
     const call = httpsCallable(functionsClient, 'timeDeviceVerification');
     await save(async () => {
-      const {data} = await call({company, action: 'begin', punchType});
+      const {data} = await call({company, action: 'begin'});
       const registration = data.mode === 'register';
       const response = registration ? await startRegistration({optionsJSON: data.options}) : await startAuthentication({optionsJSON: data.options});
-      await call({company, action: 'finish', response});
+      const {data: result} = await call({company, action: 'finish', response});
       if (registration) return 'Chave cadastrada. Toque novamente para registrar sua primeira batida verificada.';
-      onMonth();
-      return 'Batida verificada pelo aparelho e registrada.';
+      return onPunch(result.punchType);
     }, '');
   }
   return <div className="mt-3 space-y-1">
