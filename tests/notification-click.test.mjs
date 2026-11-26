@@ -93,3 +93,16 @@ test('career notification opens the filtered vacancy in an existing or new tab',
   assert.equal(url.searchParams.get('careerVacancy'), data.careerVacancyId);
   assert.equal(url.searchParams.has('messageThread'), false);
 });
+
+test('sector alert carries the exact post to an existing or newly opened tab', async () => {
+  const data = {postId: 'post-123'};
+  const existing = loadWorker(true);
+  await click(existing, 'sector_post', data).waiting;
+  assert.equal(existing.sent[0].type, 'comunica-open-post');
+  assert.equal(existing.sent[0].postId, data.postId);
+  const fresh = loadWorker(false);
+  await click(fresh, 'sector_post', data).waiting;
+  const params = new URL(fresh.opened[0]).searchParams;
+  assert.equal(params.get('postCompany'), 'company-123');
+  assert.equal(params.get('postId'), data.postId);
+});

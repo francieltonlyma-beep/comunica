@@ -58,7 +58,7 @@ import { careerFitScore, matchesCareerStage } from './careerTriage.js';
 import { CareerVacancyDetailEditor, CareerVacancyLibrary, CareerVacancyPublishedDetails } from './CareerVacancyDetails.jsx';
 import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
-import { NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
+import { sectorMembership, NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
 import { activeHeadcount } from './personnelModel.js';
 import { usePersonnelRows, usePersonnelDay } from './usePersonnelRows.js';
@@ -957,6 +957,11 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
 
   const [announcementFilter, setAnnouncementFilter] = useState('Todos');
   const [sectorFilter, setSectorFilter] = useState('all');
+  const [sectorProfile, setSectorProfile] = useState(null);
+  const [pendingSectorPost, setPendingSectorPost] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has('postCompany') ? {companyId: params.get('postCompany'), postId: params.get('postId')} : null;
+  });
   const [openPostId, setOpenPostId] = useState(null);
   const [sectorPostType, setSectorPostType] = useState('all');
   const [sectorPostLimit, setSectorPostLimit] = useState(8);
@@ -1835,7 +1840,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           FirebaseMessaging.addListener('notificationActionPerformed', ({ notification }) => {
             const type = notification?.data?.type;
             if (type === 'announcement') setActiveTab('announcements');
-            if (type === 'sector_post') setActiveTab('sectors');
+            if (type === 'sector_post') setPendingSectorPost(notification.data);
             if (type === 'sales_lead') setPendingSalesLeadId(notification?.data?.leadId || '');
             if (type === 'career_application') setPendingCareerNavigation({ companyId: notification.data.companyId, vacancyId: notification.data.careerVacancyId });
             if (['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline'].includes(type)) {
@@ -1887,7 +1892,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
             const isCareerNotification = payload.data?.type === 'career_application';
             if (isPushEnabled(payload.data) && shouldDisplayPush(eventId)) {
               triggerNotification(payload.notification?.title || 'Você recebeu uma nova notificação.', "success");
-              if ((isCareerNotification || ['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(payload.data?.type)) && 'Notification' in window && Notification.permission === 'granted') {
+              if ((isCareerNotification || payload.data?.type === 'sector_post' || ['message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(payload.data?.type)) && 'Notification' in window && Notification.permission === 'granted') {
                 const desktopNotification = new Notification(payload.notification?.title || 'Atualização no Comunica', {
                   body: payload.notification?.body || 'Uma atividade exige sua atenção.',
                   icon: '/pwa/icon-192.png',
@@ -1895,7 +1900,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
                 });
                 desktopNotification.onclick = () => {
                   window.focus();
-                  if (payload.data?.type === 'sales_lead') setPendingSalesLeadId(payload.data?.leadId || '');
+                  if (payload.data?.type === 'sector_post') setPendingSectorPost(payload.data);
+                  else if (payload.data?.type === 'sales_lead') setPendingSalesLeadId(payload.data?.leadId || '');
                   else if (isCareerNotification) setPendingCareerNavigation({ companyId: payload.data.companyId, vacancyId: payload.data.careerVacancyId });
                   else setPendingMessageNavigation({companyId: payload.data?.companyId, threadId: payload.data?.threadId, messageId: payload.data?.messageId, activityId: payload.data?.threadId ? '' : payload.data?.messageId});
                   desktopNotification.close();
@@ -1918,6 +1924,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   useEffect(() => {
     if (!navigator.serviceWorker) return;
     const onWorkerMessage = event => {
+      if (event.data?.type === 'comunica-open-post') setPendingSectorPost(event.data);
       if (event.data?.type === 'comunica-open-message') {
         setPendingMessageNavigation({companyId: event.data.companyId, threadId: event.data.threadId, messageId: event.data.messageId});
       }
@@ -2211,7 +2218,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     }
 
     setLiveDataStatus({ companyId: activeCompany.id, users: 'loading', messages: 'loading', activities: 'loading' });
-    const requiredSources = new Set(['users', 'messages', 'activities']);
+    const requiredSources = new Set(['users', 'messages', 'activities', 'posts']);
     const markSource = (name, status) => {
       if (!requiredSources.has(name)) return;
       setLiveDataStatus(previous => ({ ...previous, companyId: activeCompany.id, [name]: status }));
@@ -2268,6 +2275,9 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     const unsubUsers = setupSync('users', setUsersList);
     const unsubRoles = setupSync('roles', setRolesList);
     const unsubAnn = setupSync('announcements', setAnnouncements);
+    const unsubSectorProfile = currentUser.isDeveloper ? () => {} : onSnapshot(doc(getCollectionPath('users'), dbUser.uid), snapshot => {
+      setSectorProfile({companyId: activeCompany.id, uid: dbUser.uid, profile: snapshot.data() || null});
+    }, () => setSectorProfile({companyId: activeCompany.id, uid: dbUser.uid, profile: null}));
     const unsubPosts = setupSync('posts', setSectorPosts);
     const unsubMessages = setupSync('messages', setPrivateMessages);
     const unsubActivities = setupSync('activities', setStandaloneActivities);
@@ -2283,6 +2293,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
       unsubUsers();
       unsubRoles();
       unsubAnn();
+      unsubSectorProfile();
       unsubPosts();
       unsubMessages();
       unsubActivities();
@@ -3697,7 +3708,7 @@ const getStatusEmTempoReal = (colaborador) => {
   };
 
   const openSectorPublication = post => {
-    if (!tabReleased('sectors') || !userAllowedDepts.includes(post.dept)) return;
+    if (!tabReleased('sectors') || !(channelProfile?.isAdmin || channelDepts.includes(post.dept))) return;
     setOpenPostId(post.id);
     void recordPostVisit(post);
   };
@@ -3794,7 +3805,8 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         image: newPost.image || '',
         author: currentUser.name,
         authorId: currentUser.id,
-date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        createdAt: Date.now(),
+        date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
         likes: 0,
         likedBy: [],
         comments: [],
@@ -5833,12 +5845,15 @@ try {
   }).sort((a, b) => String(b.hireDate).localeCompare(String(a.hireDate))).slice(0, 4);
 
   const userAllowedDepts = currentUser ? (currentUser.isAdmin ? departmentsList.map(d => d.id) : getUserDepts(currentUser)) : [];
+  const liveSectorProfile = sectorProfile?.companyId === activeCompany?.id && sectorProfile?.uid === currentUser?.id ? sectorProfile?.profile : undefined;
+  const channelProfile = liveSectorProfile === undefined ? currentUser : liveSectorProfile;
+  const channelDepts = channelProfile?.isAdmin ? departmentsList.map(dept => dept.id) : sectorMembership(channelProfile);
   const filteredSectorPosts = sectorPosts.filter(post => {
-    if (!userAllowedDepts.includes(post.dept) || (sectorFilter !== 'all' && post.dept !== sectorFilter)) return false;
+    if (!channelDepts.includes(post.dept) || (sectorFilter !== 'all' && post.dept !== sectorFilter)) return false;
     const automatic = isAutomaticSectorPost(post);
     return sectorPostType === 'all' || (sectorPostType === 'automatic' ? automatic : !automatic);
   });
-  const openedPost = sectorPosts.find(post => post.id === openPostId && userAllowedDepts.includes(post.dept));
+  const openedPost = sectorPosts.find(post => post.id === openPostId && channelDepts.includes(post.dept));
   const visibleSectorPosts = filteredSectorPosts.slice(0, sectorPostLimit);
   const yesterday = civilDateShift(todayStr, { days: -1 });
   const accessibleDocuments = documentsList.filter(item => canAccessDocument(item, { allowedDepartments: userAllowedDepts, userId: currentUser?.id, isAdmin: currentUser?.isAdmin }));
@@ -7256,7 +7271,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
 
   const allNotifications = currentUser ? [
     ...announcements.map(a => ({ ...a, notifType: 'announcement' })),
-    ...sectorPosts.filter(p => userAllowedDepts.includes(p.dept)).map(p => ({ ...p, notifType: 'post' })),
+    ...sectorPosts.filter(p => channelDepts.includes(p.dept)).map(p => ({ ...p, notifType: 'post' })),
     ...pollTimelineEntries,
   ].sort((a, b) => getNotifTs(b) - getNotifTs(a)) : [];
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -7493,6 +7508,29 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setCareerViewMode('list');
     setCareerScrollTarget({applicationId});
   }, []);
+
+  const openLinkedSectorPost = useEffectEvent(post => openSectorPublication(post));
+  useEffect(() => {
+    if (!pendingSectorPost || !authReady || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany?.id || !companyTabAccess) return;
+    if (pendingSectorPost.companyId === activeCompany.id && authScope.companyId === activeCompany.id && tabReleased('sectors')) {
+      setActiveTab('sectors');
+      setSectorFilter('all');
+      setSectorPostType('all');
+      if (pendingSectorPost.postId) {
+        if (liveSectorProfile === undefined || liveDataStatus.posts !== 'ready' || liveDataStatus.companyId !== activeCompany.id) {
+          if (liveDataStatus.posts !== 'error') return;
+        }
+        const post = sectorPosts.find(item => item.id === pendingSectorPost.postId);
+        if (post && (channelProfile?.isAdmin || sectorMembership(channelProfile).includes(post.dept))) openLinkedSectorPost(post);
+        else triggerNotification('Publicação indisponível para este acesso.', 'error');
+      }
+    }
+    setPendingSectorPost(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('postCompany');
+    url.searchParams.delete('postId');
+    window.history.replaceState(window.history.state, '', url);
+  }, [pendingSectorPost, authReady, dbUser, currentUser?.id, activeCompany?.id, companyTabAccess, authScope.companyId, liveSectorProfile, liveDataStatus, sectorPosts, channelProfile]);
 
   useEffect(() => {
     if (!pendingCareerNavigation || !authReady || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany?.id) return;
@@ -10472,7 +10510,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 <button type="button" onClick={() => setShowDocumentFilters(value => !value)} className="flex items-center gap-1 text-xs font-bold text-blue-700 sm:hidden" aria-expanded={showDocumentFilters}><Filter className="h-4 w-4" /> {showDocumentFilters ? 'Ocultar filtros' : 'Mais filtros'}</button>
                 <div className={`${showDocumentFilters ? 'grid' : 'hidden'} grid-cols-1 gap-2 sm:grid sm:grid-cols-2 xl:grid-cols-4`}>
                   <select aria-label="Filtrar categoria" value={documentCategoryFilter} onChange={event => setDocumentCategoryFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos">Todas as categorias</option>{DOCUMENT_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}</select>
-                  <select aria-label="Filtrar setor" value={documentDepartmentFilter} onChange={event => setDocumentDepartmentFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos os setores">Todos os setores</option><option value="all">Compartilhados com todos</option>{departmentsList.filter(dept => userAllowedDepts.includes(dept.id)).map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select>
+                  <select aria-label="Filtrar setor" value={documentDepartmentFilter} onChange={event => setDocumentDepartmentFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos os setores">Todos os setores</option><option value="all">Compartilhados com todos</option>{departmentsList.filter(dept => channelDepts.includes(dept.id)).map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select>
                   <select aria-label="Filtrar tipo de arquivo" value={documentTypeFilter} onChange={event => setDocumentTypeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="Todos os tipos">Todos os tipos</option>{['PDF', 'Imagem', 'Planilha', 'Texto', 'Outros'].map(type => <option key={type} value={type}>{type}</option>)}</select>
                   <select aria-label="Ordenar documentos" value={documentSort} onChange={event => setDocumentSort(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"><option value="recentes">Mais recentes</option><option value="titulo">Título de A a Z</option></select>
                 </div>
@@ -10523,13 +10561,13 @@ const handleDownload = async (fileUrl, fileName) => {
                     className="px-3 py-2 w-full sm:w-auto rounded-xl border border-slate-200 text-xs focus:outline-none flex-1"
                   >
                     <option value="all">Todos os meus setores</option>
-                    {departmentsList.filter(d => userAllowedDepts.includes(d.id)).map(d => (
+                    {departmentsList.filter(d => channelDepts.includes(d.id)).map(d => (
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
                   <select value={sectorPostType} onChange={event => { setSectorPostType(event.target.value); setSectorPostLimit(8); }} aria-label="Filtrar origem das publicações" className="px-3 py-2 w-full sm:w-auto rounded-xl border border-slate-200 bg-white text-xs focus:outline-none flex-1"><option value="all">Todas as publicações</option><option value="human">Publicações da equipe</option><option value="automatic">Avisos automáticos</option></select>
                   <button
-                    onClick={() => { setNewPost(prev => ({ ...prev, depts: [sectorFilter === 'all' ? (userAllowedDepts[0] || 'rh') : sectorFilter] })); setShowPostModal(true); }}
+                    onClick={() => { setNewPost(prev => ({ ...prev, depts: [sectorFilter === 'all' ? (channelDepts[0] || 'rh') : sectorFilter] })); setShowPostModal(true); }}
                     className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 px-4 rounded-xl flex items-center gap-1.5 shadow flex-shrink-0"
                     type="button"
                   >
@@ -12894,7 +12932,7 @@ const handleDownload = async (fileUrl, fileName) => {
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Setor(es) de Destino</label>
                   <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
                     {departmentsList
-                      .filter(dept => userAllowedDepts.includes(dept.id))
+                      .filter(dept => channelDepts.includes(dept.id))
                       .map((dept) => (
                       <label key={dept.id} className="flex items-center gap-1.5 cursor-pointer bg-white px-2 py-1.5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition-all">
                         <input

@@ -29,3 +29,14 @@ export function notificationTab(type, threadId = '') {
 export function notificationEnabled(preferences, tab) {
   return !tab || preferences?.[tab] !== false;
 }
+
+// The employee editor writes depts. Older profiles use the other three fields.
+export function sectorMembership(profile) {
+  if (Array.isArray(profile?.depts)) return profile.depts;
+  if (Array.isArray(profile?.departments) && profile.departments.length) return profile.departments;
+  return [profile?.department || profile?.dept].filter(Boolean);
+}
+
+export function canSeeSectorPost(profile, dept) {
+  return Boolean(dept && (profile?.isAdmin || sectorMembership(profile).includes(dept)));
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {notificationEnabled, notificationTab} from '../functions/src/notificationPreferences.mjs';
+import {canSeeSectorPost, notificationEnabled, notificationTab} from '../functions/src/notificationPreferences.mjs';
 
 test('notification preferences default to enabled and only mute the selected tab', () => {
   assert.equal(notificationEnabled(undefined, 'careers'), true);
@@ -19,4 +19,14 @@ test('push and bell alerts resolve to their source tab', () => {
   assert.equal(notificationTab('activity_update'), 'services');
   assert.equal(notificationTab('purchase'), 'integra');
   assert.equal(notificationTab('sales_lead'), '');
+});
+
+test('sector recipients follow current assignments and support legacy profiles', () => {
+  const profile = {depts: ['loja', 'caixa'], departments: ['antigo']};
+  assert.equal(canSeeSectorPost(profile, 'caixa'), true);
+  assert.equal(canSeeSectorPost(profile, 'antigo'), false);
+  assert.equal(canSeeSectorPost({departments: ['rh']}, 'rh'), true);
+  assert.equal(canSeeSectorPost({dept: 'loja'}, 'loja'), true);
+  assert.equal(canSeeSectorPost({depts: ['rh']}, 'loja'), false);
+  assert.equal(canSeeSectorPost({isAdmin: true}, 'loja'), true);
 });

@@ -63,7 +63,7 @@ firebase.initializeApp({
 self.addEventListener('notificationclick', (event) => {
   const data = event.notification?.data?.FCM_MSG?.data;
   const isCareerNotification = data?.type === 'career_application';
-  if (!isCareerNotification && !['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(data?.type)) return;
+  if (!isCareerNotification && data?.type !== 'sector_post' && !['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(data?.type)) return;
   event.stopImmediatePropagation();
   event.notification.close();
   event.waitUntil((async () => {
@@ -71,7 +71,9 @@ self.addEventListener('notificationclick', (event) => {
     const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
     if (existing) {
       await existing.focus();
-      existing.postMessage(data.type === 'sales_lead'
+      existing.postMessage(data.type === 'sector_post'
+        ? {type: 'comunica-open-post', companyId: data.companyId, postId: data.postId}
+        : data.type === 'sales_lead'
         ? {type: 'comunica-open-sales-lead', leadId: data.leadId}
         : isCareerNotification
           ? {type: 'comunica-open-career', companyId: data.companyId, vacancyId: data.careerVacancyId}
@@ -80,7 +82,10 @@ self.addEventListener('notificationclick', (event) => {
             : {type: 'comunica-open-activity', companyId: data.companyId, activityId: data.messageId});
     } else {
       const url = new URL('/', self.location.origin);
-      if (data.type === 'sales_lead') {
+      if (data.type === 'sector_post') {
+        url.searchParams.set('postCompany', data.companyId || '');
+        if (data.postId) url.searchParams.set('postId', data.postId);
+      } else if (data.type === 'sales_lead') {
         url.searchParams.set('supportLead', data.leadId || '');
       } else if (isCareerNotification) {
         url.searchParams.set('careerCompany', data.companyId || '');

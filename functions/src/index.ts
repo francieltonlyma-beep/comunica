@@ -32,7 +32,7 @@ import {maintainPlatformRecord} from './platformRecordMaintenance';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
 import {saveCoverageSettings} from './scheduleCoverage';
-import {notificationEnabled, notificationTab} from './notificationPreferences.mjs';
+import {canSeeSectorPost, notificationEnabled, notificationTab} from './notificationPreferences.mjs';
 import {buildPendingReminders} from './pendingReminders.mjs';
 import {approvePurchaseQuoteGroup} from './purchaseQuoteApproval';
 
@@ -905,7 +905,7 @@ export const generateAiText = onCall(
 
 type CompanyNotificationEvent = {
   id?: string;
-  params: {appId: string; companyId: string};
+  params: {appId: string; companyId: string; postId?: string};
   data?: {data: () => Record<string, unknown>};
 };
 
@@ -920,6 +920,7 @@ const notifyCompany = async (
   const usersSnapshot = await getFirestore().collection(usersPath).get();
   const authorId = typeof content.authorId === "string" ? content.authorId : "";
   const tokens = usersSnapshot.docs
+    .filter(user => type !== 'sector_post' || canSeeSectorPost(user.data(), content.dept))
     .filter((user) => user.id !== authorId && notificationEnabled(user.data().notificationPreferences, notificationTab(type)))
     .flatMap((user) => {
       const savedTokens = user.data().pushTokens;
@@ -929,15 +930,16 @@ const notifyCompany = async (
 
   if (tokens.length === 0) return;
 
-  await getMessaging().sendEachForMulticast({
-    tokens: [...new Set(tokens)],
-    notification: {title, body},
-    // Mantém o mesmo identificador em qualquer tentativa de entrega. O app
-    // ignora uma segunda chegada da mesma publicação no mesmo dispositivo.
-    data: {type, companyId: event.params.companyId, eventId: event.id ?? ""},
-    android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
-    webpush: {headers: {Urgency: "high", TTL: "3600"}},
-  });
+  const uniqueTokens = [...new Set(tokens)];
+  const data: Record<string, string> = {type, companyId: event.params.companyId, eventId: event.id ?? ""};
+  if (type === 'sector_post' && event.params.postId) data.postId = event.params.postId;
+  for (let index = 0; index < uniqueTokens.length; index += 500) {
+    await getMessaging().sendEachForMulticast({
+      tokens: uniqueTokens.slice(index, index + 500), notification: {title, body}, data,
+      android: {priority: "high", ttl: 60 * 60 * 1000, notification: {sound: "default"}},
+      webpush: {headers: {Urgency: "high", TTL: "3600"}},
+    });
+  }
 };
 
 const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
