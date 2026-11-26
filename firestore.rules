@@ -987,6 +987,23 @@ service cloud.firestore {
           (profile.get('permissions', {}).get('personnel', false) &&
           (!confidential || profile.get('permissions', {}).get('personnelPrivate', false))));
       }
+      match /salaryPlans/{roleId} {
+        allow read: if personnelAccess(true);
+        allow create, update: if personnelAccess(true)
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/roles/$(roleId))
+          && request.resource.data.keys().hasOnly(['plan', 'revision', 'updatedBy', 'updatedAt'])
+          && request.resource.data.plan is map
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.revision is int
+          && request.resource.data.revision == (resource == null ? 1 : resource.data.revision + 1);
+        match /history/{revision} {
+          allow read: if personnelAccess(true);
+          allow create: if personnelAccess(true)
+            && request.resource.data.updatedAt == request.time
+            && request.resource.data == getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/salaryPlans/$(roleId)).data;
+        }
+      }
       function timePilotEnabled() {
         return get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/timePilot/config).data.enabled == true;
       }
