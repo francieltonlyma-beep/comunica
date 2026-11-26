@@ -42,8 +42,10 @@ export default function LoginShowcase({onSubmit}) {
     try {
       await onSubmit(form);
       setSent(true);
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({event: 'comunica_contact_submitted'});
+      if (!form.website.trim()) {
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({event: 'comunica_contact_submitted'});
+      }
       setForm({companyName: '', contactName: '', cnpj: '', phone: '', email: '', interest: '', message: '', website: ''});
     } catch (submitError) {
       const code = String(submitError?.code || '');
