@@ -416,27 +416,39 @@ service cloud.firestore {
         && canEdit(app, company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageActivities', true) == true);
     }
-    function activityEditor(app, company, activity, fallbackOwner) {
-      let uid = request.auth.uid;
+    function activityWriteAllowed(profile) {
+      let permissions = profile.get('permissions', {});
+      return permissions.get('canEdit', true) && permissions.get('canManageActivities', true);
+    }
+    function activityOwner(activity, fallbackOwner) {
       let creator = activity.get('createdBy', '');
-      return manages(app, company) || (canManageActivities(app, company) && (
-        (creator == '' ? fallbackOwner : creator) == uid
-        || uid in activity.get('assigneeIds', [])
-        || (fallbackOwner == '' && activity.get('collaborators', {}).get(uid, {}).get('status', '') == 'accepted')
-      ));
+      return (creator == '' ? fallbackOwner : creator) == request.auth.uid;
+    }
+    function activityEditor(app, company, activity) {
+      let uid = request.auth.uid;
+      let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)).data;
+      return support() || (member(company) && (profile.get('isAdmin', false) || (activityWriteAllowed(profile) && (
+        activityOwner(activity, '') || uid in activity.get('assigneeIds', [])
+        || activity.get('collaborators', {}).get(uid, {}).get('status', '') == 'accepted'
+      ))));
     }
     function canChangeMessageActivity(app, company) {
-      let previous = resource.data.get('activity', null);
-      let next = request.resource.data.get('activity', null);
+      let uid = request.auth.uid;
+      let isSupport = uid == 'platform-support-francielton';
+      let profile = isSupport ? {} : get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)).data;
+      let before = resource.data.get('activity', null);
+      let after = request.resource.data.get('activity', null);
       let sender = resource.data.get('senderId', '');
-      let creator = previous is map ? previous.get('createdBy', '') : '';
-      return previous is map
-        ? activityEditor(app, company, previous, sender)
-          && (next is map
-            ? next.get('createdBy', '') == previous.get('createdBy', '')
-            : next == null && (manages(app, company) || (creator == '' ? sender : creator) == request.auth.uid))
-        : canManageActivities(app, company) && (manages(app, company) || sender == request.auth.uid)
-          && next is map && next.get('createdBy', '') == request.auth.uid;
+      let privileged = isSupport || profile.get('isAdmin', false);
+      return before is map
+        ? (privileged || activityWriteAllowed(profile)) && (
+          after is map
+            ? after.get('createdBy', '') == before.get('createdBy', '') &&
+              (privileged || activityOwner(before, sender) || uid in before.get('assigneeIds', []))
+            : after == null && (activityOwner(before, sender) || privileged)
+        )
+        : after is map && after.get('createdBy', '') == uid &&
+          (privileged || (sender == uid && activityWriteAllowed(profile)));
     }
     function respondsToActivityInvitation(company) {
       let before = resource.data.get('collaborators', {});
@@ -832,7 +844,7 @@ service cloud.firestore {
         allow delete: if kind == 'activities' && (manages(app, company)
           || (canManageActivities(app, company) && resource.data.get('createdBy', '') == request.auth.uid));
         allow update: if kind == 'activities' && (
-          (activityEditor(app, company, resource.data, '')
+          (activityEditor(app, company, resource.data)
             && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', ''))
           || respondsToActivityInvitation(company));
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
