@@ -6,12 +6,6 @@ import './installPrompt.js'
 import { AppErrorBoundary, AppLoadingScreen, RuntimeNotices } from './AppRuntime.jsx'
 import { claimDeployRecovery } from './deployRecovery.js'
 
-try {
-  document.documentElement.classList.toggle('comunica-dark', localStorage.getItem('comunica_theme') === 'dark')
-} catch {
-  // O aplicativo continua com o tema claro quando o armazenamento estiver indisponível.
-}
-
 let recoveringDeploy = false
 
 window.addEventListener('vite:preloadError', event => {

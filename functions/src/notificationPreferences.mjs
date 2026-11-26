@@ -17,6 +17,7 @@ export function notificationTab(type, threadId = '') {
     case 'poll': return 'polls';
     case 'message':
     case 'message_deadline': return 'inbox';
+    case 'service_request': return 'services';
     case 'activity_assignment':
     case 'activity_update':
     case 'activity_deadline': return threadId ? 'inbox' : 'services';
@@ -39,4 +40,22 @@ export function sectorMembership(profile) {
 
 export function canSeeSectorPost(profile, dept) {
   return Boolean(dept && (profile?.isAdmin || sectorMembership(profile).includes(dept)));
+}
+
+export function isServiceOpeningMessage(message) {
+  return message?.serviceRequest === true && message.senderId !== 'system' &&
+    typeof message.threadId === 'string' && message.threadId.startsWith('thread-') &&
+    message.id === `msg-${message.threadId.slice(7)}`;
+}
+
+export function isNewActivityRecipient(activity, uid) {
+  if (!uid || activity?.createdBy === uid) return false;
+  const assignees = Array.isArray(activity?.assigneeIds) ? activity.assigneeIds : [];
+  return assignees.length === 0 || assignees.includes(uid);
+}
+
+export function isServiceRequestRecipient(message, uid) {
+  return Boolean(uid && isServiceOpeningMessage(message) && message.senderId !== uid &&
+    Array.isArray(message.participants) && message.participants.includes(uid) &&
+    !(Array.isArray(message.mutedBy) && message.mutedBy.includes(uid)));
 }

@@ -13,6 +13,18 @@
     <meta name="application-name" content="Comunica" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Comunica</title>
+    <script>
+      try {
+        if (localStorage.getItem('comunica_theme') === 'dark') {
+          document.documentElement.classList.add('comunica-dark');
+          document.querySelector('meta[name="theme-color"]').content = '#0b1220';
+        }
+      } catch { /* A tela abre com o tema claro. */ }
+    </script>
+    <style>
+      html { background-color: #f1f5f9; }
+      html.comunica-dark { background-color: #0b1220; color-scheme: dark; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

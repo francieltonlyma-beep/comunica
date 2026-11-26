@@ -416,6 +416,28 @@ service cloud.firestore {
         && canEdit(app, company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageActivities', true) == true);
     }
+    function activityEditor(app, company, activity, fallbackOwner) {
+      let uid = request.auth.uid;
+      let creator = activity.get('createdBy', '');
+      return manages(app, company) || (canManageActivities(app, company) && (
+        (creator == '' ? fallbackOwner : creator) == uid
+        || uid in activity.get('assigneeIds', [])
+        || (fallbackOwner == '' && activity.get('collaborators', {}).get(uid, {}).get('status', '') == 'accepted')
+      ));
+    }
+    function canChangeMessageActivity(app, company) {
+      let previous = resource.data.get('activity', null);
+      let next = request.resource.data.get('activity', null);
+      let sender = resource.data.get('senderId', '');
+      let creator = previous is map ? previous.get('createdBy', '') : '';
+      return previous is map
+        ? activityEditor(app, company, previous, sender)
+          && (next is map
+            ? next.get('createdBy', '') == previous.get('createdBy', '')
+            : next == null && (manages(app, company) || (creator == '' ? sender : creator) == request.auth.uid))
+        : canManageActivities(app, company) && (manages(app, company) || sender == request.auth.uid)
+          && next is map && next.get('createdBy', '') == request.auth.uid;
+    }
     function respondsToActivityInvitation(company) {
       let before = resource.data.get('collaborators', {});
       let after = request.resource.data.get('collaborators', {});
@@ -805,8 +827,14 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'reviewedAt', 'reviewedById', 'reviewedByName', 'decisionNote']))
         );
         allow delete: if kind == 'scheduleSwapRequests' && false;
-        allow create, delete: if kind == 'activities' && canManageActivities(app, company);
-        allow update: if kind == 'activities' && (canManageActivities(app, company) || respondsToActivityInvitation(company));
+        allow create: if kind == 'activities' && canManageActivities(app, company)
+          && request.resource.data.get('createdBy', '') == request.auth.uid;
+        allow delete: if kind == 'activities' && (manages(app, company)
+          || (canManageActivities(app, company) && resource.data.get('createdBy', '') == request.auth.uid));
+        allow update: if kind == 'activities' && (
+          (activityEditor(app, company, resource.data, '')
+            && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', ''))
+          || respondsToActivityInvitation(company));
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
         allow read, delete: if kind == 'careerVacancyLibrary' && (support() || careerManager(app, company));
@@ -1118,7 +1146,7 @@ service cloud.firestore {
           && request.resource.data.get('senderId', '') in [request.auth.uid, 'system'];
         allow update: if access(company) && participant(resource.data) && participant(request.resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'pinnedBy', 'mutedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy', 'resolutionRating', 'resolutionFeedback', 'resolutionEvaluatedAt', 'servicePriority', 'servicePriorityLabel', 'serviceDecision', 'serviceDecisionBy', 'serviceDecisionAt', 'serviceStatus', 'serviceAssigneeId', 'serviceAssigneeName', 'serviceStartedAt', 'serviceWaitingSince', 'servicePromisedDate', 'serviceProgress', 'serviceProgressNote', 'serviceProgressUpdatedAt', 'serviceProgressUpdatedBy', 'likedBy', 'savedBy', 'highlightedBy', 'activity'])
-          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activity']) || canManageActivities(app, company));
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activity']) || canChangeMessageActivity(app, company));
         allow delete: if false;
       }
       match /scheduleCoverageApprovals/{id} {
