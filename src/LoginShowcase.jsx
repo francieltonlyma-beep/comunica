@@ -28,6 +28,16 @@ export default function LoginShowcase({onSubmit}) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
+    if (!window.gtag) {
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () { window.dataLayer.push(arguments); };
+      window.gtag('js', new Date());
+      window.gtag('config', 'AW-18585397813', {allow_enhanced_conversions: false});
+      const script = document.createElement('script');
+      script.async = true;
+      script.src = 'https://www.googletagmanager.com/gtag/js?id=AW-18585397813';
+      document.head.appendChild(script);
+    }
     if (window.location.hash === '#fale-conosco') {
       document.getElementById('fale-conosco')?.scrollIntoView();
     }
@@ -43,8 +53,9 @@ export default function LoginShowcase({onSubmit}) {
       await onSubmit(form);
       setSent(true);
       if (!form.website.trim()) {
-        window.dataLayer = window.dataLayer || [];
-        window.dataLayer.push({event: 'comunica_contact_submitted'});
+        window.gtag?.('event', 'conversion', {
+          send_to: 'AW-18585397813/igzYCJz7zr8dELXUmp5F',
+        });
       }
       setForm({companyName: '', contactName: '', cnpj: '', phone: '', email: '', interest: '', message: '', website: ''});
     } catch (submitError) {
