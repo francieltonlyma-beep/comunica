@@ -456,7 +456,7 @@ service cloud.firestore {
         && request.resource.data.get('history', []) is list
         && request.resource.data.history.size() > 0
         && request.resource.data.history.size() <= 100
-        && request.resource.data.history == resource.data.get('history', []) + [request.resource.data.history[request.resource.data.history.size() - 1]]
+        && request.resource.data.history == resource.data.get('history', []).concat([request.resource.data.history[request.resource.data.history.size() - 1]])
         && request.resource.data.history[request.resource.data.history.size() - 1].get('actorId', '') == uid;
     }
     function canManageActivityTemplates(app, company) {
