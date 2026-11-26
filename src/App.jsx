@@ -10741,7 +10741,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>}
             </div>
           )}
-          {activeTab === 'management' && mgmtSubTab === 'dpi' && confidentialPersonnel && dbUser && activeCompany?.id && (
+          {activeTab === 'management' && mgmtSubTab === 'dpi' && !currentUser.isAdmin && confidentialPersonnel && dbUser && activeCompany?.id && (
             <Suspense fallback={<p>Carregando Painel DPI…</p>}>
               <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
                 roles={rolesList} employees={employeesList} activities={standaloneActivities}
@@ -10753,7 +10753,6 @@ const handleDownload = async (fileUrl, fileName) => {
             <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
 
               <div className="flex flex-wrap border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
-                <button type="button" aria-pressed={mgmtSubTab === 'dpi'} className="rounded-xl px-4 py-2 text-xs font-bold aria-pressed:bg-blue-100" onClick={() => setMgmtSubTab('dpi')}>Painel DPI</button>
                 <button
                   type="button"
                   onClick={() => setMgmtSubTab('overview')}
@@ -10763,7 +10762,7 @@ const handleDownload = async (fileUrl, fileName) => {
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <Activity className="h-3.5 w-3.5 inline-block -mt-0.5" /> Visão da equipe
+                  <Activity className="h-3.5 w-3.5 inline-block -mt-0.5" /> Visão da equipe e DPI
                 </button>
                 <button
                   type="button"
@@ -10825,6 +10824,13 @@ const handleDownload = async (fileUrl, fileName) => {
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><UserPlus className="h-5 w-5 text-amber-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Primeiro acesso</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.pendingAccess}</strong><span className="text-[10px] text-slate-500">ainda não acessaram</span></div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Filter className="h-5 w-5 text-violet-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Para completar</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-slate-500">sem cargo ou setor</span></div>
                   </div>
+                  {confidentialPersonnel && dbUser && activeCompany?.id && (
+            <Suspense fallback={<p>Carregando Painel DPI…</p>}>
+              <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
+                roles={rolesList} employees={employeesList} activities={standaloneActivities}
+                openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey('standalone:' + id); }} />
+            </Suspense>
+                  )}
                   <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-800">Cadastros que precisam de atenção</h4><p className="mt-1 text-xs text-slate-500">Ajuste vínculo, cargo ou acompanhe quem ainda não fez o primeiro acesso.</p></div><button type="button" onClick={() => setMgmtSubTab('employees')} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Abrir equipe</button></div>
