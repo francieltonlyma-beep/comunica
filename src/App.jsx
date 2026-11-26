@@ -64,6 +64,7 @@ import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyMo
 import { activeHeadcount, displayDay, hrDay, isInactiveEmployee } from './personnelModel.js';
 import { usePersonnelRows, usePersonnelDay } from './usePersonnelRows.js';
 const TimePilotWorkspace = lazy(() => import('./TimePilotWorkspace.jsx'));
+const DpiWorkspace = lazy(() => import('./DpiWorkspace.jsx'));
 const PersonnelWorkspace = lazy(() => import('./PersonnelWorkspace.jsx'));
 const AssignedPersonnelTasks = lazy(() => import('./PersonnelWorkspace.jsx').then(module => ({default: module.AssignedPersonnelTasks})));
 const loadIntegraWorkspace = () => import('./IntegraWorkspace.jsx');
@@ -10728,19 +10729,31 @@ const handleDownload = async (fileUrl, fileName) => {
 
           {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && (!currentUser.isAdmin || ['hr-pending','hr-file'].includes(mgmtSubTab)) && (
             <div className="space-y-3">
+              {!currentUser.isAdmin && confidentialPersonnel && <div className="flex gap-3">
+                <button type="button" onClick={() => setMgmtSubTab('dpi')}>Painel DPI</button>
+                <button type="button" onClick={() => setMgmtSubTab('hr-pending')}>Acompanhamento do RH</button>
+              </div>}
               {currentUser.isAdmin && <button className="text-sm font-semibold text-blue-800" onClick={()=>setMgmtSubTab('employees')}>← Voltar à equipe</button>}
-              <Suspense fallback={<p>Carregando acompanhamento do RH…</p>}><PersonnelWorkspace
+              {mgmtSubTab !== 'dpi' && <Suspense fallback={<p>Carregando acompanhamento do RH…</p>}><PersonnelWorkspace
                 key={JSON.stringify([activeCompany.id,dbUser.uid,confidentialPersonnel])}
                 db={db} company={activeCompany.id} uid={dbUser.uid} employees={employeesList} departments={departmentsList}
                 confidential={confidentialPersonnel} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee}
-                view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>
+                view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>}
             </div>
+          )}
+          {activeTab === 'management' && mgmtSubTab === 'dpi' && confidentialPersonnel && dbUser && activeCompany?.id && (
+            <Suspense fallback={<p>Carregando Painel DPI…</p>}>
+              <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
+                roles={rolesList} employees={employeesList} activities={standaloneActivities}
+                openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey('standalone:' + id); }} />
+            </Suspense>
           )}
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
           {activeTab === 'management' && currentUser.isAdmin && (!canUsePersonnel || !['hr-pending','hr-file'].includes(mgmtSubTab)) && (
             <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
 
               <div className="flex flex-wrap border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
+                <button type="button" aria-pressed={mgmtSubTab === 'dpi'} className="rounded-xl px-4 py-2 text-xs font-bold aria-pressed:bg-blue-100" onClick={() => setMgmtSubTab('dpi')}>Painel DPI</button>
                 <button
                   type="button"
                   onClick={() => setMgmtSubTab('overview')}
