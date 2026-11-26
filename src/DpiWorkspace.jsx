@@ -18,6 +18,8 @@ function SalaryPlan({ plans, role, roles, save }) {
   const [draft, setDraft] = useState(() => ({ ...defaults, ...saved?.plan }));
   const [revision, setRevision] = useState(saved?.revision || 0);
   const [status, setStatus] = useState('');
+  const [sourceRole, setSourceRole] = useState('');
+  const [showOverrides, setShowOverrides] = useState(false);
   const [busy, setBusy] = useState(false);
   const floor = Math.max(Number(draft.cct), Number(draft.minimum), Number(draft.base));
   const bands = bandNames.map((label, index) => {
@@ -52,16 +54,51 @@ function SalaryPlan({ plans, role, roles, save }) {
       setBusy(false);
     }
   }
+  const templates = roles.filter(item => item.id !== role.id && plans[item.id]?.plan);
+  function copyParameters() {
+    const source = plans[sourceRole]?.plan;
+    if (!source) return;
+    const { cct, minimum, base, bandRate, levelRate, score, months } = source;
+    setDraft(previous => ({ ...previous, cct, minimum, base, bandRate, levelRate, score, months }));
+    setStatus('Parâmetros copiados para este rascunho. Confira a matriz antes de salvar.');
+  }
+
   return <form onSubmit={submit} className={panel}>
+    {templates.length > 0 && <div className="flex flex-wrap items-end gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <label className="min-w-48 flex-1 font-semibold">Usar parâmetros de outro cargo
+        <select className={field} value={sourceRole} onChange={event => setSourceRole(event.target.value)}>
+          <option value="">Escolha um plano já salvo</option>
+          {templates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+      <button type="button" disabled={!sourceRole} onClick={copyParameters} className="rounded-xl bg-blue-800 px-4 py-2.5 font-semibold text-white disabled:opacity-50">Copiar parâmetros</button>
+    </div>}
+
     <div className="grid gap-3 sm:grid-cols-3">
       <label>Situação<select className={field} value={String(draft.active)} onChange={event => change('active', event.target.value === 'true')}><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
       <label>Cargo que supervisiona<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Vigência<input required className={field} type="date" value={draft.effective} onChange={event => change('effective', event.target.value)} /></label>
       {fields.map(([key, label]) => <label key={key}>{label}<input className={field} type="number" min="0" max={key === 'score' ? 100 : 10000000} step={key === 'months' ? 1 : 0.01} value={draft[key]} onChange={event => change(key, event.target.value)} /></label>)}
     </div>
-    <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th>Faixa</th><th>Valor calculado</th><th>Valor manual em R$</th></tr></thead><tbody>
-      {bands.map(({ label, calculated }, index) => <tr className="border-t border-slate-100" key={label}><th scope="row">{role.name} {label}</th><td>{money.format(calculated)}</td><td className="p-1"><input aria-label={`Valor manual da faixa ${label}`} placeholder="Usar valor calculado" className={field} type="number" min={floor} step="0.01" value={draft.overrides[index]} onChange={event => change('overrides', draft.overrides.map((value, position) => position === index ? event.target.value : value))} /></td></tr>)}
-    </tbody></table></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4">
+      <h4 className="text-base font-bold">Matriz salarial</h4>
+      <button type="button" aria-expanded={showOverrides} onClick={() => setShowOverrides(value => !value)} className="rounded-lg border px-3 py-2 font-semibold">{showOverrides ? 'Fechar edição manual' : 'Ajustar valores manualmente'}</button>
+    </div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[420px] border-separate border-spacing-1 text-left text-sm">
+      <thead><tr><th>Nível</th>{['A', 'B', 'C'].map(band => <th key={band} scope="col" className="p-2">Faixa {band}</th>)}</tr></thead>
+      <tbody>{['I', 'II', 'III'].map((level, row) => <tr key={level}>
+        <th scope="row" className="p-2">{level}</th>
+        {bands.slice(row * 3, row * 3 + 3).map(({ label, value, calculated }, column) => {
+          const index = row * 3 + column;
+          const manual = draft.overrides[index] !== '';
+          return <td className="rounded-lg bg-slate-50 p-3" key={label}>
+            <strong className="block tabular-nums">{money.format(value)}</strong>
+            {manual && <small className="text-blue-700">Ajuste manual</small>}
+            {showOverrides && <input aria-label={`Valor manual da faixa ${label}`} title={`Valor calculado ${money.format(calculated)}`} placeholder={calculated.toFixed(2)} className={field} type="number" min={floor} step="0.01" value={draft.overrides[index]} onChange={event => change('overrides', draft.overrides.map((previous, position) => position === index ? event.target.value : previous))} />}
+          </td>;
+        })}
+      </tr>)}</tbody>
+    </table></div>
     {bands.some((band, index) => index > 0 && band.value < bands[index - 1].value) && <p role="status" className="font-semibold text-amber-800">A matriz tem valores decrescentes entre faixas ou níveis. Confira antes de salvar.</p>}
     <button disabled={busy} className="rounded-xl bg-blue-800 px-4 py-3 font-semibold text-white disabled:opacity-50">Salvar plano</button>
     <p role="status">{status}</p>
@@ -74,6 +111,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   const [roleId, setRoleId] = useState('');
   const [metric, setMetric] = useState('all');
   const [employee, setEmployee] = useState('');
+  const [view, setView] = useState('performance');
   const today = dateFormat.format(new Date());
   const active = employees.filter(person => !person.terminationDate || person.terminationDate > today);
   const currentRole = roles.find(role => role.id === roleId);
@@ -101,22 +139,44 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     return { record, status };
   });
   const metrics = [['all', 'Atividades'], ['ontime', 'No prazo'], ['late', 'Concluídas com atraso'], ['overdue', 'Abertas vencidas']];
-  return <section className="space-y-5 text-sm text-slate-900">
-    <header className="rounded-2xl bg-slate-950 p-6 text-white"><h2 className="text-2xl font-bold">Painel DPI</h2><p className="mt-1 text-slate-200">Desempenho da equipe e plano de cargos e salários</p></header>
-    <section className={panel}>
-      <div className="flex flex-wrap items-end justify-between gap-3"><h3 className="text-lg font-bold">Indicadores da equipe</h3>
+  const selectedRows = rows.filter(row => metric === 'all' || row.status === metric);
+  const evaluated = rows.filter(row => row.status === 'ontime' || row.status === 'late').length;
+  const onTime = rows.filter(row => row.status === 'ontime').length;
+  return <section className="space-y-4 text-sm text-slate-900">
+    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-950 p-6 text-white">
+      <div><h2 className="text-2xl font-bold">Desempenho e carreira</h2><p className="mt-1 text-slate-200">Indicadores da equipe e plano de cargos e salários</p></div>
+      <nav aria-label="Desempenho e carreira" className="flex flex-wrap gap-1 rounded-xl border border-white/20 p-1">
+        {[['performance', 'Indicadores'], ['salary', 'Cargos e salários']].map(([key, label]) => <button type="button" key={key} aria-pressed={view === key} onClick={() => setView(key)} className={`rounded-lg px-3 py-2 font-semibold ${view === key ? 'bg-blue-700 text-white' : 'text-white hover:bg-white/10'}`}>{label}</button>)}
+      </nav>
+    </header>
+    <section className={view === 'performance' ? panel : 'hidden'}>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Selecione uma barra para consultar as atividades.</p></div>
         <label>Colaborador<select className={field} value={employee} onChange={event => setEmployee(event.target.value)}><option value="">Toda a equipe · {active.length} ativos</option>{active.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
       </div>
       {employee && <p>Admissão · {active.find(person => person.id === employee)?.hireDate?.split('-').reverse().join('/') || 'Data pendente no cadastro'}</p>}
-      <div className="grid gap-2 sm:grid-cols-4">{metrics.map(([key, label]) => {
-        const count = key === 'all' ? rows.length : rows.filter(row => row.status === key).length;
-        return <button key={key} type="button" aria-pressed={metric === key} onClick={() => setMetric(key)} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left aria-pressed:border-blue-600"><strong className="block text-xl">{count}</strong>{label}<span aria-hidden="true" className="mt-2 block h-1 bg-blue-700" style={{ width: `${rows.length ? count / rows.length * 100 : 0}%` }} /></button>;
-      })}</div>
-      <ul className="max-h-64 space-y-1 overflow-y-auto">{rows.filter(row => metric === 'all' || row.status === metric).map(({ record }) => <li key={record.id}><button type="button" onClick={() => openActivity(record.id)} className="w-full rounded-lg border p-2 text-left hover:bg-blue-50">{record.title} · {record.dueDate || 'Sem prazo'}</button></li>)}</ul>
+      <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+        <div className="flex flex-col justify-center rounded-2xl bg-blue-50 p-5">
+          <p className="font-semibold text-blue-800">Entregas no prazo</p>
+          <strong className="mt-2 text-4xl tabular-nums text-blue-950">{evaluated ? `${Math.round(onTime / evaluated * 100)}%` : '—'}</strong>
+          <span className="mt-1 text-slate-700">{onTime} de {evaluated} conclusões com prazo e data de entrega</span>
+        </div>
+        <div className="space-y-2" role="group" aria-label="Gráfico de atividades por situação">{metrics.map(([key, label], index) => {
+          const count = key === 'all' ? rows.length : rows.filter(row => row.status === key).length;
+          const colors = ['bg-blue-700', 'bg-emerald-600', 'bg-amber-500', 'bg-rose-600'];
+          return <button key={key} type="button" aria-pressed={metric === key} onClick={() => setMetric(key)} className="block w-full rounded-xl border border-slate-200 p-2.5 text-left aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
+            <span className="flex justify-between gap-2"><span>{label}</span><strong className="tabular-nums">{count}</strong></span>
+            <span aria-hidden="true" className="mt-1 block h-2 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${colors[index]}`} style={{ width: `${rows.length ? count / rows.length * 100 : 0}%` }} /></span>
+          </button>;
+        })}</div>
+      </div>
+      <details open><summary className="cursor-pointer font-semibold">{metrics.find(([key]) => key === metric)?.[1]} · {selectedRows.length} registros</summary>
+        {selectedRows.length ? <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">{selectedRows.map(({ record }) => <li key={record.id}><button type="button" onClick={() => openActivity(record.id)} className="w-full rounded-lg border p-2 text-left hover:bg-blue-50">{record.title} · {record.dueDate || 'Sem prazo'}</button></li>)}</ul> : <p className="mt-2 text-slate-600">Nenhuma atividade neste recorte.</p>}
+      </details>
     </section>
-    <section className="space-y-3">
-      <h3 className="text-lg font-bold">Plano de cargos e salários</h3>
-      <label>Cargo<select className={field} value={roleId} onChange={event => setRoleId(event.target.value)}><option value="">Selecione um cargo</option>{[...roles].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(role => <option key={role.id} value={role.id}>{role.name}{records?.[role.id]?.plan?.active === false ? ' · Inativo' : ''}</option>)}</select></label>
+    <section className={view === 'salary' ? 'space-y-3' : 'hidden'}>
+      <div className={panel}><h3 className="text-lg font-bold">Plano de cargos e salários</h3>
+        <label>Cargo<select className={field} value={roleId} onChange={event => setRoleId(event.target.value)}><option value="">Selecione um cargo</option>{[...roles].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(role => <option key={role.id} value={role.id}>{role.name}{records?.[role.id]?.plan?.active === false ? ' · Inativo' : records?.[role.id] ? ' · Plano salvo' : ''}</option>)}</select></label>
+      </div>
       {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : currentRole && <SalaryPlan key={roleId} role={currentRole} roles={roles} plans={records} save={save} />}
     </section>
   </section>;
