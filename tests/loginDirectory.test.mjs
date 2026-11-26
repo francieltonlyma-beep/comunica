@@ -70,7 +70,7 @@ test('envio do PIN usa o diretório do login mesmo com a equipe interna vazia', 
   const context = { activeCompany: company, usersList: [], loginUsers: users, loginSelectedUserId: 'joao', loginSearchText: 'João Pedro',
     normalizeLoginName, loginPin: '1234', loginSubmitInFlight: { current: false }, companyLookupLoading: false, appId: 'comunica-salvador',
     isFirebaseAvailable: true, functionsClient: {}, httpsCallable: () => async data => { sent = data; return { data: { token: 'token', company, user: users[0] } }; },
-    authPersistenceReady: Promise.resolve(), auth: {}, signInWithCustomToken: async () => {}, setActiveCompany() {},
+    localStorage: { setItem() {} }, publicComputer: false, setPersistence: async () => {}, browserLocalPersistence: {}, sessionStorage: { removeItem() {} }, authPersistenceReady: Promise.resolve(), auth: {}, signInWithCustomToken: async () => {}, setActiveCompany() {},
     setCurrentUser: user => { logged = user; }, setLoginPin() {}, setLoginSearchText() {}, setLoginSelectedUserId() {},
     setLoginError: value => { error = value; }, setLoginSubmitting: value => { busy = value; }, triggerNotification() {}, console,
     loginErrorMessage: e => String(e) };

@@ -550,7 +550,7 @@ try {
   if (firebaseEnvironmentError) throw new Error(firebaseEnvironmentError);
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
-  authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch(error => {
+  authPersistenceReady = setPersistence(auth, localStorage.getItem('comunica_public_computer') === 'true' ? inMemoryPersistence : browserLocalPersistence).catch(error => {
     console.error('Não foi possível ativar a permanência da sessão neste dispositivo.', error);
   });
   db = getFirestore(app);
@@ -903,6 +903,11 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
     id === 'time-pilot' || (id === 'platform-support' ? allowsCompanyTab(companyTabAccess?.policy, 'inbox') : allowsCompanyTab(companyTabAccess?.policy, id))
   );
   const activeTab = tabReleased(requestedTab) ? requestedTab : 'tab-unavailable';
+  const [publicComputer, setPublicComputer] = useState(() => {
+    const preference = localStorage.getItem('comunica_public_computer');
+    return preference === 'true' || (preference === null && !currentUser && window.matchMedia('(min-width: 640px)').matches);
+  });
+  const [switchCompanyCode] = useState(() => sessionStorage.getItem('comunica_switch_company') || '');
   const [companyCode, setCompanyCode] = useState('');
   const [loginDirectory, setLoginDirectory] = useState(null);
   // Impede que uma consulta antiga (por exemplo, "082") apague o resultado
@@ -925,6 +930,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const loginUsers = loginDirectoryUsers(loginDirectory, activeCompany, companyCode);
   const visibleLoginUsers = filterLoginEmployees(loginUsers, loginSearchText);
   const selectLoginEmployee = person => {
+    setLoginPin('');
     setLoginSearchText(person.name);
     setLoginSelectedUserId(person.id);
     setShowLoginSuggestions(false);
@@ -2203,14 +2209,14 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
   }, [dbUser, currentUser?.isDeveloper]);
 
   useEffect(() => {
-    if (currentUser) localStorage.setItem('comunica_current_user', JSON.stringify(sessionIdentity(currentUser)));
+    if (currentUser && !publicComputer) localStorage.setItem('comunica_current_user', JSON.stringify(sessionIdentity(currentUser)));
     else localStorage.removeItem('comunica_current_user');
-  }, [currentUser]);
+  }, [currentUser, publicComputer]);
 
   useEffect(() => {
-    if (activeCompany) localStorage.setItem('comunica_active_company', JSON.stringify(activeCompany));
+    if (activeCompany && !publicComputer) localStorage.setItem('comunica_active_company', JSON.stringify(activeCompany));
     else localStorage.removeItem('comunica_active_company');
-  }, [activeCompany]);
+  }, [activeCompany, publicComputer]);
 
   useEffect(() => {
     const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
@@ -3025,7 +3031,10 @@ const getStatusEmTempoReal = (colaborador) => {
       const response = await authenticate({ appId, companyCode: company.code, userId: selectedEmployee.id, pin: loginPin });
       const session = response.data;
       await authPersistenceReady;
+      await setPersistence(auth, publicComputer ? inMemoryPersistence : browserLocalPersistence);
       await signInWithCustomToken(auth, session.token);
+      sessionStorage.removeItem('comunica_switch_company');
+      if (!publicComputer) localStorage.setItem('comunica_login_hint', JSON.stringify({ companyCode: company.code, name: session.user.name }));
       setActiveCompany(session.company);
       setCurrentUser({ ...session.user, mustChangePin: session.requiresPinChange === true });
       if (session.requiresPinChange === true) {
@@ -3058,7 +3067,9 @@ const getStatusEmTempoReal = (colaborador) => {
       const response = await developerLogin({ appId, pin: developerPin, name: developerName });
       const session = response.data;
       await authPersistenceReady;
+      await setPersistence(auth, publicComputer ? inMemoryPersistence : browserLocalPersistence);
       await signInWithCustomToken(auth, session.token);
+      sessionStorage.removeItem('comunica_switch_company');
       setActiveCompany(session.company);
       setCurrentUser(session.user);
       setActiveTab('support');
@@ -3091,6 +3102,20 @@ const getStatusEmTempoReal = (colaborador) => {
       triggerNotification(error.code === 'functions/internal' ? 'Não foi possível concluir a ação no laboratório. Tente novamente.' : error.message, 'error');
     } finally {
       setLabAction('');
+    }
+  };
+
+  const handleSwitchUser = async () => {
+    const code = activeCompany?.code;
+    try {
+      await signOut(auth);
+      localStorage.removeItem('comunica_current_user');
+      localStorage.removeItem('comunica_active_company');
+      if (code && !publicComputer) sessionStorage.setItem('comunica_switch_company', code);
+      else sessionStorage.removeItem('comunica_switch_company');
+      window.location.reload();
+    } catch {
+      triggerNotification('Não foi possível trocar de usuário. Tente novamente.', 'error');
     }
   };
 
@@ -8309,6 +8334,7 @@ const notificationsToShow = [...notificationItems]
   }
 
   if (!currentUser) {
+    const loginHint = publicComputer ? null : getLocalStorageItem('comunica_login_hint', null);
     const loginCompanyIdentified = isLoginCompanyIdentified(activeCompany, companyCode);
     const loginSuggestionsOpen = showLoginSuggestions && loginCompanyIdentified && !companyLookupLoading;
     const loginActiveSuggestion = loginSuggestionsOpen ? visibleLoginUsers[loginSuggestionIndex] : undefined;
@@ -8369,6 +8395,26 @@ const notificationsToShow = [...notificationItems]
   {installStatus && <p role="status" className="mb-3 text-xs text-cyan-100">{installStatus}</p>}
   {/* CAMPO DE BUSCA DE NOME E PIN */}
   <form onSubmit={handleUserLoginSubmit} className="relative z-10 flex flex-col gap-4">
+    <label className="flex items-center gap-2 text-xs text-blue-100">
+      <input type="checkbox" checked={publicComputer} disabled={loginSubmitting} onChange={event => {
+        const enabled = event.target.checked;
+        localStorage.setItem('comunica_public_computer', String(enabled));
+        if (enabled) {
+          sessionStorage.removeItem('comunica_switch_company');
+          localStorage.removeItem('comunica_login_hint');
+        }
+        setPublicComputer(enabled);
+      }} />
+      Computador público · não manter minha conta conectada
+    </label>
+    {!publicComputer && switchCompanyCode && !companyCode && <button type="button" className="rounded-lg border border-cyan-300/40 p-2 text-sm font-bold text-cyan-100" onClick={() => handleCompanyCodeChange(switchCompanyCode)}>Trocar usuário na mesma empresa</button>}
+    {loginHint?.name && loginHint.companyCode === companyCode && loginCompanyIdentified && !loginSearchText && (
+      <button type="button" className="text-left text-xs font-bold text-cyan-100 underline" onClick={() => {
+        setLoginSearchText(loginHint.name);
+        setLoginPin('');
+        setShowLoginSuggestions(true);
+      }}>Usar nome lembrado · {loginHint.name}</button>
+    )}
     <div>
       <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-blue-100/75">Código da empresa</label>
       <input
@@ -8376,7 +8422,7 @@ const notificationsToShow = [...notificationItems]
         required
         placeholder="Ex.: MINHA-EMPRESA"
         value={companyCode}
-        onChange={(e) => handleCompanyCodeChange(e.target.value)}
+        onChange={(e) => { setLoginPin(''); handleCompanyCodeChange(e.target.value); }}
         disabled={loginSubmitting}
         className="w-full rounded-xl border border-white/15 bg-white/[0.09] px-3 py-3 text-sm font-bold text-white placeholder:text-blue-100/35 transition hover:bg-white/[0.12] focus:border-cyan-300/70 focus:bg-white/[0.14] focus:outline-none focus:ring-4 focus:ring-cyan-300/10"
       />
@@ -8402,6 +8448,7 @@ const notificationsToShow = [...notificationItems]
           onChange={(e) => {
             setLoginSearchText(e.target.value);
             setLoginSuggestionIndex(-1);
+            setLoginPin('');
             setLoginSelectedUserId(''); // Limpa ID caso o usuário mude o texto manualmente
             setShowLoginSuggestions(true);
             setLoginError('');
@@ -8448,6 +8495,7 @@ const notificationsToShow = [...notificationItems]
         <input
           ref={loginPinRef}
           id="login-access-pin"
+          autoComplete="off"
           type="password"
           inputMode="numeric"
           maxLength="4"
@@ -9435,6 +9483,9 @@ const notificationsToShow = [...notificationItems]
                 <KeyRound className="h-4 w-4" />
               </button>
 
+              <button type="button" onClick={handleSwitchUser} className="hidden items-center gap-1 rounded-lg p-2 text-xs font-semibold text-slate-600 hover:bg-blue-50 sm:flex">
+                <Users className="h-4 w-4" /> Trocar usuário
+              </button>
               <button
                 onClick={handleUserLogout}
                 title="Encerrar Sessão"
