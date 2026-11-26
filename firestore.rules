@@ -987,10 +987,28 @@ service cloud.firestore {
           (profile.get('permissions', {}).get('personnel', false) &&
           (!confidential || profile.get('permissions', {}).get('personnelPrivate', false))));
       }
+      match /departments/{unit} {
+        allow update: if personnelAccess(true)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['managerId','managerSince'])
+          && request.resource.data.managerSince is string
+          && (request.resource.data.managerId == '' ||
+            exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.managerId)));
+      }
+      match /salaryChanges/{changeId} {
+        allow read: if personnelAccess(true);
+        allow create: if personnelAccess(true)
+          && request.resource.data.keys().hasOnly(['person','amount','effective','updatedBy','updatedAt'])
+          && request.resource.data.person is string
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.person))
+          && request.resource.data.amount is number && request.resource.data.amount > 0
+          && request.resource.data.effective is string
+          && changeId == request.resource.data.person + '_' + request.resource.data.effective
+          && request.resource.data.updatedBy == request.auth.uid && request.resource.data.updatedAt == request.time;
+      }
       match /salaryPlans/{roleId} {
         allow read: if personnelAccess(true);
         allow create, update: if personnelAccess(true)
-          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/roles/$(roleId))
+          && (roleId == 'pdi-company-standard-v1' || exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/roles/$(roleId)))
           && request.resource.data.keys().hasOnly(['plan', 'revision', 'updatedBy', 'updatedAt'])
           && request.resource.data.plan is map
           && request.resource.data.updatedBy == request.auth.uid

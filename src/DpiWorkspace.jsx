@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { Managers, TeamCharts } from './TeamInsights.jsx';
+import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -13,19 +14,29 @@ const fields = [
 const field = 'block w-full rounded-xl border border-slate-300 bg-white p-2.5 text-sm';
 const panel = 'space-y-4 rounded-2xl border border-slate-200 bg-white p-5';
 
+function salaryBands(draft) {
+  const floor = Math.max(Number(draft.cct), Number(draft.minimum), Number(draft.base));
+  return bandNames.map((label, index) => {
+    const calculated = Math.round(floor * (1 + Number(draft.levelRate) / 100) ** Math.floor(index / 3) * (1 + Number(draft.bandRate) / 100) ** (index % 3) * 100) / 100;
+    return { label, calculated, value: (draft.overrides?.[index] ?? '') === '' ? calculated : Number(draft.overrides[index]) };
+  });
+}
+
+const standard = { id: 'pdi-company-standard-v1', name: 'Padrão da empresa' };
+function parameters(plan) {
+  return plan ? Object.fromEntries([...fields.map(([key]) => key), 'overrides'].map(key => [key, plan[key] ?? defaults[key]])) : {};
+}
+
 function SalaryPlan({ plans, role, roles, save }) {
   const saved = plans[role.id];
-  const [draft, setDraft] = useState(() => ({ ...defaults, ...saved?.plan }));
+  const [draft, setDraft] = useState(() => ({ ...defaults, ...(saved?.plan || (role.id !== standard.id ? parameters(plans[standard.id]?.plan) : {})) }));
   const [revision, setRevision] = useState(saved?.revision || 0);
   const [status, setStatus] = useState('');
   const [sourceRole, setSourceRole] = useState('');
   const [showOverrides, setShowOverrides] = useState(false);
   const [busy, setBusy] = useState(false);
   const floor = Math.max(Number(draft.cct), Number(draft.minimum), Number(draft.base));
-  const bands = bandNames.map((label, index) => {
-    const calculated = Math.round(floor * (1 + Number(draft.levelRate) / 100) ** Math.floor(index / 3) * (1 + Number(draft.bandRate) / 100) ** (index % 3) * 100) / 100;
-    return { label, calculated, value: draft.overrides[index] === '' ? calculated : Number(draft.overrides[index]) };
-  });
+  const bands = salaryBands(draft);
   const change = (key, value) => setDraft(previous => ({ ...previous, [key]: value }));
   async function submit(event) {
     event.preventDefault();
@@ -55,11 +66,11 @@ function SalaryPlan({ plans, role, roles, save }) {
     }
   }
   const templates = roles.filter(item => item.id !== role.id && plans[item.id]?.plan);
-  function copyParameters() {
+  function copyParameters(full) {
     const source = plans[sourceRole]?.plan;
     if (!source) return;
     const { cct, minimum, base, bandRate, levelRate, score, months } = source;
-    setDraft(previous => ({ ...previous, cct, minimum, base, bandRate, levelRate, score, months }));
+    setDraft(previous => ({ ...previous, cct, minimum, base, bandRate, levelRate, score, months, ...(full ? { overrides: [...source.overrides] } : {}) }));
     setStatus('Parâmetros copiados para este rascunho. Confira a matriz antes de salvar.');
   }
 
@@ -71,12 +82,12 @@ function SalaryPlan({ plans, role, roles, save }) {
           {templates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </label>
-      <button type="button" disabled={!sourceRole} onClick={copyParameters} className="rounded-xl bg-blue-800 px-4 py-2.5 font-semibold text-white disabled:opacity-50">Copiar parâmetros</button>
+      <button type="button" disabled={!sourceRole} onClick={() => copyParameters(false)} className="rounded-xl bg-blue-800 px-4 py-2.5 font-semibold text-white disabled:opacity-50">Copiar parâmetros</button><button type="button" disabled={!sourceRole} onClick={() => copyParameters(true)} className="rounded-xl border p-2 font-semibold">Copiar matriz completa</button>
     </div>}
 
     <div className="grid gap-3 sm:grid-cols-3">
       <label>Situação<select className={field} value={String(draft.active)} onChange={event => change('active', event.target.value === 'true')}><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
-      <label>Cargo que supervisiona<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Cargo que supervisiona<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id && item.id !== standard.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Vigência<input required className={field} type="date" value={draft.effective} onChange={event => change('effective', event.target.value)} /></label>
       {fields.map(([key, label]) => <label key={key}>{label}<input className={field} type="number" min="0" max={key === 'score' ? 100 : 10000000} step={key === 'months' ? 1 : 0.01} value={draft[key]} onChange={event => change(key, event.target.value)} /></label>)}
     </div>
@@ -105,7 +116,35 @@ function SalaryPlan({ plans, role, roles, save }) {
   </form>;
 }
 
-export default function DpiWorkspace({ db, company, uid, roles, employees, activities, openActivity }) {
+function Compensation({ db, company, uid, employees, roles, records, today }) {
+  const [entries,setEntries] = useState([]);
+  const [person,setPerson] = useState('');
+  const [amount,setAmount] = useState('');
+  const [effective,setEffective] = useState(today);
+  const [status,setStatus] = useState('');
+  useEffect(() => onSnapshot(collection(db,'artifacts','comunica-salvador','public','data','companies',company,'salaryChanges'),
+    snapshot => setEntries(snapshot.docs.map(item => item.data()).sort((a,b) => b.effective.localeCompare(a.effective))),
+    () => setStatus('Falha ao consultar os salários individuais.')), [company,db]);
+  async function save(event) {
+    event.preventDefault();
+    if (!window.confirm(`Registrar ${money.format(Number(amount))} para ${employees.find(p => p.id === person)?.name} com vigência em ${effective.split('-').reverse().join('/')}?`)) return;
+    try {
+      await setDoc(doc(db,'artifacts','comunica-salvador','public','data','companies',company,'salaryChanges',person+'_'+effective),{person,amount:Number(amount),effective,updatedBy:uid,updatedAt:serverTimestamp()});
+      setStatus('Salário registrado.'); setAmount('');
+    } catch { setStatus('Falha ao registrar. Verifique a conexão, a permissão ou se já há registro nesta data.'); }
+  }
+  return <section className={panel}><h3 className="text-lg font-bold">Enquadramento e reajustes individuais</h3><div className="max-h-64 overflow-auto"><table className="w-full text-left"><thead><tr><th>Colaborador</th><th>Cargo</th><th>Salário vigente</th><th>Enquadramento</th></tr></thead><tbody>{employees.map(p => {
+    const role = roles.find(r => r.id === p.roleId || r.name === p.role);
+    const plan = records[role?.id]?.plan;
+    const pay = entries.find(e => e.person === p.id && e.effective <= today);
+    const values = plan && salaryBands(plan).map(b => b.value);
+    const label = !pay ? 'Salário pendente' : !values ? 'Plano pendente' : pay.amount < Math.min(...values) ? 'Abaixo da matriz' : pay.amount > Math.max(...values) ? 'Acima da matriz' : 'Dentro da matriz';
+    return <tr key={p.id} className="border-t"><td className="py-2">{p.name}</td><td>{role?.name || p.role}</td><td>{pay ? money.format(pay.amount) : '—'}</td><td>{label}</td></tr>;
+  })}</tbody></table></div><form onSubmit={save} className="grid items-end gap-2 sm:grid-cols-4"><label>Colaborador<select required className={field} value={person} onChange={e => setPerson(e.target.value)}><option value="">Escolha</option>{employees.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label><button className="rounded-xl bg-blue-800 p-2 text-white">Confirmar reajuste</button></form>
+    {person && <ul>{entries.filter(e => e.person === person).map(e => <li key={e.effective}>{e.effective.split('-').reverse().join('/')} · {money.format(e.amount)}</li>)}</ul>}<p role="status">{status}</p></section>;
+}
+
+export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity }) {
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(false);
   const [roleId, setRoleId] = useState('');
@@ -114,7 +153,15 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   const [view, setView] = useState('performance');
   const today = dateFormat.format(new Date());
   const active = employees.filter(person => !person.terminationDate || person.terminationDate > today);
-  const currentRole = roles.find(role => role.id === roleId);
+  const ordered = [...roles].sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
+  const choices = [standard, ...ordered];
+  const currentRole = choices.find(role => role.id === roleId);
+  const [unit, setUnit] = useState('');
+  const [filterRole,setFilterRole] = useState('');
+  const [slice, setSlice] = useState(null);
+  const [manager, setManager] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   useEffect(() => onSnapshot(collection(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans'),
     snapshot => setRecords(Object.fromEntries(snapshot.docs.map(record => [record.id, record.data()]))),
     () => setError(true)), [db, company]);
@@ -131,28 +178,38 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     });
   }
 
-  const rows = activities.filter(record => !employee || record.assigneeIds?.includes(employee)).map(record => {
+  const inUnit = (record, id) => record.unit ? record.unit === id : employees.some(person => record.assigneeIds?.includes(person.id) && getDepartments(person).includes(id));
+  const rows = activities.filter(record => (!filterRole || employees.some(person => record.assigneeIds?.includes(person.id) && (person.roleId === filterRole || roles.find(role => role.id === filterRole)?.name === person.role))) && (!unit || inUnit(record, unit)) && (!manager || record.manager === manager)).filter(record => !employee || record.assigneeIds?.includes(employee)).map(record => {
     const completed = record.resolvedAt ? dateFormat.format(new Date(record.resolvedAt)) : '';
     let status = 'open';
     if (record.status === 'resolved') status = record.dueDate && completed ? (completed <= record.dueDate ? 'ontime' : 'late') : 'unrated';
     else if (record.dueDate && record.dueDate < today) status = 'overdue';
-    return { record, status };
-  });
+    const day = completed || record.dueDate || (record.createdAt ? dateFormat.format(new Date(record.createdAt)) : '');
+    return { record, status, day };
+  }).filter(({day}) => (!from || day >= from) && (!to || (day && day <= to)));
   const metrics = [['all', 'Atividades'], ['ontime', 'No prazo'], ['late', 'Concluídas com atraso'], ['overdue', 'Abertas vencidas']];
-  const selectedRows = rows.filter(row => metric === 'all' || row.status === metric);
+  const selectedRows = rows.filter(row => (metric === 'all' || row.status === metric) && (!slice || (slice.kind === 'month' ? row.day.startsWith(slice.id) && ['ontime','late'].includes(row.status) : slice.kind === 'manager' ? row.record.manager === slice.id : inUnit(row.record,slice.id))));
   const evaluated = rows.filter(row => row.status === 'ontime' || row.status === 'late').length;
   const onTime = rows.filter(row => row.status === 'ontime').length;
   return <section className="space-y-4 text-sm text-slate-900">
     <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-950 p-6 text-white">
       <div><h2 className="text-2xl font-bold">Desempenho e carreira</h2><p className="mt-1 text-slate-200">Indicadores da equipe e plano de cargos e salários</p></div>
       <nav aria-label="Desempenho e carreira" className="flex flex-wrap gap-1 rounded-xl border border-white/20 p-1">
-        {[['performance', 'Indicadores'], ['salary', 'Cargos e salários']].map(([key, label]) => <button type="button" key={key} aria-pressed={view === key} onClick={() => setView(key)} className={`rounded-lg px-3 py-2 font-semibold ${view === key ? 'bg-blue-700 text-white' : 'text-white hover:bg-white/10'}`}>{label}</button>)}
+        {[['performance', 'Indicadores'], ['salary', 'Cargos e salários'], ['management', 'Gerentes']].map(([key, label]) => <button type="button" key={key} aria-pressed={view === key} onClick={() => setView(key)} className={`rounded-lg px-3 py-2 font-semibold ${view === key ? 'bg-blue-700 text-white' : 'text-white hover:bg-white/10'}`}>{label}</button>)}
       </nav>
     </header>
     <section className={view === 'performance' ? panel : 'hidden'}>
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Selecione uma barra para consultar as atividades.</p></div>
-        <label>Colaborador<select className={field} value={employee} onChange={event => setEmployee(event.target.value)}><option value="">Toda a equipe · {active.length} ativos</option>{active.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+        <label>Colaborador<select className={field} value={employee} onChange={event => { setEmployee(event.target.value); setSlice(null); }}><option value="">Toda a equipe · {active.length} ativos</option>{active.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
       </div>
+      <div className="grid gap-3 sm:grid-cols-4" onChange={() => setSlice(null)}>
+        <label>Loja ou setor<select className={field} value={unit} onChange={e => setUnit(e.target.value)}><option value="">Todos</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+        <label>Cargo<select className={field} value={filterRole} onChange={e => setFilterRole(e.target.value)}><option value="">Todos</option>{ordered.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+        <label>Gerente designado<select className={field} value={manager} onChange={e => setManager(e.target.value)}><option value="">Todos</option>{[...new Set(activities.map(a => a.manager).filter(Boolean))].map(id => <option key={id} value={id}>{employees.find(p => p.id === id)?.name || id}</option>)}</select></label>
+        <label>De<input className={field} type="date" max={to} value={from} onChange={e => setFrom(e.target.value)} /></label><label>Até<input className={field} type="date" min={from} value={to} onChange={e => setTo(e.target.value)} /></label>
+      </div>
+      <TeamCharts employees={employees} rows={rows} departments={departments.filter(d => !unit || unit === d.id)} inUnit={inUnit} select={value => { setSlice(value); setMetric('all'); }} />
+      {slice && <button type="button" onClick={() => setSlice(null)}>Limpar seleção do gráfico · {slice.label}</button>}
       {employee && <p>Admissão · {active.find(person => person.id === employee)?.hireDate?.split('-').reverse().join('/') || 'Data pendente no cadastro'}</p>}
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div className="flex flex-col justify-center rounded-2xl bg-blue-50 p-5">
@@ -163,7 +220,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
         <div className="space-y-2" role="group" aria-label="Gráfico de atividades por situação">{metrics.map(([key, label], index) => {
           const count = key === 'all' ? rows.length : rows.filter(row => row.status === key).length;
           const colors = ['bg-blue-700', 'bg-emerald-600', 'bg-amber-500', 'bg-rose-600'];
-          return <button key={key} type="button" aria-pressed={metric === key} onClick={() => setMetric(key)} className="block w-full rounded-xl border border-slate-200 p-2.5 text-left aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
+          return <button key={key} type="button" aria-pressed={metric === key} onClick={() => { setMetric(key); setSlice(null); }} className="block w-full rounded-xl border border-slate-200 p-2.5 text-left aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
             <span className="flex justify-between gap-2"><span>{label}</span><strong className="tabular-nums">{count}</strong></span>
             <span aria-hidden="true" className="mt-1 block h-2 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${colors[index]}`} style={{ width: `${rows.length ? count / rows.length * 100 : 0}%` }} /></span>
           </button>;
@@ -173,11 +230,14 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
         {selectedRows.length ? <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">{selectedRows.map(({ record }) => <li key={record.id}><button type="button" onClick={() => openActivity(record.id)} className="w-full rounded-lg border p-2 text-left hover:bg-blue-50">{record.title} · {record.dueDate || 'Sem prazo'}</button></li>)}</ul> : <p className="mt-2 text-slate-600">Nenhuma atividade neste recorte.</p>}
       </details>
     </section>
+    {view === 'management' && <Managers {...{db,company,departments,active,today}} />}
     <section className={view === 'salary' ? 'space-y-3' : 'hidden'}>
       <div className={panel}><h3 className="text-lg font-bold">Plano de cargos e salários</h3>
-        <label>Cargo<select className={field} value={roleId} onChange={event => setRoleId(event.target.value)}><option value="">Selecione um cargo</option>{[...roles].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(role => <option key={role.id} value={role.id}>{role.name}{records?.[role.id]?.plan?.active === false ? ' · Inativo' : records?.[role.id] ? ' · Plano salvo' : ''}</option>)}</select></label>
+        <label>Cargo<select className={field} value={roleId} onChange={event => setRoleId(event.target.value)}><option value="">Selecione um cargo</option>{choices.map(role => <option key={role.id} value={role.id}>{role.name}{records?.[role.id]?.plan?.active === false ? ' · Inativo' : records?.[role.id] ? ' · Plano salvo' : ''}</option>)}</select></label>
       </div>
-      {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : currentRole && <SalaryPlan key={roleId} role={currentRole} roles={roles} plans={records} save={save} />}
+      {records && <div className={panel}><h3 className="text-lg font-bold">Tabela geral de cargos e salários</h3><div className="overflow-x-auto"><table className="w-full whitespace-nowrap text-right"><thead><tr><th className="text-left">Cargo</th>{bandNames.map(b => <th className="p-2" key={b}>{b}</th>)}</tr></thead><tbody>{ordered.map(role => { const plan = records[role.id]?.plan; const values = plan && salaryBands(plan); return <tr key={role.id} className="border-t"><th className="text-left"><button className="p-2 text-blue-800" onClick={() => setRoleId(role.id)}>{role.name}</button></th>{bandNames.map((b,i) => <td className="p-2" key={b}>{values ? money.format(values[i].value) : '—'}</td>)}</tr>; })}</tbody></table></div></div>}
+      {records && view === 'salary' && <Compensation {...{db,company,uid,roles,records,today}} employees={active} />}
+      {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : currentRole && <SalaryPlan key={roleId} role={currentRole} roles={choices} plans={records} save={save} />}
     </section>
   </section>;
 }
