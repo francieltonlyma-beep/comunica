@@ -5164,7 +5164,8 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         return;
       }
       try {
-        const {pin, terminationDate: ignoredTermination, ...profile} = userForm;
+        const {pin, ...profile} = userForm;
+        delete profile.terminationDate;
         const response = await httpsCallable(functionsClient, 'createEmployee')({appId, userId: uId, profile: { ...profile, avatar: profile.avatar || DEFAULT_AVATAR }, pin});
         const {user: created, presence: defaultPresence} = response.data || {};
         if (!created?.id || !defaultPresence?.id) throw new Error('Cadastro não confirmado');

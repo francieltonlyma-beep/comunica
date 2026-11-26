@@ -59,6 +59,7 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
   const scope = JSON.stringify([target, month]);
   const rows = read?.scope === scope ? read.rows : null;
   const base = ['artifacts', appId, 'public', 'data', 'companies', company];
+  const currentMonth = calendar.format(now).slice(0, 7);
   const enabled = settings?.enabled === true;
   const person = employees.find(item => item.id === target);
   const today = calendar.format(now);
