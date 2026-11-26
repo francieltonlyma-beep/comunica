@@ -53,6 +53,33 @@ try {
   await assertFails(getDocs(library(candidate)));
   await assertFails(deleteDoc(item(employee)));
   await assertSucceeds(deleteDoc(item(recruiter)));
+  const author = env.authenticatedContext('other',{companyId:'tenant-a'}).firestore();
+  const activity = db => doc(db, base, 'activities', 'service-activity');
+  const message = db => doc(db, base, 'messages', 'service-message');
+  const activityData = { createdBy: 'other', status: 'pending', source: 'standalone', assigneeIds: [],
+    collaborators: { recruiter: { status: 'invited', invitedAt: 1 } } };
+  await assertFails(setDoc(activity(employee), activityData));
+  await assertSucceeds(setDoc(activity(author), activityData));
+  await assertFails(updateDoc(activity(employee), { status: 'resolved' }));
+  await assertFails(updateDoc(activity(recruiter), { status: 'resolved' }));
+  await assertFails(updateDoc(activity(author), { createdBy: 'employee' }));
+  await assertSucceeds(updateDoc(activity(recruiter), {
+    'collaborators.recruiter.status': 'accepted', 'collaborators.recruiter.respondedAt': 2,
+    history: [{ actorId: 'recruiter' }], updatedBy: 'recruiter', updatedAt: 2,
+  }));
+  await assertSucceeds(updateDoc(activity(recruiter), { status: 'in_progress' }));
+  await assertSucceeds(updateDoc(activity(admin), { assigneeIds: ['employee'] }));
+  await assertSucceeds(updateDoc(activity(employee), { status: 'resolved' }));
+  await assertFails(deleteDoc(activity(employee)));
+  await assertSucceeds(setDoc(message(author), { senderId: 'other', participants: ['other', 'employee'], activity: null }));
+  await assertFails(updateDoc(message(employee), { activity: { createdBy: 'employee', status: 'pending' } }));
+  await assertSucceeds(updateDoc(message(author), { activity: { createdBy: 'other', status: 'pending' } }));
+  await assertFails(updateDoc(message(employee), { 'activity.status': 'resolved' }));
+  await assertSucceeds(updateDoc(message(author), { 'activity.assigneeIds': ['employee'] }));
+  await assertSucceeds(updateDoc(message(employee), { 'activity.status': 'resolved' }));
+  await assertFails(updateDoc(message(employee), { activity: null }));
+  await assertSucceeds(updateDoc(message(author), { activity: null }));
+  console.log('PASS: atividades só podem ser alteradas por colaboradores vinculados e administradores');
   console.log('PASS: pré-cadastros de vagas limitados ao recrutamento da empresa');
   console.log('PASS: diretório público não expõe o cadastro privado dos colaboradores');
 } finally { await env.cleanup(); }

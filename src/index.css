@@ -57,14 +57,33 @@
 /* Tema escuro persistente do Comunica. Mantém as cores semânticas de estado. */
 :root {
   --comunica-page: #f1f5f9;
-  --comunica-surface: #ffffff;
-  --comunica-surface-soft: #f8fafc;
+  --comunica-surface: #f8fafc;
+  --comunica-surface-soft: #f3f6fa;
   --comunica-input: #ffffff;
   --comunica-text: #0f172a;
-  --comunica-muted: #64748b;
+  --comunica-muted: #475569;
   --comunica-border: #e2e8f0;
   --comunica-focus: #0e7490;
 }
+html,
+body,
+#root {
+  background-color: var(--comunica-page);
+  color: var(--comunica-text);
+}
+html { color-scheme: light; }
+.comunica-app { background-color: var(--comunica-page); color: var(--comunica-text); }
+html:not(.comunica-dark) .comunica-app :is(.bg-white, [class~="bg-white/90"], [class~="bg-white/95"]) {
+  background-color: var(--comunica-surface);
+}
+html:not(.comunica-dark) .comunica-app :is(.text-slate-400, .text-slate-500):not(:is(
+  .bg-slate-800, .bg-slate-900, .bg-slate-950, .bg-blue-950,
+  [class~="from-slate-950"], [class~="from-slate-900"], [class~="from-indigo-950"]
+) *) {
+  color: var(--comunica-muted);
+}
+html:not(.comunica-dark) .comunica-app :is(input, textarea)::placeholder { color: var(--comunica-muted); }
+
 html.comunica-dark {
   --comunica-page: #0b1220;
   --comunica-surface: #111c2e;
@@ -115,6 +134,9 @@ html.comunica-dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-
 html.comunica-dark .hover\:bg-slate-50:hover,
 html.comunica-dark .hover\:bg-slate-100:hover,
 html.comunica-dark .hover\:bg-slate-200:hover { background-color: #26364d !important; }
+html.comunica-dark .comunica-app [class~="hover:bg-white"]:hover,
+html.comunica-dark .comunica-app [class~="focus:bg-white"]:focus,
+html.comunica-dark .comunica-app .group:hover [class~="group-hover:bg-white"],
 html.comunica-dark [class~="hover:bg-white/70"]:hover,
 html.comunica-dark [class~="hover:bg-white/10"]:hover { background-color: #26364d !important; }
 html.comunica-dark input:not([type="checkbox"]):not([type="radio"]),
@@ -216,6 +238,10 @@ html.comunica-dark [class~="from-white"],
 html.comunica-dark [class~="via-white"],
 html.comunica-dark [class~="to-white"],
 html.comunica-dark [class~="from-blue-50"],
+html.comunica-dark .comunica-app [class~="from-slate-50"],
+html.comunica-dark .comunica-app [class~="from-slate-100"],
+html.comunica-dark .comunica-app [class~="from-cyan-50"],
+html.comunica-dark .comunica-app [class~="from-violet-50"],
 html.comunica-dark [class~="via-indigo-50/40"],
 html.comunica-dark [class~="to-cyan-50"],
 html.comunica-dark [class~="to-cyan-50/50"],

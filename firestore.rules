@@ -416,6 +416,40 @@ service cloud.firestore {
         && canEdit(app, company)
         && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.auth.uid)).data.get('permissions', {}).get('canManageActivities', true) == true);
     }
+    function activityWriteAllowed(profile) {
+      let permissions = profile.get('permissions', {});
+      return permissions.get('canEdit', true) && permissions.get('canManageActivities', true);
+    }
+    function activityOwner(activity, fallbackOwner) {
+      let creator = activity.get('createdBy', '');
+      return (creator == '' ? fallbackOwner : creator) == request.auth.uid;
+    }
+    function activityEditor(app, company, activity) {
+      let uid = request.auth.uid;
+      let profile = get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)).data;
+      return support() || (member(company) && (profile.get('isAdmin', false) || (activityWriteAllowed(profile) && (
+        activityOwner(activity, '') || uid in activity.get('assigneeIds', [])
+        || activity.get('collaborators', {}).get(uid, {}).get('status', '') == 'accepted'
+      ))));
+    }
+    function canChangeMessageActivity(app, company) {
+      let uid = request.auth.uid;
+      let isSupport = uid == 'platform-support-francielton';
+      let profile = isSupport ? {} : get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)).data;
+      let before = resource.data.get('activity', null);
+      let after = request.resource.data.get('activity', null);
+      let sender = resource.data.get('senderId', '');
+      let privileged = isSupport || profile.get('isAdmin', false);
+      return before is map
+        ? (privileged || activityWriteAllowed(profile)) && (
+          after is map
+            ? after.get('createdBy', '') == before.get('createdBy', '') &&
+              (privileged || activityOwner(before, sender) || uid in before.get('assigneeIds', []))
+            : after == null && (activityOwner(before, sender) || privileged)
+        )
+        : after is map && after.get('createdBy', '') == uid &&
+          (privileged || (sender == uid && activityWriteAllowed(profile)));
+    }
     function respondsToActivityInvitation(company) {
       let before = resource.data.get('collaborators', {});
       let after = request.resource.data.get('collaborators', {});
@@ -434,7 +468,7 @@ service cloud.firestore {
         && request.resource.data.get('history', []) is list
         && request.resource.data.history.size() > 0
         && request.resource.data.history.size() <= 100
-        && request.resource.data.history == resource.data.get('history', []) + [request.resource.data.history[request.resource.data.history.size() - 1]]
+        && request.resource.data.history == resource.data.get('history', []).concat([request.resource.data.history[request.resource.data.history.size() - 1]])
         && request.resource.data.history[request.resource.data.history.size() - 1].get('actorId', '') == uid;
     }
     function canManageActivityTemplates(app, company) {
@@ -805,8 +839,14 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'reviewedAt', 'reviewedById', 'reviewedByName', 'decisionNote']))
         );
         allow delete: if kind == 'scheduleSwapRequests' && false;
-        allow create, delete: if kind == 'activities' && canManageActivities(app, company);
-        allow update: if kind == 'activities' && (canManageActivities(app, company) || respondsToActivityInvitation(company));
+        allow create: if kind == 'activities' && canManageActivities(app, company)
+          && request.resource.data.get('createdBy', '') == request.auth.uid;
+        allow delete: if kind == 'activities' && (manages(app, company)
+          || (canManageActivities(app, company) && resource.data.get('createdBy', '') == request.auth.uid));
+        allow update: if kind == 'activities' && (
+          (activityEditor(app, company, resource.data)
+            && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', ''))
+          || respondsToActivityInvitation(company));
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
         allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
         allow read, delete: if kind == 'careerVacancyLibrary' && (support() || careerManager(app, company));
@@ -1118,7 +1158,7 @@ service cloud.firestore {
           && request.resource.data.get('senderId', '') in [request.auth.uid, 'system'];
         allow update: if access(company) && participant(resource.data) && participant(request.resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readBy', 'archivedBy', 'pinnedBy', 'mutedBy', 'participants', 'threadId', 'subject', 'dueDate', 'initialDueDate', 'dueDateHistory', 'completedAt', 'completedBy', 'resolutionRating', 'resolutionFeedback', 'resolutionEvaluatedAt', 'servicePriority', 'servicePriorityLabel', 'serviceDecision', 'serviceDecisionBy', 'serviceDecisionAt', 'serviceStatus', 'serviceAssigneeId', 'serviceAssigneeName', 'serviceStartedAt', 'serviceWaitingSince', 'servicePromisedDate', 'serviceProgress', 'serviceProgressNote', 'serviceProgressUpdatedAt', 'serviceProgressUpdatedBy', 'likedBy', 'savedBy', 'highlightedBy', 'activity'])
-          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activity']) || canManageActivities(app, company));
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['activity']) || canChangeMessageActivity(app, company));
         allow delete: if false;
       }
       match /scheduleCoverageApprovals/{id} {

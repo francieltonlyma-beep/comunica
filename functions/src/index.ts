@@ -32,7 +32,7 @@ import {maintainPlatformRecord} from './platformRecordMaintenance';
 import {getPlatformCompanyHealth} from './platformCompanyHealth';
 import {submitSalesLead} from './salesLeads';
 import {saveCoverageSettings} from './scheduleCoverage';
-import {canSeeSectorPost, notificationEnabled, notificationTab} from './notificationPreferences.mjs';
+import {isServiceOpeningMessage, isServiceRequestRecipient, canSeeSectorPost, notificationEnabled, notificationTab} from './notificationPreferences.mjs';
 import {buildPendingReminders} from './pendingReminders.mjs';
 import {approvePurchaseQuoteGroup} from './purchaseQuoteApproval';
 
@@ -944,6 +944,17 @@ const notifyCompany = async (
 
 const notifyMessageRecipients = async (event: CompanyNotificationEvent) => {
   const content = event.data?.data() ?? {};
+  if (isServiceOpeningMessage(content)) {
+    await sendActivityPush({
+      database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
+      recipientIds: (Array.isArray(content.participants) ? content.participants : [])
+        .filter((id): id is string => typeof id === 'string' && isServiceRequestRecipient(content, id)),
+      actorId: String(content.senderId || ''), title: 'Nova solicitação de serviço', body: String(content.subject || 'Central de Serviços'),
+      type: 'service_request', threadId: String(content.threadId), messageId: String(content.id),
+      eventId: `service-request-${content.id}`,
+    });
+    return;
+  }
   const participants = Array.isArray(content.participants)
     ? content.participants.filter((id): id is string => typeof id === "string")
     : [];
@@ -1096,7 +1107,7 @@ const sendActivityPush = async ({
   actorId?: string;
   title: string;
   body: string;
-  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message' | 'purchase' | 'career_application';
+  type: 'activity_assignment' | 'activity_update' | 'activity_deadline' | 'message' | 'purchase' | 'career_application' | 'service_request';
   threadId?: string;
   messageId?: string;
   eventId: string;
@@ -1302,7 +1313,12 @@ export const notifyMessageActivityChange = onDocumentUpdated(
     let title = '';
     let body = '';
     let type: 'activity_assignment' | 'activity_update' = 'activity_update';
-    if (newAssignees.length > 0) {
+    if (!previous && newAssignees.length === 0) {
+      recipientIds = Array.isArray(after.participants) ? after.participants : [];
+      title = '📋 Nova atividade disponível na conversa';
+      body = subject;
+      type = 'activity_assignment';
+    } else if (newAssignees.length > 0) {
       recipientIds = newAssignees;
       title = '📋 Nova atividade atribuída a você';
       body = subject;
@@ -1328,7 +1344,8 @@ export const notifyMessageActivityChange = onDocumentUpdated(
     }
 
     const mutedBy = Array.isArray(after.mutedBy) ? after.mutedBy.filter((id): id is string => typeof id === 'string') : [];
-    recipientIds = recipientIds.filter((id) => !mutedBy.includes(id));
+    const participants = new Set([...(Array.isArray(after.participants) ? after.participants : []), after.senderId, after.receiverId]);
+    recipientIds = recipientIds.filter((id) => !mutedBy.includes(id)).filter(id => participants.has(id));
     await sendActivityPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds, actorId, title, body, type, threadId, messageId,
@@ -1342,11 +1359,14 @@ export const notifyStandaloneActivityCreated = onDocumentCreated(
   async (event) => {
     const content = event.data?.data() ?? {};
     const activity = messageActivityData(content);
-    if (!activity || activity.assigneeIds.length === 0) return;
+    if (!activity) return;
+    const assigned = activity.assigneeIds.length > 0;
     await sendActivityPush({
       database: getFirestore(), appId: event.params.appId, companyId: event.params.companyId,
       recipientIds: activity.assigneeIds, actorId: activity.createdBy,
-      title: '📋 Nova atividade avulsa atribuída a você', body: String(content.title || 'Atividade na Central de Serviços'),
+      recipientFilter: assigned ? undefined : profile => profile.isDeveloper !== true,
+      title: assigned ? '📋 Nova atividade avulsa atribuída a você' : '📋 Nova atividade disponível',
+      body: String(content.title || 'Atividade na Central de Serviços'),
       type: 'activity_assignment', threadId: '', messageId: event.params.activityId,
       eventId: `standalone-activity-created-${event.params.activityId}`,
     });

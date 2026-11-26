@@ -63,7 +63,7 @@ firebase.initializeApp({
 self.addEventListener('notificationclick', (event) => {
   const data = event.notification?.data?.FCM_MSG?.data;
   const isCareerNotification = data?.type === 'career_application';
-  if (!isCareerNotification && data?.type !== 'sector_post' && !['message', 'message_deadline', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(data?.type)) return;
+  if (!isCareerNotification && data?.type !== 'sector_post' && !['message', 'message_deadline', 'service_request', 'activity_assignment', 'activity_update', 'activity_deadline', 'sales_lead'].includes(data?.type)) return;
   event.stopImmediatePropagation();
   event.notification.close();
   event.waitUntil((async () => {
