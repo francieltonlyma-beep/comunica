@@ -3796,7 +3796,8 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const createdPosts = [];
 
     for (const deptId of newPost.depts) {
-      const postId = `post-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const createdAt = Date.now();
+      const postId = `post-${createdAt}-${Math.random().toString(36).substr(2, 5)}`;
       const created = {
         id: postId,
         dept: deptId,
@@ -3805,7 +3806,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         image: newPost.image || '',
         author: currentUser.name,
         authorId: currentUser.id,
-        createdAt: Date.now(),
+        createdAt,
         date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
         likes: 0,
         likedBy: [],
@@ -7509,10 +7510,11 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setCareerScrollTarget({applicationId});
   }, []);
 
+  const sectorsReleased = tabReleased('sectors');
   const openLinkedSectorPost = useEffectEvent(post => openSectorPublication(post));
   useEffect(() => {
     if (!pendingSectorPost || !authReady || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany?.id || !companyTabAccess) return;
-    if (pendingSectorPost.companyId === activeCompany.id && authScope.companyId === activeCompany.id && tabReleased('sectors')) {
+    if (pendingSectorPost.companyId === activeCompany.id && authScope.companyId === activeCompany.id && sectorsReleased) {
       setActiveTab('sectors');
       setSectorFilter('all');
       setSectorPostType('all');
@@ -7530,7 +7532,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     url.searchParams.delete('postCompany');
     url.searchParams.delete('postId');
     window.history.replaceState(window.history.state, '', url);
-  }, [pendingSectorPost, authReady, dbUser, currentUser?.id, activeCompany?.id, companyTabAccess, authScope.companyId, liveSectorProfile, liveDataStatus, sectorPosts, channelProfile]);
+  }, [pendingSectorPost, authReady, dbUser, currentUser?.id, activeCompany?.id, companyTabAccess, authScope.companyId, liveSectorProfile, liveDataStatus, sectorPosts, channelProfile, sectorsReleased]);
 
   useEffect(() => {
     if (!pendingCareerNavigation || !authReady || !dbUser || currentUser?.id !== dbUser.uid || !activeCompany?.id) return;
