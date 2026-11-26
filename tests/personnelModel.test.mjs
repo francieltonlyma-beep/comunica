@@ -32,3 +32,8 @@ test('exames realizados têm próxima renovação e cancelamentos saem das pend�
   assert.equal(pendingDate({ ...exam, status: 'Realizado' }), exam.nextDate);
   assert.equal(pendingDate({ ...exam, status: 'Cancelado' }), '');
 });
+
+test('a data de demissão do perfil retira o colaborador do quadro na data efetiva', () => {
+  const employee = { id: 'profile', hireDate: '2026-11-01', terminationDate: '2026-11-25' };
+  assert.deepEqual(activeHeadcount([{ ...employee, terminationDate: '' }], [], '2026-11-26').map(person => person.id), ['profile']);
+});

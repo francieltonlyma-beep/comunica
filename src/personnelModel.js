@@ -40,6 +40,9 @@ export const personnelKinds = {
 export const hrDay = (date = new Date()) =>
   new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(date);
 export const displayDay = (date) => (date ? date.split('-').reverse().join('/') : '—');
+export const isInactiveEmployee = (person, today) =>
+  Boolean(person.terminationDate && person.terminationDate <= today);
+
 export function pendingDate(row) {
   if (row.status === 'Cancelado') return '';
   if (row.kind === 'leave' && row.status === 'Em andamento' && row.nextDate) return row.nextDate;
@@ -62,6 +65,7 @@ export function activeHeadcount(employees, events, today) {
       latest.set(event.employeeId, event);
   }
   return employees.filter((person) => {
+    if (isInactiveEmployee(person, today)) return false;
     const event = latest.get(person.id);
     if (event) return event.kind === 'admission';
     if (person.hireDate) return person.hireDate <= today;

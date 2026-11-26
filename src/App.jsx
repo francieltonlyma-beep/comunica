@@ -60,7 +60,7 @@ import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
 import { sectorMembership, NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
-import { activeHeadcount } from './personnelModel.js';
+import { activeHeadcount, displayDay, hrDay, isInactiveEmployee } from './personnelModel.js';
 import { usePersonnelRows, usePersonnelDay } from './usePersonnelRows.js';
 const TimePilotWorkspace = lazy(() => import('./TimePilotWorkspace.jsx'));
 const PersonnelWorkspace = lazy(() => import('./PersonnelWorkspace.jsx'));
@@ -1244,7 +1244,8 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     prodGroup: '',
     managerId: '',
     birthDate: '',
-    hireDate: ''
+    hireDate: '',
+    terminationDate: ''
   });
   const [myProfileForm, setMyProfileForm] = useState({
     avatar: '',
@@ -1260,6 +1261,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
   const [empSearchText, setEmpSearchText] = useState('');
   const [empSectorFilter, setEmpSectorFilter] = useState('Todos');
+  const [empStatusFilter, setEmpStatusFilter] = useState('Todos');
   const [empRoleFilter, setEmpRoleFilter] = useState('Todos');
   const [empProdGroupFilter, setEmpProdGroupFilter] = useState('Todos');
 
@@ -5035,6 +5037,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       pin: '',
       birthDate: user.birthDate || '',
       hireDate: user.hireDate || '',
+      terminationDate: user.terminationDate || '',
       emergencyName: user.emergencyName || '',
       emergencyPhone: user.emergencyPhone || '',
       emergencyRelationship: user.emergencyRelationship || '',
@@ -5136,13 +5139,24 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }
 
     if (editingUser) {
-      const {pin: ignoredOldPin, ...existingProfile} = editingUser;
-      const {pin: ignoredFormPin, ...formProfile} = userForm;
+      const {pin: ignoredOldPin, terminationDate: previousTermination, ...existingProfile} = editingUser;
+      const {pin: ignoredFormPin, terminationDate = '', ...formProfile} = userForm;
+      if (terminationDate && (terminationDate > hrDay() || (formProfile.hireDate && terminationDate < formProfile.hireDate))) {
+        triggerNotification('A data de demissão deve estar entre a admissão e hoje.', 'error');
+        return;
+      }
+      const terminationChanged = terminationDate !== (previousTermination || '');
       const updatedData = { ...existingProfile, ...formProfile, updatedAt: Date.now() };
-      if (!window.confirm('Salvar as alterações no cadastro de ' + editingUser.name + '? Os módulos que usam esse cadastro serão atualizados.')) return;
+      if (terminationChanged) updatedData.terminationDate = terminationDate;
+      const confirmation = terminationChanged
+        ? terminationDate
+          ? `Registrar a demissão de ${editingUser.name} em ${displayDay(terminationDate)} e marcar o perfil como inativo?`
+          : `Remover a data de demissão de ${editingUser.name} e marcar o perfil como ativo?`
+        : `Salvar as alterações no cadastro de ${editingUser.name}?`;
+      if (!window.confirm(confirmation)) return;
       if (!await saveDoc('users', editingUser.id, updatedData)) return;
-      setUsersList(prev => prev.map(user => user.id === editingUser.id ? updatedData : user));
-      triggerNotification('Ficha de cadastro atualizada!');
+      setUsersList(prev => prev.map(user => user.id === editingUser.id ? { ...user, ...updatedData } : user));
+      triggerNotification(terminationChanged && terminationDate ? 'Demissão registrada. Perfil inativo.' : 'Ficha de cadastro atualizada.');
     } else {
       const uId = `u-${Date.now()}`;
       if (!isFirebaseAvailable || !dbUser || !functionsClient) {
@@ -5150,7 +5164,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         return;
       }
       try {
-        const {pin, ...profile} = userForm;
+        const {pin, terminationDate: ignoredTermination, ...profile} = userForm;
         const response = await httpsCallable(functionsClient, 'createEmployee')({appId, userId: uId, profile: { ...profile, avatar: profile.avatar || DEFAULT_AVATAR }, pin});
         const {user: created, presence: defaultPresence} = response.data || {};
         if (!created?.id || !defaultPresence?.id) throw new Error('Cadastro não confirmado');
@@ -7331,7 +7345,10 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       });
     }, 100);
   };
+  const employeeStatusDay = hrDay();
+  const activeEmployees = employeesList.filter(user => !isInactiveEmployee(user, employeeStatusDay));
   const sectorCounts = departmentsList.map(d => ({ ...d, count: employeesList.filter(u => getUserDepts(u).includes(d.id)).length }));
+  const activeSectorCounts = departmentsList.map(d => ({ ...d, count: activeEmployees.filter(u => getUserDepts(u).includes(d.id)).length }));
   const formRoleOptions = showUserModal ? employeeRoleOptions(rolesList, userForm.depts || [], userForm.role) : [];
   const roleSearchTerm = normalizedText(roleSearch);
   const visibleRoles = activeTab === 'management' && mgmtSubTab === 'roles'
@@ -7387,15 +7404,17 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const matchSector = empSectorFilter === 'Todos' || getUserDepts(u).includes(empSectorFilter);
     const matchRole = empRoleFilter === 'Todos' || u.role === empRoleFilter;
     const matchProdGroup = empProdGroupFilter === 'Todos' || u.prodGroup === empProdGroupFilter;
-    return matchText && matchSector && matchRole && matchProdGroup;
+    const inactive = isInactiveEmployee(u, employeeStatusDay);
+    const matchStatus = empStatusFilter === 'Todos' || inactive === (empStatusFilter === 'inactive');
+    return matchText && matchSector && matchRole && matchProdGroup && matchStatus;
   }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
   const peopleOverview = {
-    active: employeesList.length,
-    recentlyActive: employeesList.filter(user => employeeAccessMillis(user.lastLoginAt) >= Date.now() - (7 * 24 * 60 * 60 * 1000)).length,
-    pendingAccess: employeesList.filter(user => !employeeAccessMillis(user.lastLoginAt)).length,
-    incompleteProfile: employeesList.filter(user => !user.role || !getUserDepts(user).length).length,
+    active: activeEmployees.length,
+    recentlyActive: activeEmployees.filter(user => employeeAccessMillis(user.lastLoginAt) >= Date.now() - (7 * 24 * 60 * 60 * 1000)).length,
+    pendingAccess: activeEmployees.filter(user => !employeeAccessMillis(user.lastLoginAt)).length,
+    incompleteProfile: activeEmployees.filter(user => !user.role || !getUserDepts(user).length).length,
   };
-  const peopleAttentionList = employeesList.filter(user => !employeeAccessMillis(user.lastLoginAt) || !user.role || !getUserDepts(user).length)
+  const peopleAttentionList = activeEmployees.filter(user => !employeeAccessMillis(user.lastLoginAt) || !user.role || !getUserDepts(user).length)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
   const accessProfileForUser = (user) => {
     if (!user || user.isAdmin || user.isDeveloper) return fullAccessProfile();
@@ -10756,7 +10775,7 @@ const handleDownload = async (fileUrl, fileName) => {
                       <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-800">Cadastros que precisam de atenção</h4><p className="mt-1 text-xs text-slate-500">Ajuste vínculo, cargo ou acompanhe quem ainda não fez o primeiro acesso.</p></div><button type="button" onClick={() => setMgmtSubTab('employees')} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Abrir equipe</button></div>
                       <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!employeeAccessLabel(user.lastLoginAt) ? 'Ainda não acessou' : ''}{!employeeAccessLabel(user.lastLoginAt) && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { setEmpSearchText(user.name || ''); setMgmtSubTab('employees'); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-800">Distribuição da equipe</h4><div className="mt-4 space-y-3">{sectorCounts.slice().sort((a,b) => b.count - a.count).slice(0, 5).map(sector => <div key={sector.id}><div className="flex justify-between text-[10px] font-semibold text-slate-600"><span>{sector.name}</span><span>{sector.count}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${peopleOverview.active ? Math.round((sector.count / peopleOverview.active) * 100) : 0}%` }} /></div></div>)}{sectorCounts.length === 0 && <p className="mt-4 text-xs text-slate-500">Cadastre setores para acompanhar a distribuição.</p>}</div></div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-800">Distribuição da equipe</h4><div className="mt-4 space-y-3">{activeSectorCounts.slice().sort((a,b) => b.count - a.count).slice(0, 5).map(sector => <div key={sector.id}><div className="flex justify-between text-[10px] font-semibold text-slate-600"><span>{sector.name}</span><span>{sector.count}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${peopleOverview.active ? Math.round((sector.count / peopleOverview.active) * 100) : 0}%` }} /></div></div>)}{sectorCounts.length === 0 && <p className="mt-4 text-xs text-slate-500">Cadastre setores para acompanhar a distribuição.</p>}</div></div>
                   </div>
                 </div>
               )}
@@ -10819,7 +10838,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {activeCompany?.code === '082026' && <button type="button" onClick={handleMigrateLegacyUsers} className="bg-white/10 hover:bg-white/15 text-white font-bold text-xs py-2.5 px-4 rounded-xl border border-white/15">Migrar dados anteriores</button>}
-                      <button type="button" onClick={() => { setEditingUser(null); setUserForm({ name: '', role: '', depts: [], avatar: DEFAULT_AVATAR, isAdmin: false, pin: '1234', emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', managerId: '', birthDate: '', hireDate: '' }); setShowUserModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow-lg transition-all flex-shrink-0"><Plus className="h-4 w-4" /> Novo colaborador</button>
+                      <button type="button" onClick={() => { setEditingUser(null); setUserForm({ name: '', role: '', depts: [], avatar: DEFAULT_AVATAR, isAdmin: false, pin: '1234', emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', managerId: '', birthDate: '', hireDate: '', terminationDate: '' }); setShowUserModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow-lg transition-all flex-shrink-0"><Plus className="h-4 w-4" /> Novo colaborador</button>
                     </div>
                   </div>
 
@@ -10830,7 +10849,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-violet-600">Cadastro incompleto</span><strong className="block text-xl font-black text-violet-950 mt-1">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-violet-700">sem cargo ou setor</span></div>
                   </div>
 
-                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                       <input
@@ -10865,6 +10884,12 @@ const handleDownload = async (fileUrl, fileName) => {
                       <option value="Todos">Todos os Grupos</option>
                       <option value="">Sem Grupo ({employeesList.filter(u => !u.prodGroup).length})</option>
                       {prodGroupCounts.map(g => <option key={g.name} value={g.name}>{g.name} ({g.count})</option>)}
+                    </select>
+                    <select aria-label="Situação do colaborador" value={empStatusFilter} onChange={event => setEmpStatusFilter(event.target.value)}
+                      className="px-3 py-2 w-full rounded-lg border border-slate-200 text-xs bg-white font-semibold text-slate-700">
+                      <option value="Todos">Todas as situações</option>
+                      <option value="active">Ativos</option>
+                      <option value="inactive">Inativos</option>
                     </select>
                   </div>
 
@@ -10906,7 +10931,10 @@ const handleDownload = async (fileUrl, fileName) => {
                               {employeeAccessLabel(user.lastLoginAt) ? <><strong className="block text-slate-700">{employeeAccessLabel(user.lastLoginAt).date}</strong><span>{employeeAccessLabel(user.lastLoginAt).time}</span></> : <span className="font-bold text-amber-700">Ainda não acessou</span>}
                             </td>
                             <td className="p-4">
-                              {(!user.role || !getUserDepts(user).length) ? <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-black text-amber-700">Cadastro incompleto</span> : employeeAccessLabel(user.lastLoginAt) ? <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black text-emerald-700">Ativo</span> : <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-black text-blue-700">Aguardando acesso</span>}
+                              {isInactiveEmployee(user, employeeStatusDay) ? (
+                                <><span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[9px] font-black text-slate-700">Inativo</span>
+                                <span className="mt-1 block text-[10px] text-slate-600">Demissão em {displayDay(user.terminationDate)}</span></>
+                              ) : (!user.role || !getUserDepts(user).length) ? <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-black text-amber-700">Cadastro incompleto</span> : employeeAccessLabel(user.lastLoginAt) ? <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black text-emerald-700">Ativo</span> : <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-black text-blue-700">Aguardando acesso</span>}
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-2">
@@ -12505,6 +12533,15 @@ const handleDownload = async (fileUrl, fileName) => {
                   <input type="date" value={userForm.hireDate || ''} onChange={(e) => setUserForm({ ...userForm, hireDate: e.target.value })} className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs focus:outline-none" />
                 </div>
               </div>
+              {editingUser && (
+                <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <label htmlFor="employee-termination-date" className="text-[10px] font-bold uppercase text-slate-600">Data de demissão</label>
+                  <input id="employee-termination-date" type="date" value={userForm.terminationDate || ''} min={userForm.hireDate || undefined} max={employeeStatusDay}
+                    onChange={event => setUserForm({ ...userForm, terminationDate: event.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs" />
+                  <p className="text-xs text-slate-600">Situação ao salvar <strong>{isInactiveEmployee(userForm, employeeStatusDay) ? 'Inativo' : 'Ativo'}</strong></p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3">
                 <div>

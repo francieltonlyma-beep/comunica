@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, Clock, Download } from 'lucide-react';
 import { collection, doc, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 
 import TimeDeviceButton from './TimeDeviceButton.jsx';
 import TimeRecordParameters from './TimeRecordParameters.jsx';
@@ -44,13 +45,13 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
   const [now, setNow] = useState(() => new Date());
   const [view, setView] = useState('self');
   const [policy, setPolicy] = useState(null);
-  const [type, setType] = useState('entry');
   const [employee, setEmployee] = useState('');
   const [month, setMonth] = useState(() => calendar.format(new Date()).slice(0, 7));
   const [read, setRead] = useState(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const locked = useRef(false);
+  const pendingPunch = useRef(null);
   const [adjustmentHour, setAdjustmentHour] = useState('');
   const [reason, setReason] = useState('');
   const target = view === 'team' && canReview ? employee : uid;
@@ -58,7 +59,6 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
   const scope = JSON.stringify([target, month]);
   const rows = read?.scope === scope ? read.rows : null;
   const base = ['artifacts', appId, 'public', 'data', 'companies', company];
-  const currentMonth = calendar.format(now).slice(0, 7);
   const enabled = settings?.enabled === true;
   const person = employees.find(item => item.id === target);
   const today = calendar.format(now);
@@ -119,12 +119,21 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
   }
 
   const recordsFor = user => collection(db, ...base, 'timePilotUsers', user, 'records');
+  function showPunch(punchType) {
+    setMonth(calendar.format(new Date()).slice(0, 7));
+    const label = punchTypes[punchType];
+    return label ? 'Batida de teste registrada — ' + label + '.' : 'Batida de teste registrada.';
+  }
+
   function registerPunch() {
-    if (!window.confirm('Registrar batida de teste: ' + punchTypes[type] + '?')) return;
-    const ref = doc(recordsFor(uid));
-    void save(() => setDoc(ref, { kind: 'punch', punchType: type, createdAt: serverTimestamp(), occurredAt: serverTimestamp() }),
-      'Batida de teste registrada. O comprovante está no histórico.');
-    setMonth(currentMonth);
+    if (!window.confirm('Registrar agora a batida de teste?')) return;
+    void save(async () => {
+      pendingPunch.current ??= doc(recordsFor(uid)).id;
+      const call = httpsCallable(functionsClient, 'timeDeviceVerification');
+      const { data } = await call({ company, action: 'record', requestId: pendingPunch.current });
+      pendingPunch.current = null;
+      return showPunch(data.punchType);
+    }, 'Batida de teste registrada.');
   }
 
   async function requestAdjustment(event) {
@@ -199,9 +208,9 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
               <h2 className="flex items-center gap-2 font-bold"><Clock size={19} aria-hidden="true" /> Registrar batida</h2>
               <p className="mt-4 text-4xl font-bold tabular-nums">{time.format(now)}</p>
               <p className="mt-1 text-sm text-slate-600">{day.format(now)} · Horário de Brasília</p>
-              <label className="mt-3 block text-sm">Tipo de batida<select className={field} value={type} onChange={event => setType(event.target.value)}>{Object.entries(punchTypes).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+              <p className="mt-3 text-sm text-slate-600">O tipo de batida é definido automaticamente ao registrar.</p>
               <button className={`${primary} mt-5 w-full sm:w-auto`} disabled={saving} onClick={registerPunch} type="button">Bater ponto de teste</button>
-              {policy?.deviceVerification && <TimeDeviceButton functionsClient={functionsClient} company={company} punchType={type} busy={saving} save={save} onMonth={() => setMonth(currentMonth)} />}
+              {policy?.deviceVerification && <TimeDeviceButton functionsClient={functionsClient} company={company} busy={saving} save={save} onPunch={showPunch} />}
               <p className="mt-2 text-xs text-slate-600">A batida salva usa o horário confirmado pelo servidor.</p>
             </div>
             <form className={`${panel} grid content-start gap-3`} onSubmit={requestAdjustment}>
