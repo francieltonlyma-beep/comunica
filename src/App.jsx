@@ -10730,7 +10730,7 @@ const handleDownload = async (fileUrl, fileName) => {
           {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && (!currentUser.isAdmin || ['hr-pending','hr-file'].includes(mgmtSubTab)) && (
             <div className="space-y-3">
               {!currentUser.isAdmin && confidentialPersonnel && <div className="flex gap-3">
-                <button type="button" onClick={() => setMgmtSubTab('dpi')}>Painel DPI</button>
+                <button type="button" onClick={() => setMgmtSubTab('dpi')}>Painel PDI</button>
                 <button type="button" onClick={() => setMgmtSubTab('hr-pending')}>Acompanhamento do RH</button>
               </div>}
               {currentUser.isAdmin && <button className="text-sm font-semibold text-blue-800" onClick={()=>setMgmtSubTab('employees')}>← Voltar à equipe</button>}
@@ -10742,7 +10742,7 @@ const handleDownload = async (fileUrl, fileName) => {
             </div>
           )}
           {activeTab === 'management' && mgmtSubTab === 'dpi' && !currentUser.isAdmin && confidentialPersonnel && dbUser && activeCompany?.id && (
-            <Suspense fallback={<p>Carregando Painel DPI…</p>}>
+            <Suspense fallback={<p>Carregando Painel PDI…</p>}>
               <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
                 roles={rolesList} employees={employeesList} activities={standaloneActivities}
                 openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey('standalone:' + id); }} />
@@ -10762,7 +10762,7 @@ const handleDownload = async (fileUrl, fileName) => {
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <Activity className="h-3.5 w-3.5 inline-block -mt-0.5" /> Visão da equipe e DPI
+                  <Activity className="h-3.5 w-3.5 inline-block -mt-0.5" /> Visão da equipe e PDI
                 </button>
                 <button
                   type="button"
@@ -10825,7 +10825,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Filter className="h-5 w-5 text-violet-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Para completar</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-slate-500">sem cargo ou setor</span></div>
                   </div>
                   {confidentialPersonnel && dbUser && activeCompany?.id && (
-            <Suspense fallback={<p>Carregando Painel DPI…</p>}>
+            <Suspense fallback={<p>Carregando Painel PDI…</p>}>
               <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
                 roles={rolesList} employees={employeesList} activities={standaloneActivities}
                 openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey('standalone:' + id); }} />
