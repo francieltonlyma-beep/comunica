@@ -1,8 +1,8 @@
-import { bandNames, salaryBands } from './careerReview.js';
+import { adjustSalaryBand, bandNames, salaryBands } from './careerReview.js';
 import { roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import PlrSimulator from './PlrSimulator.jsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Managers, TeamCharts } from './TeamInsights.jsx';
 import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -22,20 +22,42 @@ function parameters(plan) {
   return plan ? Object.fromEntries([...fields.map(([key]) => key), 'overrides'].map(key => [key, plan[key] ?? defaults[key]])) : {};
 }
 
-function SalaryPlan({ plans, role, roles, save }) {
+function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markDirty }) {
   const saved = plans[role.id];
   const [draft, setDraft] = useState(() => ({ ...defaults, ...(saved?.plan || (role.id !== standard.id ? parameters(plans[standard.id]?.plan) : {})) }));
   const [revision, setRevision] = useState(saved?.revision || 0);
   const [status, setStatus] = useState('');
   const [sourceRole, setSourceRole] = useState('');
-  const [showOverrides, setShowOverrides] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [mode, setMode] = useState('');
+  const [original, setOriginal] = useState(saved?.plan);
+  const index = requestedBand;
+  const adjustment = mode && amount !== '' ? adjustSalaryBand(draft, index, Number(amount), mode) : null;
+  const preview = adjustment ? salaryBands(adjustment) : null;
+
+  function editBand(position) {
+    setMode('');
+    setAmount('');
+    selectBand(position);
+  }
+
+  function applyAdjustment() {
+    if (!adjustment) return;
+    markDirty();
+    setDraft(adjustment);
+    editBand(null);
+    setStatus('Ajuste incluído no rascunho. Revise e salve o plano.');
+  }
   const [busy, setBusy] = useState(false);
   const floor = Math.max(Number(draft.cct), Number(draft.minimum), Number(draft.base));
   const bands = salaryBands(draft);
-  const change = (key, value) => setDraft(previous => ({ ...previous, [key]: value }));
+  const change = (key, value) => {
+    markDirty();
+    setDraft(previous => ({ ...previous, [key]: value }));
+  };
   async function submit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || index !== null) return;
     if (floor <= 0 || bands.some(band => !Number.isFinite(band.value) || band.value < floor)) {
       setStatus('Informe uma base positiva e revise valores abaixo da base ou dos pisos.');
       return;
@@ -48,11 +70,18 @@ function SalaryPlan({ plans, role, roles, save }) {
       }
       visited.add(id);
     }
+    const previousBands = original ? salaryBands(original) : [];
+    const differences = bands.flatMap(({label, value}, i) => value === previousBands[i]?.value ? [] :
+      [`${label}: ${previousBands[i] ? money.format(previousBands[i].value) + ' → ' : ''}${money.format(value)}`]);
+    const summary = [`Salvar plano de ${role.name}?`, ...differences, 'O quadro será atualizado. Salários individuais registrados continuam separados.'];
+    if (!window.confirm(summary.join('\n'))) return;
     setBusy(true);
     setStatus('');
     try {
       await save(role.id, revision, draft);
       setRevision(revision + 1);
+      setOriginal(draft);
+      markDirty(false);
       setStatus('Plano salarial salvo.');
     } catch {
       setStatus('Não foi possível salvar. Confira a conexão ou reabra o cargo se outro usuário alterou o plano.');
@@ -64,12 +93,14 @@ function SalaryPlan({ plans, role, roles, save }) {
   function copyParameters(full) {
     const source = plans[sourceRole]?.plan;
     if (!source) return;
+    markDirty();
     const { cct, minimum, base, bandRate, levelRate, score, months } = source;
     setDraft(previous => ({ ...previous, cct, minimum, base, bandRate, levelRate, score, months, ...(full ? { overrides: [...(source.overrides || [])] } : {}) }));
     setStatus('Parâmetros copiados para este rascunho. Confira a matriz antes de salvar.');
   }
 
   return <form onSubmit={submit} className={panel}>
+    <fieldset disabled={busy} className="min-w-0 space-y-4 disabled:opacity-70">
     {templates.length > 0 && <div className="flex flex-wrap items-end gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
       <label className="min-w-48 flex-1 font-semibold">Usar parâmetros de outro cargo
         <select className={field} value={sourceRole} onChange={event => setSourceRole(event.target.value)}>
@@ -86,27 +117,52 @@ function SalaryPlan({ plans, role, roles, save }) {
       <label>Vigência<input required className={field} type="date" value={draft.effective} onChange={event => change('effective', event.target.value)} /></label>
       {fields.map(([key, label]) => <label key={key}>{label}<input className={field} type="number" min="0" max={key === 'score' ? 100 : 10000000} step={key === 'months' ? 1 : 0.01} value={draft[key]} onChange={event => change(key, event.target.value)} /></label>)}
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4">
-      <h4 className="text-base font-bold">Matriz salarial</h4>
-      <button type="button" aria-expanded={showOverrides} onClick={() => setShowOverrides(value => !value)} className="rounded-lg border px-3 py-2 font-semibold">{showOverrides ? 'Fechar edição manual' : 'Ajustar valores manualmente'}</button>
+    <div className="border-t border-slate-200 pt-4">
+      <h4 className="text-base font-bold">Matriz salarial · {role.name}</h4>
+      <p className="text-slate-600">Selecione um valor para ajustar a faixa ou recalcular a progressão.</p>
     </div>
-    <div className="overflow-x-auto"><table className="w-full min-w-[420px] border-separate border-spacing-1 text-left text-sm">
+    <div className="overflow-x-auto"><table className="w-full min-w-[360px] border-separate border-spacing-1 text-left text-sm">
       <thead><tr><th>Nível</th>{['A', 'B', 'C'].map(band => <th key={band} scope="col" className="p-2">Faixa {band}</th>)}</tr></thead>
       <tbody>{['I', 'II', 'III'].map((level, row) => <tr key={level}>
         <th scope="row" className="p-2">{level}</th>
         {bands.slice(row * 3, row * 3 + 3).map(({ label, value, calculated }, column) => {
-          const index = row * 3 + column;
-          const manual = draft.overrides[index] !== '';
-          return <td className="rounded-lg bg-slate-50 p-3" key={label}>
+          const position = row * 3 + column;
+          const manual = (draft.overrides?.[position] ?? '') !== '';
+          return <td key={label}><button type="button" onClick={() => editBand(position)} aria-pressed={index === position}
+            aria-label={`Editar faixa ${label}, ${money.format(value)}`}
+            className="block w-full rounded-lg border border-transparent bg-slate-50 p-2 text-left hover:border-blue-300 aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
             <strong className="block tabular-nums">{money.format(value)}</strong>
-            {manual && <small className="text-blue-700">Ajuste manual</small>}
-            {showOverrides && <input aria-label={`Valor manual da faixa ${label}`} title={`Valor calculado ${money.format(calculated)}`} placeholder={calculated.toFixed(2)} className={field} type="number" min={floor} step="0.01" value={draft.overrides[index]} onChange={event => change('overrides', draft.overrides.map((previous, position) => position === index ? event.target.value : previous))} />}
-          </td>;
+            {manual && <small className="text-blue-700">Pela fórmula: {money.format(calculated)}</small>}
+          </button></td>;
         })}
       </tr>)}</tbody>
     </table></div>
+    {index !== null && <section className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label={`Ajustar faixa ${bandNames[index]}`}>
+      <h5 className="font-bold">Ajustar faixa {bandNames[index]}</h5>
+      <label>Novo valor (R$)<input className={field} type="number" min="0.01" max="10000000" step="0.01" placeholder={bands[index].value.toFixed(2)}
+        value={amount} onChange={event => setAmount(event.target.value)} /></label>
+      {(draft.overrides?.[index] ?? '') !== '' && <button type="button" className="text-blue-800 underline" onClick={() => {
+        setAmount(bands[index].calculated.toFixed(2)); setMode('single');
+      }}>Sugerir valor pela fórmula · {money.format(bands[index].calculated)}</button>}
+      <fieldset className="space-y-2">
+        <legend className="mb-1 font-semibold">Como aplicar o ajuste?</legend>
+        <label className="flex items-start gap-2"><input type="radio" name="salary-adjustment" checked={mode === 'single'} onChange={() => setMode('single')} /> Alterar apenas esta faixa no quadro</label>
+        <label className="flex items-start gap-2"><input type="radio" name="salary-adjustment" checked={mode === 'progression'} onChange={() => setMode('progression')} /> Recalcular todas as faixas com os percentuais do plano</label>
+      </fieldset>
+      {mode === 'progression' && <p className="text-amber-900">O salário-base será recalculado a partir da faixa escolhida. Os ajustes manuais anteriores serão substituídos pela progressão do plano.</p>}
+      {mode && amount !== '' && !preview && <p role="status" className="text-rose-800">Revise o valor. O ajuste precisa manter a base e as faixas dentro dos limites do plano e dos pisos informados.</p>}
+      {preview && <div className="space-y-1">
+        {mode === 'progression' && <p>Salário-base · {money.format(Number(draft.base))} → {money.format(Number(adjustment.base))}</p>}
+        <ul>{preview.map(({ label, value }, i) => value !== bands[i].value && <li key={label}>{label} · {money.format(bands[i].value)} → <strong>{money.format(value)}</strong></li>)}</ul>
+      </div>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={!preview || busy} onClick={applyAdjustment} className="rounded-lg bg-blue-800 px-3 py-2 font-semibold text-white disabled:opacity-50">Aplicar ao rascunho</button>
+        <button type="button" onClick={() => editBand(null)} className="rounded-lg border bg-white px-3 py-2">Cancelar ajuste</button>
+      </div>
+    </section>}
     {bands.some((band, index) => index > 0 && band.value < bands[index - 1].value) && <p role="status" className="font-semibold text-amber-800">A matriz tem valores decrescentes entre faixas ou níveis. Confira antes de salvar.</p>}
-    <button disabled={busy} className="rounded-xl bg-blue-800 px-4 py-3 font-semibold text-white disabled:opacity-50">Salvar plano</button>
+    <button disabled={busy || index !== null} className="rounded-xl bg-blue-800 px-4 py-3 font-semibold text-white disabled:opacity-50">Salvar plano</button>
+    </fieldset>
     <p role="status">{status}</p>
   </form>;
 }
@@ -173,6 +229,29 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(false);
   const [roleId, setRoleId] = useState(initialRoleId);
+  const [requestedBand, setRequestedBand] = useState(null);
+  const [salarySearch, setSalarySearch] = useState('');
+  const [editRequest, setEditRequest] = useState(0);
+  const salaryEditor = useRef(null);
+  const salaryDirty = useRef(false);
+  const salarySaving = useRef(false);
+
+  function markSalaryDirty(value = true) {
+    salaryDirty.current = value;
+  }
+
+  function openSalaryEditor(id, band = null, scroll = true) {
+    if (salarySaving.current) return;
+    if (salaryDirty.current && !window.confirm('Há alterações no rascunho. Descartar e abrir a edição selecionada?')) return;
+    markSalaryDirty(false);
+    setRoleId(id);
+    setRequestedBand(band);
+    setEditRequest(previous => previous + 1);
+    if (scroll) {
+      salaryEditor.current?.scrollIntoView({ block: 'start' });
+      salaryEditor.current?.focus({ preventScroll: true });
+    }
+  }
   const [metric, setMetric] = useState('all');
   const [employee, setEmployee] = useState('');
   const [selectedView, setView] = useState('performance');
@@ -193,6 +272,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     () => setError(true)), [db, company]);
 
   function save(role, revision, plan) {
+    salarySaving.current = true;
     const ref = doc(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans', role);
     return runTransaction(db, async transaction => {
       const snapshot = await transaction.get(ref);
@@ -201,7 +281,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
       const change = { plan, revision: revision + 1, updatedBy: uid, updatedAt: serverTimestamp() };
       transaction.set(ref, change);
       transaction.set(history, change);
-    });
+    }).finally(() => { salarySaving.current = false; });
   }
 
   const roleName = roleNameKey(roles.find(role => role.id === filterRole)?.name);
@@ -281,12 +361,35 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     </section>
     {view === 'management' && <Managers {...{db,company,departments,active,today}} />}
     <section className={view === 'salary' ? 'space-y-3' : 'hidden'}>
-      <div className={panel}><h3 className="text-lg font-bold">Plano de cargos e salários</h3>
-        <label>Cargo<select className={field} value={roleId} onChange={event => setRoleId(event.target.value)}><option value="">Selecione um cargo</option>{choices.map(role => <option key={role.id} value={role.id}>{role.name}{records?.[role.id]?.plan?.active === false ? ' · Inativo' : records?.[role.id] ? ' · Plano salvo' : ''}</option>)}</select></label>
-      </div>
-      {records && <div className={panel}><h3 className="text-lg font-bold">Tabela geral de cargos e salários</h3><div className="overflow-x-auto"><table className="w-full whitespace-nowrap text-right"><thead><tr><th className="text-left">Cargo</th>{bandNames.map(b => <th className="p-2" key={b}>{b}</th>)}</tr></thead><tbody>{ordered.map(role => { const plan = records[role.id]?.plan; const values = plan && salaryBands(plan); return <tr key={role.id} className="border-t"><th className="text-left"><button className="p-2 text-blue-800" onClick={() => setRoleId(role.id)}>{role.name}</button></th>{bandNames.map((b,i) => <td className="p-2" key={b}>{values ? money.format(values[i].value) : '—'}</td>)}</tr>; })}</tbody></table></div></div>}
+      {records && <div className={panel}>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div><h3 className="text-lg font-bold">Tabela geral de cargos e salários</h3><p className="text-slate-600">Clique no cargo para editar o plano, ou em um valor para ajustar a faixa.</p></div>
+          <label>Buscar cargo<input className={field} type="search" value={salarySearch} onChange={event => setSalarySearch(event.target.value)} /></label>
+        </div>
+        <div className="overflow-x-auto"><table className="w-full whitespace-nowrap text-right">
+          <thead><tr><th className="sticky left-0 bg-white p-2 text-left" scope="col">Cargo</th>{bandNames.map(band => <th className="p-2" key={band} scope="col">{band}</th>)}</tr></thead>
+          <tbody>{ordered.filter(role => roleNameKey(role.name).includes(roleNameKey(salarySearch))).map(role => {
+            const plan = records[role.id]?.plan;
+            const values = plan ? salaryBands(plan) : null;
+            return <tr key={role.id} className={`border-t ${roleId === role.id ? 'bg-blue-50' : ''}`}>
+              <th className="sticky left-0 bg-white text-left" scope="row"><button type="button" className="p-2 text-blue-800 hover:underline" onClick={() => openSalaryEditor(role.id)}>{role.name}</button></th>
+              {values ? values.map(({ label, value }, i) => <td key={label}><button type="button" className="rounded-md px-2 py-2 text-blue-900 hover:bg-blue-100 hover:underline"
+                aria-label={`Editar ${role.name}, faixa ${label}: ${money.format(value)}`} onClick={() => openSalaryEditor(role.id, i)}>{money.format(value)}{(plan.overrides?.[i] ?? '') !== '' && <small className="block text-slate-600">Manual</small>}</button></td>)
+                : <td colSpan={bandNames.length} className="text-left"><button type="button" className="p-2 text-blue-800 underline" onClick={() => openSalaryEditor(role.id)}>Configurar plano</button></td>}
+            </tr>;
+          })}</tbody>
+        </table></div>
+        {!ordered.some(role => roleNameKey(role.name).includes(roleNameKey(salarySearch))) && <p>Nenhum cargo encontrado.</p>}
+      </div>}
+      <section ref={salaryEditor} tabIndex={-1} aria-label="Editor do plano salarial" className="grid min-w-0 items-start gap-3 scroll-mt-28 xl:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+        <div className={panel}><h3 className="text-lg font-bold">Editar plano salarial</h3>
+          <PurchaseSelect searchPlaceholder="Buscar cargo" label="Cargo para editar" value={roleId} onChange={id => openSalaryEditor(id, null, false)}
+            placeholder="Selecione um cargo" options={choices.map(role => [role.id, role.name + (records?.[role.id]?.plan?.active === false ? ' · Inativo' : '')])} />
+        </div>
+        {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : currentRole &&
+          <SalaryPlan key={`${roleId}:${editRequest}`} role={currentRole} roles={choices} plans={records} save={save} requestedBand={requestedBand} selectBand={setRequestedBand} markDirty={markSalaryDirty} />}
+      </section>
       {records && view === 'salary' && <Compensation {...{db,company,uid,roles,records,today}} employees={active} />}
-      {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : currentRole && <SalaryPlan key={roleId} role={currentRole} roles={choices} plans={records} save={save} />}
     </section>
   </section>;
 }

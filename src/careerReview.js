@@ -1,11 +1,33 @@
 export const bandNames = ['I · A', 'I · B', 'I · C', 'II · A', 'II · B', 'II · C', 'III · A', 'III · B', 'III · C'];
 
+function salaryFactor(draft, index) {
+  return (1 + Number(draft.levelRate) / 100) ** Math.floor(index / 3) * (1 + Number(draft.bandRate) / 100) ** (index % 3);
+}
+
 export function salaryBands(draft) {
   const floor = Math.max(Number(draft.cct), Number(draft.minimum), Number(draft.base));
   return bandNames.map((label, index) => {
-    const calculated = Math.round(floor * (1 + Number(draft.levelRate) / 100) ** Math.floor(index / 3) * (1 + Number(draft.bandRate) / 100) ** (index % 3) * 100) / 100;
+    const calculated = Math.round(floor * salaryFactor(draft, index) * 100) / 100;
     return { label, calculated, value: (draft.overrides?.[index] ?? '') === '' ? calculated : Number(draft.overrides[index]) };
   });
+}
+
+export function adjustSalaryBand(draft, index, amount, mode) {
+  if (!Number.isInteger(index) || index < 0 || index >= bandNames.length
+    || !['single', 'progression'].includes(mode) || !Number.isFinite(amount) || amount <= 0 || amount > 10000000) return null;
+  amount = Math.round(amount * 100) / 100;
+  if (!amount) return null;
+  const overrides = bandNames.map((_, position) => String(draft.overrides?.[position] ?? ''));
+  if (mode === 'single') {
+    if (amount < salaryBands(draft)[0].calculated) return null;
+    overrides[index] = salaryBands(draft)[index].calculated === amount ? '' : String(amount);
+    return { ...draft, overrides };
+  }
+  const base = Math.round(amount / salaryFactor(draft, index) * 100) / 100;
+  if (!(base > 0 && base >= Math.max(Number(draft.cct), Number(draft.minimum)))) return null;
+  const next = { ...draft, base: String(base), overrides: bandNames.map(() => '') };
+  if (salaryBands(next)[index].calculated !== amount) next.overrides[index] = String(amount);
+  return next;
 }
 
 const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' });
