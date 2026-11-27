@@ -20,3 +20,15 @@ export function isCareerDeadlineAvailable(deadline, today = careerDateInBrazil()
 export function isCareerVacancyOpen(vacancy, today = careerDateInBrazil()) {
   return vacancy?.status === 'published' && isCareerDeadlineAvailable(vacancy.closesAt, today);
 }
+
+export const CAREER_EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function careerVacancyEditDeadline(vacancy) {
+  const publishedAt = vacancy?.publishedAt?.toMillis?.() ?? vacancy?.createdAt;
+  return Number.isSafeInteger(publishedAt) && publishedAt > 0 ? publishedAt + CAREER_EDIT_WINDOW_MS : null;
+}
+
+export function canEditCareerVacancy(vacancy, now = Date.now()) {
+  const deadline = careerVacancyEditDeadline(vacancy);
+  return deadline !== null && now >= deadline - CAREER_EDIT_WINDOW_MS && now < deadline;
+}

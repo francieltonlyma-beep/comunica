@@ -62,7 +62,7 @@ import { careerFitScore, matchesCareerStage } from './careerTriage.js';
 import { CareerVacancyDetailEditor, CareerVacancyLibrary, CareerVacancyPublishedDetails } from './CareerVacancyDetails.jsx';
 import CareerVacancyHistory from './CareerVacancyHistory.jsx';
 import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
-import { careerDateInBrazil, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
+import { canEditCareerVacancy, careerDateInBrazil, careerVacancyEditDeadline, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
 import { isNewActivityRecipient, isServiceRequestRecipient, sectorMembership, NOTIFICATION_TABS, notificationEnabled, notificationTab } from '../functions/src/notificationPreferences.mjs';
 import { canEditServiceActivity } from './serviceActivityAccess.js';
 import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyModel.mjs';
@@ -399,6 +399,8 @@ const POLL_QUESTION_TYPES = {
 };
 const createPollQuestion = (type = 'single') => ({ type, question: '', options: [...(POLL_QUESTION_TYPES[type]?.options || POLL_QUESTION_TYPES.single.options)] });
 const hashSurveyRespondent = async value => { const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value))); return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''); };
+const vacancyEditorDate = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
+const vacancyEditExpiredMessage = 'O prazo de 7 dias corridos para editar esta vaga terminou.';
 const EMPTY_VACANCY = { companyId: '', roleId: '', title: '', description: '', location: '', mode: 'Presencial', skills: '', quiz: [], closesAt: '', details: {} };
 const EMPTY_CAREER_LIBRARY = { status: 'loading', items: [] };
 const CAREER_LIBRARY_COLLECTION = 'careerVacancyLibrary';
@@ -3517,6 +3519,10 @@ const getStatusEmTempoReal = (colaborador) => {
 
   const editPublishedVacancy = vacancy => {
     if (!activeCompany?.id || vacancySaveLock.current) return;
+    if (!canEditCareerVacancy(vacancy)) {
+      triggerNotification(vacancyEditExpiredMessage, 'error');
+      return;
+    }
     setNewVacancy({
       ...EMPTY_VACANCY, ...vacancy, companyId: activeCompany.id, editId: vacancy.id,
       skills: (vacancy.skills || []).join(', '), details: vacancy.details || {}, originalDeadline: vacancy.closesAt || '', closesAt: vacancy.closesAt || '',
@@ -3539,7 +3545,11 @@ const getStatusEmTempoReal = (colaborador) => {
         if (!before || (before.changeId || '') !== (vacancy.changeId || '') || before.status !== vacancy.status) {
           throw new Error('vacancy-changed');
         }
-        if (Object.keys(fields).every(key => JSON.stringify(before[key]) === JSON.stringify(fields[key]))) return;
+        const changed = Object.keys(fields).filter(key => JSON.stringify(before[key]) !== JSON.stringify(fields[key]));
+        if (!changed.length) return;
+        if (changed.some(key => !['status', 'archivedAt', 'archivedBy'].includes(key)) && !canEditCareerVacancy(before)) {
+          throw new Error('vacancy-edit-expired');
+        }
         const update = { ...fields, changeId: entry.id, updatedAt: Date.now() };
         transaction.update(ref, update);
         transaction.set(entry, {
@@ -3549,7 +3559,8 @@ const getStatusEmTempoReal = (colaborador) => {
       });
       return true;
     } catch (error) {
-      triggerNotification(error.message === 'vacancy-changed' ? 'A vaga foi alterada. Reabra a edição para consultar a versão atual.' : 'Não foi possível salvar a alteração e o histórico.', 'error');
+      triggerNotification(error.message === 'vacancy-changed' ? 'A vaga foi alterada. Reabra a edição para consultar a versão atual.'
+        : error.message === 'vacancy-edit-expired' ? vacancyEditExpiredMessage : 'Não foi possível salvar a alteração e o histórico.', 'error');
       return false;
     }
   };
@@ -3592,7 +3603,7 @@ const getStatusEmTempoReal = (colaborador) => {
       const { id: draftId, status, createdAt, authorId, ...fields } = vacancy;
       const saved = newVacancy.editId
         ? await saveVacancyChange({ ...newVacancy, id: newVacancy.editId }, fields)
-        : await saveDoc('vacancies', draftId, { ...fields, id: draftId, status, createdAt, authorId });
+        : await saveDoc('vacancies', draftId, { ...fields, id: draftId, status, createdAt, authorId, publishedAt: serverTimestamp() });
       if (!saved) return;
       setNewVacancy(EMPTY_VACANCY);
       setShowVacancyModal(false);
@@ -3604,6 +3615,10 @@ const getStatusEmTempoReal = (colaborador) => {
   };
 
   const editVacancyDeadline = (vacancy, reopen = false) => {
+    if (!canEditCareerVacancy(vacancy)) {
+      triggerNotification(vacancyEditExpiredMessage, 'error');
+      return;
+    }
     setVacancyDeadlineDraft({ id: vacancy.id, companyId: activeCompany?.id, deadline: vacancy.closesAt || '', reopen, changeId: vacancy.changeId, status: vacancy.status });
   };
 
@@ -10660,6 +10675,8 @@ const handleDownload = async (fileUrl, fileName) => {
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{[...vacanciesList].filter(vacancy => showArchivedVacancies || vacancy.status !== 'archived').sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).map(vacancy => {
                 const open = isCareerVacancyOpen(vacancy, careerToday);
                 const expired = vacancy.status === 'published' && !open;
+                const canEdit = canEditCareerVacancy(vacancy);
+                const editDeadline = careerVacancyEditDeadline(vacancy);
                 const editing = vacancyDeadlineDraft?.id === vacancy.id && vacancyDeadlineDraft.companyId === activeCompany?.id;
                 return <div key={vacancy.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-2"><div><h4 className="text-sm font-extrabold text-slate-900">{vacancy.title}</h4><span className="text-[10px] text-slate-500">{vacancy.location || 'Local não informado'} · {vacancy.mode}</span></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${open ? 'bg-emerald-50 text-emerald-700' : vacancy.status === 'archived' ? 'bg-slate-200 text-slate-600' : 'bg-amber-50 text-amber-700'}`}>{open ? 'Publicada no link' : expired ? 'Prazo encerrado' : vacancy.status === 'archived' ? 'Arquivada' : 'Encerrada'}</span></div><p className="mt-3 whitespace-pre-wrap text-xs text-slate-600">{vacancy.description}</p><CareerVacancyPublishedDetails details={vacancy.details} /><p className="mt-3 text-[10px] text-slate-500">Competências: {(vacancy.skills || []).join(', ') || 'Não especificadas'} · Quiz: {(vacancy.quiz || []).length} perguntas</p><p className="mt-2 text-xs font-semibold text-slate-600">{/^\d{4}-\d{2}-\d{2}$/.test(vacancy.closesAt || '') ? `Inscrições até ${vacancy.closesAt.split('-').reverse().join('/')}` : vacancy.closesAt ? 'Prazo inválido' : 'Sem prazo de inscrição'}</p>
                   {editing && <form onSubmit={saveVacancyDeadline} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
@@ -10669,7 +10686,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <button type="submit" disabled={savingVacancyDeadline} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{vacancyDeadlineDraft.reopen ? 'Salvar e reabrir' : 'Salvar prazo'}</button>
                     <button type="button" disabled={savingVacancyDeadline} onClick={() => setVacancyDeadlineDraft(null)} className="px-2 py-2 text-xs font-bold text-slate-600">Cancelar</button>
                   </form>}
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs"><span>{careerApplications.filter(item => item.vacancyId === vacancy.id).length} candidaturas</span><div className="flex flex-wrap gap-3">{vacancy.status === 'published' && !editing && <button type="button" onClick={() => editPublishedVacancy(vacancy)} className="font-bold text-blue-800 hover:underline">Editar vaga</button>}{vacancy.status !== 'archived' && !editing && <button type="button" onClick={() => editVacancyDeadline(vacancy)} className="font-bold text-blue-700">Editar prazo</button>}<button type="button" onClick={() => handleCloseVacancy(vacancy)} className="font-bold text-blue-700">{vacancy.status === 'published' ? 'Encerrar vaga' : 'Reabrir vaga'}</button>{vacancy.status !== 'published' && <button type="button" onClick={() => handleArchiveVacancy(vacancy)} className="font-bold text-slate-600">{vacancy.status === 'archived' ? 'Desarquivar' : 'Arquivar'}</button>}</div></div><CareerVacancyHistory key={activeCompany.id + vacancy.id} vacancyRef={doc(getTenantCollection('vacancies'), vacancy.id)} revision={vacancy.changeId || ''} /></div>;
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs"><span>{careerApplications.filter(item => item.vacancyId === vacancy.id).length} candidaturas</span><div className="flex flex-wrap gap-3">{canEdit && vacancy.status === 'published' && !editing && <button type="button" onClick={() => editPublishedVacancy(vacancy)} className="font-bold text-blue-800 hover:underline">Editar vaga</button>}{canEdit && vacancy.status !== 'archived' && !editing && <button type="button" onClick={() => editVacancyDeadline(vacancy)} className="font-bold text-blue-700">Editar prazo</button>}<button type="button" onClick={() => handleCloseVacancy(vacancy)} className="font-bold text-blue-700">{vacancy.status === 'published' ? 'Encerrar vaga' : 'Reabrir vaga'}</button>{vacancy.status !== 'published' && <button type="button" onClick={() => handleArchiveVacancy(vacancy)} className="font-bold text-slate-600">{vacancy.status === 'archived' ? 'Desarquivar' : 'Arquivar'}</button>}</div></div>{vacancy.status === 'published' && <p className="mt-2 text-xs text-slate-600">{canEdit ? `Edição até ${vacancyEditorDate.format(editDeadline)}` : 'Prazo de edição encerrado'}</p>}<CareerVacancyHistory key={activeCompany.id + vacancy.id} vacancyRef={doc(getTenantCollection('vacancies'), vacancy.id)} revision={vacancy.changeId || ''} /></div>;
               })}</div>
               {vacanciesList.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">Nenhuma vaga publicada ainda.</div>}
               <section className="overflow-hidden rounded-[1.5rem] border border-violet-200 bg-gradient-to-br from-violet-950 via-indigo-950 to-blue-950 text-white shadow-lg shadow-indigo-950/10"><div className="grid gap-5 p-5 lg:grid-cols-[0.8fr_1.2fr]"><div><span className="inline-flex rounded-full border border-violet-200/20 bg-white/10 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-violet-100">Cadastro permanente</span><h4 className="mt-3 text-lg font-black">Banco de Talentos · Futuras oportunidades</h4><p className="mt-2 text-xs leading-5 text-indigo-100/75">Currículos enviados para cargos divulgados no Trabalhe Conosco, sem vínculo com uma vaga aberta. Esses perfis ficam separados dos processos seletivos ativos e seguem a retenção de 90 dias.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => { setCareerSourceFilter('talent_pool'); setCareerVacancyFilter('all'); setCareerViewMode('list'); }} className="rounded-xl bg-white px-4 py-2.5 text-xs font-extrabold text-indigo-950">Ver todos os currículos</button><button type="button" onClick={() => { setCareerSourceFilter('open'); setCareerVacancyFilter('all'); }} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white">Ver somente vagas abertas</button></div></div><div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="flex items-center justify-between"><strong className="text-xs">Currículos por cargo</strong><span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold">{talentPoolApplications.length} no total</span></div>{talentPoolApplicationsByRole.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{talentPoolApplicationsByRole.map(role => <button key={role.id} type="button" onClick={() => { setCareerSourceFilter('talent_pool'); setCareerVacancyFilter(role.id); setCareerViewMode('list'); }} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/10 p-3 text-left transition hover:bg-white/15"><span className="min-w-0 truncate text-xs font-bold">{role.title}</span><span className="grid h-7 min-w-7 place-items-center rounded-full bg-violet-300 px-2 text-[10px] font-black text-violet-950">{role.count}</span></button>)}</div> : <div className="mt-3 rounded-xl border border-dashed border-white/20 p-5 text-center text-xs text-indigo-100/70">Ainda não há currículos cadastrados para futuras oportunidades.</div>}</div></div></section>

@@ -13,11 +13,23 @@ const env = await initializeTestEnvironment({
 const company = 'career-history';
 const base = `artifacts/comunica-salvador/public/data/companies/${company}`;
 const path = 'vacancies/v1';
-const before = { id: 'v1', title: 'Auxiliar', status: 'published' };
+const before = { id: 'v1', title: 'Auxiliar', status: 'published', createdAt: Date.now() - 3600000 };
 const after = { ...before, title: 'Auxiliar de loja', changeId: 'rev1' };
+const expiredPath = 'vacancies/expired';
+const oldVacancy = { ...before, id: 'expired', createdAt: Date.now() - 8 * 86400000 };
 const client = (actor, companyId = company) => env.authenticatedContext(actor, { companyId }).firestore();
 const ref = (db, suffix) => doc(db, base + '/' + suffix);
 const entry = (actorId, previous = before) => ({ before: previous, after, actorId, actorName: 'Recrutador', changedAt: serverTimestamp() });
+
+function changeExpired(db, fields) {
+  const batch = writeBatch(db);
+  const next = { ...oldVacancy, ...fields, changeId: 'expired-revision' };
+  batch.update(ref(db, expiredPath), next);
+  batch.set(ref(db, expiredPath + '/history/expired-revision'), {
+    ...entry('recruiter'), before: oldVacancy, after: next,
+  });
+  return batch.commit();
+}
 
 function change(db, actor = 'recruiter', previous = before) {
   const batch = writeBatch(db);
@@ -30,7 +42,9 @@ try {
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
     await Promise.all([
+      setDoc(doc(db, base), {}),
       setDoc(ref(db, path), before),
+      setDoc(ref(db, expiredPath), oldVacancy),
       setDoc(ref(db, 'users/recruiter'), { role: 'RH', name: 'Recrutador' }),
       setDoc(ref(db, 'users/employee'), { role: 'Estoquista' }),
     ]);
@@ -42,6 +56,12 @@ try {
   await assertFails(change(rh, 'employee'));
   await assertFails(setDoc(ref(rh, path + '/history/rev1'), entry('recruiter')));
   await assertFails(change(employee, 'employee'));
+  await assertSucceeds(setDoc(ref(rh, 'vacancies/new'), { ...before, publishedAt: serverTimestamp() }));
+  await assertFails(changeExpired(rh, { title: 'Prazo encerrado' }));
+  await assertFails(changeExpired(rh, { closesAt: '2027-01-20' }));
+  await assertFails(changeExpired(rh, { createdAt: Date.now() }));
+  await assertSucceeds(changeExpired(rh, { status: 'closed' }));
+  await assertSucceeds(getDoc(ref(rh, expiredPath + '/history/expired-revision')));
   await assertSucceeds(change(rh));
   await assertSucceeds(getDoc(ref(rh, path + '/history/rev1')));
   await assertFails(getDoc(ref(employee, path + '/history/rev1')));
