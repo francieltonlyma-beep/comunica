@@ -1,3 +1,4 @@
+import CareerReview from './CareerReview.jsx';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -422,6 +423,8 @@ export default function PersonnelWorkspace({
   go,
   employeeId,
   selectEmployee,
+  roles = [],
+  reviewActivities,
 }) {
   const common = usePersonnelRows(db, company, 'hrCases');
   const restricted = usePersonnelRows(db, company, confidential ? 'hrConfidential' : '');
@@ -515,6 +518,7 @@ export default function PersonnelWorkspace({
       ) : (
         <>
           {view === 'file' ? (
+            <>
             <div className={panel}>
               <Field label="Colaborador">
                 <PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador da ficha" value={employeeId} onChange={selectedId => openFile(selectedId)} placeholder="Selecione um colaborador" options={[...options.map(p => [p.id, p.name])]} />
@@ -536,6 +540,9 @@ export default function PersonnelWorkspace({
                 </div>
               )}
             </div>
+            {person && confidential && <CareerReview key={JSON.stringify([company, person.id])}
+              db={db} company={company} person={person} roles={roles} activities={reviewActivities} today={today} />}
+            </>
           ) : (
             <div className={panel}>
               <div className="flex flex-wrap gap-2">

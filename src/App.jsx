@@ -10875,6 +10875,7 @@ const handleDownload = async (fileUrl, fileName) => {
                 key={JSON.stringify([activeCompany.id,dbUser.uid,confidentialPersonnel])}
                 db={db} company={activeCompany.id} uid={dbUser.uid} employees={employeesList} departments={departmentsList}
                 confidential={confidentialPersonnel} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee}
+                roles={rolesList} reviewActivities={currentUser.isAdmin ? serviceActivityRows.map(row => row.activity) : undefined}
                 view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>}
             </div>
           )}

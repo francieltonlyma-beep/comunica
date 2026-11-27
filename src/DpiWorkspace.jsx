@@ -1,3 +1,4 @@
+import { bandNames, salaryBands } from './careerReview.js';
 import { roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useState } from 'react';
@@ -6,7 +7,6 @@ import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } 
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' });
-const bandNames = ['I · A', 'I · B', 'I · C', 'II · A', 'II · B', 'II · C', 'III · A', 'III · B', 'III · C'];
 const defaults = { active: true, supervisor: '', effective: '', cct: '', minimum: '', base: '', bandRate: '', levelRate: '', score: '', months: '', overrides: Array(9).fill('') };
 const fields = [
   ['cct', 'Piso da CCT'], ['minimum', 'Salário mínimo de referência'], ['base', 'Salário-base da empresa'],
@@ -15,14 +15,6 @@ const fields = [
 ];
 const field = 'block w-full rounded-xl border border-slate-300 bg-white p-2.5 text-sm';
 const panel = 'space-y-4 rounded-2xl border border-slate-200 bg-white p-5';
-
-function salaryBands(draft) {
-  const floor = Math.max(Number(draft.cct), Number(draft.minimum), Number(draft.base));
-  return bandNames.map((label, index) => {
-    const calculated = Math.round(floor * (1 + Number(draft.levelRate) / 100) ** Math.floor(index / 3) * (1 + Number(draft.bandRate) / 100) ** (index % 3) * 100) / 100;
-    return { label, calculated, value: (draft.overrides?.[index] ?? '') === '' ? calculated : Number(draft.overrides[index]) };
-  });
-}
 
 const standard = { id: 'pdi-company-standard-v1', name: 'Padrão da empresa' };
 function parameters(plan) {
