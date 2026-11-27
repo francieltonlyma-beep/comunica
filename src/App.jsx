@@ -9251,7 +9251,6 @@ const notificationsToShow = [...notificationItems]
   const visibleNavigationSections = (isIntegraWorkspace ? buildIntegraNavigation(fleetManager) : navigationSections)
     .map(section => ({ ...section, items: section.items.filter(item => (item.action && tabReleased(item.id)) || canOpenModule(item.id)) }))
     .filter(section => section.items.length);
-  const activeNavigationItem = visibleNavigationSections.flatMap(section => section.items).find(item => item.id === activeTab);
 
   const workspaceToolbar = (
     <div className={`flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:flex-row sm:items-center`}>
@@ -9315,7 +9314,7 @@ const notificationsToShow = [...notificationItems]
                  className="h-full w-full object-contain"
                />
             </div>
-            <div className="hidden min-w-0 sm:block"><div className="flex items-center gap-2"><h1 className="text-base font-black tracking-tight text-slate-900">{isIntegraWorkspace ? 'Comunica Integra' : 'Comunica Gestão'}</h1><span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-cyan-800">Plataforma</span></div><p className="mt-0.5 max-w-52 truncate text-[9px] font-semibold text-slate-500">{activeCompany?.name || 'Comunicação e gestão corporativa'}</p>
+            <div className="hidden min-w-0 sm:block"><h1 className="text-base font-black tracking-tight text-slate-900">Comunica</h1><p className="mt-0.5 max-w-52 truncate text-[9px] font-semibold text-slate-500">{activeCompany?.name || 'Comunicação e gestão corporativa'}</p>
             </div>
           </button>
 
@@ -9324,7 +9323,6 @@ const notificationsToShow = [...notificationItems]
             {firstIntegraTab && <button type="button" title="Comunica Integra" onPointerEnter={preloadIntegra} onFocus={preloadIntegra} aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab(firstIntegraTab); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
           </nav>
 
-          <div className="hidden min-w-0 flex-1 justify-center px-2 xl:flex"><div className="flex min-w-0 max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
 
           <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-0.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:ml-auto sm:max-w-full sm:gap-2">
             <button
@@ -9354,9 +9352,8 @@ const notificationsToShow = [...notificationItems]
               <button type="button" onClick={() => setIsDarkMode(value => !value)} className="rounded-lg p-1.5 sm:p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-700" title={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'} aria-label={isDarkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}>
                 {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
-              {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-1.5 sm:p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
               {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-1.5 sm:p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
-              <div className="relative">
+              {isIntegraWorkspace && <div className="relative">
                 <button
                   onClick={() => setActiveTab('inbox')}
                   className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
@@ -9369,7 +9366,7 @@ const notificationsToShow = [...notificationItems]
                     </span>
                   )}
                 </button>
-              </div>
+              </div>}
               {activeTab === 'inbox' && (
                 <button
                   type="button"
@@ -9424,6 +9421,7 @@ const notificationsToShow = [...notificationItems]
       </div>
 
       <div className="max-h-[calc(100dvh-10rem)] overflow-y-auto overscroll-contain sm:max-h-80">
+        {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="flex w-full items-center gap-2 border-b border-blue-100 bg-blue-50 px-3 py-2.5 text-left text-xs font-semibold text-blue-800 transition hover:bg-blue-100" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4 shrink-0" /> Ativar notificações neste dispositivo</button>}
         {showNotificationPreferences ? (
           <div className="space-y-2 p-3">
             {availableNotificationTabs.map(([tab, label]) => (
@@ -9526,24 +9524,20 @@ const notificationsToShow = [...notificationItems]
 
         {/* 2. BARRA LATERAL ESQUERDA (O Menu Correto) */}
         <aside id="comunica-main-menu" data-tour="platform-menu" className={`${sidebarCollapsed ? 'sm:w-20' : 'sm:w-72'} h-full w-full overflow-y-auto pb-24 transition-all duration-300 sm:sticky sm:top-20 sm:max-h-[calc(100vh-6rem)] ${
-          mobileMenuOpen ? 'fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-slate-100 p-5 pt-[calc(env(safe-area-inset-top)+5rem)] pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))]' : 'hidden sm:block'
+          mobileMenuOpen ? 'fixed inset-0 z-50 h-[100dvh] overflow-y-auto bg-slate-100 p-5 pt-[calc(env(safe-area-inset-top)+1rem)] pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))]' : 'hidden sm:block'
         }`}>
                     {/* Botão fechar no mobile */}
           {mobileMenuOpen && (
-            <div className="flex justify-end mb-6 sm:hidden">
-              <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600">
+            <div className="mb-2 flex justify-end sm:hidden">
+              <button type="button" aria-label="Fechar menu principal" onClick={() => setMobileMenuOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600">
                 <X className="h-6 w-6" />
               </button>
             </div>
           )}
 
-          <div className={`mb-3 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-800 text-white shadow-lg ${sidebarCollapsed ? 'p-2' : 'p-4'}`}>
-            <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}><div className="relative shrink-0"><img src={currentUser.avatar || DEFAULT_AVATAR} alt="Foto de perfil" className={`${sidebarCollapsed ? 'h-10 w-10' : 'h-12 w-12'} rounded-2xl border-2 border-white/40 object-cover shadow`} /><span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-blue-950 bg-emerald-400" /></div>{!sidebarCollapsed && <div className="min-w-0"><h4 className="truncate text-sm font-extrabold">{currentUser.name}</h4><p className="mt-0.5 truncate text-[10px] font-semibold text-blue-100/70">{currentUser.role}</p><span className="mt-2 inline-flex rounded-full bg-white/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-cyan-100">Sessão ativa</span></div>}</div>
-          </div>
-
           <nav aria-label="Menu principal" onKeyDown={handleMainNavigationKeys} className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
-            <div className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-2 pt-1'}`}>{!sidebarCollapsed && <div><span className="block text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Navegação</span><strong className="text-xs text-slate-800">Menu principal</strong><span className="hidden text-[9px] text-slate-500 sm:block">↑ ↓ para navegar · Enter para abrir</span></div>}<button type="button" onClick={() => setSidebarCollapsed(previous => !previous)} className="hidden rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:block" title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'} aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}>{sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</button></div>
-            <div className="space-y-3">{visibleNavigationSections.map(section => <section key={section.label}>{!sidebarCollapsed && <span className="mb-1 block px-3 text-[8px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{section.label}</span>}<div className="space-y-1">{section.items.map(item => { const Icon = item.icon; const active = activeTab === item.id; return <button key={item.id} type="button" data-navigation-item aria-label={item.label} aria-current={active ? 'page' : undefined} title={sidebarCollapsed ? item.label : undefined} onClick={() => { if (item.action) item.action(); else setActiveTab(item.id); setMobileMenuOpen(false); }} className={`group relative flex w-full items-center rounded-2xl transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3 py-2.5 text-left'} ${active ? `bg-gradient-to-r ${item.activeClass} text-white shadow-md` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><span className={`grid shrink-0 place-items-center rounded-xl transition ${sidebarCollapsed ? 'h-9 w-9' : 'h-9 w-9'} ${active ? 'bg-white/15 text-white' : `bg-slate-100 ${item.accent} group-hover:bg-white group-hover:shadow-sm`}`}><Icon className="h-4.5 w-4.5" /></span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-extrabold">{item.label}</strong><span className={`mt-0.5 block truncate text-[8px] font-medium ${active ? 'text-white/65' : 'text-slate-400'}`}>{item.description}</span></span>}{item.badge ? <span className={`${sidebarCollapsed ? 'absolute right-1 top-1' : ''} grid min-h-5 min-w-5 place-items-center rounded-full px-1 text-[8px] font-extrabold ${active ? 'bg-white text-slate-900' : 'bg-rose-100 text-rose-700'}`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}{active && !sidebarCollapsed && <ChevronRight className="h-3.5 w-3.5 text-white/70" />}</button>; })}</div></section>)}</div>
+            <div className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-2 pt-1'}`}>{!sidebarCollapsed && <strong className="text-xs text-slate-800">Menu principal</strong>}<button type="button" onClick={() => setSidebarCollapsed(previous => !previous)} className="hidden rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:block" title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'} aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}>{sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</button></div>
+            <div className="space-y-3">{visibleNavigationSections.map(section => <section key={section.label}>{!sidebarCollapsed && <span className="mb-1 block px-3 text-[8px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{section.label}</span>}<div className="space-y-1">{section.items.map(item => { const Icon = item.icon; const active = activeTab === item.id; return <button key={item.id} type="button" data-navigation-item aria-label={item.label} aria-current={active ? 'page' : undefined} title={sidebarCollapsed ? item.label : undefined} onClick={() => { if (item.action) item.action(); else setActiveTab(item.id); setMobileMenuOpen(false); }} className={`group relative flex w-full items-center rounded-2xl transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${sidebarCollapsed ? 'justify-center p-2' : 'gap-2.5 px-2.5 py-1.5 text-left'} ${active ? `bg-gradient-to-r ${item.activeClass} text-white shadow-md` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><span className={`grid shrink-0 place-items-center rounded-xl transition h-8 w-8 ${active ? 'bg-white/15 text-white' : `bg-slate-100 ${item.accent} group-hover:bg-white group-hover:shadow-sm`}`}><Icon className="h-4.5 w-4.5" /></span>{!sidebarCollapsed && <span className="min-w-0 flex-1"><strong className="block truncate text-[11px] font-extrabold">{item.label}</strong><span className={`mt-0.5 block truncate text-[8px] font-medium ${active ? 'text-white/65' : 'text-slate-400'}`}>{item.description}</span></span>}{item.badge ? <span className={`${sidebarCollapsed ? 'absolute right-1 top-1' : ''} grid min-h-5 min-w-5 place-items-center rounded-full px-1 text-[8px] font-extrabold ${active ? 'bg-white text-slate-900' : 'bg-rose-100 text-rose-700'}`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}{active && !sidebarCollapsed && <ChevronRight className="h-3.5 w-3.5 text-white/70" />}</button>; })}</div></section>)}</div>
           </nav>
 
           {!isIntegraWorkspace && <div className={`relative mt-3 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-cyan-50 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}><div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-cyan-300/20 blur-xl" />{sidebarCollapsed ? <button type="button" onClick={handleGenerateWeeklySummary} title="Gerar boletim semanal" className="relative grid h-11 w-full place-items-center rounded-2xl bg-blue-900 text-white"><Sparkles className="h-4.5 w-4.5" /></button> : <div className="relative"><span className="flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-wider text-blue-700"><Sparkles className="h-4 w-4" /> Inteligência do Comunica</span><h4 className="mt-2 text-sm font-extrabold text-slate-900">Boletim semanal</h4><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Compile os principais acontecimentos da empresa.</p><button onClick={handleGenerateWeeklySummary} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-900 px-3 py-2.5 text-[10px] font-extrabold text-white shadow transition hover:bg-blue-800" type="button"><Sparkles className="h-4 w-4" /> Gerar boletim</button></div>}</div>}
