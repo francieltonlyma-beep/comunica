@@ -9306,9 +9306,7 @@ const notificationsToShow = [...notificationItems]
 
 <header className="sticky top-0 z-40 border-b border-blue-100 bg-gradient-to-r from-white via-white to-cyan-50/80 pt-[env(safe-area-inset-top)] text-slate-800 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur">
 
-  {/* Aqui continua o restante do seu conteúdo do header */}
-
-        <div className="relative z-10 mx-auto grid min-h-[4.5rem] w-full max-w-7xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-3 pb-2 sm:flex sm:flex-wrap sm:justify-between sm:px-4 sm:py-1 lg:flex-nowrap">
+        <div className="relative z-10 mx-auto grid min-h-[4.5rem] w-full max-w-7xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-3 pb-2 sm:flex sm:flex-wrap sm:justify-between sm:gap-x-3 sm:gap-y-2 sm:px-4 sm:py-2">
           <button type="button" onClick={() => setActiveTab(isIntegraWorkspace ? 'integra' : 'dashboard')} className="group col-start-1 row-start-1 flex min-w-0 items-center gap-3 rounded-2xl p-1 text-left transition hover:bg-white/70">
             <div className="flex h-10 w-11 sm:h-14 sm:w-[4.75rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-blue-100 bg-white p-1 shadow-sm transition group-hover:shadow-md select-none">
                <img
@@ -9326,9 +9324,9 @@ const notificationsToShow = [...notificationItems]
             {firstIntegraTab && <button type="button" title="Comunica Integra" onPointerEnter={preloadIntegra} onFocus={preloadIntegra} aria-current={isIntegraWorkspace ? 'page' : undefined} onClick={() => { setActiveTab(firstIntegraTab); setMobileMenuOpen(false); }} className={`min-h-8 min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs sm:flex-none font-extrabold transition sm:px-3 sm:text-xs ${isIntegraWorkspace ? 'border-teal-700 bg-teal-950 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'}`}>Integra</button>}
           </nav>
 
-          <div className="hidden min-w-0 flex-1 justify-center px-4 lg:flex"><div className="flex max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
+          <div className="hidden min-w-0 flex-1 justify-center px-2 xl:flex"><div className="flex min-w-0 max-w-sm items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm"><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full bg-gradient-to-br ${activeNavigationItem?.activeClass || 'from-slate-800 to-blue-800'} text-white`}>{activeNavigationItem ? React.createElement(activeNavigationItem.icon, { className: 'h-3.5 w-3.5' }) : <Layers className="h-3.5 w-3.5" />}</span><div className="min-w-0"><span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Você está em</span><strong className="block truncate text-[10px] text-slate-800">{activeNavigationItem?.label || 'Comunica'}</strong></div></div></div>
 
-          <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-0.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:gap-2">
+          <div className="col-start-2 row-start-1 flex min-w-0 items-center justify-end gap-0.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1 shadow-sm sm:ml-auto sm:max-w-full sm:gap-2">
             <button
               onClick={() => {
                 setMyProfileForm({
@@ -9340,13 +9338,13 @@ const notificationsToShow = [...notificationItems]
                 setShowPinFieldsInProfile(false);
                 setShowProfileModal(true);
               }}
-              className="flex items-center gap-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
+              className="flex min-w-0 items-center gap-2 rounded-xl p-1 text-left transition-all hover:bg-blue-50"
               title="Meu Perfil de Colaborador"
             >
-              <span className="relative"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-7 w-7 rounded-xl sm:h-9 sm:w-9 border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
-              <div className="hidden max-w-44 md:block">
-                <span className="text-xs font-bold block leading-tight text-slate-800">{currentUser.name}</span>
-                <span className="text-[9px] uppercase font-bold text-slate-500 block tracking-wider">
+              <span className="relative shrink-0"><img src={currentUser.avatar || DEFAULT_AVATAR} className="h-7 w-7 rounded-xl sm:h-9 sm:w-9 border border-slate-200 object-cover" alt="" /><span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" /></span>
+              <div className="hidden min-w-0 max-w-32 xl:block">
+                <span className="block truncate text-xs font-bold leading-tight text-slate-800">{currentUser.name}</span>
+                <span className="block truncate text-[9px] font-bold uppercase tracking-wider text-slate-500">
                   {currentUser.role} {currentUser.isAdmin && '• ADM'}
                 </span>
               </div>
@@ -9358,11 +9356,6 @@ const notificationsToShow = [...notificationItems]
               </button>
               {!Capacitor.isNativePlatform() && (!pushToken || !(currentUser.pushTokens || []).includes(pushToken)) && <button type="button" onClick={handleEnablePushNotifications} className="rounded-lg p-1.5 sm:p-2 text-blue-700 transition hover:bg-blue-50" title="Ativar ou tentar novamente as notificações neste dispositivo" aria-label="Ativar notificações neste dispositivo"><Bell className="h-4 w-4" /></button>}
               {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-1.5 sm:p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
-              <button type="button" onClick={() => { setActiveTab('updates'); setShowNotificationsDropdown(false); }} className="relative rounded-lg p-1.5 sm:p-2 text-cyan-700 transition hover:bg-cyan-50" title="Novidades do Comunica" aria-label="Novidades do Comunica">
-                <Sparkles className="h-4 w-4" />
-                {notificationEnabled(notificationPreferences, 'updates') && platformUpdates.some(item => !platformUpdateReadIds.has(item.id)) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white" />}
-              </button>
-
               <div className="relative">
                 <button
                   onClick={() => setActiveTab('inbox')}
@@ -9499,26 +9492,8 @@ const notificationsToShow = [...notificationItems]
                 <Lock className="h-4 w-4" />
               </button>}
 
-              <button
-                onClick={() => {
-                  setMyProfileForm({
-                    avatar: currentUser.avatar || '',
-                    emergencyName: currentUser.emergencyName || '',
-                    emergencyPhone: currentUser.emergencyPhone || '',
-                    emergencyRelationship: currentUser.emergencyRelationship || ''
-                  });
-                  setShowPinFieldsInProfile(true);
-                  setShowProfileModal(true);
-                }}
-                title="Alterar PIN de Acesso"
-                className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all"
-                type="button"
-              >
-                <KeyRound className="h-4 w-4" />
-              </button>
-
-              <button type="button" onClick={handleSwitchUser} className="hidden items-center gap-1 rounded-lg p-2 text-xs font-semibold text-slate-600 hover:bg-blue-50 sm:flex">
-                <Users className="h-4 w-4" /> Trocar usuário
+              <button type="button" onClick={handleSwitchUser} title="Trocar usuário" aria-label="Trocar usuário" className="hidden items-center gap-1 rounded-lg p-2 text-xs font-semibold text-slate-600 hover:bg-blue-50 sm:flex">
+                <Users className="h-4 w-4 shrink-0" /> <span className="hidden 2xl:inline">Trocar usuário</span>
               </button>
               <button
                 onClick={handleUserLogout}
@@ -9526,7 +9501,7 @@ const notificationsToShow = [...notificationItems]
                 className="p-1.5 sm:p-2 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-slate-500 transition-all flex items-center gap-1 text-xs font-semibold"
                 type="button"
               >
-                <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sair</span>
+                <LogOut className="h-4 w-4" /> <span className="hidden 2xl:inline">Sair</span>
               </button>
             </div>
           </div>
