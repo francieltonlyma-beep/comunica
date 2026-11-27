@@ -1,6 +1,7 @@
 import { bandNames, salaryBands } from './careerReview.js';
 import { roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
+import PlrSimulator from './PlrSimulator.jsx';
 import { useEffect, useState } from 'react';
 import { Managers, TeamCharts } from './TeamInsights.jsx';
 import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -210,18 +211,21 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   ).map(person => person.id));
   const inUnit = (record, id) => record.unit ? record.unit === id : employees.some(person =>
     matchingAssignees.has(person.id) && record.assigneeIds?.includes(person.id) && getDepartments(person).includes(id));
-  const rows = activities.filter(record =>
-    ((!employee && !filterRole) || record.assigneeIds?.some(id => matchingAssignees.has(id)))
-    && (!unit || inUnit(record, unit))
-    && (!manager || record.manager === manager)
-  ).map(record => {
+  const activityRows = activities.map(record => {
     const completed = record.resolvedAt ? dateFormat.format(new Date(record.resolvedAt)) : '';
     let status = 'open';
     if (record.status === 'resolved') status = record.dueDate && completed ? (completed <= record.dueDate ? 'ontime' : 'late') : 'unrated';
     else if (record.dueDate && record.dueDate < today) status = 'overdue';
     const day = completed || record.dueDate || (record.createdAt ? dateFormat.format(new Date(record.createdAt)) : '');
     return { record, status, day };
-  }).filter(({day}) => (!from || day >= from) && (!to || (day && day <= to)));
+  });
+  const rows = activityRows.filter(({record, day}) =>
+    ((!employee && !filterRole) || record.assigneeIds?.some(id => matchingAssignees.has(id)))
+    && (!unit || inUnit(record, unit))
+    && (!manager || record.manager === manager)
+    && (!from || day >= from)
+    && (!to || (day && day <= to))
+  );
   const metrics = [['all', 'Atividades'], ['ontime', 'No prazo'], ['late', 'Concluídas com atraso'], ['overdue', 'Abertas vencidas']];
   const chartRows = rows.filter(row => {
     if (!slice) return true;
@@ -239,6 +243,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
         {[['performance', 'Indicadores'], ['salary', 'Cargos e salários'], ['management', 'Gerentes']].map(([key, label]) => <button type="button" key={key} aria-pressed={view === key} onClick={() => setView(key)} className={`rounded-lg px-3 py-2 font-semibold ${view === key ? 'bg-blue-700 text-white' : 'text-white hover:bg-white/10'}`}>{label}</button>)}
       </nav>}
     </header>
+    {view === 'performance' && <PlrSimulator {...{company, uid, employees}} roles={ordered} rows={activityRows} />}
     <section className={view === 'performance' ? panel : 'hidden'}>
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Use os filtros e os gráficos para explorar as atividades.</p></div>
         <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={employee} onChange={selectedId => { setEmployee(selectedId); setSlice(null); }} placeholder={"Toda a equipe · " + (active.length) + " ativos"} options={active.map(person => [person.id, person.name])} /></label>
