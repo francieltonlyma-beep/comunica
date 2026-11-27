@@ -25,13 +25,18 @@ function parameters(plan) {
 
 function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markDirty }) {
   const saved = plans[role.id];
-  const [draft, setDraft] = useState(() => ({ ...defaults, ...(saved?.plan || (role.id !== standard.id ? parameters(plans[standard.id]?.plan) : {})) }));
+  const [draft, setDraft] = useState(() => {
+    const preset = role.id !== standard.id ? parameters(plans[standard.id]?.plan) : {};
+    const stored = saved?.plan;
+    const fields = stored?.hierarchyOnly ? { ...preset, supervisor: stored.supervisor } : stored || preset;
+    return { ...defaults, ...fields };
+  });
   const [revision, setRevision] = useState(saved?.revision || 0);
   const [status, setStatus] = useState('');
   const [sourceRole, setSourceRole] = useState('');
   const [amount, setAmount] = useState('');
   const [mode, setMode] = useState('');
-  const [original, setOriginal] = useState(saved?.plan);
+  const [original, setOriginal] = useState(saved?.plan?.hierarchyOnly ? null : saved?.plan);
   const index = requestedBand;
   const adjustment = mode && amount !== '' ? adjustSalaryBand(draft, index, Number(amount), mode) : null;
   const preview = adjustment ? salaryBands(adjustment) : null;
@@ -90,7 +95,7 @@ function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markD
       setBusy(false);
     }
   }
-  const templates = roles.filter(item => item.id !== role.id && plans[item.id]?.plan);
+  const templates = roles.filter(item => item.id !== role.id && plans[item.id]?.plan && !plans[item.id].plan.hierarchyOnly);
   function copyParameters(full) {
     const source = plans[sourceRole]?.plan;
     if (!source) return;
@@ -114,7 +119,7 @@ function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markD
 
     <div className="grid gap-3 sm:grid-cols-3">
       <label>Situação<select className={field} value={String(draft.active)} onChange={event => change('active', event.target.value === 'true')}><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
-      <label>Superior direto deste cargo<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id && item.id !== standard.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Superior direto deste cargo<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id && item.id !== standard.id && !item.mergedIntoRoleId).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Vigência<input required className={field} type="date" value={draft.effective} onChange={event => change('effective', event.target.value)} /></label>
       {fields.map(([key, label]) => <label key={key}>{label}<input className={field} type="number" min="0" max={key === 'score' ? 100 : 10000000} step={key === 'months' ? 1 : 0.01} value={draft[key]} onChange={event => change(key, event.target.value)} /></label>)}
     </div>
@@ -182,7 +187,7 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
   const selectedRole = roles.find(role => !role.mergedIntoRoleId && role.id === selectedEmployee?.roleId)
     || (sameName.length === 1 ? sameName[0] : undefined);
   const selectedPlan = records[selectedRole?.id]?.plan;
-  const proposedBands = selectedPlan?.active !== false && selectedPlan?.effective <= effective ? salaryBands(selectedPlan) : [];
+  const proposedBands = !selectedPlan?.hierarchyOnly && selectedPlan?.active !== false && selectedPlan?.effective <= effective ? salaryBands(selectedPlan) : [];
   const currentPay = entries.find(entry => entry.person === person && entry.effective <= today);
   const proposedAmount = Number(amount);
   const difference = currentPay && proposedAmount > 0 ? Math.round((proposedAmount - Number(currentPay.amount)) * 100) / 100 : null;
@@ -200,7 +205,7 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
     const role = roles.find(r => r.id === p.roleId || r.name === p.role);
     const plan = records[role?.id]?.plan;
     const pay = entries.find(e => e.person === p.id && e.effective <= today);
-    const values = plan && salaryBands(plan).map(b => b.value);
+    const values = plan && !plan.hierarchyOnly && salaryBands(plan).map(b => b.value);
     const label = !pay ? 'Salário pendente' : !values ? 'Plano pendente' : pay.amount < Math.min(...values) ? 'Abaixo da matriz' : pay.amount > Math.max(...values) ? 'Acima da matriz' : 'Dentro da matriz';
     return <tr key={p.id} className="border-t"><td className="py-2">{p.name}</td><td>{role?.name || p.role}</td><td>{pay ? money.format(pay.amount) : '—'}</td><td>{label}</td></tr>;
   })}</tbody></table></div><form onSubmit={save} className="space-y-3"><div className="grid items-end gap-2 sm:grid-cols-3"><label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={id => { setPerson(id); setAmount(''); }} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label></div>
@@ -272,17 +277,64 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     snapshot => setRecords(Object.fromEntries(snapshot.docs.map(record => [record.id, record.data()]))),
     () => setError(true)), [db, company]);
 
+  const plansPath = ['artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans'];
+
+  async function validateSupervisor(transaction, role, supervisor) {
+    const visited = new Set([role]);
+    for (let id = supervisor; id;) {
+      if (visited.has(id)) throw new Error('cycle');
+      visited.add(id);
+      const snapshot = await transaction.get(doc(db, ...plansPath, id));
+      id = snapshot.data()?.plan?.supervisor;
+    }
+  }
+
+  function writePlan(transaction, ref, record, plan) {
+    const revision = (record?.revision || 0) + 1;
+    const history = doc(ref, 'history', String(revision));
+    const change = { plan, revision, updatedBy: uid, updatedAt: serverTimestamp() };
+    transaction.set(ref, change);
+    transaction.set(history, change);
+  }
+
   function save(role, revision, plan) {
+    if (salarySaving.current) throw new Error('busy');
     salarySaving.current = true;
-    const ref = doc(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans', role);
+    const ref = doc(db, ...plansPath, role);
     return runTransaction(db, async transaction => {
       const snapshot = await transaction.get(ref);
-      if ((snapshot.data()?.revision || 0) !== revision) throw new Error('stale');
-      const history = doc(ref, 'history', String(revision + 1));
-      const change = { plan, revision: revision + 1, updatedBy: uid, updatedAt: serverTimestamp() };
-      transaction.set(ref, change);
-      transaction.set(history, change);
+      const record = snapshot.data();
+      if ((record?.revision || 0) !== revision) throw new Error('stale');
+      await validateSupervisor(transaction, role, plan.supervisor);
+      writePlan(transaction, ref, record, plan);
     }).finally(() => { salarySaving.current = false; });
+  }
+
+  async function saveReports(changes) {
+    if (salarySaving.current) return { applied: 0, error: 'busy' };
+    salarySaving.current = true;
+    let applied = 0;
+    try {
+      for (const { id, previous, supervisor } of changes) {
+        const ref = doc(db, ...plansPath, id);
+        await runTransaction(db, async transaction => {
+          const snapshot = await transaction.get(ref);
+          const record = snapshot.data();
+          const current = record?.plan?.supervisor || '';
+          if (current === supervisor) return;
+          if (current !== previous) throw new Error('stale');
+          await validateSupervisor(transaction, id, supervisor);
+          const plan = record?.plan || { ...defaults, hierarchyOnly: true };
+          writePlan(transaction, ref, record, { ...plan, supervisor });
+        });
+        applied += 1;
+      }
+      return { applied };
+    } catch (error) {
+      return { applied, error: error.message };
+    } finally {
+      salarySaving.current = false;
+    }
   }
 
   const roleName = roleNameKey(roles.find(role => role.id === filterRole)?.name);
@@ -362,7 +414,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     </section>
     {view === 'management' && <Managers {...{db,company,departments,active,today}} />}
     <section className={view === 'salary' ? 'space-y-3' : 'hidden'}>
-      {records && view === 'salary' && <SalaryHierarchy roles={ordered} records={records} initialRoleId={roleId} openEditor={openSalaryEditor} />}
+      {records && view === 'salary' && <SalaryHierarchy roles={ordered} records={records} initialRoleId={roleId} openEditor={openSalaryEditor} saveReports={saveReports} />}
       {records && <div className={panel}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><h3 className="text-lg font-bold">Tabela geral de cargos e salários</h3><p className="text-slate-600">Clique no cargo para editar o plano, ou em um valor para ajustar a faixa.</p></div>
@@ -372,7 +424,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
           <thead><tr><th className="sticky left-0 bg-white p-2 text-left" scope="col">Cargo</th>{bandNames.map(band => <th className="p-2" key={band} scope="col">{band}</th>)}</tr></thead>
           <tbody>{ordered.filter(role => roleNameKey(role.name).includes(roleNameKey(salarySearch))).map(role => {
             const plan = records[role.id]?.plan;
-            const values = plan ? salaryBands(plan) : null;
+            const values = plan && !plan.hierarchyOnly ? salaryBands(plan) : null;
             return <tr key={role.id} className={`border-t ${roleId === role.id ? 'bg-blue-50' : ''}`}>
               <th className="sticky left-0 bg-white text-left" scope="row"><button type="button" className="p-2 text-blue-800 hover:underline" onClick={() => openSalaryEditor(role.id)}>{role.name}</button></th>
               {values ? values.map(({ label, value }, i) => <td key={label}><button type="button" className="rounded-md px-2 py-2 text-blue-900 hover:bg-blue-100 hover:underline"

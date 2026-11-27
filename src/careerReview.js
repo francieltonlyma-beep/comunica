@@ -58,7 +58,7 @@ export function timelyDeliveries(activities, employee, today) {
 }
 
 export function salaryPosition(pay, plan) {
-  if (!pay || !plan) return 'Sem referência';
+  if (!pay || !plan || plan.hierarchyOnly) return 'Sem referência';
   const cents = amount => Math.round(amount * 100);
   const bands = salaryBands(plan);
   const current = cents(pay.amount);

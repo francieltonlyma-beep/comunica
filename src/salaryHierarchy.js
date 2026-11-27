@@ -34,3 +34,14 @@ export function buildSalaryHierarchy(roles, records) {
   }
   return { nodes, rows };
 }
+
+export function directReportChanges(supervisorId, candidates, selectedIds) {
+  const changes = candidates.flatMap(({ id, plan }) => {
+    const previous = plan?.supervisor || '';
+    const selected = selectedIds.has(id);
+    if (id === supervisorId || selected === (previous === supervisorId)) return [];
+    return [{ id, previous, supervisor: selected ? supervisorId : '' }];
+  });
+  // Apply removals first so a correction can break a legacy cycle before linking other roles.
+  return changes.sort((a, b) => Number(Boolean(a.supervisor)) - Number(Boolean(b.supervisor)));
+}

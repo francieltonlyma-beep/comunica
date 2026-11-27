@@ -37,7 +37,7 @@ export default function CareerReview({ db, company, uid, person, roles, activiti
 
   const matchingMatrix = role && matrix?.id === role.id ? matrix : null;
   const savedPlan = matchingMatrix?.plan;
-  const plan = savedPlan && savedPlan.active !== false && savedPlan.effective <= today ? savedPlan : null;
+  const plan = savedPlan && !savedPlan.hierarchyOnly && savedPlan.active !== false && savedPlan.effective <= today ? savedPlan : null;
   const pay = payroll?.records?.filter(item => item.effective <= today).sort((a, b) => b.effective.localeCompare(a.effective))[0];
   const months = completeMonths(person.hireDate, today);
   const delivery = timelyDeliveries(activities, person.id, today);
