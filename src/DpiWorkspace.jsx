@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useState } from 'react';
 import { Managers, TeamCharts } from './TeamInsights.jsx';
 import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -140,7 +141,7 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
     const values = plan && salaryBands(plan).map(b => b.value);
     const label = !pay ? 'Salário pendente' : !values ? 'Plano pendente' : pay.amount < Math.min(...values) ? 'Abaixo da matriz' : pay.amount > Math.max(...values) ? 'Acima da matriz' : 'Dentro da matriz';
     return <tr key={p.id} className="border-t"><td className="py-2">{p.name}</td><td>{role?.name || p.role}</td><td>{pay ? money.format(pay.amount) : '—'}</td><td>{label}</td></tr>;
-  })}</tbody></table></div><form onSubmit={save} className="grid items-end gap-2 sm:grid-cols-4"><label>Colaborador<select required className={field} value={person} onChange={e => setPerson(e.target.value)}><option value="">Escolha</option>{employees.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label><button className="rounded-xl bg-blue-800 p-2 text-white">Confirmar reajuste</button></form>
+  })}</tbody></table></div><form onSubmit={save} className="grid items-end gap-2 sm:grid-cols-4"><label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={setPerson} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label><button className="rounded-xl bg-blue-800 p-2 text-white">Confirmar reajuste</button></form>
     {person && <ul>{entries.filter(e => e.person === person).map(e => <li key={e.effective}>{e.effective.split('-').reverse().join('/')} · {money.format(e.amount)}</li>)}</ul>}<p role="status">{status}</p></section>;
 }
 
@@ -206,12 +207,12 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     </header>
     <section className={view === 'performance' ? panel : 'hidden'}>
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Use os filtros e os gráficos para explorar as atividades.</p></div>
-        <label>Colaborador<select className={field} value={employee} onChange={event => { setEmployee(event.target.value); setSlice(null); }}><option value="">Toda a equipe · {active.length} ativos</option>{active.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+        <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={employee} onChange={selectedId => { setEmployee(selectedId); setSlice(null); }} placeholder={"Toda a equipe · " + (active.length) + " ativos"} options={active.map(person => [person.id, person.name])} /></label>
       </div>
       <div className="grid gap-3 sm:grid-cols-4" onChange={() => setSlice(null)}>
         <label>Loja ou setor<select className={field} value={unit} onChange={e => setUnit(e.target.value)}><option value="">Todos</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         <label>Cargo<select className={field} value={filterRole} onChange={e => setFilterRole(e.target.value)}><option value="">Todos</option>{ordered.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
-        <label>Gerente designado<select className={field} value={manager} onChange={e => setManager(e.target.value)}><option value="">Todos</option>{[...new Set(activities.map(a => a.manager).filter(Boolean))].map(id => <option key={id} value={id}>{employees.find(p => p.id === id)?.name || id}</option>)}</select></label>
+        <label>Gerente designado<PurchaseSelect searchPlaceholder="Buscar por nome" label="Gerente designado" value={manager} onChange={selectedId => { setManager(selectedId); setSlice(null); }} placeholder="Todos" options={[...new Set(activities.map(a => a.manager).filter(Boolean))].map(id => [id, employees.find(p => p.id === id)?.name || id])} /></label>
         <label>De<input className={field} type="date" max={to} value={from} onChange={e => setFrom(e.target.value)} /></label><label>Até<input className={field} type="date" min={from} value={to} onChange={e => setTo(e.target.value)} /></label>
       </div>
       {slice && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-blue-50 p-3 text-blue-950">

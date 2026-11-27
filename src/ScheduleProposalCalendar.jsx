@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, LockKeyhole } from 'lucide-react';
 import { scheduleCalendarDates } from './scheduleCalendarModel.js';
@@ -29,7 +30,7 @@ export default function ScheduleProposalCalendar({ rows, analysis, issues = [], 
   return <section className="spc" aria-label="Calendário da simulação">
     <header className="spc-toolbar">
       <div><span className="spc-eyebrow">Prévia · ainda não publicada</span><h4>Confira a distribuição no calendário</h4><p>Selecione um dia para revisar os horários abaixo.</p></div>
-      <label className="spc-filter">Visualizar colaborador<select value={activeEmployee} disabled={disabled} onChange={event => setEmployee(event.target.value)}><option value="all">Toda a equipe selecionada</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+      <label className="spc-filter">Visualizar colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador da proposta" value={activeEmployee} onChange={setEmployee} disabled={disabled} pinnedOptions={[["all", "Toda a equipe selecionada"]]} options={people} /></label>
     </header>
     <div className="spc-navigation"><div className="spc-month"><button type="button" disabled={disabled || monthIndex === 0} aria-label="Mês anterior da simulação" onClick={() => onSelectDate(days.find(day => day.date.startsWith(months[monthIndex - 1])).date)}><ChevronLeft size={18} /></button><strong aria-live="polite">{title}</strong><button type="button" disabled={disabled || monthIndex === months.length - 1} aria-label="Próximo mês da simulação" onClick={() => onSelectDate(days.find(day => day.date.startsWith(months[monthIndex + 1])).date)}><ChevronRight size={18} /></button></div><button className="spc-find-gap" type="button" disabled={disabled || !nextGap} onClick={() => { if (!nextGap) return; onSelectDate(nextGap.date); const issue = nextGap.issues.find(item => item.blocking); if (issue && onReviewIssue) onReviewIssue(issue); else onOpenDay?.(nextGap.date); }}>{reviewLabel}</button></div>
     <div className="spc-legend"><span><i className="spc-dot-work" />Trabalho</span><span><i className="spc-dot-off" />Folga</span><span><i className="spc-dot-absence" />Ausência / férias</span><span><LockKeyhole size={12} />Fixo ou preservado</span><span><i className="spc-dot-gap" />Falta cobertura</span><span><i className="spc-dot-unknown" />Conferir horários</span></div>

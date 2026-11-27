@@ -11,3 +11,7 @@ html.comunica-dark .purchase-select-clear { background:#111c2e; border-color:#34
 html.comunica-dark .purchase-select-options [role=option]:hover,
 html.comunica-dark .purchase-select-options .purchase-select-active { background:#203f51; color:#eafbff; }
 html.comunica-dark .purchase-select-options [aria-selected=true] { color:#8cdbe4; }
+
+@media (max-width: 640px) {
+  .purchase-select-search input { font-size: 16px; }
+}

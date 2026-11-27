@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useRef, useState } from 'react';
 import {
   Bytes,
@@ -182,23 +183,7 @@ function CaseEditor({ db, company, uid, employees, confidential, record, close, 
       <h3 className="text-lg font-bold">{record.id ? 'Atualizar acompanhamento' : 'Novo acompanhamento'}</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Colaborador">
-          <select
-            required
-            disabled={Boolean(record.id)}
-            className={control}
-            value={draft.employeeId}
-            onChange={(e) => change('employeeId', e.target.value)}
-          >
-            <option value="">Selecione</option>
-            {employees.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-            {record.id && !employees.some((p) => p.id === record.employeeId) && (
-              <option value={record.employeeId}>{record.employeeName}</option>
-            )}
-          </select>
+          <PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={draft.employeeId} onChange={selectedId => change('employeeId', selectedId)} required disabled={Boolean(record.id)} placeholder="Selecione" options={[...employees.map(p => [p.id, p.name]), ...(record.id && !employees.some((p) => p.id === record.employeeId) ? [[record.employeeId, record.employeeName]] : [])]} />
         </Field>
         <Field label="Tipo">
           <select
@@ -235,19 +220,7 @@ function CaseEditor({ db, company, uid, employees, confidential, record, close, 
           </select>
         </Field>
         <Field label="Responsável">
-          <select
-            required
-            className={control}
-            value={draft.owner}
-            onChange={(e) => change('owner', e.target.value)}
-          >
-            <option value="">Selecione</option>
-            {employees.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <PurchaseSelect searchPlaceholder="Buscar por nome" label="Responsável" value={draft.owner} onChange={selectedId => change('owner', selectedId)} required placeholder="Selecione" options={[...employees.map(p => [p.id, p.name])]} />
         </Field>
         <Field label="Prazo da próxima ação">
           <input
@@ -539,14 +512,7 @@ export default function PersonnelWorkspace({
           {view === 'file' ? (
             <div className={panel}>
               <Field label="Colaborador">
-                <select className={control} value={employeeId} onChange={(e) => openFile(e.target.value)}>
-                  <option value="">Selecione um colaborador</option>
-                  {options.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador da ficha" value={employeeId} onChange={selectedId => openFile(selectedId)} placeholder="Selecione um colaborador" options={[...options.map(p => [p.id, p.name])]} />
               </Field>
               {person && (
                 <div>

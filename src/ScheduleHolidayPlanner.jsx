@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { normalizeSearch } from '../functions/src/procurement.mjs';
 import { holidayWorkTemplate, isWorking } from './scheduleDayRules.js';
 import { isReplaceableSchedule } from './scheduleOptimizer.js';
 
@@ -13,7 +14,9 @@ export default function ScheduleHolidayPlanner({ holidays, employees, rules, his
   const date = dates.includes(selected) ? selected : dates[0];
   if (!date) return null;
   const day = assignments[date] || {};
-  const visible = employees.filter(user => String(user.name || '').toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')));
+  const words = normalizeSearch(search).split(/\s+/);
+  const visible = employees.filter(user => words.every(word => normalizeSearch(user.name).includes(word)))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
   const preserved = user => history.some(item => String(item.userId) === String(user.id) && activeOn(item, date) && !isReplaceableSchedule(item)) || absences.some(item => String(item.userId) === String(user.id) && activeOn(item, date));
   const setStatus = (users, status) => {
     const next = { ...day };

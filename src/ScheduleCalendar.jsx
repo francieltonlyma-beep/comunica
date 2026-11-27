@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeftRight, Pencil, CalendarDays, ChevronLeft, ChevronRight, Maximize2, Minimize2, Plus, Search, SlidersHorizontal, X, Trash2, LoaderCircle, Clock, Users, CalendarCheck, PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -174,8 +175,7 @@ export default function ScheduleCalendar({
       {filtersOpen && <div className="sc-filters">
         <label>Setor<select value={department} onChange={event => { setDetailEmployee(''); setDepartment(event.target.value); setEmployee('all'); }}>
           <option value="all">Todos os setores</option>{departments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>Colaborador<select value={employee} onChange={event => { setDetailEmployee(''); setEmployee(event.target.value); }}>
-          <option value="all">Todos os colaboradores</option>{eligibleEmployees.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+        <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={employee} onChange={selectedId => { setDetailEmployee(''); setEmployee(selectedId); }} pinnedOptions={[["all", "Todos os colaboradores"]]} options={eligibleEmployees.map(user => [user.id, user.name])} /></label>
         <label>Situação da escala<select value={status} onChange={event => { setDetailEmployee(''); setStatus(event.target.value); }}>
           <option value="all">Todas as situações</option>{statuses.map(value => <option key={value}>{value}</option>)}</select></label>
         <label>Buscar pessoa<div className="sc-search"><Search size={15} /><input value={search} type="search" placeholder="Nome ou cargo" onChange={event => { setDetailEmployee(''); setSearch(event.target.value); }} /></div></label>

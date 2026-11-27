@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useState } from 'react';
 import { teamMonthRows, teamDaySummary } from './scheduleTeamMonth.js';
 import { employeeMonthSummary } from './scheduleEmployeeManagement.js';
@@ -8,14 +9,12 @@ const duration = hours => `${Math.floor(Math.round(hours * 60) / 60)}h${String(M
 
 export default function ScheduleEmployeeManagement({ days, employees, filters, getDepartments, onSelectDay }) {
   const [selected, setSelected] = useState('');
-  const [personSearch, setPersonSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [sort, setSort] = useState('date');
   const rows = teamMonthRows(days, employees, { filters, getDepartments, showAbsences: true });
-  const matchingPeople = rows.filter(person => `${person.name} ${person.role}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(personSearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()));
-  const row = matchingPeople.find(item => item.key === selected) || matchingPeople[0];
+  const row = rows.find(item => item.key === selected) || rows[0];
   const month = days[0]?.date.slice(0, 7) || '';
   const from = start.startsWith(month) ? start : '';
   const to = end.startsWith(month) ? end : '';
@@ -23,13 +22,15 @@ export default function ScheduleEmployeeManagement({ days, employees, filters, g
   const visibleDays = filterEmployeeDays(allDays, { status, start: from, end: to, sort });
   const summary = employeeMonthSummary(visibleDays);
   const reviewCount = summary.days.filter(day => day.review).length;
-  const clear = () => { setPersonSearch(''); setStatus('all'); setStart(''); setEnd(''); setSort('date'); };
+  const clear = () => { setStatus('all'); setStart(''); setEnd(''); setSort('date'); };
 
   return <section className="sem" aria-label="Gestão do colaborador">
-    <div className="sem-heading"><div><span className="sem-eyebrow">ESCALA PUBLICADA · {month}</span><h3>Gestão do colaborador</h3><p>Consulte a jornada prevista, folgas e ausências de cada pessoa. Os totais acompanham os filtros abaixo; não representam apuração de ponto.</p></div><span className="sem-count">{matchingPeople.length} pessoa(s) · {visibleDays.length} dia(s)</span></div>
+    <div className="sem-heading"><div><span className="sem-eyebrow">ESCALA PUBLICADA · {month}</span><h3>Gestão do colaborador</h3><p>Consulte a jornada prevista, folgas e ausências de cada pessoa. Os totais acompanham os filtros abaixo; não representam apuração de ponto.</p></div><span className="sem-count">{rows.length} pessoa(s) · {visibleDays.length} dia(s)</span></div>
     <div className="sem-filters" aria-label="Filtros da gestão do colaborador">
-      <label>Buscar colaborador<input type="search" value={personSearch} onChange={event => setPersonSearch(event.target.value)} placeholder="Nome ou cargo" /></label>
-      <label>Colaborador<select value={row?.key || ''} onChange={event => setSelected(event.target.value)} disabled={!matchingPeople.length}>{matchingPeople.length ? matchingPeople.map(person => <option key={person.key} value={person.key}>{person.name}{person.role ? ` · ${person.role}` : ''}</option>) : <option value="">Nenhuma pessoa encontrada</option>}</select></label>
+      <label>Colaborador<PurchaseSelect label="Colaborador" searchPlaceholder="Buscar por nome ou cargo"
+        value={row?.key || ''} onChange={setSelected} disabled={!rows.length}
+        placeholder="Nenhum colaborador disponível" clearable={false}
+        options={rows.map(person => [person.key, person.role ? `${person.name} · ${person.role}` : person.name])} /></label>
       <label>Situação<select value={status} onChange={event => setStatus(event.target.value)}><option value="all">Todas</option><option value="work">Trabalho</option><option value="off">Folga</option><option value="vacation">Férias</option><option value="absence">Ausência</option><option value="holiday">Feriado sem trabalho</option><option value="empty">Sem registro</option><option value="review">Precisa de revisão</option></select></label>
       <label>De<input type="date" value={from} min={days[0]?.date} max={days.at(-1)?.date} onChange={event => setStart(event.target.value)} /></label>
       <label>Até<input type="date" value={to} min={days[0]?.date} max={days.at(-1)?.date} onChange={event => setEnd(event.target.value)} /></label>

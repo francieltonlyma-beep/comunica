@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useRef, useState } from 'react';
 import { addDoc, collection, doc, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { Gauge } from 'lucide-react';
@@ -295,7 +296,9 @@ export default function FleetWorkspace({ db, appId, companyId, user, users = [],
       <Form key={editingDriverId || 'new'} onSubmit={form => act(() => saveDriver(form), 'Cadastro do motorista salvo.')} saving={saving} label={editingDriver ? 'Salvar alterações' : 'Cadastrar motorista'}>
         {editingDriver
           ? <Field label="Colaborador" readOnly value={users.find(item => item.id === editingDriver.id)?.name || editingDriver.id} />
-          : <SelectField label="Colaborador" name="uid" required defaultValue=""><option value="" disabled>Selecione o colaborador</option>{users.filter(row => !drivers.rows.some(existing => existing.id === row.id)).map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</SelectField>}
+          : <Field label="Colaborador"><PurchaseSelect label="Colaborador" name="uid" required
+            placeholder="Selecione o colaborador" searchPlaceholder="Buscar por nome"
+            options={users.filter(person => !drivers.rows.some(existing => existing.id === person.id)).map(person => [person.id, person.name])} /></Field>}
         <SelectField label="Veículo vinculado" name="vehicleId" required defaultValue={editingDriver?.vehicleId || ''}><option value="" disabled>Selecione o veículo</option>{vehicles.rows.map(row => <option key={row.id} value={row.id}>{row.plate} · {row.model}</option>)}</SelectField>
         <Field label="Validade da CNH" name="licenseExpiry" type="date" required defaultValue={editingDriver?.licenseExpiry} />
         <SelectField label="Situação" name="active" defaultValue={editingDriver?.active === false ? 'no' : 'yes'}><option value="yes">Ativo</option><option value="no">Inativo</option></SelectField>

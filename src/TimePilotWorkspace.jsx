@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, Clock, Download } from 'lucide-react';
 import { collection, doc, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
@@ -240,10 +241,7 @@ export default function TimePilotWorkspace({ functionsClient, db, appId, company
           <div className="mb-4 flex flex-wrap gap-3">
             {isTeam && (
               <label className="grid flex-1 gap-1 text-sm font-medium">Colaborador
-                <select className={field} value={employee} onChange={event => setEmployee(event.target.value)}>
-                  <option value="">Selecione uma pessoa</option>
-                  {roster.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
-                </select>
+                <PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={employee} onChange={setEmployee} placeholder="Selecione uma pessoa" options={roster.map(person => [person.id, person.name])} />
               </label>
             )}
             <label className="grid gap-1 text-sm font-medium">Mês de referência

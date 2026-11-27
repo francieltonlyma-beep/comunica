@@ -1,3 +1,4 @@
+import PurchaseSelect from './PurchaseSelect.jsx';
 import { useState } from 'react';
 import { doc, runTransaction } from 'firebase/firestore';
 
@@ -19,7 +20,12 @@ export function Managers({ db, company, departments, active, today }) {
     } catch { setStatus('Não foi possível salvar. Confira sua permissão e o gerente atual da unidade.'); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded-2xl border bg-white p-5"><h3 className="text-lg font-bold">Gerentes por loja ou setor</h3>{departments.map(unit => <label key={unit.id} className="grid gap-2 border-b py-3 sm:grid-cols-2"><span><strong>{unit.name}</strong>{unit.managerId && unit.managerSince && <small className="block">Desde {unit.managerSince.split('-').reverse().join('/')}</small>}</span><select disabled={busy} className="rounded-lg border p-2" value={unit.managerId || ''} onChange={e => assign(unit,e.target.value)}><option value="">Sem gerente</option>{unit.managerId && !active.some(p => p.id === unit.managerId) && <option value={unit.managerId}>Vínculo inativo</option>}{active.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>)}<p role="status">{status}</p></section>;
+  return <section className="space-y-3 rounded-2xl border bg-white p-5"><h3 className="text-lg font-bold">Gerentes por loja ou setor</h3>{departments.map(unit => <label key={unit.id} className="grid gap-2 border-b py-3 sm:grid-cols-2"><span><strong>{unit.name}</strong>{unit.managerId && unit.managerSince && <small className="block">Desde {unit.managerSince.split('-').reverse().join('/')}</small>}</span><PurchaseSelect label={`Gerente de ${unit.name}`} searchPlaceholder="Buscar por nome" disabled={busy}
+      value={unit.managerId || ''} onChange={id => assign(unit, id)} placeholder="Sem gerente"
+      options={[
+        ...active.map(person => [person.id, person.name]),
+        ...(unit.managerId && !active.some(person => person.id === unit.managerId) ? [[unit.managerId, 'Vínculo inativo']] : []),
+      ]} /></label>)}<p role="status">{status}</p></section>;
 }
 
 export function TeamCharts({ employees, rows, departments, inUnit, select }) {
