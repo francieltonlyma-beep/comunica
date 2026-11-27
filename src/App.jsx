@@ -9353,8 +9353,9 @@ const notificationsToShow = [...notificationItems]
                 {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
               {!isStandaloneApp && !installCompleted && <button type="button" disabled={isInstallingApp} onClick={canInstallDirectly ? handleInstallApp : () => setShowInstallHelp(true)} className="p-1.5 sm:p-2 hover:bg-cyan-50 rounded-lg text-slate-500 hover:text-cyan-700 transition-all" title="Instalar o Comunica neste dispositivo" aria-label="Instalar aplicativo"><Download className="h-4 w-4" /></button>}
-              {isIntegraWorkspace && <div className="relative">
+              {canOpenModule('inbox') && <div className="relative">
                 <button
+                  type="button"
                   onClick={() => setActiveTab('inbox')}
                   className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all relative"
                   title="Abrir Caixa de entrada" aria-label="Abrir Caixa de entrada"
