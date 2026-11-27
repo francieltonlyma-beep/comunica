@@ -10,7 +10,7 @@ const APP_ID = 'comunica-salvador';
 const tenant = (companyId: string) => getFirestore().doc(`artifacts/${APP_ID}/public/data/companies/${companyId}`);
 
 type CandidateIdentity = {uid: string; email?: string; email_verified?: boolean};
-type Vacancy = {title?: string; status?: string; skills?: string[]; quiz?: {question: string; options: string[]}[]; closesAt?: string; source?: string; roleId?: string; description?: string; details?: {experience?: string; requirements?: string}};
+type Vacancy = {title?: string; status?: string; skills?: string[]; quiz?: {question: string; options: string[]}[]; closesAt?: string; source?: string; roleId?: string; description?: string; details?: {experience?: string; requirements?: string}; changeId?: string};
 const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 const CAREER_PRIVACY_VERSION = '2026-10-12';
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -513,26 +513,32 @@ export async function submitApplication(identity: CandidateIdentity | undefined,
     const [profileSnapshot, previous, analysisSnapshot] = await Promise.all([tx.get(profileRef), tx.get(applicationRef), tx.get(analysisRef)]);
     const profile = profileSnapshot.data();
     if (!profile) throw new HttpsError('failed-precondition', 'Complete seu cadastro antes de se candidatar.');
-    const quiz = Array.isArray(vacancy.quiz) ? vacancy.quiz : [];
+    const latest = vacancy.source === 'talent_pool' ? vacancy
+      : (await tx.get(tenant(companyId).collection('vacancies').doc(vacancyId))).data() as Vacancy | undefined;
+    if (!latest || !isCareerVacancyOpen(latest)) throw new HttpsError('failed-precondition', 'Esta oportunidade não está aberta.');
+    if (typeof input.vacancyChangeId === 'string' && input.vacancyChangeId !== (latest.changeId || '')) {
+      throw new HttpsError('failed-precondition', 'A vaga foi atualizada. Recarregue a página e revise as perguntas antes de reenviar.');
+    }
+    const quiz = Array.isArray(latest.quiz) ? latest.quiz : [];
     if (quiz.length !== answers.length || quiz.some((question, index) =>
       !Number.isInteger(answers[index]) || answers[index] < 0 || answers[index] >= (question.options || []).length)) {
       throw new HttpsError('invalid-argument', 'Responda todas as perguntas do questionário.');
     }
     const extracted = analysisSnapshot.data();
     const fit = matchCandidateSkills(
-      Array.isArray(vacancy.skills) ? vacancy.skills : [],
+      Array.isArray(latest.skills) ? latest.skills : [],
       Array.isArray(profile.skills) ? profile.skills : [],
       extracted?.text || '',
       profile.resumeText || '',
-      vacancy,
+      latest,
     );
     const applicationData = {
       id: applicationRef.id,
       candidateUid: candidate.uid,
       vacancyId,
-      vacancyTitle: vacancy.title || '',
-      source: vacancy.source || 'vacancy',
-      roleId: vacancy.roleId || '',
+      vacancyTitle: latest.title || '',
+      source: latest.source || 'vacancy',
+      roleId: latest.roleId || '',
       name: profile.name,
       email: candidate.email,
       phone: profile.phone || '',

@@ -206,7 +206,7 @@ export default function Careers() {
     setBusy(true);
     try {
       await call('uploadCareerResume')({ companyId: careerData.companyId, vacancyId: selectedJob.id, fileName: resumeFile.name, base64: await fileBase64(resumeFile) });
-      await call('submitCareerApplication')({ companyId: careerData.companyId, vacancyId: selectedJob.id, answers: quizAnswers, consent: true });
+      await call('submitCareerApplication')({ companyId: careerData.companyId, vacancyId: selectedJob.id, vacancyChangeId: selectedJob.changeId || '', answers: quizAnswers, consent: true });
       setSubmitted(true);
       setEditingApplication(false);
       setApplicationStatus(previous => ({ ...(previous || {}), status: previous?.status || 'received', createdAt: previous?.createdAt || Date.now(), retentionUntil: previous?.retentionUntil || Date.now() + 90 * 24 * 60 * 60 * 1000, candidateUpdatedAt: Date.now() }));

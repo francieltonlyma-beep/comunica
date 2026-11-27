@@ -787,6 +787,21 @@ service cloud.firestore {
           allow delete: if ownsDraft() && scheduleDraftInScope(app, company, getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(uid)/scheduleDrafts/$(draftId)).data);
         }
       }
+      match /vacancies/{vacancyId}/history/{revisionId} {
+        function vacancyPath() {
+          return /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/vacancies/$(vacancyId);
+        }
+        allow read: if support() || careerManager(app, company);
+        allow create: if (support() || careerManager(app, company))
+          && request.resource.data.keys().hasOnly(['before', 'after', 'actorId', 'actorName', 'changedAt'])
+          && request.resource.data.actorId == request.auth.uid
+          && request.resource.data.actorName is string && request.resource.data.actorName.size() <= 200
+          && request.resource.data.changedAt == request.time
+          && request.resource.data.before == get(vacancyPath()).data
+          && request.resource.data.after == getAfter(vacancyPath()).data
+          && request.resource.data.before.get('changeId', '') != revisionId
+          && request.resource.data.after.changeId == revisionId;
+      }
       match /{kind}/{id} {
         allow read: if kind in ['departments', 'roles', 'announcements', 'posts', 'polls', 'events', 'absences', 'presence', 'settings', 'vacancies', 'activities', 'activityTemplates'] && access(company);
         allow read: if kind == 'schedules' && access(company) && scheduleDepartmentInScope(app, company, resource.data);
@@ -848,7 +863,12 @@ service cloud.firestore {
             && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', ''))
           || respondsToActivityInvitation(company));
         allow create, update, delete: if kind == 'activityTemplates' && canManageActivityTemplates(app, company);
-        allow create, update, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
+        allow create, delete: if kind == 'vacancies' && (support() || careerManager(app, company));
+        allow update: if kind == 'vacancies' && (support() || careerManager(app, company))
+          && request.resource.data.changeId is string
+          && request.resource.data.changeId != resource.data.get('changeId', '')
+          && existsAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/vacancies/$(id)/history/$(request.resource.data.changeId))
+          && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/vacancies/$(id)/history/$(request.resource.data.changeId)).data.changedAt == request.time;
         allow read, delete: if kind == 'careerVacancyLibrary' && (support() || careerManager(app, company));
         allow create, update: if kind == 'careerVacancyLibrary' && (support() || careerManager(app, company))
           && request.resource.data.keys().hasOnly(['category', 'text'])
