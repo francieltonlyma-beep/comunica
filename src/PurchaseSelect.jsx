@@ -24,6 +24,7 @@ export default function PurchaseSelect({ label, value: controlledValue, name, op
   const id = useId();
   const trigger = useRef(null);
   const popup = useRef(null);
+  const searchInput = useRef(null);
   const activeOption = useRef(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -57,7 +58,14 @@ export default function PurchaseSelect({ label, value: controlledValue, name, op
   useEffect(() => {
     if (!open) return undefined;
     const dismiss = event => { if (!popup.current?.contains(event.target) && !trigger.current?.contains(event.target)) setOpen(false); };
-    const reposition = event => { if (!popup.current?.contains(event.target)) setOpen(false); };
+    searchInput.current?.focus({ preventScroll: true });
+    const reposition = event => {
+      if (!trigger.current || popup.current?.contains(event.target)) return;
+      const bounds = trigger.current.getBoundingClientRect();
+      const height = window.visualViewport?.height || window.innerHeight;
+      if (bounds.bottom <= 0 || bounds.top >= height) setOpen(false);
+      else setPosition(popupPosition(trigger.current));
+    };
     document.addEventListener('pointerdown', dismiss);
     window.addEventListener('scroll', reposition, true);
     const resize = () => { if (trigger.current) setPosition(popupPosition(trigger.current)); };
@@ -98,7 +106,7 @@ export default function PurchaseSelect({ label, value: controlledValue, name, op
     </button>
     {(required || name) && <input name={name} className="purchase-select-validation" aria-hidden="true" aria-label={label} tabIndex={-1} value={value} required={required} disabled={disabled} onChange={() => {}} onInvalid={event => { event.preventDefault(); trigger.current?.focus(); show(); }} />}
     {open && !disabled && createPortal(<div ref={popup} className="purchase-select-popup" data-dialog-popup style={position}>
-      <div className="purchase-select-search"><Search size={16} aria-hidden="true" /><input autoFocus role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls={`${id}-list`}
+      <div className="purchase-select-search"><Search size={16} aria-hidden="true" /><input ref={searchInput} role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls={`${id}-list`}
         aria-activedescendant={matches[active] ? `${id}-option-${active}` : undefined} aria-label={`Pesquisar em ${label}`} placeholder={searchPlaceholder || `Pesquisar ${label.toLocaleLowerCase('pt-BR')}...`}
         value={search} onChange={event => { event.stopPropagation(); setSearch(event.target.value); setActive(0); }} onKeyDown={navigate} /></div>
       <div className="purchase-select-meta" aria-live="polite">{matches.length} opções encontradas</div>
