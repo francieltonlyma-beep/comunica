@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { completeMonths, salaryPosition, timelyDeliveries } from '../src/careerReview.js';
+import { completeMonths, salaryPosition, effectiveSalaryPlan, timelyDeliveries } from '../src/careerReview.js';
 
 test('tenure uses full months and the end of shorter months', () => {
   assert.equal(completeMonths('2026-01-31', '2026-02-28'), 1);
@@ -27,4 +27,12 @@ test('a salary shared by multiple bands does not imply an exact band', () => {
   assert.equal(salaryPosition({ amount: 2250 }, plan), 'Entre faixas');
   assert.equal(salaryPosition({ amount: 2000 }, { ...plan, bandRate: 0 }), 'Valor compartilhado por várias faixas');
   assert.equal(salaryPosition({ amount: 1999 }, plan), 'Abaixo da matriz');
+});
+
+test('the salary matrix used for classification must be active and in effect on the reference date', () => {
+  const plan = { effective: '2026-11-27' };
+  assert.equal(effectiveSalaryPlan(plan, '2026-11-27'), plan);
+  assert.equal(effectiveSalaryPlan(plan, '2026-11-26'), null);
+  assert.equal(effectiveSalaryPlan({ ...plan, active: false }, '2026-11-28'), null);
+  assert.equal(effectiveSalaryPlan({ ...plan, hierarchyOnly: true }, '2026-11-28'), null);
 });

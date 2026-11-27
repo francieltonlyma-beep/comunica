@@ -1,9 +1,9 @@
 import { CareerReviewDecision } from './CareerReviewWorkflow.jsx';
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
-import { completeMonths, salaryPosition, timelyDeliveries } from './careerReview.js';
+import { completeMonths, effectiveSalaryPlan, salaryPosition, timelyDeliveries } from './careerReview.js';
 import { displayDay, isInactiveEmployee } from './personnelModel.js';
-import { roleNameKey } from './roleCatalog.js';
+import { resolveEmployeeRole } from './roleCatalog.js';
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const root = company => ['artifacts', 'comunica-salvador', 'public', 'data', 'companies', company];
@@ -11,9 +11,7 @@ const unknown = 'A confirmar';
 const threshold = value => value !== '' && value != null && Number.isFinite(Number(value)) ? Number(value) : null;
 
 export default function CareerReview({ db, company, uid, person, roles, activities, today }) {
-  const catalog = roles.filter(role => !role.mergedIntoRoleId);
-  const candidates = catalog.filter(role => person.role && roleNameKey(role.name) === roleNameKey(person.role));
-  const role = catalog.find(item => item.id === person.roleId) || (candidates.length === 1 ? candidates[0] : null);
+  const role = resolveEmployeeRole(person, roles);
   const roleId = role?.id;
   const [matrix, setMatrix] = useState(null);
   const [payroll, setPayroll] = useState(null);
@@ -36,8 +34,7 @@ export default function CareerReview({ db, company, uid, person, roles, activiti
     () => setGoals({ error: true })), [db, company, person.id]);
 
   const matchingMatrix = role && matrix?.id === role.id ? matrix : null;
-  const savedPlan = matchingMatrix?.plan;
-  const plan = savedPlan && !savedPlan.hierarchyOnly && savedPlan.active !== false && savedPlan.effective <= today ? savedPlan : null;
+  const plan = effectiveSalaryPlan(matchingMatrix?.plan, today);
   const pay = payroll?.records?.filter(item => item.effective <= today).sort((a, b) => b.effective.localeCompare(a.effective))[0];
   const months = completeMonths(person.hireDate, today);
   const delivery = timelyDeliveries(activities, person.id, today);

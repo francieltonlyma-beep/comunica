@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { teamHeadcount } from '../src/teamHeadcount.js';
 import test from 'node:test';
 import { activeHeadcount, pendingDate } from '../src/personnelModel.js';
 test('quadro considera datas efetivas, cancelamentos, readmissão e cadastros antigos', () => {
@@ -36,4 +37,24 @@ test('exames realizados têm próxima renovação e cancelamentos saem das pend�
 test('a data de demissão do perfil retira o colaborador do quadro na data efetiva', () => {
   const employee = { id: 'profile', hireDate: '2026-11-01', terminationDate: '2026-11-25' };
   assert.deepEqual(activeHeadcount([{ ...employee, terminationDate: '' }], [], '2026-11-26').map(person => person.id), ['profile']);
+});
+
+test('quadro usa o vínculo com o cargo atualizado e conta somente vagas com inscrições abertas', () => {
+  const role = {id: 'role-a', name: 'Atendimento', depts: ['norte', 'sul'], approvedHeadcountByDept: {norte: 2, sul: 0}};
+  const employee = {id: 'emp-a', roleId: 'role-a', role: 'Nome antigo', depts: ['norte', 'sul', 'sul']};
+  const {headcountRows, headcountMetrics} = teamHeadcount({
+    activeEmployees: [employee],
+    departmentsList: [{id: 'norte'}, {id: 'sul'}],
+    rolesList: [role, {id: 'old', name: 'Atendimento antigo', depts: ['sul'], mergedIntoRoleId: role.id}],
+    vacanciesList: [
+      {roleId: role.id, status: 'published', closesAt: '2026-11-27'},
+      {roleId: role.id, status: 'published', closesAt: '2026-11-26'},
+      {roleId: role.id, status: 'closed'},
+    ],
+    getUserDepts: user => user.depts,
+    employeeStatusDay: '2026-11-27',
+    mgmtSectorFilter: 'all',
+  });
+  assert.deepEqual(headcountRows.map(row => [row.current, row.activeRecruitment]), [[1, 1], [1, 1]]);
+  assert.deepEqual(headcountMetrics, {planned: 2, vacancies: 1, excess: 1, configuredRoles: 2});
 });

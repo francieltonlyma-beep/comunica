@@ -1,4 +1,8 @@
 import './TeamManagement.css';
+import TeamHeadcount from './TeamHeadcount.jsx';
+import TeamOverview from './TeamOverview.jsx';
+import { teamHeadcount } from './teamHeadcount.js';
+import TeamManagementNavigation from './TeamManagementNavigation.jsx';
 import { Managers } from './TeamInsights.jsx';
 import EmployeeChecklist from './EmployeeChecklist.jsx';
 import PurchaseSelect from './PurchaseSelect.jsx';
@@ -19,7 +23,7 @@ import { CoverageRequirementEditor } from './ScheduleCoveragePanel.jsx';
 import { scopedScheduleSource } from './scheduleScope.js';
 import React, { Suspense, lazy, useState, useEffect, useEffectEvent, useRef, useCallback } from 'react';
 const ScheduleConfigurationAudit = lazy(() => import('./ScheduleConfigurationAudit.jsx'));
-import { employeeRoleOptions, getRoleDepts, getRoleUsers, matchingRoles, mergeRoleFields, roleNameKey } from './roleCatalog.js';
+import { employeeRoleOptions, getRoleDepts, getRoleUsers, matchingRoles, mergeRoleFields, resolveEmployeeRole, roleNameKey } from './roleCatalog.js';
 import { useCompanyEmployees } from './useCompanyEmployees.js';
 import { useDialogFocus } from './useDialogFocus.js';
 import { loginErrorMessage } from './loginError';
@@ -353,6 +357,7 @@ const isEmojiGrapheme = (value) => /[\p{Extended_Pictographic}\p{Regional_Indica
 const CAREER_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const applicationRetentionMs = application => careerDateMs(application.retentionUntil) || (careerDateMs(application.createdAt) || Date.now()) + CAREER_RETENTION_MS;
 const formatCareerDate = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date(value)) : 'Prazo não definido';
+const EMPTY_HEADCOUNT = { headcountRows: [], headcountMetrics: { planned: 0, vacancies: 0, excess: 0, configuredRoles: 0 } };
 const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
 const isVacationAbsence = absence => normalizedText(absence?.reason) === 'ferias';
 const isAutomaticSectorPost = post => post?.authorId === 'system' || String(post?.id || '').startsWith('post-abs-');
@@ -847,6 +852,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [careerApplications, setCareerApplications] = useState([]);
   const [careerWorkspace, setCareerWorkspace] = useState('vacancies');
   const [careerVacancyFocusId, setCareerVacancyFocusId] = useState('');
+  const [careerRoleFilter, setCareerRoleFilter] = useState('');
   const [careerVacancySearch, setCareerVacancySearch] = useState('');
   const [careerQueueFilter, setCareerQueueFilter] = useState('all');
   const [careerVacancyFilter, setCareerVacancyFilter] = useState('all');
@@ -896,8 +902,9 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [requestedTab, setActiveTab] = useState('dashboard');
   const [visitedIntegraScope, setVisitedIntegraScope] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('comunica-dark'));
-  const [personnelEmployee, setPersonnelEmployee] = useState('');
+  const [teamEmployeeSelection, setTeamEmployeeSelection] = useState(null);
   const [mgmtSubTab, setMgmtSubTab] = useState('overview');
+  const [teamSalaryView, setTeamSalaryView] = useState('matrix');
   const [salaryRoleId, setSalaryRoleId] = useState('');
   const [employeeAttention, setEmployeeAttention] = useState('');
   const [headcountEmployeeIds, setHeadcountEmployeeIds] = useState(null);
@@ -7505,10 +7512,20 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       });
     }, 100);
   };
-  const employeeStatusDay = hrDay();
-  const activeEmployees = employeesList.filter(user => !isInactiveEmployee(user, employeeStatusDay));
-  const sectorCounts = departmentsList.map(d => ({ ...d, count: employeesList.filter(u => getUserDepts(u).includes(d.id)).length }));
-  const activeSectorCounts = departmentsList.map(d => ({ ...d, count: activeEmployees.filter(u => getUserDepts(u).includes(d.id)).length }));
+  const canUsePersonnel = Boolean(!currentUser?.isDeveloper && (currentUser?.isAdmin || currentUser?.permissions?.personnel === true));
+  const confidentialPersonnel = Boolean(canUsePersonnel && (currentUser?.isAdmin || currentUser?.permissions?.personnelPrivate === true));
+  const managementView = !currentUser?.isAdmin && !(['hr-pending', 'hr-file'].includes(mgmtSubTab)
+    || (confidentialPersonnel && ['dpi', 'development', 'salary', 'managers'].includes(mgmtSubTab))) ? 'hr-pending' : mgmtSubTab;
+  const personnelEmployee = teamEmployeeSelection?.companyId === activeCompany?.id && teamEmployeeSelection?.uid === dbUser?.uid
+    ? teamEmployeeSelection?.employeeId || '' : '';
+  const setPersonnelEmployee = employeeId => setTeamEmployeeSelection({companyId: activeCompany?.id, uid: dbUser?.uid, employeeId});
+  const manageEmployment = activeTab === 'management' && canUsePersonnel;
+  const employment = usePersonnelRows(dbUser ? db : null, activeCompany?.id, manageEmployment ? 'hrCases' : '', 'employment', dbUser?.uid);
+  const employeeStatusDay = usePersonnelDay(activeTab === 'management');
+  const activeEmployees = activeHeadcount(employeesList, employment.rows, employeeStatusDay);
+  const activeEmployeeIds = new Set(activeEmployees.map(employee => employee.id));
+  const sectorCounts = departmentsList.map(department => ({ ...department, count: employeesList.filter(employee => getUserDepts(employee).includes(department.id)).length }));
+  const activeSectorCounts = departmentsList.map(department => ({ ...department, count: activeEmployees.filter(employee => getUserDepts(employee).includes(department.id)).length }));
   const formRoleOptions = showUserModal ? employeeRoleOptions(rolesList, userForm.depts || [], userForm.role) : [];
   const roleSearchTerm = normalizedText(roleSearch);
   const visibleRoles = activeTab === 'management' && mgmtSubTab === 'roles'
@@ -7517,46 +7534,10 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         && (!roleSectorFilter || roleDepartments.includes(roleSectorFilter)))
       .sort((a, b) => a.role.name.localeCompare(b.role.name, 'pt-BR', { sensitivity: 'base', numeric: true }))
     : [];
-  const canUsePersonnel = Boolean(!currentUser?.isDeveloper && (currentUser?.isAdmin || currentUser?.permissions?.personnel === true));
-  const confidentialPersonnel = Boolean(canUsePersonnel && (currentUser?.isAdmin || currentUser?.permissions?.personnelPrivate === true));
-  const employment = usePersonnelRows(dbUser ? db : null, activeCompany?.id,
-    activeTab === 'management' && mgmtSubTab === 'headcount' && currentUser?.isAdmin && !currentUser?.isDeveloper ? 'hrCases' : '', 'employment', dbUser?.uid);
-  const headcountDay = usePersonnelDay(activeTab === 'management' && mgmtSubTab === 'headcount');
-  const headcountPeople = activeTab === 'management' && mgmtSubTab === 'headcount' ? activeHeadcount(employeesList, employment.rows, headcountDay) : employeesList;
-  const headcountRows = departmentsList
-    .filter(department => mgmtSectorFilter === 'all' || department.id === mgmtSectorFilter)
-    .flatMap(department => rolesList
-      .filter(role => getRoleDepts(role).includes(department.id))
-      .map(role => {
-        const occupants = headcountPeople.filter(user =>
-          (user.roleId ? user.roleId === role.id : roleNameKey(user.role) === roleNameKey(role.name))
-          && getUserDepts(user).includes(department.id));
-        const current = occupants.length;
-        const plannedValue = role.approvedHeadcountByDept?.[department.id];
-        const planned = plannedValue === '' || plannedValue === undefined || plannedValue === null ? null : Math.max(0, Number(plannedValue) || 0);
-        return {
-          key: `${role.id || role.name}:${department.id}`,
-          role,
-          department,
-          current,
-          occupants,
-          planned,
-          activeRecruitment: vacanciesList.filter(vacancy => vacancy.roleId === role.id && vacancy.status === 'published').length,
-          vacancies: planned === null ? 0 : Math.max(planned - current, 0),
-          excess: planned === null ? 0 : Math.max(current - planned, 0),
-          configured: planned !== null,
-        };
-      }));
-  const headcountMetrics = headcountRows.reduce((totals, row) => {
-    if (row.configured) {
-      totals.planned += row.planned;
-      totals.vacancies += row.vacancies;
-      totals.excess += row.excess;
-      totals.configuredRoles += 1;
-    }
-    return totals;
-  }, { planned: 0, vacancies: 0, excess: 0, configuredRoles: 0 });
-  const headcountVisibleEmployees = headcountPeople.filter(user =>
+  const { headcountRows, headcountMetrics } = activeTab === 'management' && managementView === 'headcount'
+    ? teamHeadcount({activeEmployees, departmentsList, rolesList, vacanciesList, getUserDepts, employeeStatusDay, mgmtSectorFilter})
+    : EMPTY_HEADCOUNT;
+  const headcountVisibleEmployees = activeEmployees.filter(user =>
     mgmtSectorFilter === 'all' || getUserDepts(user).includes(mgmtSectorFilter));
   const uniqueRoles = [...new Set(employeesList.map(u => u.role).filter(Boolean))];
   const roleCounts = uniqueRoles.map(role => ({ name: role, count: employeesList.filter(u => u.role === role).length }));
@@ -7565,17 +7546,17 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
 
   const accessCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const employeeViews = {
-    active: ['Colaboradores ativos', user => !isInactiveEmployee(user, employeeStatusDay)],
-    recent: ['Acessos nos últimos 7 dias', user => !isInactiveEmployee(user, employeeStatusDay) && employeeAccessMillis(user.lastLoginAt) >= accessCutoff],
-    first: ['Primeiro acesso pendente', user => !isInactiveEmployee(user, employeeStatusDay) && !employeeAccessMillis(user.lastLoginAt)],
-    incomplete: ['Cadastro sem cargo ou setor', user => !isInactiveEmployee(user, employeeStatusDay) && (!user.role || !getUserDepts(user).length)],
+    active: ['Colaboradores ativos', user => activeEmployeeIds.has(user.id)],
+    recent: ['Acessos nos últimos 7 dias', user => activeEmployeeIds.has(user.id) && employeeAccessMillis(user.lastLoginAt) >= accessCutoff],
+    first: ['Primeiro acesso pendente', user => activeEmployeeIds.has(user.id) && !employeeAccessMillis(user.lastLoginAt)],
+    incomplete: ['Cadastro sem cargo ou setor', user => activeEmployeeIds.has(user.id) && (!user.role || !getUserDepts(user).length)],
   };
   const filteredEmployees = employeesList.filter(u => {
     const matchText = normalizedText(u.name).includes(normalizedText(empSearchText));
     const matchSector = empSectorFilter === 'Todos' || getUserDepts(u).includes(empSectorFilter);
     const matchRole = empRoleFilter === 'Todos' || u.role === empRoleFilter;
     const matchProdGroup = empProdGroupFilter === 'Todos' || u.prodGroup === empProdGroupFilter;
-    const inactive = isInactiveEmployee(u, employeeStatusDay);
+    const inactive = !activeEmployeeIds.has(u.id);
     const matchStatus = empStatusFilter === 'Todos' || inactive === (empStatusFilter === 'inactive');
     return matchText && matchSector && matchRole && matchProdGroup && matchStatus
       && (!employeeAttention || employeeViews[employeeAttention][1](u))
@@ -7592,6 +7573,22 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setEmployeeAttention(attention);
     setHeadcountEmployeeIds(occupants);
     setMgmtSubTab('employees');
+  };
+  const openTeamSalary = (roleId = '', view = 'matrix') => {
+    setSalaryRoleId(roleId);
+    setTeamSalaryView(view);
+    setMgmtSubTab('salary');
+  };
+  const openTeamEmployeeView = (view, id) => {
+    setPersonnelEmployee(id);
+    setMgmtSubTab(view);
+  };
+  const openRoleRecruitment = role => {
+    setCareerWorkspace('vacancies');
+    setCareerVacancySearch('');
+    setCareerRoleFilter(role.id);
+    setCareerVacancyStatus('open');
+    setActiveTab('careers');
   };
   const peopleAttentionList = activeEmployees.filter(user => !employeeAccessMillis(user.lastLoginAt) || !user.role || !getUserDepts(user).length)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
@@ -7768,6 +7765,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setCareerWorkspace('vacancies');
     setCareerVacancyStatus(vacancy.status === 'archived' ? 'archived' : 'current');
     setCareerVacancySearch('');
+    setCareerRoleFilter('');
     setCareerVacancyFocusId(vacancy.id);
   };
 
@@ -8405,7 +8403,7 @@ const notificationsToShow = [...notificationItems]
     const open = isCareerVacancyOpen(vacancy, careerToday);
     const status = vacancy.status === 'archived' ? 'archived' : open ? 'open' : 'closed';
     const matchesStatus = careerVacancyStatus === 'current' ? status !== 'archived' : status === careerVacancyStatus;
-    return matchesStatus && normalizedText(`${vacancy.title || ''} ${vacancy.location || ''}`).includes(normalizedText(careerVacancySearch));
+    return matchesStatus && (!careerRoleFilter || vacancy.roleId === careerRoleFilter) && normalizedText(`${vacancy.title || ''} ${vacancy.location || ''}`).includes(normalizedText(careerVacancySearch));
   }).sort((a, b) => careerDateMs(b.createdAt) - careerDateMs(a.createdAt));
   const careerOpportunityTitle = application => careerVacanciesById.get(application.vacancyId)?.title
     || careerPoolRoles.get(application.vacancyId) || application.vacancyTitle || 'Oportunidade sem título';
@@ -10723,6 +10721,9 @@ const handleDownload = async (fileUrl, fileName) => {
                       <option value="closed">Encerradas</option>
                       <option value="archived">Arquivadas</option>
                     </select>
+                    {careerRoleFilter && <button type="button" className="px-2 py-2 text-xs font-bold text-blue-800" onClick={() => setCareerRoleFilter('')}>
+                      Limpar cargo: {careerRoleNames.get(careerRoleFilter) || 'Selecionado'}
+                    </button>}
                     <span className="text-xs text-slate-600">{careerVisibleVacancies.length} {careerVisibleVacancies.length === 1 ? 'vaga' : 'vagas'}</span>
                   </div>
                   <div className="grid items-start gap-3 lg:grid-cols-2">
@@ -11089,25 +11090,16 @@ const handleDownload = async (fileUrl, fileName) => {
             /></Suspense>
           )}
 
-          {activeTab === 'management' && currentUser.isAdmin && (
-            <nav data-tour="management" aria-label="Abas da Gestão de Equipe" className="flex gap-1 overflow-x-auto rounded-2xl border bg-white p-2">
-              {[
-                ['overview', 'Visão da equipe'],
-                ...(confidentialPersonnel ? [['dpi', 'Indicadores e PDI'], ['development', 'Desenvolvimento']] : []),
-                ['employees', 'Colaboradores'],
-                ['headcount', 'Quadro por setor'],
-                ['roles', 'Cargos e salários'],
-                ['sectors', 'Setores'],
-                ...(canUsePersonnel ? [['hr-pending', 'Pendências do RH']] : []),
-              ].map(([id, label]) => {
-                const selected = mgmtSubTab === id || (id === 'roles' && mgmtSubTab === 'salary') || (id === 'hr-pending' && mgmtSubTab === 'hr-file');
-                return <button key={id} type="button" aria-current={selected ? 'page' : undefined}
-                  onClick={() => { if (id === 'employees') { setEmployeeAttention(''); setHeadcountEmployeeIds(null); } setMgmtSubTab(id); }}
-                  className={`min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold ${selected ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
-                  {label}
-                </button>;
-              })}
-            </nav>
+          {activeTab === 'management' && (currentUser.isAdmin || canUsePersonnel) && (
+            <TeamManagementNavigation view={managementView} salaryView={teamSalaryView} admin={currentUser.isAdmin} personnel={canUsePersonnel} confidential={confidentialPersonnel}
+              onNavigate={view => {
+                if (view === 'employees') openEmployeeList();
+                else if (['matrix', 'hierarchy', 'compensation'].includes(view)) {
+                  if (managementView === 'salary') setTeamSalaryView(view);
+                  else openTeamSalary('', view);
+                } else if (view === 'salary' && managementView !== 'salary') openTeamSalary();
+                else setMgmtSubTab(view);
+              }} />
           )}
 
           {activeTab === 'my-development' && dbUser && activeCompany?.id && (
@@ -11126,121 +11118,57 @@ const handleDownload = async (fileUrl, fileName) => {
               </Suspense>
             </div>
           )}
-          {activeTab === 'management' && mgmtSubTab === 'development' && confidentialPersonnel && dbUser && activeCompany?.id && (
-            <Suspense fallback={<p>Carregando desenvolvimento…</p>}>
+          {activeTab === 'management' && managementView === 'development' && confidentialPersonnel && dbUser && activeCompany?.id && (
+            <Suspense fallback={<p>Carregando metas do PDI…</p>}>
               <DevelopmentWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id}
-                uid={dbUser.uid} employees={activeEmployees} editable />
+                uid={dbUser.uid} employees={activeEmployees} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee} editable />
             </Suspense>
           )}
-          {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && (!currentUser.isAdmin || ['hr-pending','hr-file'].includes(mgmtSubTab)) && (
-            <div className="space-y-3">
-              {!currentUser.isAdmin && confidentialPersonnel && <div className="flex gap-3">
-                <button type="button" onClick={() => setMgmtSubTab('dpi')}>Painel PDI</button>
-                <button type="button" onClick={() => setMgmtSubTab('hr-pending')}>Acompanhamento do RH</button>
-              </div>}
-              {mgmtSubTab !== 'dpi' && <Suspense fallback={<p>Carregando acompanhamento do RH…</p>}><PersonnelWorkspace
-                key={JSON.stringify([activeCompany.id,dbUser.uid,confidentialPersonnel])}
+          {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && ['hr-pending', 'hr-file'].includes(managementView) && (
+            <Suspense fallback={<p>Carregando rotinas do RH…</p>}>
+              <PersonnelWorkspace key={JSON.stringify([activeCompany.id, dbUser.uid, confidentialPersonnel])}
                 db={db} company={activeCompany.id} uid={dbUser.uid} employees={employeesList} departments={departmentsList}
                 confidential={confidentialPersonnel} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee}
                 roles={rolesList} reviewActivities={currentUser.isAdmin ? serviceActivityRows.map(row => row.activity) : undefined}
-                view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>}
-            </div>
+                careerActions={confidentialPersonnel ? (view, person) => {
+                  if (view === 'development' && !activeEmployeeIds.has(person.id)) {
+                    triggerNotification('O cadastro precisa estar ativo para editar as metas do PDI.', 'error');
+                    return;
+                  }
+                  if (view === 'salary') {
+                    setPersonnelEmployee(person.id);
+                    openTeamSalary(resolveEmployeeRole(person, rolesList)?.id, activeEmployeeIds.has(person.id) ? 'compensation' : 'matrix');
+                  } else openTeamEmployeeView(view, person.id);
+                } : undefined}
+                view={managementView === 'hr-file' ? 'file' : 'pending'} go={view => setMgmtSubTab(view === 'file' ? 'hr-file' : 'hr-pending')} />
+            </Suspense>
           )}
-          {activeTab === 'management' && (mgmtSubTab === 'dpi' || (currentUser.isAdmin && mgmtSubTab === 'salary')) && confidentialPersonnel && dbUser && activeCompany?.id && (
-            <div className="space-y-3">
-              {mgmtSubTab === 'salary' && <button type="button" className="rounded-lg border bg-white px-4 py-2 text-xs font-semibold text-blue-800"
-                onClick={() => setMgmtSubTab('roles')}>Voltar ao cadastro de cargos</button>}
-            <Suspense fallback={<p>Carregando Painel PDI…</p>}>
-              <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
-                fixedView={currentUser.isAdmin ? (mgmtSubTab === 'salary' ? 'salary' : 'performance') : ''}
-                initialRoleId={mgmtSubTab === 'salary' ? salaryRoleId : ''}
-                roles={rolesList} employees={employeesList} departments={departmentsList} getDepartments={getUserDepts}
+          {activeTab === 'management' && ['dpi', 'salary', 'managers'].includes(managementView) && confidentialPersonnel && dbUser && activeCompany?.id && (
+            <Suspense fallback={<p>Carregando ferramentas da equipe…</p>}>
+              <DpiWorkspace key={JSON.stringify([activeCompany.id, dbUser.uid, managementView, salaryRoleId])}
+                db={db} company={activeCompany.id} uid={dbUser.uid}
+                view={managementView === 'salary' ? 'salary' : managementView === 'managers' ? 'management' : 'performance'}
+                initialRoleId={managementView === 'salary' ? salaryRoleId : ''} salaryView={teamSalaryView} setSalaryView={setTeamSalaryView}
+                roles={rolesList} employees={employeesList} activeEmployees={activeEmployees} today={employeeStatusDay}
+                employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee} openEmployee={openTeamEmployeeView}
+                departments={departmentsList} getDepartments={getUserDepts}
                 activities={serviceActivityRows.map(row => ({ ...row.activity, id: row.key, title: row.subject, unit: row.record?.managerUnit || '', manager: row.record?.assignedManager || '' }))}
                 openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey(id); }} />
             </Suspense>
-            </div>
           )}
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
-          {activeTab === 'management' && currentUser.isAdmin && (!canUsePersonnel || !['hr-pending','hr-file'].includes(mgmtSubTab)) && (
-            <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
+          {activeTab === 'management' && currentUser.isAdmin && ['overview', 'headcount', 'employees', 'roles', 'sectors'].includes(managementView) && (
+            <div className="flex flex-col gap-6 animate-in fade-in duration-300">
 
-              {mgmtSubTab === 'overview' && (
-                <div className="flex flex-col gap-5 animate-in fade-in duration-200">
-                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-sm">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Gestão de pessoas</span>
-                    <h3 className="mt-1 text-xl font-black">Visão rápida da sua equipe</h3>
-                    <p className="mt-1 max-w-2xl text-xs text-slate-300">Acompanhe o acesso, a estrutura organizacional e os cadastros que precisam de atenção.</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    {Object.entries(employeeViews).map(([key, [label]]) => (
-                      <button key={key} type="button" onClick={() => openEmployeeList({ attention: key })}
-                        className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500">
-                        <span className="block text-xs font-semibold text-slate-600">{label}</span>
-                        <strong className="mt-1 block text-2xl tabular-nums text-slate-900">{peopleOverview[key]}</strong>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                      <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-800">Cadastros que precisam de atenção</h4><p className="mt-1 text-xs text-slate-500">Ajuste vínculo, cargo ou acompanhe quem ainda não fez o primeiro acesso.</p></div><button type="button" onClick={() => setMgmtSubTab('employees')} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Abrir equipe</button></div>
-                      <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!employeeAccessLabel(user.lastLoginAt) ? 'Ainda não acessou' : ''}{!employeeAccessLabel(user.lastLoginAt) && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { handleEditUser(user); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-800">Distribuição da equipe</h4><div className="mt-4 space-y-3">{activeSectorCounts.slice().sort((a,b) => b.count - a.count).slice(0, 5).map(sector => <div key={sector.id}><div className="flex justify-between text-[10px] font-semibold text-slate-600"><span>{sector.name}</span><span>{sector.count}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${peopleOverview.active ? Math.round((sector.count / peopleOverview.active) * 100) : 0}%` }} /></div></div>)}{sectorCounts.length === 0 && <p className="mt-4 text-xs text-slate-500">Cadastre setores para acompanhar a distribuição.</p>}</div></div>
-                  </div>
-                </div>
-              )}
+              {mgmtSubTab === 'overview' && <TeamOverview {...{employeeViews, peopleOverview, peopleAttentionList, activeSectorCounts,
+                openEmployeeList, employeeAccessLabel, getUserDepts, handleEditUser}}
+                openPersonnel={canUsePersonnel ? () => setMgmtSubTab('hr-pending') : undefined}
+                openPerformance={confidentialPersonnel ? () => setMgmtSubTab('dpi') : undefined} />}
 
-              {mgmtSubTab === 'headcount' && (employment.error || employment.loading ? <p role="status">{employment.error || 'Consultando vínculos efetivos…'}</p> :
-                <div className="flex flex-col gap-5 animate-in fade-in duration-200">
-                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 to-blue-950 p-6 text-white shadow-sm">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-200">Planejamento de pessoas</span>
-                    <h3 className="mt-1 text-xl font-black">Composição do quadro por setor</h3>
-                    <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-300">Defina quantas pessoas cada cargo deve ter em cada setor. O Comunica compara o previsto com os colaboradores cadastrados e calcula vagas e excedentes.</p>
-                  </div>
-
-                  <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-                    <div><label htmlFor="headcount-sector-filter" className="block text-[10px] font-bold uppercase tracking-wide text-slate-500">Setor analisado</label><select id="headcount-sector-filter" value={mgmtSectorFilter} onChange={event => setMgmtSectorFilter(event.target.value)} className="mt-1.5 min-w-56 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"><option value="all">Todos os setores</option>{departmentsList.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}</select></div>
-                    <p className="max-w-xl text-[10px] leading-4 text-slate-500">Sem um quadro previsto, o cargo fica como <strong>não planejado</strong> e não entra no cálculo de vagas ou excedentes. Um colaborador vinculado a mais de um setor conta em cada vínculo correspondente.</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-blue-700">Pessoas únicas</span><strong className="mt-1 block text-2xl font-black text-blue-950">{headcountVisibleEmployees.length}</strong><span className="text-[10px] text-blue-700">nos setores selecionados</span></div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4"><span className="text-[9px] font-black uppercase tracking-wide text-slate-500">Quadro planejado</span><strong className="mt-1 block text-2xl font-black text-slate-900">{headcountMetrics.planned}</strong><span className="text-[10px] text-slate-500">em {headcountMetrics.configuredRoles} cargo(s) configurado(s)</span></div>
-                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-amber-700">Vagas do quadro</span><strong className="mt-1 block text-2xl font-black text-amber-950">{headcountMetrics.vacancies}</strong><span className="text-[10px] text-amber-700">posições sem ocupante</span></div>
-                    <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-rose-700">Acima do previsto</span><strong className="mt-1 block text-2xl font-black text-rose-950">{headcountMetrics.excess}</strong><span className="text-[10px] text-rose-700">vínculos além do quadro</span></div>
-                  </div>
-
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="border-b border-slate-100 px-5 py-4"><h4 className="text-sm font-extrabold text-slate-800">Quadro previsto e composição atual</h4><p className="mt-1 text-[10px] text-slate-500">Cadastre o número previsto para cada combinação de cargo e setor. Use 0 para indicar que não há posição prevista.</p></div>
-                    <div className="overflow-x-auto">
-                      <table className="team-headcount-table w-full text-left text-xs lg:min-w-[880px]">
-                        <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Setor</th><th className="px-4 py-3">Cargo</th><th className="px-4 py-3 text-center">Atual</th><th className="px-4 py-3 text-center">Previsto</th><th className="px-4 py-3 text-center">Vagas do quadro</th><th className="px-4 py-3 text-center">Excedente</th><th className="px-4 py-3 text-center">Vagas publicadas</th><th className="px-5 py-3 text-right">Ação</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {headcountRows.map(row => {
-                            const value = headcountDrafts[row.key] ?? (row.planned === null ? '' : String(row.planned));
-                            const isDirty = value !== (row.planned === null ? '' : String(row.planned));
-                            return <tr key={row.key} className="hover:bg-slate-50/70">
-                              <td data-label="Setor" className="px-5 py-3 font-semibold text-slate-700">{row.department.name}</td>
-                              <td data-label="Cargo" className="px-4 py-3"><strong className="text-slate-800">{row.role.name}</strong><span className={`ml-2 rounded-full px-2 py-0.5 text-[9px] font-bold ${row.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{row.configured ? 'Planejado' : 'Não planejado'}</span></td>
-                              <td data-label="Vínculos atuais" className="px-4 py-3 text-center font-bold text-slate-700">
-                                {row.current ? <button type="button" className="font-bold text-blue-700 underline"
-                                  aria-label={`Ver ${row.current} ocupantes de ${row.role.name} em ${row.department.name}`}
-                                  onClick={() => openEmployeeList({ occupants: row.occupants.map(user => user.id) })}>{row.current}</button> : 0}
-                              </td>
-                              <td data-label="Previsto" className="px-4 py-3 text-center"><input aria-label={`Quadro previsto para ${row.role.name} em ${row.department.name}`} type="number" min="0" max="10000" step="1" value={value} onChange={event => setHeadcountDrafts(previous => ({ ...previous, [row.key]: event.target.value }))} placeholder="Definir" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-xs font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" /></td>
-                              <td data-label="Vagas" className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.vacancies ? 'text-amber-700' : 'text-slate-400'}`}>{row.vacancies}</span> : <span className="text-slate-300">—</span>}</td>
-                              <td data-label="Excedente" className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.excess ? 'text-rose-700' : 'text-slate-400'}`}>{row.excess}</span> : <span className="text-slate-300">—</span>}</td>
-                              <td data-label="Recrutamento" className="px-4 py-3 text-center"><span className={`font-bold ${row.activeRecruitment ? 'text-blue-700' : 'text-slate-400'}`}>{row.activeRecruitment}</span></td>
-                              <td data-label="Ações" className="px-5 py-3 text-right"><button type="button" disabled={!isDirty || savingHeadcountKey === row.key} onClick={() => handleSaveHeadcount(row)} className="rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">{savingHeadcountKey === row.key ? 'Salvando…' : 'Salvar'}</button></td>
-                            </tr>;
-                          })}
-                          {!headcountRows.length && <tr><td colSpan="8" className="px-5 py-12 text-center"><strong className="block text-xs text-slate-700">Nenhum cargo vinculado a este setor</strong><span className="mt-1 block text-[10px] text-slate-500">Cadastre um cargo e associe-o ao setor para planejar o quadro.</span><button type="button" onClick={() => setMgmtSubTab('roles')} className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-blue-700 hover:bg-blue-50">Abrir cargos</button></td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {mgmtSubTab === 'headcount' && <TeamHeadcount {...{employment, headcountMetrics, headcountRows,
+                headcountVisibleEmployees, departmentsList, mgmtSectorFilter, setMgmtSectorFilter, headcountDrafts,
+                setHeadcountDrafts, savingHeadcountKey, handleSaveHeadcount, canOpenCareers, openRoleRecruitment, openEmployeeList}}
+                openRoleCatalog={() => setMgmtSubTab('roles')} />}
 
               {mgmtSubTab === 'employees' && (
                 <div className="bg-white p-4 sm:p-6 rounded-[26px] border border-slate-200 shadow-[0_18px_50px_-36px_rgba(15,23,42,.55)] flex flex-col gap-5">
@@ -11343,14 +11271,14 @@ const handleDownload = async (fileUrl, fileName) => {
                               {employeeAccessLabel(user.lastLoginAt) ? <><strong className="block text-slate-700">{employeeAccessLabel(user.lastLoginAt).date}</strong><span>{employeeAccessLabel(user.lastLoginAt).time}</span></> : <span className="font-bold text-amber-700">Ainda não acessou</span>}
                             </td>
                             <td className="p-4">
-                              {isInactiveEmployee(user, employeeStatusDay) ? (
+                              {!activeEmployeeIds.has(user.id) ? (
                                 <><span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[9px] font-black text-slate-700">Inativo</span>
-                                <span className="mt-1 block text-[10px] text-slate-600">Demissão em {displayDay(user.terminationDate)}</span></>
+                                {user.terminationDate && <span className="mt-1 block text-[10px] text-slate-600">Demissão em {displayDay(user.terminationDate)}</span>}</>
                               ) : (!user.role || !getUserDepts(user).length) ? <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-black text-amber-700">Cadastro incompleto</span> : employeeAccessLabel(user.lastLoginAt) ? <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black text-emerald-700">Ativo</span> : <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[9px] font-black text-blue-700">Aguardando acesso</span>}
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                {canUsePersonnel && <button type="button" className="rounded-lg border px-2 py-1 text-blue-800" onClick={()=>{setPersonnelEmployee(user.id);setMgmtSubTab('hr-file');}}>Ficha do RH</button>}
+                                {canUsePersonnel && <button type="button" className="rounded-lg border px-2 py-1 text-blue-800" onClick={() => openTeamEmployeeView('hr-file', user.id)}>Ficha do RH</button>}
                                 <button type="button" onClick={() => handleResetUserPin(user.id, user.name)} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-blue-700 transition-all border border-transparent hover:border-blue-100" title="Redefinir PIN"><KeyRound className="h-4 w-4" /></button>
                                 <button
                                   type="button"
@@ -11387,10 +11315,6 @@ const handleDownload = async (fileUrl, fileName) => {
 
               {mgmtSubTab === 'roles' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {confidentialPersonnel && <div className="lg:col-span-3 rounded-2xl border bg-white p-4">
-                    <button type="button" onClick={() => { setSalaryRoleId(''); setMgmtSubTab('salary'); }}
-                      className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Abrir matriz e reajustes</button>
-                  </div>}
                   <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
                     <div className="border-b border-slate-100 pb-3">
                       <h3 className="font-extrabold text-slate-800 text-base">Cargos Existentes</h3>
@@ -11488,7 +11412,7 @@ const handleDownload = async (fileUrl, fileName) => {
                                 <div className="flex flex-col">
                                   <span className="font-extrabold text-slate-800">{role.name}</span>
                                   {confidentialPersonnel && <button type="button" className="self-start py-1 text-xs font-semibold text-blue-700 underline"
-                                    onClick={() => { setSalaryRoleId(role.id); setMgmtSubTab('salary'); }}>Plano salarial</button>}
+                                    onClick={() => openTeamSalary(role.id)}>Plano salarial</button>}
                                   <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                     {roleDepartments.map(deptId => <span key={deptId} className="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded border border-slate-200">{departmentsList.find(d => d.id === deptId)?.name || deptId}</span>)}
                                     {duplicates.length > 1 && <span className="text-[10px] font-bold text-amber-800">Nome duplicado</span>}

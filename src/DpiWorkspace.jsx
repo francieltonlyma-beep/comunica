@@ -1,5 +1,5 @@
-import { adjustSalaryBand, bandNames, salaryBands } from './careerReview.js';
-import { roleNameKey } from './roleCatalog.js';
+import { adjustSalaryBand, bandNames, effectiveSalaryPlan, salaryBands, salaryPosition } from './careerReview.js';
+import { resolveEmployeeRole, roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import PlrSimulator from './PlrSimulator.jsx';
 import SalaryHierarchy from './SalaryHierarchy.jsx';
@@ -173,21 +173,30 @@ function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markD
   </form>;
 }
 
-function Compensation({ db, company, uid, employees, roles, records, today }) {
+function Compensation({ db, company, uid, employees, roles, records, today, employeeId, selectEmployee, openEmployee, openPlan, visible }) {
   const [entries,setEntries] = useState([]);
-  const [person,setPerson] = useState('');
+  const person = employees.some(employee => employee.id === employeeId) ? employeeId : '';
   const [amount,setAmount] = useState('');
   const [effective,setEffective] = useState(today);
   const [status,setStatus] = useState('');
-  useEffect(() => onSnapshot(collection(db,'artifacts','comunica-salvador','public','data','companies',company,'salaryChanges'),
-    snapshot => setEntries(snapshot.docs.map(item => item.data()).sort((a,b) => b.effective.localeCompare(a.effective))),
-    () => setStatus('Falha ao consultar os salários individuais.')), [company,db]);
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    if (!visible) return;
+    return onSnapshot(collection(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryChanges'),
+      snapshot => setEntries(snapshot.docs.map(item => item.data()).sort((a, b) => b.effective.localeCompare(a.effective))),
+      () => setStatus('Falha ao consultar os salários individuais.'));
+  }, [company, db, visible]);
   const selectedEmployee = employees.find(employee => employee.id === person);
-  const sameName = roles.filter(role => !role.mergedIntoRoleId && selectedEmployee?.role && roleNameKey(role.name) === roleNameKey(selectedEmployee.role));
-  const selectedRole = roles.find(role => !role.mergedIntoRoleId && role.id === selectedEmployee?.roleId)
-    || (sameName.length === 1 ? sameName[0] : undefined);
-  const selectedPlan = records[selectedRole?.id]?.plan;
-  const proposedBands = !selectedPlan?.hierarchyOnly && selectedPlan?.active !== false && selectedPlan?.effective <= effective ? salaryBands(selectedPlan) : [];
+  const selectedRole = resolveEmployeeRole(selectedEmployee, roles);
+  const proposedPlan = effectiveSalaryPlan(records[selectedRole?.id]?.plan, effective);
+  const proposedBands = proposedPlan ? salaryBands(proposedPlan) : [];
+  const visibleEmployees = employees.filter(employee => roleNameKey(employee.name).includes(roleNameKey(search)));
+  function openReajuste(id) {
+    selectEmployee(id);
+    setAmount('');
+    setEffective(today);
+    setStatus('');
+  }
   const currentPay = entries.find(entry => entry.person === person && entry.effective <= today);
   const proposedAmount = Number(amount);
   const difference = currentPay && proposedAmount > 0 ? Math.round((proposedAmount - Number(currentPay.amount)) * 100) / 100 : null;
@@ -201,14 +210,34 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
       setStatus('Salário registrado.'); setAmount('');
     } catch { setStatus('Falha ao registrar. Verifique a conexão, a permissão ou se já há registro nesta data.'); }
   }
-  return <section className={panel}><h3 className="text-lg font-bold">Enquadramento e reajustes individuais</h3><div className="max-h-64 overflow-auto"><table className="w-full text-left"><thead><tr><th>Colaborador</th><th>Cargo</th><th>Salário vigente</th><th>Enquadramento</th></tr></thead><tbody>{employees.map(p => {
-    const role = roles.find(r => r.id === p.roleId || r.name === p.role);
-    const plan = records[role?.id]?.plan;
-    const pay = entries.find(e => e.person === p.id && e.effective <= today);
-    const values = plan && !plan.hierarchyOnly && salaryBands(plan).map(b => b.value);
-    const label = !pay ? 'Salário pendente' : !values ? 'Plano pendente' : pay.amount < Math.min(...values) ? 'Abaixo da matriz' : pay.amount > Math.max(...values) ? 'Acima da matriz' : 'Dentro da matriz';
-    return <tr key={p.id} className="border-t"><td className="py-2">{p.name}</td><td>{role?.name || p.role}</td><td>{pay ? money.format(pay.amount) : '—'}</td><td>{label}</td></tr>;
-  })}</tbody></table></div><form onSubmit={save} className="space-y-3"><div className="grid items-end gap-2 sm:grid-cols-3"><label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={id => { setPerson(id); setAmount(''); }} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label></div>
+  return <section className={panel}>
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <h3 className="text-lg font-bold">Enquadramento e reajustes individuais</h3>
+      <label>Buscar colaborador<input type="search" className={field} value={search} onChange={event => setSearch(event.target.value)} /></label>
+    </div>
+    <div className="max-h-64 overflow-auto">
+      <table className="w-full min-w-[30rem] text-left text-sm">
+        <thead className="sticky top-0 bg-white"><tr><th className="p-2">Colaborador</th><th className="p-2">Cargo</th><th className="p-2">Salário vigente</th><th className="p-2">Enquadramento</th></tr></thead>
+        <tbody>{visibleEmployees.map(employee => {
+          const role = resolveEmployeeRole(employee, roles);
+          const plan = effectiveSalaryPlan(records[role?.id]?.plan, today);
+          const pay = entries.find(entry => entry.person === employee.id && entry.effective <= today);
+          return <tr key={employee.id} className={`border-t ${person === employee.id ? 'bg-blue-50' : ''}`}>
+            <td className="p-2"><button type="button" onClick={() => openReajuste(employee.id)} className="text-left font-semibold text-blue-800 hover:underline">{employee.name}</button></td>
+            <td className="p-2">{role?.name || employee.role || '—'}</td>
+            <td className="p-2">{pay ? money.format(pay.amount) : '—'}</td>
+            <td className="p-2">{!pay ? 'Salário pendente' : !plan ? 'Plano vigente pendente' : salaryPosition(pay, plan)}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+      {!visibleEmployees.length && <p className="p-2 text-slate-600">Nenhum colaborador encontrado.</p>}
+    </div>
+    <form onSubmit={save} className="space-y-3">
+      <div className="grid items-end gap-2 sm:grid-cols-3">
+        <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={openReajuste} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label>
+        <label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={event => setAmount(event.target.value)} /></label>
+        <label>Início da vigência<input required className={field} type="date" value={effective} onChange={event => setEffective(event.target.value)} /></label>
+      </div>
     {person && <section className="space-y-3 rounded-xl border border-slate-200 p-3">
       <div><h4 className="font-bold">Simulação de reajuste</h4><p className="text-xs text-slate-600">Impacto mensal no salário bruto individual, com vigência em {effective ? effective.split('-').reverse().join('/') : 'data a definir'}.</p></div>
       {proposedBands.length > 0 && <label>Simular com uma faixa da matriz
@@ -226,18 +255,23 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
         ].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-600">{label}</dt><dd className="font-semibold">{value}</dd></div>)}
       </dl>
     </section>}
-    <button type="submit" disabled={!person || !effective || !(proposedAmount > 0)} className="rounded-xl bg-blue-800 px-4 py-2 font-semibold text-white disabled:opacity-50">Confirmar reajuste</button>
+    <div className="flex flex-wrap gap-2">
+      <button type="submit" disabled={!person || !effective || !(proposedAmount > 0)} className="rounded-xl bg-blue-800 px-4 py-2 font-semibold text-white disabled:opacity-50">Confirmar reajuste</button>
+      {selectedRole && <button type="button" onClick={() => openPlan(selectedRole.id)} className="rounded-xl border px-4 py-2 font-semibold text-blue-800">Abrir plano do cargo</button>}
+      {person && <button type="button" onClick={() => openEmployee('hr-file', person)} className="rounded-xl border px-4 py-2 font-semibold text-blue-800">Abrir ficha do RH</button>}
+    </div>
     </form>
     {person && <ul>{entries.filter(e => e.person === person).map(e => <li key={e.effective}>{e.effective.split('-').reverse().join('/')} · {money.format(e.amount)}</li>)}</ul>}<p role="status">{status}</p></section>;
 }
 
-export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity, fixedView = '', initialRoleId = '' }) {
+export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity, view, initialRoleId = '', salaryView, setSalaryView, employeeId = '', selectEmployee, openEmployee, activeEmployees, today }) {
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(false);
   const [roleId, setRoleId] = useState(initialRoleId);
   const [requestedBand, setRequestedBand] = useState(null);
   const [salarySearch, setSalarySearch] = useState('');
   const [editRequest, setEditRequest] = useState(0);
+  const focusSalaryEditor = useRef(false);
   const salaryEditor = useRef(null);
   const salaryDirty = useRef(false);
   const salarySaving = useRef(false);
@@ -254,17 +288,23 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     setRequestedBand(band);
     setEditRequest(previous => previous + 1);
     if (scroll) {
-      salaryEditor.current?.scrollIntoView({ block: 'start' });
-      salaryEditor.current?.focus({ preventScroll: true });
+      setSalaryView('matrix');
+      focusSalaryEditor.current = true;
     }
   }
+
+  useEffect(() => {
+    if (!focusSalaryEditor.current || salaryView !== 'matrix') return;
+    if (salaryEditor.current) {
+      focusSalaryEditor.current = false;
+      salaryEditor.current.scrollIntoView({ block: 'start' });
+      salaryEditor.current.focus({ preventScroll: true });
+    }
+  }, [salaryView, editRequest]);
   const [metric, setMetric] = useState('all');
-  const [employee, setEmployee] = useState('');
-  const [selectedView, setView] = useState('performance');
-  const view = fixedView || selectedView;
-  const today = dateFormat.format(new Date());
-  const active = employees.filter(person => !person.terminationDate || person.terminationDate > today);
-  const ordered = [...roles].sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
+  const sortedEmployees = [...activeEmployees].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const employee = employees.some(person => person.id === employeeId) ? employeeId : '';
+  const ordered = roles.filter(role => !role.mergedIntoRoleId).sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
   const choices = [standard, ...ordered];
   const currentRole = choices.find(role => role.id === roleId);
   const [unit, setUnit] = useState('');
@@ -273,9 +313,12 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   const [manager, setManager] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  useEffect(() => onSnapshot(collection(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans'),
-    snapshot => setRecords(Object.fromEntries(snapshot.docs.map(record => [record.id, record.data()]))),
-    () => setError(true)), [db, company]);
+  useEffect(() => {
+    if (view !== 'salary') return;
+    return onSnapshot(collection(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans'),
+      snapshot => { setRecords(Object.fromEntries(snapshot.docs.map(record => [record.id, record.data()]))); setError(false); },
+      () => setError(true));
+  }, [db, company, view]);
 
   const plansPath = ['artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'salaryPlans'];
 
@@ -337,10 +380,9 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     }
   }
 
-  const roleName = roleNameKey(roles.find(role => role.id === filterRole)?.name);
   const matchingAssignees = new Set(employees.filter(person =>
     (!employee || person.id === employee)
-    && (!filterRole || (person.roleId ? person.roleId === filterRole : Boolean(roleName && roleName === roleNameKey(person.role))))
+    && (!filterRole || resolveEmployeeRole(person, ordered)?.id === filterRole)
   ).map(person => person.id));
   const inUnit = (record, id) => record.unit ? record.unit === id : employees.some(person =>
     matchingAssignees.has(person.id) && record.assigneeIds?.includes(person.id) && getDepartments(person).includes(id));
@@ -360,6 +402,13 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     && (!to || (day && day <= to))
   );
   const metrics = [['all', 'Atividades'], ['ontime', 'No prazo'], ['late', 'Concluídas com atraso'], ['overdue', 'Abertas vencidas']];
+  const hasFilters = Boolean(employee || unit || filterRole || manager || from || to || slice || metric !== 'all');
+  const selectedEmployee = employees.find(person => person.id === employee);
+  const indicatorPeople = selectedEmployee && !sortedEmployees.some(person => person.id === selectedEmployee.id)
+    ? [...sortedEmployees, selectedEmployee] : sortedEmployees;
+  function clearFilters() {
+    selectEmployee(''); setUnit(''); setFilterRole(''); setManager(''); setFrom(''); setTo(''); setSlice(null); setMetric('all');
+  }
   const chartRows = rows.filter(row => {
     if (!slice) return true;
     if (slice.kind === 'month') return row.day.startsWith(slice.id) && ['ontime', 'late'].includes(row.status);
@@ -370,17 +419,13 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   const evaluated = chartRows.filter(row => row.status === 'ontime' || row.status === 'late').length;
   const onTime = chartRows.filter(row => row.status === 'ontime').length;
   return <section className="space-y-4 text-sm text-slate-900">
-    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-950 p-6 text-white">
-      <h2 className="text-2xl font-bold">{fixedView === 'salary' ? 'Matriz salarial e reajustes' : fixedView ? 'Indicadores e PDI' : 'Desempenho e carreira'}</h2>
-      {!fixedView && <nav aria-label="Desempenho e carreira" className="flex flex-wrap gap-1 rounded-xl border border-white/20 p-1">
-        {[['performance', 'Indicadores'], ['salary', 'Cargos e salários'], ['management', 'Gerentes']].map(([key, label]) => <button type="button" key={key} aria-pressed={view === key} onClick={() => setView(key)} className={`rounded-lg px-3 py-2 font-semibold ${view === key ? 'bg-blue-700 text-white' : 'text-white hover:bg-white/10'}`}>{label}</button>)}
-      </nav>}
-    </header>
-    {view === 'performance' && <PlrSimulator {...{company, uid, employees}} roles={ordered} rows={activityRows} />}
-    <section className={view === 'performance' ? panel : 'hidden'}>
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Use os filtros e os gráficos para explorar as atividades.</p></div>
-        <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={employee} onChange={selectedId => { setEmployee(selectedId); setSlice(null); }} placeholder={"Toda a equipe · " + (active.length) + " ativos"} options={active.map(person => [person.id, person.name])} /></label>
+    {view === 'performance' && <section className={panel}>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h3 className="text-lg font-bold">Indicadores de atividades</h3>
+        {hasFilters && <button type="button" className="font-semibold text-blue-800 hover:underline" onClick={clearFilters}>Limpar filtros</button>}
       </div>
+      <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador" value={employee} onChange={id => { selectEmployee(id); setSlice(null); }}
+        placeholder={`Toda a equipe · ${sortedEmployees.length} ativos`} options={indicatorPeople.map(person => [person.id, person.name])} /></label>
       <div className="grid gap-3 sm:grid-cols-4" onChange={() => setSlice(null)}>
         <label>Loja ou setor<select className={field} value={unit} onChange={e => setUnit(e.target.value)}><option value="">Todos</option>{departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
         <label>Cargo<select className={field} value={filterRole} onChange={e => setFilterRole(e.target.value)}><option value="">Todos</option>{ordered.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
@@ -391,7 +436,10 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
         <span>Recorte do gráfico · <strong>{slice.kind === 'month' ? slice.id.split('-').reverse().join('/') : slice.label}</strong></span>
         <button type="button" className="font-semibold underline" onClick={() => { setSlice(null); setMetric('all'); }}>Limpar recorte</button>
       </div>}
-      {employee && <p>Admissão · {active.find(person => person.id === employee)?.hireDate?.split('-').reverse().join('/') || 'Data pendente no cadastro'}</p>}
+      {selectedEmployee && <div className="flex flex-wrap items-center gap-3">
+        {selectedEmployee.hireDate && <span>Admissão em {selectedEmployee.hireDate.split('-').reverse().join('/')}</span>}
+        <button type="button" className="font-semibold text-blue-800 hover:underline" onClick={() => openEmployee('hr-file', selectedEmployee.id)}>Abrir ficha do RH</button>
+      </div>}
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div className="flex flex-col justify-center rounded-2xl bg-blue-50 p-5">
           <p className="font-semibold text-blue-800">Entregas no prazo</p>
@@ -411,11 +459,19 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
       <details open><summary className="cursor-pointer font-semibold">{metrics.find(([key]) => key === metric)?.[1]} · {selectedRows.length} registros</summary>
         {selectedRows.length ? <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">{selectedRows.map(({ record }) => <li key={record.id}><button type="button" onClick={() => openActivity(record.id)} className="w-full rounded-lg border p-2 text-left hover:bg-blue-50">{record.title} · {record.dueDate || 'Sem prazo'}</button></li>)}</ul> : <p className="mt-2 text-slate-600">Nenhuma atividade neste recorte.</p>}
       </details>
-    </section>
-    {view === 'management' && <Managers {...{db,company,departments,active,today}} />}
-    <section className={view === 'salary' ? 'space-y-3' : 'hidden'}>
-      {records && view === 'salary' && <SalaryHierarchy roles={ordered} records={records} initialRoleId={roleId} openEditor={openSalaryEditor} saveReports={saveReports} />}
-      {records && <div className={panel}>
+    </section>}
+    {view === 'performance' && <details className={panel}>
+      <summary className="cursor-pointer text-base font-bold">Simulador de PLR</summary>
+      <PlrSimulator {...{company, uid, employees}} roles={ordered} rows={activityRows} />
+    </details>}
+    {view === 'management' && <Managers {...{db,company,departments,today}} active={sortedEmployees} />}
+    {view === 'salary' && <section className="space-y-3">
+      {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : <>
+      <div hidden={salaryView !== 'hierarchy'}>
+        <SalaryHierarchy key={roleId} roles={ordered} records={records} initialRoleId={roleId} openEditor={openSalaryEditor} saveReports={saveReports} />
+      </div>
+      <div hidden={salaryView !== 'matrix'}>
+      <div className={`mb-3 ${panel}`}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><h3 className="text-lg font-bold">Tabela geral de cargos e salários</h3><p className="text-slate-600">Clique no cargo para editar o plano, ou em um valor para ajustar a faixa.</p></div>
           <label>Buscar cargo<input className={field} type="search" value={salarySearch} onChange={event => setSalarySearch(event.target.value)} /></label>
@@ -434,16 +490,21 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
           })}</tbody>
         </table></div>
         {!ordered.some(role => roleNameKey(role.name).includes(roleNameKey(salarySearch))) && <p>Nenhum cargo encontrado.</p>}
-      </div>}
+      </div>
       <section ref={salaryEditor} tabIndex={-1} aria-label="Editor do plano salarial" className="grid min-w-0 items-start gap-3 scroll-mt-28 xl:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
         <div className={panel}><h3 className="text-lg font-bold">Editar plano salarial</h3>
           <PurchaseSelect searchPlaceholder="Buscar cargo" label="Cargo para editar" value={roleId} onChange={id => openSalaryEditor(id, null, false)}
             placeholder="Selecione um cargo" options={choices.map(role => [role.id, role.name + (records?.[role.id]?.plan?.active === false ? ' · Inativo' : '')])} />
         </div>
-        {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : currentRole &&
+        {currentRole &&
           <SalaryPlan key={`${roleId}:${editRequest}`} role={currentRole} roles={choices} plans={records} save={save} requestedBand={requestedBand} selectBand={setRequestedBand} markDirty={markSalaryDirty} />}
       </section>
-      {records && view === 'salary' && <Compensation {...{db,company,uid,roles,records,today}} employees={active} />}
-    </section>
+      </div>
+      <div hidden={salaryView !== 'compensation'}>
+        <Compensation {...{db, company, uid, roles, records, today, employeeId, selectEmployee, openEmployee}}
+          employees={sortedEmployees} openPlan={openSalaryEditor} visible={salaryView === 'compensation'} />
+      </div>
+      </>}
+    </section>}
   </section>;
 }

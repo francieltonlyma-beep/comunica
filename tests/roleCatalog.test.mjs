@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { employeeRoleOptions, getRoleUsers, matchingRoles, mergeRoleFields } from '../src/roleCatalog.js';
+import { employeeRoleOptions, getRoleUsers, matchingRoles, mergeRoleFields, resolveEmployeeRole } from '../src/roleCatalog.js';
 
 const main = { id: 'analista', name: 'ANALISTA FINANCEIRO', depts: ['vila-a', 'ceasa'] };
 const duplicate = { id: 'analista-importado', name: 'Analista  Financeiro', dept: 'ceasa' };
@@ -34,4 +34,12 @@ test('unifica setores, descrições e quadro previsto e exige revisão se houver
     approvedHeadcountByDept: { ceasa: 2, comercial: 0 },
   });
   assert.throws(() => mergeRoleFields({ ...source, approvedHeadcountByDept: { ceasa: 1 } }, target), /quadros previstos diferentes/);
+});
+
+test('resolves a catalog link after role rename and uses a legacy name only when it is unique', () => {
+  const renamed = { ...main, name: 'ANALISTA DE CONTAS' };
+  assert.equal(resolveEmployeeRole({ roleId: main.id, role: main.name }, [renamed, duplicate]), renamed);
+  assert.equal(resolveEmployeeRole({ role: 'Análista Financeiro' }, [main]), main);
+  assert.equal(resolveEmployeeRole({ role: main.name }, [main, duplicate]), null);
+  assert.equal(resolveEmployeeRole({ role: main.name }, [main, { ...duplicate, mergedIntoRoleId: main.id }]), main);
 });

@@ -147,13 +147,12 @@ function Goals({ db, company, person, editable, requestConversation }) {
   </>;
 }
 
-export default function DevelopmentWorkspace({ db, company, uid, employees = [], editable = false, requestConversation }) {
-  const [employee, setEmployee] = useState('');
-  const person = editable ? employee : uid;
+export default function DevelopmentWorkspace({ db, company, uid, employees = [], editable = false, employeeId = '', selectEmployee, requestConversation }) {
+  const person = editable ? employees.find(employee => employee.id === employeeId)?.id : uid;
   return <section className="space-y-4">
     <header className={card}>
-      <h2 className="text-xl font-bold">{editable ? 'Desenvolvimento da equipe' : 'Meu desenvolvimento'}</h2>
-      {editable && <PurchaseSelect label="Colaborador" searchPlaceholder="Buscar por nome" value={employee} onChange={setEmployee}
+      <h2 className="text-xl font-bold">{editable ? 'Metas e feedback do PDI' : 'Meu desenvolvimento'}</h2>
+      {editable && <PurchaseSelect label="Colaborador" searchPlaceholder="Buscar por nome" value={person || ''} onChange={selectEmployee}
         placeholder="Selecione o colaborador" options={employees.map(p => [p.id, p.name])} />}
     </header>
     {person && <Goals key={person} db={db} company={company} person={person} editable={editable} requestConversation={requestConversation} />}

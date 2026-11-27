@@ -47,3 +47,14 @@ export function mergeRoleFields(source, target) {
   }
   return { depts, dept: depts[0] || '', description, approvedHeadcountByDept };
 }
+
+export function resolveEmployeeRole(employee, roles) {
+  if (!employee) return null;
+  const catalog = roles.filter(role => !role.mergedIntoRoleId);
+  const linked = catalog.find(role => role.id === employee.roleId);
+  if (linked) return linked;
+  const name = roleNameKey(employee.role);
+  if (!name) return null;
+  const named = catalog.filter(role => roleNameKey(role.name) === name);
+  return named.length === 1 ? named[0] : null;
+}

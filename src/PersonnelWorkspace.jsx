@@ -426,6 +426,7 @@ export default function PersonnelWorkspace({
   selectEmployee,
   roles = [],
   reviewActivities,
+  careerActions,
 }) {
   const common = usePersonnelRows(db, company, 'hrCases');
   const restricted = usePersonnelRows(db, company, confidential ? 'hrConfidential' : '');
@@ -471,7 +472,6 @@ export default function PersonnelWorkspace({
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase text-blue-800">Gestão de equipe</p>
           <h2 className="text-2xl font-bold">
             {view === 'file' ? 'Ficha do colaborador' : 'Pendências do RH'}
           </h2>
@@ -532,19 +532,26 @@ export default function PersonnelWorkspace({
                 <PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador da ficha" value={employeeId} onChange={selectedId => openFile(selectedId)} placeholder="Selecione um colaborador" options={[...options.map(p => [p.id, p.name])]} />
               </Field>
               {person && (
-                <div>
-                  <h3 className="font-bold">{person.name}</h3>
-                  <p className="text-sm text-slate-600">
-                    {[
-                      person.role,
-                      ...(Array.isArray(person.depts) ? person.depts : []).map(
-                        (id) => departments.find((d) => d.id === id)?.name || id,
-                      ),
-                      person.hireDate && 'Admissão em ' + displayDay(person.hireDate),
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold">{person.name}</h3>
+                    <p className="text-sm text-slate-600">
+                      {[
+                        person.role,
+                        ...(Array.isArray(person.depts) ? person.depts : []).map(
+                          (id) => departments.find((d) => d.id === id)?.name || id,
+                        ),
+                        person.hireDate && 'Admissão em ' + displayDay(person.hireDate),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </div>
+                  {careerActions && <div className="flex flex-wrap gap-2">
+                    <button type="button" className={button} onClick={() => careerActions('dpi', person)}>Indicadores</button>
+                    <button type="button" className={button} onClick={() => careerActions('development', person)}>Metas do PDI</button>
+                    <button type="button" className={button} onClick={() => careerActions('salary', person)}>Cargos e salários</button>
+                  </div>}
                 </div>
               )}
             </div>

@@ -70,3 +70,7 @@ export function salaryPosition(pay, plan) {
   if (current > Math.max(...values)) return 'Acima da matriz';
   return 'Entre faixas';
 }
+
+export function effectiveSalaryPlan(plan, date) {
+  return plan && !plan.hierarchyOnly && plan.active !== false && plan.effective <= date ? plan : null;
+}
