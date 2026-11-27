@@ -437,20 +437,25 @@ export default function PersonnelWorkspace({
   const person = people.get(employeeId);
   const today = usePersonnelDay(true);
   const soon = new Date(Date.parse(today + 'T12:00:00Z') + 30 * 86400000).toISOString().slice(0, 10);
-  const pending = all.filter((row) => pendingDate(row));
+  const weekEnd = new Date(Date.parse(today + 'T12:00:00Z') + 7 * 86400000).toISOString().slice(0, 10);
+  const pending = all.filter(row => pendingDate(row) ||
+    (row.status !== 'Cancelado' && row.status !== personnelKinds[row.kind]?.steps.at(-1)));
+  const matchesKind = row => !kind || row.kind === kind;
+  const pendingOfKind = pending.filter(matchesKind);
   const filters = [
     ['all', 'Todas', () => true],
-    ['late', 'Atrasadas', (r) => pendingDate(r) < today],
-    ['today', 'Para hoje', (r) => pendingDate(r) === today],
-    ['exams', 'Exames a vencer', (r) => r.kind === 'exam' && pendingDate(r) <= soon],
+    ['late', 'Vencidas', r => Boolean(pendingDate(r) && pendingDate(r) < today)],
+    ['today', 'Para hoje', r => pendingDate(r) === today],
+    ['week', 'Próximos 7 dias', r => pendingDate(r) > today && pendingDate(r) <= weekEnd],
+    ['undated', 'Sem prazo', r => !pendingDate(r)],
+    ['exams', 'Exames a vencer', (r) => r.kind === 'exam' && pendingDate(r) >= today && pendingDate(r) <= soon],
   ].filter(([id]) => id !== 'exams' || confidential);
   const visible =
     view === 'file'
       ? all.filter((r) => r.employeeId === employeeId).sort((a, b) => b.at - a.at)
-      : pending
+      : pendingOfKind
           .filter(filters.find(([key]) => key === period)?.[2] || (() => true))
-          .filter((r) => !kind || r.kind === kind)
-          .sort((a, b) => pendingDate(a).localeCompare(pendingDate(b)));
+          .sort((a, b) => (pendingDate(a) || '9999').localeCompare(pendingDate(b) || '9999'));
   const loading = common.loading || restricted.loading;
   function openFile(id) {
     selectEmployee(id);
@@ -541,7 +546,7 @@ export default function PersonnelWorkspace({
                     className={period === id ? primary : button}
                     onClick={() => setPeriod(id)}
                   >
-                    {label} · {loading ? '…' : pending.filter(match).length}
+                    {label} · {loading ? '…' : pendingOfKind.filter(match).length}
                   </button>
                 ))}
               </div>

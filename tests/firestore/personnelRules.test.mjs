@@ -98,6 +98,25 @@ try {
   await assertSucceeds(updateDoc(ref(manager, 'hrAssignments/case1'), { completed: true }));
   await assertFails(updateDoc(ref(manager, 'hrAssignments/case1'), { owner: 'person' }));
   await assertFails(getDoc(ref(client('person'), 'hrAssignments/case1')));
+  const goalPath = 'development/person/goals/goal1';
+  const goal = () => ({
+    title: 'Aprimorar a operação', due: '2026-12-20', status: 'active', nextStep: 'Acompanhar treinamento',
+    feedback: '', feedbackAt: null, revision: 1, updatedAt: serverTimestamp(),
+  });
+  await assertFails(setDoc(ref(client('person'), goalPath), goal()));
+  await assertFails(setDoc(ref(client('general'), goalPath), goal()));
+  await assertSucceeds(setDoc(ref(client('hr'), goalPath), goal()));
+  await assertSucceeds(getDoc(ref(client('person'), goalPath)));
+  await assertSucceeds(getDocs(collection(client('person'), base + '/development/person/goals')));
+  await assertFails(getDoc(ref(client('person', 'other'), goalPath)));
+  await assertFails(getDoc(ref(client('manager'), goalPath)));
+  await assertFails(getDocs(collection(client('manager'), base + '/development/person/goals')));
+  await assertFails(updateDoc(ref(client('person'), goalPath), { title: 'Tentativa de editar' }));
+  await assertFails(setDoc(ref(client('hr'), goalPath), goal()));
+  await assertSucceeds(updateDoc(ref(client('admin'), goalPath), {
+    feedback: 'Bom progresso', feedbackAt: serverTimestamp(), revision: 2, updatedAt: serverTimestamp(),
+  }));
+  assert.equal((await getDoc(ref(client('person'), goalPath))).data().feedback, 'Bom progresso');
   console.log('Acesso por empresa e permissão, histórico, PDFs, concorrência e delegação validados.');
 } finally {
   await env.cleanup();

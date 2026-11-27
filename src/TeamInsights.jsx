@@ -2,7 +2,7 @@ import PurchaseSelect from './PurchaseSelect.jsx';
 import { useState } from 'react';
 import { doc, runTransaction } from 'firebase/firestore';
 
-export function Managers({ db, company, departments, active, today }) {
+export function Managers({ db, company, departments, active, today, compact = false }) {
   const [status,setStatus] = useState('');
   const [busy,setBusy] = useState(false);
   async function assign(unit,id) {
@@ -20,7 +20,7 @@ export function Managers({ db, company, departments, active, today }) {
     } catch { setStatus('Não foi possível salvar. Confira sua permissão e o gerente atual da unidade.'); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded-2xl border bg-white p-5"><h3 className="text-lg font-bold">Gerentes por loja ou setor</h3>{departments.map(unit => <label key={unit.id} className="grid gap-2 border-b py-3 sm:grid-cols-2"><span><strong>{unit.name}</strong>{unit.managerId && unit.managerSince && <small className="block">Desde {unit.managerSince.split('-').reverse().join('/')}</small>}</span><PurchaseSelect label={`Gerente de ${unit.name}`} searchPlaceholder="Buscar por nome" disabled={busy}
+  return <section className={compact ? "min-w-0" : "space-y-3 rounded-2xl border bg-white p-5"}>{!compact && <h3 className="text-lg font-bold">Gerentes por loja ou setor</h3>}{departments.map(unit => <label key={unit.id} className={compact ? "block py-1 text-xs" : "grid gap-2 border-b py-3 sm:grid-cols-2"}><span><strong>{compact ? "Gerente do setor" : unit.name}</strong>{unit.managerId && unit.managerSince && <small className="block">Desde {unit.managerSince.split('-').reverse().join('/')}</small>}</span><PurchaseSelect label={`Gerente de ${unit.name}`} searchPlaceholder="Buscar por nome" disabled={busy}
       value={unit.managerId || ''} onChange={id => assign(unit, id)} placeholder="Sem gerente"
       options={[
         ...active.map(person => [person.id, person.name]),

@@ -1,3 +1,5 @@
+import './TeamManagement.css';
+import { Managers } from './TeamInsights.jsx';
 import EmployeeChecklist from './EmployeeChecklist.jsx';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import SectorPostDetail from './SectorPostDetail.jsx';
@@ -66,6 +68,7 @@ import { surveyDraftQuestions, isSurveyManager } from '../functions/src/surveyMo
 import { activeHeadcount, displayDay, hrDay, isInactiveEmployee } from './personnelModel.js';
 import { usePersonnelRows, usePersonnelDay } from './usePersonnelRows.js';
 const TimePilotWorkspace = lazy(() => import('./TimePilotWorkspace.jsx'));
+const DevelopmentWorkspace = lazy(() => import('./DevelopmentWorkspace.jsx'));
 const DpiWorkspace = lazy(() => import('./DpiWorkspace.jsx'));
 const PersonnelWorkspace = lazy(() => import('./PersonnelWorkspace.jsx'));
 const AssignedPersonnelTasks = lazy(() => import('./PersonnelWorkspace.jsx').then(module => ({default: module.AssignedPersonnelTasks})));
@@ -888,7 +891,11 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [visitedIntegraScope, setVisitedIntegraScope] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('comunica-dark'));
   const [personnelEmployee, setPersonnelEmployee] = useState('');
-  const [mgmtSubTab, setMgmtSubTab] = useState('employees');
+  const [mgmtSubTab, setMgmtSubTab] = useState('overview');
+  const [salaryRoleId, setSalaryRoleId] = useState('');
+  const [employeeAttention, setEmployeeAttention] = useState('');
+  const [headcountEmployeeIds, setHeadcountEmployeeIds] = useState(null);
+  const [sectorSearch, setSectorSearch] = useState('');
   const [mgmtSectorFilter, setMgmtSectorFilter] = useState('all');
   const [headcountDrafts, setHeadcountDrafts] = useState({});
   const [savingHeadcountKey, setSavingHeadcountKey] = useState('');
@@ -902,7 +909,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const companyTabAccess = useCompanyTabAccess(db, appId, activeCompany?.id, dbUser?.uid);
   const supportSession = currentUser?.isDeveloper && dbUser?.uid === PLATFORM_SUPPORT.id;
   const tabReleased = id => supportSession || !isFirebaseAvailable || (
-    id === 'time-pilot' || (id === 'platform-support' ? allowsCompanyTab(companyTabAccess?.policy, 'inbox') : allowsCompanyTab(companyTabAccess?.policy, id))
+    id === 'time-pilot' || (id === 'platform-support' ? allowsCompanyTab(companyTabAccess?.policy, 'inbox') : allowsCompanyTab(companyTabAccess?.policy, id === 'my-development' ? 'management' : id))
   );
   const activeTab = tabReleased(requestedTab) ? requestedTab : 'tab-unavailable';
   const [publicComputer, setPublicComputer] = useState(() => {
@@ -7425,7 +7432,10 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     .flatMap(department => rolesList
       .filter(role => getRoleDepts(role).includes(department.id))
       .map(role => {
-        const current = headcountPeople.filter(user => roleNameKey(user.role) === roleNameKey(role.name) && getUserDepts(user).includes(department.id)).length;
+        const occupants = headcountPeople.filter(user =>
+          (user.roleId ? user.roleId === role.id : roleNameKey(user.role) === roleNameKey(role.name))
+          && getUserDepts(user).includes(department.id));
+        const current = occupants.length;
         const plannedValue = role.approvedHeadcountByDept?.[department.id];
         const planned = plannedValue === '' || plannedValue === undefined || plannedValue === null ? null : Math.max(0, Number(plannedValue) || 0);
         return {
@@ -7433,6 +7443,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
           role,
           department,
           current,
+          occupants,
           planned,
           activeRecruitment: vacanciesList.filter(vacancy => vacancy.roleId === role.id && vacancy.status === 'published').length,
           vacancies: planned === null ? 0 : Math.max(planned - current, 0),
@@ -7456,20 +7467,35 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   const uniqueProdGroups = [...new Set(employeesList.map(u => u.prodGroup).filter(Boolean))];
   const prodGroupCounts = uniqueProdGroups.map(group => ({ name: group, count: employeesList.filter(u => u.prodGroup === group).length }));
 
+  const accessCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const employeeViews = {
+    active: ['Colaboradores ativos', user => !isInactiveEmployee(user, employeeStatusDay)],
+    recent: ['Acessos nos últimos 7 dias', user => !isInactiveEmployee(user, employeeStatusDay) && employeeAccessMillis(user.lastLoginAt) >= accessCutoff],
+    first: ['Primeiro acesso pendente', user => !isInactiveEmployee(user, employeeStatusDay) && !employeeAccessMillis(user.lastLoginAt)],
+    incomplete: ['Cadastro sem cargo ou setor', user => !isInactiveEmployee(user, employeeStatusDay) && (!user.role || !getUserDepts(user).length)],
+  };
   const filteredEmployees = employeesList.filter(u => {
-    const matchText = u.name.toLowerCase().includes(empSearchText.toLowerCase());
+    const matchText = normalizedText(u.name).includes(normalizedText(empSearchText));
     const matchSector = empSectorFilter === 'Todos' || getUserDepts(u).includes(empSectorFilter);
     const matchRole = empRoleFilter === 'Todos' || u.role === empRoleFilter;
     const matchProdGroup = empProdGroupFilter === 'Todos' || u.prodGroup === empProdGroupFilter;
     const inactive = isInactiveEmployee(u, employeeStatusDay);
     const matchStatus = empStatusFilter === 'Todos' || inactive === (empStatusFilter === 'inactive');
-    return matchText && matchSector && matchRole && matchProdGroup && matchStatus;
+    return matchText && matchSector && matchRole && matchProdGroup && matchStatus
+      && (!employeeAttention || employeeViews[employeeAttention][1](u))
+      && (!headcountEmployeeIds || headcountEmployeeIds.includes(u.id));
   }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
-  const peopleOverview = {
-    active: activeEmployees.length,
-    recentlyActive: activeEmployees.filter(user => employeeAccessMillis(user.lastLoginAt) >= Date.now() - (7 * 24 * 60 * 60 * 1000)).length,
-    pendingAccess: activeEmployees.filter(user => !employeeAccessMillis(user.lastLoginAt)).length,
-    incompleteProfile: activeEmployees.filter(user => !user.role || !getUserDepts(user).length).length,
+  const peopleOverview = Object.fromEntries(Object.entries(employeeViews)
+    .map(([key, [, matches]]) => [key, employeesList.filter(matches).length]));
+  const openEmployeeList = ({ attention = '', sector = 'Todos', occupants = null } = {}) => {
+    setEmpSearchText('');
+    setEmpSectorFilter(sector);
+    setEmpRoleFilter('Todos');
+    setEmpProdGroupFilter('Todos');
+    setEmpStatusFilter('Todos');
+    setEmployeeAttention(attention);
+    setHeadcountEmployeeIds(occupants);
+    setMgmtSubTab('employees');
   };
   const peopleAttentionList = activeEmployees.filter(user => !employeeAccessMillis(user.lastLoginAt) || !user.role || !getUserDepts(user).length)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', { sensitivity: 'base' }));
@@ -8249,6 +8275,10 @@ const notificationsToShow = [...notificationItems]
     fuchsia: 'text-fuchsia-800',
   };
   const dashboardQuickActions = [
+    dbUser && activeCompany?.id && !currentUser?.isDeveloper && tabReleased('management') ? {
+      id: 'my-development', label: 'Meu desenvolvimento', detail: 'Metas e feedback',
+      icon: Activity, action: () => setActiveTab('my-development'),
+    } : null,
     canOpenModule('services') && activeServiceCatalog.length ? { id: 'new-service', label: 'Abrir solicitação', detail: 'Novo chamado interno', icon: Plus, action: () => openServiceRequestForm(activeServiceCatalog[0].id) } : null,
     canOpenModule('services') && serviceActivityMetrics.active ? { id: 'activities', label: 'Atividades pendentes', detail: `${serviceActivityMetrics.active} atividade(s) pendente(s)`, icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityPeriodFilter('all'); setActiveTab('services'); } } : null,
     { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setActiveTab('inbox') },
@@ -9550,7 +9580,7 @@ const notificationsToShow = [...notificationItems]
           {(activeTab === 'tab-unavailable' || (activeTab === 'time-pilot' && !timePilotEnabled)) && <p className="rounded-xl border bg-white p-4" role="status">{companyTabAccess?.error ? 'Não foi possível consultar as abas desta empresa.' : !companyTabAccess?.policy ? 'Consultando liberações da empresa…' : 'Esta aba está indisponível para a empresa. Selecione uma aba liberada no menu.'}</p>}
           {activeTab === 'inbox' && inboxSurface}
           {keepIntegra && <Suspense fallback={<div className="rounded-2xl bg-white p-8 text-sm text-slate-600">Carregando Comunica Integra...</div>}><IntegraWorkspace active={integraOpen} activeTab={activeTab} onNavigate={setActiveTab} key={integraScope} db={dbUser ? db : null} appId={appId} companyId={activeCompany?.id} companyCode={activeCompany?.code} companyName={activeCompany?.name} user={currentUser} departments={departmentsList} users={employeesList} online={navigator.onLine && Boolean(dbUser)} initialPurchaseId={focusedPurchaseId} uploadAttachment={(file,purchaseId) => uploadFileToStorage(file,'attachments',{purchaseId})} downloadAttachment={downloadPurchaseAttachment} approveQuote={async quote => (await httpsCallable(functionsClient, 'approvePurchaseQuote')({ companyId: activeCompany?.id, ...quote })).data} /></Suspense>}
-          {!isIntegraWorkspace && !['dashboard', 'inbox','tab-unavailable'].includes(activeTab) && canOpenModule(activeTab) && workspaceToolbar}
+          {!isIntegraWorkspace && !['dashboard', 'inbox', 'my-development', 'tab-unavailable'].includes(activeTab) && canOpenModule(activeTab) && workspaceToolbar}
 
           {/* TAB: SUPPORT */}
           {activeTab === 'updates' && (
@@ -10800,13 +10830,47 @@ const handleDownload = async (fileUrl, fileName) => {
             /></Suspense>
           )}
 
+          {activeTab === 'management' && currentUser.isAdmin && (
+            <nav data-tour="management" aria-label="Abas da Gestão de Equipe" className="flex gap-1 overflow-x-auto rounded-2xl border bg-white p-2">
+              {[
+                ['overview', 'Visão da equipe'],
+                ...(confidentialPersonnel ? [['dpi', 'Indicadores e PDI'], ['development', 'Desenvolvimento']] : []),
+                ['employees', 'Colaboradores'],
+                ['headcount', 'Quadro por setor'],
+                ['roles', 'Cargos e salários'],
+                ['sectors', 'Setores'],
+                ...(canUsePersonnel ? [['hr-pending', 'Pendências do RH']] : []),
+              ].map(([id, label]) => {
+                const selected = mgmtSubTab === id || (id === 'roles' && mgmtSubTab === 'salary') || (id === 'hr-pending' && mgmtSubTab === 'hr-file');
+                return <button key={id} type="button" aria-current={selected ? 'page' : undefined}
+                  onClick={() => { if (id === 'employees') { setEmployeeAttention(''); setHeadcountEmployeeIds(null); } setMgmtSubTab(id); }}
+                  className={`min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold ${selected ? 'bg-blue-700 text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
+                  {label}
+                </button>;
+              })}
+            </nav>
+          )}
+
+          {activeTab === 'my-development' && dbUser && activeCompany?.id && (
+            <div className="space-y-3">
+              <button type="button" onClick={() => setActiveTab('dashboard')} className="rounded-lg border bg-white px-4 py-2 text-xs font-semibold text-blue-800">Voltar ao início</button>
+              <Suspense fallback={<p>Carregando desenvolvimento…</p>}>
+                <DevelopmentWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid} />
+              </Suspense>
+            </div>
+          )}
+          {activeTab === 'management' && mgmtSubTab === 'development' && confidentialPersonnel && dbUser && activeCompany?.id && (
+            <Suspense fallback={<p>Carregando desenvolvimento…</p>}>
+              <DevelopmentWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id}
+                uid={dbUser.uid} employees={activeEmployees} editable />
+            </Suspense>
+          )}
           {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && (!currentUser.isAdmin || ['hr-pending','hr-file'].includes(mgmtSubTab)) && (
             <div className="space-y-3">
               {!currentUser.isAdmin && confidentialPersonnel && <div className="flex gap-3">
                 <button type="button" onClick={() => setMgmtSubTab('dpi')}>Painel PDI</button>
                 <button type="button" onClick={() => setMgmtSubTab('hr-pending')}>Acompanhamento do RH</button>
               </div>}
-              {currentUser.isAdmin && <button className="text-sm font-semibold text-blue-800" onClick={()=>setMgmtSubTab('employees')}>← Voltar à equipe</button>}
               {mgmtSubTab !== 'dpi' && <Suspense fallback={<p>Carregando acompanhamento do RH…</p>}><PersonnelWorkspace
                 key={JSON.stringify([activeCompany.id,dbUser.uid,confidentialPersonnel])}
                 db={db} company={activeCompany.id} uid={dbUser.uid} employees={employeesList} departments={departmentsList}
@@ -10814,76 +10878,23 @@ const handleDownload = async (fileUrl, fileName) => {
                 view={mgmtSubTab==='hr-file'?'file':'pending'} go={view=>setMgmtSubTab(view==='file'?'hr-file':'hr-pending')} /></Suspense>}
             </div>
           )}
-          {activeTab === 'management' && mgmtSubTab === 'dpi' && !currentUser.isAdmin && confidentialPersonnel && dbUser && activeCompany?.id && (
+          {activeTab === 'management' && (mgmtSubTab === 'dpi' || (currentUser.isAdmin && mgmtSubTab === 'salary')) && confidentialPersonnel && dbUser && activeCompany?.id && (
+            <div className="space-y-3">
+              {mgmtSubTab === 'salary' && <button type="button" className="rounded-lg border bg-white px-4 py-2 text-xs font-semibold text-blue-800"
+                onClick={() => setMgmtSubTab('roles')}>Voltar ao cadastro de cargos</button>}
             <Suspense fallback={<p>Carregando Painel PDI…</p>}>
               <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
+                fixedView={currentUser.isAdmin ? (mgmtSubTab === 'salary' ? 'salary' : 'performance') : ''}
+                initialRoleId={mgmtSubTab === 'salary' ? salaryRoleId : ''}
                 roles={rolesList} employees={employeesList} departments={departmentsList} getDepartments={getUserDepts}
                 activities={serviceActivityRows.map(row => ({ ...row.activity, id: row.key, title: row.subject, unit: row.record?.managerUnit || '', manager: row.record?.assignedManager || '' }))}
                 openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey(id); }} />
             </Suspense>
+            </div>
           )}
           {/* TAB: TEAM MANAGEMENT (ONLY FOR ADMINS) */}
           {activeTab === 'management' && currentUser.isAdmin && (!canUsePersonnel || !['hr-pending','hr-file'].includes(mgmtSubTab)) && (
             <div data-tour="management" className="flex flex-col gap-6 animate-in fade-in duration-300">
-
-              <div className="flex flex-wrap border-b border-slate-200 gap-2 bg-white p-3 rounded-2xl shadow-sm border">
-                <button
-                  type="button"
-                  onClick={() => setMgmtSubTab('overview')}
-                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'overview'
-                      ? 'border-slate-900 text-slate-900 font-black'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Activity className="h-3.5 w-3.5 inline-block -mt-0.5" /> Visão da equipe e PDI
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMgmtSubTab('employees')}
-                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'employees'
-                      ? 'border-slate-900 text-slate-900 font-black'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  👥 Colaboradores ({employeesList.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMgmtSubTab('headcount')}
-                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'headcount'
-                      ? 'border-slate-900 text-slate-900 font-black'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  📊 Quadro por setor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMgmtSubTab('roles')}
-                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'roles'
-                      ? 'border-slate-900 text-slate-900 font-black'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  👔 Cargos ({rolesList.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMgmtSubTab('sectors')}
-                  className={`pb-2 px-4 text-xs font-bold transition-all border-b-2 ${
-                    mgmtSubTab === 'sectors'
-                      ? 'border-slate-900 text-slate-900 font-black'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  🏢 Setores ({departmentsList.length})
-                </button>
-                {canUsePersonnel && <button type="button" onClick={()=>setMgmtSubTab('hr-pending')} className="px-4 py-2 text-xs font-bold text-blue-800">Pendências do RH</button>}
-              </div>
 
               {mgmtSubTab === 'overview' && (
                 <div className="flex flex-col gap-5 animate-in fade-in duration-200">
@@ -10893,23 +10904,18 @@ const handleDownload = async (fileUrl, fileName) => {
                     <p className="mt-1 max-w-2xl text-xs text-slate-300">Acompanhe o acesso, a estrutura organizacional e os cadastros que precisam de atenção.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Users className="h-5 w-5 text-blue-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Colaboradores</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.active}</strong><span className="text-[10px] text-slate-500">cadastros ativos</span></div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Activity className="h-5 w-5 text-emerald-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Acessos recentes</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.recentlyActive}</strong><span className="text-[10px] text-slate-500">nos últimos 7 dias</span></div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><UserPlus className="h-5 w-5 text-amber-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Primeiro acesso</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.pendingAccess}</strong><span className="text-[10px] text-slate-500">ainda não acessaram</span></div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><Filter className="h-5 w-5 text-violet-600" /><span className="mt-3 block text-[10px] font-bold uppercase text-slate-400">Para completar</span><strong className="mt-1 block text-2xl font-black text-slate-900">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-slate-500">sem cargo ou setor</span></div>
+                    {Object.entries(employeeViews).map(([key, [label]]) => (
+                      <button key={key} type="button" onClick={() => openEmployeeList({ attention: key })}
+                        className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500">
+                        <span className="block text-xs font-semibold text-slate-600">{label}</span>
+                        <strong className="mt-1 block text-2xl tabular-nums text-slate-900">{peopleOverview[key]}</strong>
+                      </button>
+                    ))}
                   </div>
-                  {confidentialPersonnel && dbUser && activeCompany?.id && (
-            <Suspense fallback={<p>Carregando Painel PDI…</p>}>
-              <DpiWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
-                roles={rolesList} employees={employeesList} departments={departmentsList} getDepartments={getUserDepts}
-                activities={serviceActivityRows.map(row => ({ ...row.activity, id: row.key, title: row.subject, unit: row.record?.managerUnit || '', manager: row.record?.assignedManager || '' }))}
-                openActivity={id => { setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey(id); }} />
-            </Suspense>
-                  )}
                   <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                       <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-800">Cadastros que precisam de atenção</h4><p className="mt-1 text-xs text-slate-500">Ajuste vínculo, cargo ou acompanhe quem ainda não fez o primeiro acesso.</p></div><button type="button" onClick={() => setMgmtSubTab('employees')} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Abrir equipe</button></div>
-                      <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!employeeAccessLabel(user.lastLoginAt) ? 'Ainda não acessou' : ''}{!employeeAccessLabel(user.lastLoginAt) && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { setEmpSearchText(user.name || ''); setMgmtSubTab('employees'); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
+                      <div className="mt-4 divide-y divide-slate-100">{peopleAttentionList.slice(0, 6).map(user => <div key={user.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-xs text-slate-800">{user.name}</strong><span className="text-[10px] text-slate-500">{!employeeAccessLabel(user.lastLoginAt) ? 'Ainda não acessou' : ''}{!employeeAccessLabel(user.lastLoginAt) && (!user.role || !getUserDepts(user).length) ? ' · ' : ''}{!user.role || !getUserDepts(user).length ? 'Complete cargo e setor' : ''}</span></div><button type="button" onClick={() => { handleEditUser(user); }} className="text-[10px] font-bold text-blue-700 hover:text-blue-900">Ver ficha</button></div>)}{peopleAttentionList.length === 0 && <div className="py-8 text-center text-xs text-emerald-700">Tudo certo: os cadastros da equipe estão completos.</div>}</div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-800">Distribuição da equipe</h4><div className="mt-4 space-y-3">{activeSectorCounts.slice().sort((a,b) => b.count - a.count).slice(0, 5).map(sector => <div key={sector.id}><div className="flex justify-between text-[10px] font-semibold text-slate-600"><span>{sector.name}</span><span>{sector.count}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${peopleOverview.active ? Math.round((sector.count / peopleOverview.active) * 100) : 0}%` }} /></div></div>)}{sectorCounts.length === 0 && <p className="mt-4 text-xs text-slate-500">Cadastre setores para acompanhar a distribuição.</p>}</div></div>
                   </div>
@@ -10930,30 +10936,34 @@ const handleDownload = async (fileUrl, fileName) => {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-blue-700">Colaboradores nos setores</span><strong className="mt-1 block text-2xl font-black text-blue-950">{headcountVisibleEmployees.length}</strong><span className="text-[10px] text-blue-700">pessoas cadastradas</span></div>
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-blue-700">Pessoas únicas</span><strong className="mt-1 block text-2xl font-black text-blue-950">{headcountVisibleEmployees.length}</strong><span className="text-[10px] text-blue-700">nos setores selecionados</span></div>
                     <div className="rounded-2xl border border-slate-200 bg-white p-4"><span className="text-[9px] font-black uppercase tracking-wide text-slate-500">Quadro planejado</span><strong className="mt-1 block text-2xl font-black text-slate-900">{headcountMetrics.planned}</strong><span className="text-[10px] text-slate-500">em {headcountMetrics.configuredRoles} cargo(s) configurado(s)</span></div>
-                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-amber-700">Vagas do quadro</span><strong className="mt-1 block text-2xl font-black text-amber-950">{headcountMetrics.vacancies}</strong><span className="text-[10px] text-amber-700">pessoas abaixo do previsto</span></div>
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-amber-700">Vagas do quadro</span><strong className="mt-1 block text-2xl font-black text-amber-950">{headcountMetrics.vacancies}</strong><span className="text-[10px] text-amber-700">posições sem ocupante</span></div>
                     <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4"><span className="text-[9px] font-black uppercase tracking-wide text-rose-700">Acima do previsto</span><strong className="mt-1 block text-2xl font-black text-rose-950">{headcountMetrics.excess}</strong><span className="text-[10px] text-rose-700">vínculos além do quadro</span></div>
                   </div>
 
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <div className="border-b border-slate-100 px-5 py-4"><h4 className="text-sm font-extrabold text-slate-800">Quadro previsto e composição atual</h4><p className="mt-1 text-[10px] text-slate-500">Cadastre o número previsto para cada combinação de cargo e setor. Use 0 para indicar que não há posição prevista.</p></div>
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[960px] text-left text-xs">
+                      <table className="team-headcount-table w-full text-left text-xs lg:min-w-[880px]">
                         <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Setor</th><th className="px-4 py-3">Cargo</th><th className="px-4 py-3 text-center">Atual</th><th className="px-4 py-3 text-center">Previsto</th><th className="px-4 py-3 text-center">Vagas do quadro</th><th className="px-4 py-3 text-center">Excedente</th><th className="px-4 py-3 text-center">Vagas publicadas</th><th className="px-5 py-3 text-right">Ação</th></tr></thead>
                         <tbody className="divide-y divide-slate-100">
                           {headcountRows.map(row => {
                             const value = headcountDrafts[row.key] ?? (row.planned === null ? '' : String(row.planned));
                             const isDirty = value !== (row.planned === null ? '' : String(row.planned));
                             return <tr key={row.key} className="hover:bg-slate-50/70">
-                              <td className="px-5 py-3 font-semibold text-slate-700">{row.department.name}</td>
-                              <td className="px-4 py-3"><strong className="text-slate-800">{row.role.name}</strong><span className={`ml-2 rounded-full px-2 py-0.5 text-[9px] font-bold ${row.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{row.configured ? 'Planejado' : 'Não planejado'}</span></td>
-                              <td className="px-4 py-3 text-center font-bold text-slate-700">{row.current}</td>
-                              <td className="px-4 py-3 text-center"><input aria-label={`Quadro previsto para ${row.role.name} em ${row.department.name}`} type="number" min="0" max="10000" step="1" value={value} onChange={event => setHeadcountDrafts(previous => ({ ...previous, [row.key]: event.target.value }))} placeholder="Definir" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-xs font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" /></td>
-                              <td className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.vacancies ? 'text-amber-700' : 'text-slate-400'}`}>{row.vacancies}</span> : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.excess ? 'text-rose-700' : 'text-slate-400'}`}>{row.excess}</span> : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-4 py-3 text-center"><span className={`font-bold ${row.activeRecruitment ? 'text-blue-700' : 'text-slate-400'}`}>{row.activeRecruitment}</span></td>
-                              <td className="px-5 py-3 text-right"><button type="button" disabled={!isDirty || savingHeadcountKey === row.key} onClick={() => handleSaveHeadcount(row)} className="rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">{savingHeadcountKey === row.key ? 'Salvando…' : 'Salvar'}</button></td>
+                              <td data-label="Setor" className="px-5 py-3 font-semibold text-slate-700">{row.department.name}</td>
+                              <td data-label="Cargo" className="px-4 py-3"><strong className="text-slate-800">{row.role.name}</strong><span className={`ml-2 rounded-full px-2 py-0.5 text-[9px] font-bold ${row.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{row.configured ? 'Planejado' : 'Não planejado'}</span></td>
+                              <td data-label="Vínculos atuais" className="px-4 py-3 text-center font-bold text-slate-700">
+                                {row.current ? <button type="button" className="font-bold text-blue-700 underline"
+                                  aria-label={`Ver ${row.current} ocupantes de ${row.role.name} em ${row.department.name}`}
+                                  onClick={() => openEmployeeList({ occupants: row.occupants.map(user => user.id) })}>{row.current}</button> : 0}
+                              </td>
+                              <td data-label="Previsto" className="px-4 py-3 text-center"><input aria-label={`Quadro previsto para ${row.role.name} em ${row.department.name}`} type="number" min="0" max="10000" step="1" value={value} onChange={event => setHeadcountDrafts(previous => ({ ...previous, [row.key]: event.target.value }))} placeholder="Definir" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-xs font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" /></td>
+                              <td data-label="Vagas" className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.vacancies ? 'text-amber-700' : 'text-slate-400'}`}>{row.vacancies}</span> : <span className="text-slate-300">—</span>}</td>
+                              <td data-label="Excedente" className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.excess ? 'text-rose-700' : 'text-slate-400'}`}>{row.excess}</span> : <span className="text-slate-300">—</span>}</td>
+                              <td data-label="Recrutamento" className="px-4 py-3 text-center"><span className={`font-bold ${row.activeRecruitment ? 'text-blue-700' : 'text-slate-400'}`}>{row.activeRecruitment}</span></td>
+                              <td data-label="Ações" className="px-5 py-3 text-right"><button type="button" disabled={!isDirty || savingHeadcountKey === row.key} onClick={() => handleSaveHeadcount(row)} className="rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">{savingHeadcountKey === row.key ? 'Salvando…' : 'Salvar'}</button></td>
                             </tr>;
                           })}
                           {!headcountRows.length && <tr><td colSpan="8" className="px-5 py-12 text-center"><strong className="block text-xs text-slate-700">Nenhum cargo vinculado a este setor</strong><span className="mt-1 block text-[10px] text-slate-500">Cadastre um cargo e associe-o ao setor para planejar o quadro.</span><button type="button" onClick={() => setMgmtSubTab('roles')} className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-blue-700 hover:bg-blue-50">Abrir cargos</button></td></tr>}
@@ -10978,12 +10988,10 @@ const handleDownload = async (fileUrl, fileName) => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-blue-600">Equipe</span><strong className="block text-xl font-black text-blue-950 mt-1">{peopleOverview.active}</strong><span className="text-[10px] text-blue-700">colaboradores ativos</span></div>
-                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-emerald-600">Ativos recentemente</span><strong className="block text-xl font-black text-emerald-950 mt-1">{peopleOverview.recentlyActive}</strong><span className="text-[10px] text-emerald-700">últimos 7 dias</span></div>
-                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-amber-600">Primeiro acesso</span><strong className="block text-xl font-black text-amber-950 mt-1">{peopleOverview.pendingAccess}</strong><span className="text-[10px] text-amber-700">ainda pendentes</span></div>
-                    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3.5"><span className="text-[9px] font-black uppercase tracking-wide text-violet-600">Cadastro incompleto</span><strong className="block text-xl font-black text-violet-950 mt-1">{peopleOverview.incompleteProfile}</strong><span className="text-[10px] text-violet-700">sem cargo ou setor</span></div>
-                  </div>
+                  {(employeeAttention || headcountEmployeeIds) && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-blue-50 p-3 text-xs text-blue-950">
+                    <strong>{headcountEmployeeIds ? 'Ocupantes do cargo e setor selecionados' : employeeViews[employeeAttention][0]}</strong>
+                    <button type="button" className="underline" onClick={() => { setEmployeeAttention(''); setHeadcountEmployeeIds(null); }}>Limpar recorte</button>
+                  </div>}
 
                   <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
                     <div className="relative">
@@ -11111,6 +11119,10 @@ const handleDownload = async (fileUrl, fileName) => {
 
               {mgmtSubTab === 'roles' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {confidentialPersonnel && <div className="lg:col-span-3 rounded-2xl border bg-white p-4">
+                    <button type="button" onClick={() => { setSalaryRoleId(''); setMgmtSubTab('salary'); }}
+                      className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Abrir matriz e reajustes</button>
+                  </div>}
                   <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
                     <div className="border-b border-slate-100 pb-3">
                       <h3 className="font-extrabold text-slate-800 text-base">Cargos Existentes</h3>
@@ -11207,6 +11219,8 @@ const handleDownload = async (fileUrl, fileName) => {
                               <>
                                 <div className="flex flex-col">
                                   <span className="font-extrabold text-slate-800">{role.name}</span>
+                                  {confidentialPersonnel && <button type="button" className="self-start py-1 text-xs font-semibold text-blue-700 underline"
+                                    onClick={() => { setSalaryRoleId(role.id); setMgmtSubTab('salary'); }}>Plano salarial</button>}
                                   <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                     {roleDepartments.map(deptId => <span key={deptId} className="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded border border-slate-200">{departmentsList.find(d => d.id === deptId)?.name || deptId}</span>)}
                                     {duplicates.length > 1 && <span className="text-[10px] font-bold text-amber-800">Nome duplicado</span>}
@@ -11304,10 +11318,15 @@ const handleDownload = async (fileUrl, fileName) => {
                       <p className="text-slate-500 text-xs">Gerencie os setores ativos, altere as nomenclaturas e a cor institucional dos crachás.</p>
                     </div>
 
+                    <input type="search" aria-label="Buscar setor" placeholder="Buscar setor por nome"
+                      value={sectorSearch} onChange={event => setSectorSearch(event.target.value)}
+                      className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm" />
                     <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1">
-                      {departmentsList.map((dept) => {
+                      {!departmentsList.some(dept => normalizedText(dept.name).includes(normalizedText(sectorSearch))) && <p className="p-3 text-xs text-slate-500">Nenhum setor encontrado.</p>}
+                      {[...departmentsList].filter(dept => normalizedText(dept.name).includes(normalizedText(sectorSearch)))
+                        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map((dept) => {
                         const isEditing = editingSectorId === dept.id;
-                        const connectedUsers = employeesList.filter(u => getUserDepts(u).includes(dept.id)).length;
+                        const connectedUsers = activeSectorCounts.find(sector => sector.id === dept.id)?.count || 0;
                         const connectedRoles = rolesList.filter(r => getRoleDepts(r).includes(dept.id)).length;
 
                         return (
@@ -11362,8 +11381,16 @@ const handleDownload = async (fileUrl, fileName) => {
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-3 text-[10px] text-slate-400 font-semibold">
-                                    <span>👤 {connectedUsers} Colaboradores</span>
+                                    <span>{connectedUsers} colaboradores ativos</span>
                                     <span>👔 {connectedRoles} Cargos</span>
+                                  </div>
+                                  {confidentialPersonnel && dbUser && activeCompany?.id && <Managers compact db={db} company={activeCompany.id}
+                                    departments={[dept]} active={activeEmployees} today={employeeStatusDay} />}
+                                  <div className="flex flex-wrap gap-3">
+                                    <button type="button" className="text-xs font-semibold text-blue-700 underline"
+                                      onClick={() => openEmployeeList({ sector: dept.id, attention: 'active' })}>Ver equipe</button>
+                                    <button type="button" className="text-xs font-semibold text-blue-700 underline"
+                                      onClick={() => { setMgmtSectorFilter(dept.id); setMgmtSubTab('headcount'); }}>Ver quadro</button>
                                   </div>
                                 </div>
 

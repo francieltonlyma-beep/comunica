@@ -994,6 +994,22 @@ service cloud.firestore {
           && (request.resource.data.managerId == '' ||
             exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(request.resource.data.managerId)));
       }
+      match /development/{employee}/goals/{goal} {
+        allow read: if app == 'comunica-salvador' && member(company)
+          && (request.auth.uid == employee || personnelAccess(true));
+        allow create, update: if personnelAccess(true)
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(employee))
+          && request.resource.data.keys().hasOnly(['title','due','status','nextStep','feedback','feedbackAt','revision','updatedAt'])
+          && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 160
+          && hrDate(request.resource.data.due)
+          && request.resource.data.status in ['active','done','archived']
+          && request.resource.data.nextStep is string && request.resource.data.nextStep.size() <= 1000
+          && request.resource.data.feedback is string && request.resource.data.feedback.size() <= 1500
+          && (request.resource.data.feedbackAt == request.time ||
+            request.resource.data.feedbackAt == (resource == null ? null : resource.data.feedbackAt))
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.revision == (resource == null ? 1 : resource.data.revision + 1);
+      }
       match /salaryChanges/{changeId} {
         allow read: if personnelAccess(true);
         allow create: if personnelAccess(true)

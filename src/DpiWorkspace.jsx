@@ -1,3 +1,4 @@
+import { roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useState } from 'react';
 import { Managers, TeamCharts } from './TeamInsights.jsx';
@@ -71,7 +72,7 @@ function SalaryPlan({ plans, role, roles, save }) {
     const source = plans[sourceRole]?.plan;
     if (!source) return;
     const { cct, minimum, base, bandRate, levelRate, score, months } = source;
-    setDraft(previous => ({ ...previous, cct, minimum, base, bandRate, levelRate, score, months, ...(full ? { overrides: [...source.overrides] } : {}) }));
+    setDraft(previous => ({ ...previous, cct, minimum, base, bandRate, levelRate, score, months, ...(full ? { overrides: [...(source.overrides || [])] } : {}) }));
     setStatus('Parâmetros copiados para este rascunho. Confira a matriz antes de salvar.');
   }
 
@@ -145,13 +146,14 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
     {person && <ul>{entries.filter(e => e.person === person).map(e => <li key={e.effective}>{e.effective.split('-').reverse().join('/')} · {money.format(e.amount)}</li>)}</ul>}<p role="status">{status}</p></section>;
 }
 
-export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity }) {
+export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity, fixedView = '', initialRoleId = '' }) {
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(false);
-  const [roleId, setRoleId] = useState('');
+  const [roleId, setRoleId] = useState(initialRoleId);
   const [metric, setMetric] = useState('all');
   const [employee, setEmployee] = useState('');
-  const [view, setView] = useState('performance');
+  const [selectedView, setView] = useState('performance');
+  const view = fixedView || selectedView;
   const today = dateFormat.format(new Date());
   const active = employees.filter(person => !person.terminationDate || person.terminationDate > today);
   const ordered = [...roles].sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
@@ -179,8 +181,18 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     });
   }
 
-  const inUnit = (record, id) => record.unit ? record.unit === id : employees.some(person => record.assigneeIds?.includes(person.id) && getDepartments(person).includes(id));
-  const rows = activities.filter(record => (!filterRole || employees.some(person => record.assigneeIds?.includes(person.id) && (person.roleId === filterRole || roles.find(role => role.id === filterRole)?.name === person.role))) && (!unit || inUnit(record, unit)) && (!manager || record.manager === manager)).filter(record => !employee || record.assigneeIds?.includes(employee)).map(record => {
+  const roleName = roleNameKey(roles.find(role => role.id === filterRole)?.name);
+  const matchingAssignees = new Set(employees.filter(person =>
+    (!employee || person.id === employee)
+    && (!filterRole || (person.roleId ? person.roleId === filterRole : Boolean(roleName && roleName === roleNameKey(person.role))))
+  ).map(person => person.id));
+  const inUnit = (record, id) => record.unit ? record.unit === id : employees.some(person =>
+    matchingAssignees.has(person.id) && record.assigneeIds?.includes(person.id) && getDepartments(person).includes(id));
+  const rows = activities.filter(record =>
+    ((!employee && !filterRole) || record.assigneeIds?.some(id => matchingAssignees.has(id)))
+    && (!unit || inUnit(record, unit))
+    && (!manager || record.manager === manager)
+  ).map(record => {
     const completed = record.resolvedAt ? dateFormat.format(new Date(record.resolvedAt)) : '';
     let status = 'open';
     if (record.status === 'resolved') status = record.dueDate && completed ? (completed <= record.dueDate ? 'ontime' : 'late') : 'unrated';
@@ -200,10 +212,10 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
   const onTime = chartRows.filter(row => row.status === 'ontime').length;
   return <section className="space-y-4 text-sm text-slate-900">
     <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-950 p-6 text-white">
-      <div><h2 className="text-2xl font-bold">Desempenho e carreira</h2><p className="mt-1 text-slate-200">Indicadores da equipe e plano de cargos e salários</p></div>
-      <nav aria-label="Desempenho e carreira" className="flex flex-wrap gap-1 rounded-xl border border-white/20 p-1">
+      <h2 className="text-2xl font-bold">{fixedView === 'salary' ? 'Matriz salarial e reajustes' : fixedView ? 'Indicadores e PDI' : 'Desempenho e carreira'}</h2>
+      {!fixedView && <nav aria-label="Desempenho e carreira" className="flex flex-wrap gap-1 rounded-xl border border-white/20 p-1">
         {[['performance', 'Indicadores'], ['salary', 'Cargos e salários'], ['management', 'Gerentes']].map(([key, label]) => <button type="button" key={key} aria-pressed={view === key} onClick={() => setView(key)} className={`rounded-lg px-3 py-2 font-semibold ${view === key ? 'bg-blue-700 text-white' : 'text-white hover:bg-white/10'}`}>{label}</button>)}
-      </nav>
+      </nav>}
     </header>
     <section className={view === 'performance' ? panel : 'hidden'}>
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Use os filtros e os gráficos para explorar as atividades.</p></div>

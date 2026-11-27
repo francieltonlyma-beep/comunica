@@ -1,0 +1,46 @@
+@media (max-width: 1023px) {
+  .team-headcount-table,
+  .team-headcount-table tbody {
+    display: block;
+  }
+
+  .team-headcount-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+  }
+
+  .team-headcount-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 1rem;
+  }
+
+  .team-headcount-table td {
+    display: block;
+    min-width: 0;
+    padding: 0.25rem 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .team-headcount-table td[data-label]::before {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #64748b;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    content: attr(data-label);
+  }
+
+  .team-headcount-table td[colspan] {
+    grid-column: 1 / -1;
+  }
+}
+
+html.comunica-dark .team-headcount-table td[data-label]::before {
+  color: #a9bbcc;
+}
