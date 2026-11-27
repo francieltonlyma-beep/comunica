@@ -58,8 +58,9 @@ import { normalizeCoverageRequirements, validateCoverageRequirements } from './s
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
-import { careerFitScore, matchesCareerStage } from './careerTriage.js';
+import { CAREER_STAGES, careerDateMs, careerFitScore, countCareerCandidates, groupCareerApplications, matchesCareerOpportunity } from './careerTriage.js';
 import { CareerVacancyDetailEditor, CareerVacancyLibrary, CareerVacancyPublishedDetails } from './CareerVacancyDetails.jsx';
+import CareerCandidateCard from './CareerCandidateCard.jsx';
 import CareerVacancyHistory from './CareerVacancyHistory.jsx';
 import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 import { canEditCareerVacancy, careerDateInBrazil, careerVacancyEditDeadline, isCareerDeadlineAvailable, isCareerVacancyOpen } from '../functions/src/careerVacancyAvailability.mjs';
@@ -350,7 +351,6 @@ const emojiSegmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 
   : null;
 const isEmojiGrapheme = (value) => /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(value);
 const CAREER_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
-const careerDateMs = value => Number(value) || Number(value?.seconds || 0) * 1000 || value?.toMillis?.() || 0;
 const applicationRetentionMs = application => careerDateMs(application.retentionUntil) || (careerDateMs(application.createdAt) || Date.now()) + CAREER_RETENTION_MS;
 const formatCareerDate = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date(value)) : 'Prazo não definido';
 const normalizedText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
@@ -845,6 +845,10 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [pollsList, setPollsList] = useState([]);
   const [vacanciesList, setVacanciesList] = useState([]);
   const [careerApplications, setCareerApplications] = useState([]);
+  const [careerWorkspace, setCareerWorkspace] = useState('vacancies');
+  const [careerVacancyFocusId, setCareerVacancyFocusId] = useState('');
+  const [careerVacancySearch, setCareerVacancySearch] = useState('');
+  const [careerQueueFilter, setCareerQueueFilter] = useState('all');
   const [careerVacancyFilter, setCareerVacancyFilter] = useState('all');
   const [careerSourceFilter, setCareerSourceFilter] = useState('all');
   const [careerCandidateSearch, setCareerCandidateSearch] = useState('');
@@ -852,7 +856,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [careerFitFilter, setCareerFitFilter] = useState('all');
   const [careerCityFilter, setCareerCityFilter] = useState('all');
   const [careerSort, setCareerSort] = useState('recent');
-  const [careerViewMode, setCareerViewMode] = useState('pipeline');
+  const [careerViewMode, setCareerViewMode] = useState('list');
   const [careerScrollTarget, setCareerScrollTarget] = useState(null);
   const [pendingCareerNavigation, setPendingCareerNavigation] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -865,8 +869,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [careerDecisionDraft, setCareerDecisionDraft] = useState(null);
   const [careerAiAnalyzingId, setCareerAiAnalyzingId] = useState('');
   const [careerFitRefreshingId, setCareerFitRefreshingId] = useState('');
-  const [careerAnalysisSelectedId, setCareerAnalysisSelectedId] = useState('');
-  const [showArchivedVacancies, setShowArchivedVacancies] = useState(false);
+  const [careerVacancyStatus, setCareerVacancyStatus] = useState('current');
   const [auditLogs, setAuditLogs] = useState([]);
   const [accessControl, setAccessControl] = useState({ sectorPermissions: {} });
   const [showControlCenter, setShowControlCenter] = useState(false);
@@ -3656,6 +3659,28 @@ const getStatusEmTempoReal = (colaborador) => {
     triggerNotification(vacancy.status === 'archived' ? 'Vaga devolvida para encerradas.' : 'Vaga arquivada. Ela continuará no histórico interno e não ficará disponível para candidatos.');
   };
 
+  const acknowledgeCareerUpdate = async application => {
+    if (!isCareerManagerUser(currentUser) || !application?.candidateUpdatePending) return;
+    const ref = doc(getTenantCollection('applications'), application.id);
+    try {
+      await runTransaction(db, async transaction => {
+        const latest = (await transaction.get(ref)).data();
+        if (!latest?.candidateUpdatePending) return;
+        if (latest.candidateUpdateVersion !== application.candidateUpdateVersion) throw new Error('career-update-changed');
+        transaction.update(ref, {
+          ...(latest.status ? {} : {status: 'received'}),
+          candidateUpdatePending: false,
+          candidateUpdateAcknowledgedAt: serverTimestamp(),
+        });
+      });
+      triggerNotification('Atualização marcada como revisada.');
+    } catch (error) {
+      triggerNotification(error.message === 'career-update-changed'
+        ? 'O candidato enviou outra atualização. Revise a versão mais recente.'
+        : 'Não foi possível registrar a revisão da atualização.', 'error');
+    }
+  };
+
   const handleGenerateCareerAssessment = async (application) => {
     if (!isCareerManagerUser(currentUser) || !application?.id || careerAiAnalyzingId) return;
     const vacancy = vacanciesList.find(item => item.id === application.vacancyId);
@@ -3664,12 +3689,15 @@ const getStatusEmTempoReal = (colaborador) => {
       return;
     }
     setCareerAiAnalyzingId(application.id);
+    const assessmentStartedAt = Date.now();
     try {
       const quizSummary = (application.quizQuestions || []).map((question, index) => `${question.question}: ${question.options?.[application.quizAnswers?.[index]] || 'Sem resposta'}`).join('\n');
-      const prompt = `Compare o perfil abaixo com a vaga.\n\nVAGA\nTítulo: ${vacancy.title}\nDescrição: ${vacancy.description}\nCompetências desejadas: ${(vacancy.skills || []).join(', ') || 'Não informadas'}\n\nPERFIL DO CANDIDATO\nCidade: ${application.city || 'Não informada'}\nCompetências declaradas: ${(application.declaredSkills || application.skills || []).join?.(', ') || 'Não informadas'}\nResumo profissional: ${String(application.resumeText || '').slice(0, 7000)}\nRespostas do questionário:\n${quizSummary || 'Sem questionário'}\n\nProduza um parecer curto e útil para triagem humana.`;
+      const detailSummary = CAREER_DETAIL_FIELDS.filter(({key}) => key !== 'benefits' && vacancy.details?.[key])
+        .map(({key, label}) => `${label}: ${vacancy.details[key]}`).join('\n');
+      const prompt = `Compare o perfil abaixo com a vaga.\n\nVAGA\nTítulo: ${vacancy.title}\nDescrição: ${vacancy.description}\n${detailSummary}\nCompetências desejadas: ${(vacancy.skills || []).join(', ') || 'Não informadas'}\n\nPERFIL DO CANDIDATO\nCidade: ${application.city || 'Não informada'}\nCompetências declaradas: ${(application.declaredSkills || application.skills || []).join?.(', ') || 'Não informadas'}\nResumo profissional: ${String(application.resumeText || '').slice(0, 7000)}\nRespostas do questionário:\n${quizSummary || 'Sem questionário'}\n\nProduza um parecer curto e útil para triagem humana.`;
       const assessment = await callGemini(prompt, 'Você apoia recrutadores brasileiros com análise responsável de currículos. Escreva em português claro, sem Markdown, asteriscos ou notas numéricas inventadas. Organize em cinco parágrafos curtos com estes títulos em texto simples: Resumo da aderência, Pontos fortes, Lacunas ou pontos a validar, Perguntas para entrevista, Recomendação de próxima etapa. Use apenas as informações fornecidas, sinalize quando não houver evidência e nunca recomende exclusão com base em idade, gênero, raça, deficiência, religião, estado civil ou qualquer característica protegida. A decisão final é sempre humana.');
       if (!assessment || /problema temporário/i.test(assessment)) throw new Error('Análise indisponível');
-      const payload = { aiAssessment: assessment.trim(), aiAssessmentAt: Date.now(), aiAssessmentBy: currentUser.name, aiAssessmentVacancyUpdatedAt: Number(vacancy.updatedAt || vacancy.createdAt || 0) };
+      const payload = { aiAssessment: assessment.trim(), aiAssessmentAt: assessmentStartedAt, aiAssessmentBy: currentUser.name, aiAssessmentVacancyUpdatedAt: careerDateMs(vacancy.updatedAt || vacancy.createdAt) };
       if (!await updateDocField('applications', application.id, payload)) return;
       triggerNotification('Parecer de aderência gerado e salvo na candidatura.');
     } catch (error) {
@@ -7673,12 +7701,14 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     }, () => setCareerLibrarySnapshot({ ...scope, status: 'error', items: [] }));
   }, [careerLibraryScope, careerLibraryUid]);
 
-  const openCareerApplications = useCallback((vacancyId, applicationId = '', {stage = 'all', fit = 'all'} = {}) => {
-    setCareerSourceFilter('all');
+  const openCareerApplications = useCallback((vacancyId, applicationId = '', {stage = 'all', queue = 'all', source = 'all'} = {}) => {
+    setCareerWorkspace('triage');
+    setCareerQueueFilter(queue);
+    setCareerSourceFilter(source);
     setCareerVacancyFilter(vacancyId);
     setCareerCandidateSearch('');
     setCareerStageFilter(stage);
-    setCareerFitFilter(fit);
+    setCareerFitFilter('all');
     setCareerCityFilter('all');
     setCareerViewMode('list');
     setCareerScrollTarget({applicationId});
@@ -7723,7 +7753,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   }, [pendingCareerNavigation, authReady, dbUser, currentUser?.id, activeCompany?.id, authScope.companyId, canOpenCareers, openCareerApplications]);
 
   useEffect(() => {
-    if (!careerScrollTarget || activeTab !== 'careers' || careerViewMode !== 'list') return;
+    if (!careerScrollTarget || activeTab !== 'careers' || careerWorkspace !== 'triage' || careerViewMode !== 'list') return;
     const application = careerScrollTarget.applicationId && document.getElementById(`career-application-${careerScrollTarget.applicationId}`);
     const target = application || document.getElementById('career-application-results');
     target?.focus({preventScroll: true});
@@ -7732,7 +7762,22 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
     });
     setCareerScrollTarget(null);
-  }, [careerScrollTarget, activeTab, careerViewMode]);
+  }, [careerScrollTarget, activeTab, careerWorkspace, careerViewMode]);
+
+  const openCareerVacancy = vacancy => {
+    setCareerWorkspace('vacancies');
+    setCareerVacancyStatus(vacancy.status === 'archived' ? 'archived' : 'current');
+    setCareerVacancySearch('');
+    setCareerVacancyFocusId(vacancy.id);
+  };
+
+  useEffect(() => {
+    if (!careerVacancyFocusId || activeTab !== 'careers' || careerWorkspace !== 'vacancies') return;
+    const vacancy = document.getElementById(`career-vacancy-${careerVacancyFocusId}`);
+    vacancy?.focus({preventScroll: true});
+    vacancy?.scrollIntoView({block: 'start'});
+    setCareerVacancyFocusId('');
+  }, [careerVacancyFocusId, activeTab, careerWorkspace]);
 
   const careerNotifications = canOpenCareers && (currentUser?.isAdmin || isHumanResourcesUser(currentUser)) && activeCompany?.id === authScope.companyId
     ? careerApplications.filter(application => getNotifTs(application) >= thirtyDaysAgo).map(application => ({
@@ -8224,33 +8269,26 @@ const notificationsToShow = [...notificationItems]
   const formatManagementTimestamp = timestamp => timestamp
     ? new Date(timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
     : 'Sem movimentação';
-  const careerStageDefinitions = [
-    { id: 'received', label: 'Recebidas', color: 'bg-sky-500' },
-    { id: 'reviewing', label: 'Em análise', color: 'bg-amber-500' },
-    { id: 'preselected', label: 'Pré-seleção', color: 'bg-blue-600' },
-    { id: 'interview', label: 'Entrevistas', color: 'bg-violet-500' },
-    { id: 'hired', label: 'Contratados', color: 'bg-emerald-500' },
-    { id: 'rejected', label: 'Não aderentes', color: 'bg-rose-500' },
-    { id: 'closed', label: 'Concluídas', color: 'bg-slate-500' },
-  ];
   const careerToday = careerDateInBrazil();
-  const careerIndicatorVacancyIds = new Set(vacanciesList.filter(vacancy => vacancy.status !== 'archived').map(vacancy => vacancy.id));
-  const careerIndicatorApplications = careerApplications.filter(application => application.source === 'talent_pool' || careerIndicatorVacancyIds.has(application.vacancyId));
-  const careerStageInsights = careerStageDefinitions.map(stage => ({ ...stage, count: careerIndicatorApplications.filter(item => (item.status || 'received') === stage.id).length }));
-  const receivedCareerCount = careerStageInsights.find(item => item.id === 'received')?.count || 0;
-  const careerFitValues = careerIndicatorApplications.map(item => careerFitScore(item.fit?.percentage)).filter(value => value !== null);
-  const careerAverageFit = careerFitValues.length ? Math.round(careerFitValues.reduce((sum, value) => sum + value, 0) / careerFitValues.length) : null;
-  const careerRetentionSoon = careerIndicatorApplications.filter(item => {
-    const until = applicationRetentionMs(item);
-    return until > Date.now() && until <= Date.now() + 15 * 24 * 60 * 60 * 1000;
-  }).length;
-  const careerPendingCandidateUpdates = careerIndicatorApplications.filter(item => item.candidateUpdatePending === true).length;
-  const talentPoolApplications = careerApplications.filter(application => application.source === 'talent_pool' && (application.status || 'received') !== 'rejected');
-  const talentPoolApplicationsByRole = [...new Map(talentPoolApplications.map(application => [application.vacancyId, {
-    id: application.vacancyId,
-    title: application.vacancyTitle || 'Cargo não informado',
-    count: talentPoolApplications.filter(item => item.vacancyId === application.vacancyId).length,
-  }])).values()].sort((a, b) => b.count - a.count);
+  const careerVacanciesById = new Map(vacanciesList.map(vacancy => [vacancy.id, vacancy]));
+  const careerVacancyCounts = new Map();
+  const careerPoolRoles = new Map();
+  const careerRoleNames = new Map(rolesList.map(role => [role.id, role.name]));
+  careerApplications.forEach(application => {
+    if (application.source === 'talent_pool') {
+      careerPoolRoles.set(application.vacancyId, careerRoleNames.get(application.roleId) || application.vacancyTitle || 'Cargo não informado');
+    } else {
+      careerVacancyCounts.set(application.vacancyId, (careerVacancyCounts.get(application.vacancyId) || 0) + 1);
+    }
+  });
+  const careerIndicatorApplications = careerApplications.filter(application =>
+    matchesCareerOpportunity(application, careerVacanciesById.get(application.vacancyId), 'all', 'all'));
+  const receivedCareerCount = careerIndicatorApplications.filter(application => !application.status || application.status === 'received').length;
+  const careerPendingCandidateUpdates = careerIndicatorApplications.filter(application => application.candidateUpdatePending === true).length;
+  const careerNow = Date.now();
+  const careerRetentionLimit = careerNow + 15 * 24 * 60 * 60 * 1000;
+  const careerExpiring = careerApplications.filter(item => applicationRetentionMs(item) > careerNow && applicationRetentionMs(item) <= careerRetentionLimit).length;
+  const careerExpired = careerApplications.filter(item => applicationRetentionMs(item) <= careerNow).length;
   const dashboardUpcomingEvents = calendarEvents
     .filter(event => event.date && event.date >= todayStr)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -8332,7 +8370,7 @@ const notificationsToShow = [...notificationItems]
     serviceActivityMetrics.today > 0 ? { id: 'today-activities', label: 'Atividades para hoje', detail: `${serviceActivityMetrics.today} atividade(s) vencem hoje`, tone: 'amber', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('today'); setActiveTab('services'); } } : null,
     serviceActivityMetrics.overdue > 0 ? { id: 'overdue-activities', label: 'Atividades em atraso', detail: `${serviceActivityMetrics.overdue} atividade(s) com prazo ultrapassado`, tone: 'rose', icon: ListChecks, action: () => { setServiceWorkspace('activities'); setServiceActivityStatusFilter('active'); setServiceActivityAssigneeFilter('all'); setServiceActivityPeriodFilter('overdue'); setActiveTab('services'); } } : null,
     (currentUser?.isAdmin || currentUser?.isDeveloper) && serviceMetrics.unassigned > 0 ? { id: 'unassigned-services', label: 'Chamados sem responsável', detail: `${serviceMetrics.unassigned} solicitação(ões) precisam de atribuição`, tone: 'violet', icon: UserPlus, action: () => { setServiceWorkspace('requests'); setServiceAssigneeFilter('unassigned'); setServiceStatusFilter('active'); setActiveTab('services'); } } : null,
-    canOpenModule('careers') && careerPendingCandidateUpdates > 0 ? { id: 'candidate-updates', label: 'Currículos atualizados', detail: `${careerPendingCandidateUpdates} candidatura(s) precisam de nova análise`, tone: 'fuchsia', icon: Briefcase, action: () => setActiveTab('careers') } : null,
+    canOpenModule('careers') && careerPendingCandidateUpdates > 0 ? { id: 'candidate-updates', label: 'Currículos atualizados', detail: `${careerPendingCandidateUpdates} candidatura(s) precisam de nova análise`, tone: 'fuchsia', icon: Briefcase, action: () => { setActiveTab('careers'); openCareerApplications('all', '', {queue: 'updated'}); } } : null,
   ].filter(Boolean).sort((first, second) => Number(second.tone === 'rose') - Number(first.tone === 'rose'));
   const dashboardAttentionTone = {
     blue: 'text-blue-800',
@@ -8352,43 +8390,59 @@ const notificationsToShow = [...notificationItems]
     { id: 'inbox', label: 'Caixa de entrada', detail: `${dashboardOpenConversations.length} conversa(s) em andamento`, icon: MessageSquare, action: () => setActiveTab('inbox') },
     canOpenModule('documents') ? { id: 'documents', label: 'Documentos', detail: pendingDocumentReads ? `${pendingDocumentReads} leitura(s) pendente(s)` : 'Consultar arquivos', icon: FileText, action: () => setActiveTab('documents') } : null,
     canOpenModule('scale') ? { id: 'calendar', label: 'Calendário', detail: `${dashboardUpcomingEvents.length} evento(s) futuro(s)`, icon: Calendar, action: () => setActiveTab('scale') } : null,
-    canOpenModule('careers') ? { id: 'careers', label: 'Recrutamento', detail: `${receivedCareerCount} candidatura(s) recebida(s)`, icon: Briefcase, action: () => setActiveTab('careers') } : null,
+    canOpenModule('careers') ? { id: 'careers', label: 'Recrutamento', detail: `${receivedCareerCount} candidatura(s) recebida(s)`, icon: Briefcase, action: () => { setActiveTab('careers'); openCareerApplications('all', '', {stage: 'received'}); } } : null,
     currentUser?.isAdmin ? { id: 'team', label: 'Gestão da equipe', detail: `${employeesList.length} colaborador(es)`, icon: Users, action: () => setActiveTab('management') } : null,
   ].filter(Boolean);
   const careerVacancyOptions = [
-    ...vacanciesList.filter(vacancy => vacancy.status !== 'archived').map(vacancy => ({
-      id: vacancy.id,
-      title: vacancy.title || 'Vaga sem título',
-      count: careerIndicatorApplications.filter(application => application.vacancyId === vacancy.id && application.status !== 'rejected').length,
-    })),
-    ...talentPoolApplicationsByRole.map(role => ({ ...role, title: `Banco de talentos · ${role.title}` })),
-  ];
-  const careerApplicationsByVacancy = [...careerVacancyOptions].sort((a, b) => b.count - a.count).slice(0, 5);
-  const careerMaxApplications = Math.max(1, ...careerApplicationsByVacancy.map(item => item.count));
-  const careerCities = [...new Set(careerIndicatorApplications.map(application => (application.city || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const careerFilteredApplications = careerApplications.filter(application => {
-    if (application.source !== 'talent_pool' && !careerIndicatorVacancyIds.has(application.vacancyId)) return false;
-    const matchesVacancy = careerVacancyFilter === 'all' || application.vacancyId === careerVacancyFilter;
-    const matchesSource = careerSourceFilter === 'all'
-      || (careerSourceFilter === 'talent_pool' ? application.source === 'talent_pool' : application.source !== 'talent_pool');
-    const matchesStage = matchesCareerStage(application.status, careerStageFilter, careerFitFilter);
+    ...(careerSourceFilter === 'talent_pool' ? [] : vacanciesList.map(vacancy => ({
+      id: vacancy.id, title: `${vacancy.title || 'Vaga sem título'}${vacancy.status === 'archived' ? ' (arquivada)' : ''}`,
+    }))),
+    ...(careerSourceFilter === 'vacancy' ? [] : [...careerPoolRoles].map(([id, title]) => ({
+      id, title: careerSourceFilter === 'all' ? `Futuras oportunidades · ${title}` : title,
+    }))),
+  ].sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));
+  const careerVisibleVacancies = vacanciesList.filter(vacancy => {
+    const open = isCareerVacancyOpen(vacancy, careerToday);
+    const status = vacancy.status === 'archived' ? 'archived' : open ? 'open' : 'closed';
+    const matchesStatus = careerVacancyStatus === 'current' ? status !== 'archived' : status === careerVacancyStatus;
+    return matchesStatus && normalizedText(`${vacancy.title || ''} ${vacancy.location || ''}`).includes(normalizedText(careerVacancySearch));
+  }).sort((a, b) => careerDateMs(b.createdAt) - careerDateMs(a.createdAt));
+  const careerOpportunityTitle = application => careerVacanciesById.get(application.vacancyId)?.title
+    || careerPoolRoles.get(application.vacancyId) || application.vacancyTitle || 'Oportunidade sem título';
+  const careerScope = careerApplications.filter(application => {
+    if (careerQueueFilter === 'retention' && careerVacancyFilter === 'all' && careerSourceFilter === 'all') return true;
+    return matchesCareerOpportunity(application, careerVacanciesById.get(application.vacancyId), careerSourceFilter, careerVacancyFilter);
+  });
+  const careerCities = [...new Set(careerScope.map(application => (application.city || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const careerSearch = normalizedText(careerCandidateSearch);
+  const careerFilteredScope = careerScope.filter(application => {
     const fit = careerFitScore(application.fit?.percentage);
     const matchesFit = careerFitFilter === 'all' ||
       (careerFitFilter === 'scored' ? fit !== null
         : careerFitFilter === 'high' ? fit !== null && fit >= 75
         : careerFitFilter === 'medium' ? fit !== null && fit >= 50 && fit < 75
-        : fit === null || fit < 50);
-    const matchesCity = careerCityFilter === 'all' || application.city === careerCityFilter;
-    const search = normalizedText(careerCandidateSearch);
-    const matchesSearch = !search || normalizedText(`${application.name} ${application.email} ${application.city} ${application.vacancyTitle}`).includes(search);
-    return matchesSource && matchesVacancy && matchesStage && matchesFit && matchesCity && matchesSearch;
+        : careerFitFilter === 'low' ? fit !== null && fit < 50 : fit === null);
+    const matchesCity = careerCityFilter === 'all' || (application.city || '').trim() === careerCityFilter;
+    const matchesQueue = careerQueueFilter === 'all' || (careerQueueFilter === 'updated'
+      ? application.candidateUpdatePending === true : applicationRetentionMs(application) <= careerRetentionLimit);
+    return matchesFit && matchesCity && matchesQueue && (!careerSearch || normalizedText(
+      `${application.name || ''} ${application.email || ''} ${application.city || ''} ${careerOpportunityTitle(application)}`
+    ).includes(careerSearch));
   }).sort((a, b) => careerSort === 'fit'
     ? (careerFitScore(b.fit?.percentage) ?? -1) - (careerFitScore(a.fit?.percentage) ?? -1)
     : careerSort === 'name'
       ? String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR')
-      : Number(b.candidateUpdatedAt || b.createdAt || 0) - Number(a.candidateUpdatedAt || a.createdAt || 0));
-  const careerComparisonApplications = careerApplications.filter(application => careerComparisonIds.includes(application.id)).slice(0, 3);
-  const careerAnalysisApplication = careerApplications.find(application => application.id === careerAnalysisSelectedId) || null;
+      : (careerDateMs(b.candidateUpdatedAt) || careerDateMs(b.createdAt)) - (careerDateMs(a.candidateUpdatedAt) || careerDateMs(a.createdAt)));
+  const careerStageGroups = groupCareerApplications(careerFilteredScope);
+  const careerFilteredApplications = careerStageFilter === 'all' ? careerFilteredScope : careerStageGroups[careerStageFilter];
+  const careerFilteredPeople = countCareerCandidates(careerFilteredApplications);
+  const careerFilteredScores = careerFilteredApplications.map(application => careerFitScore(application.fit?.percentage)).filter(score => score !== null);
+  const careerAverageFit = careerFilteredScores.length
+    ? Math.round(careerFilteredScores.reduce((sum, score) => sum + score, 0) / careerFilteredScores.length)
+    : null;
+  const careerSelectedVacancy = careerVacanciesById.get(careerVacancyFilter);
+  const careerComparisonApplications = careerApplications.filter(application => careerComparisonIds.includes(application.id));
   const handleSalesContact = async lead => {
     if (!functionsClient) throw new Error('Serviço de contato indisponível.');
     await httpsCallable(functionsClient, 'submitPlatformSalesContact')(lead);
@@ -10635,68 +10689,233 @@ const handleDownload = async (fileUrl, fileName) => {
             /></div></Suspense>
           )}
 
-          {activeTab === 'careers' && canOpenModule('careers') && (
-            <div data-tour="careers" className="flex flex-col gap-5 animate-in fade-in duration-300">
-              <div data-tour="careers-overview" className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-900 p-6 text-white shadow-xl shadow-blue-950/10 sm:p-7"><div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-cyan-300/15 blur-3xl" /><div className="pointer-events-none absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-violet-400/15 blur-3xl" /><div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><span className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-white/10 px-3 py-1 text-[9px] font-extrabold uppercase tracking-[0.16em] text-cyan-100"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Recrutamento inteligente</span><h3 className="mt-4 flex items-center gap-2 text-2xl font-black tracking-tight"><Briefcase className="h-6 w-6 text-cyan-200" /> Banco de Talentos</h3><p className="mt-2 max-w-2xl text-sm leading-relaxed text-blue-100/75">Centralize vagas, compare perfis e conduza cada pessoa pelo processo seletivo com clareza.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveTutorial('careers')} className="flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-bold text-white backdrop-blur hover:bg-white/15"><BookOpen className="h-4 w-4" /> Como usar</button><button type="button" onClick={() => setCareerLibraryCompanyId(activeCompany?.id)} className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">Pré-cadastros de vagas</button><button type="button" onClick={openVacancyForm} className="rounded-xl bg-white px-5 py-2.5 text-xs font-extrabold text-blue-950 shadow-lg shadow-blue-950/30 hover:bg-cyan-50">+ Nova vaga</button></div></div></div>
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-950"><strong>Link para candidatos:</strong> <a href={`/carreiras?empresa=${encodeURIComponent(activeCompany?.id || '')}`} target="_blank" rel="noreferrer" className="ml-1 break-all font-bold underline">{window.location.origin}/carreiras?empresa={activeCompany?.id}</a><p className="mt-1 text-blue-800">O candidato cria uma conta própria, confirma o e-mail e envia currículo em PDF ou Word. A aderência por competências é apenas um apoio para avaliação humana.</p></div>
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <button type="button" aria-pressed={careerSourceFilter === 'open' && careerStageFilter === 'all'} onClick={() => { setCareerSourceFilter('open'); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerViewMode('list'); }} className={`rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 p-4 text-left text-xs text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'open' && careerStageFilter === 'all' ? 'ring-2 ring-cyan-400 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-slate-300">Vagas ativas</span><strong className="mt-2 block text-2xl">{vacanciesList.filter(item => isCareerVacancyOpen(item, careerToday)).length}</strong><span className="mt-1 block text-[10px] text-slate-300">abertas para inscrição</span></button>
-                <button type="button" aria-pressed={careerSourceFilter === 'all' && careerStageFilter === 'received'} onClick={() => openCareerApplications('all', '', {stage: 'received'})} className={`rounded-2xl border border-sky-100 bg-sky-50 p-4 text-left text-xs text-sky-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerSourceFilter === 'all' && careerStageFilter === 'received' ? 'ring-2 ring-sky-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-sky-700">Candidaturas recebidas</span><strong className="mt-2 block text-2xl">{receivedCareerCount}</strong><span className="mt-1 block text-[10px] text-sky-700">aguardando triagem</span></button>
-                <button type="button" aria-pressed={careerStageFilter === 'reviewing'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter(previous => previous === 'reviewing' ? 'all' : 'reviewing'); setCareerViewMode('list'); }} className={`rounded-2xl border border-amber-100 bg-amber-50 p-4 text-left text-xs text-amber-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerStageFilter === 'reviewing' ? 'ring-2 ring-amber-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-amber-700">Em análise</span><strong className="mt-2 block text-2xl">{careerStageInsights.find(item => item.id === 'reviewing')?.count || 0}</strong><span className="mt-1 block text-[10px] text-amber-700">aguardando decisão</span></button>
-                <button type="button" aria-pressed={careerStageFilter === 'interview'} onClick={() => { setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter(previous => previous === 'interview' ? 'all' : 'interview'); setCareerViewMode('list'); }} className={`rounded-2xl border border-violet-100 bg-violet-50 p-4 text-left text-xs text-violet-950 transition hover:-translate-y-0.5 hover:shadow-md ${careerStageFilter === 'interview' ? 'ring-2 ring-violet-500 ring-offset-2' : ''}`}><span className="font-bold uppercase tracking-wide text-violet-700">Entrevistas</span><strong className="mt-2 block text-2xl">{careerStageInsights.find(item => item.id === 'interview')?.count || 0}</strong><span className="mt-1 block text-[10px] text-violet-700">próxima etapa</span></button>
-              </div>
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div><h4 className="text-sm font-extrabold text-slate-900">Funil de seleção</h4><p className="mt-1 text-xs text-slate-500">Selecione uma etapa para ver as candidaturas.</p></div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{careerIndicatorApplications.length} em todas as etapas</span>
+          {activeTab === 'careers' && canOpenCareers && (
+            <div data-tour="careers" className="flex flex-col gap-4">
+              <header data-tour="careers-overview" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+                    <Briefcase className="h-5 w-5 text-blue-700" /> Banco de Talentos
+                  </h3>
+                  <div className="flex flex-wrap gap-2 text-xs font-bold">
+                    <a href={`/carreiras?empresa=${encodeURIComponent(activeCompany?.id || '')}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-2 text-blue-800">Portal de candidatos</a>
+                    <button type="button" onClick={() => setActiveTutorial('careers')} className="rounded-lg border border-slate-200 px-3 py-2 text-slate-700">Como usar</button>
+                    <button type="button" onClick={() => setCareerLibraryCompanyId(activeCompany?.id)} className="rounded-lg border border-slate-200 px-3 py-2 text-slate-700">Pré-cadastros de vagas</button>
+                    <button type="button" onClick={openVacancyForm} className="rounded-lg bg-blue-700 px-3 py-2 text-white">Nova vaga</button>
                   </div>
-                  <div className="mt-3 space-y-1">
-                    {careerStageInsights.map(stage => (
-                      <button key={stage.id} type="button" aria-pressed={careerViewMode === 'list' && careerStageFilter === stage.id}
-                        onClick={() => openCareerApplications('all', '', {stage: stage.id})}
-                        className="group block w-full rounded-lg px-2 py-1.5 text-left hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-blue-700 aria-pressed:bg-blue-50 aria-pressed:ring-1 aria-pressed:ring-blue-200">
-                        <span className="mb-1.5 flex items-center justify-between gap-2 text-xs">
-                          <span className="font-semibold text-slate-700">{stage.label}</span>
-                          <span className="flex items-center gap-1.5 font-bold text-slate-900">{stage.count}<ChevronRight aria-hidden="true" className="h-3.5 w-3.5 text-blue-700" /></span>
-                        </span>
-                        <span className="block h-2.5 overflow-hidden rounded-full bg-slate-100">
-                          <span className={`block h-full rounded-full ${stage.color}`} style={{width: `${careerIndicatorApplications.length ? stage.count / careerIndicatorApplications.length * 100 : 0}%`}} />
-                        </span>
+                </div>
+                <nav aria-label="Banco de Talentos" className="mt-4 flex gap-2 border-t border-slate-100 pt-3">
+                  {[['vacancies', 'Vagas'], ['triage', 'Triagem']].map(([value, label]) => (
+                    <button key={value} type="button" aria-pressed={careerWorkspace === value} onClick={() => setCareerWorkspace(value)}
+                      className="rounded-lg px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 aria-pressed:bg-blue-50 aria-pressed:text-blue-800">{label}</button>
+                  ))}
+                </nav>
+              </header>
+              {careerWorkspace === 'vacancies' && (
+                <section className="space-y-3" aria-label="Gestão de vagas">
+                  <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <label className="relative min-w-0 flex-1 basis-52">
+                      <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input aria-label="Buscar vagas" placeholder="Buscar por título ou local" value={careerVacancySearch} onChange={event => setCareerVacancySearch(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm" />
+                    </label>
+                    <select aria-label="Situação da vaga" value={careerVacancyStatus} onChange={event => setCareerVacancyStatus(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <option value="current">Abertas e encerradas</option>
+                      <option value="open">Abertas para inscrição</option>
+                      <option value="closed">Encerradas</option>
+                      <option value="archived">Arquivadas</option>
+                    </select>
+                    <span className="text-xs text-slate-600">{careerVisibleVacancies.length} {careerVisibleVacancies.length === 1 ? 'vaga' : 'vagas'}</span>
+                  </div>
+                  <div className="grid items-start gap-3 lg:grid-cols-2">
+                    {careerVisibleVacancies.map(vacancy => {
+                      const open = isCareerVacancyOpen(vacancy, careerToday);
+                      const archived = vacancy.status === 'archived';
+                      const published = vacancy.status === 'published';
+                      const canEdit = canEditCareerVacancy(vacancy);
+                      const editDeadline = careerVacancyEditDeadline(vacancy);
+                      const editing = vacancyDeadlineDraft?.id === vacancy.id && vacancyDeadlineDraft.companyId === activeCompany?.id;
+                      const deadline = /^\d{4}-\d{2}-\d{2}$/.test(vacancy.closesAt || '')
+                        ? `Inscrições até ${vacancy.closesAt.split('-').reverse().join('/')}`
+                        : vacancy.closesAt ? 'Prazo inválido' : 'Sem prazo de inscrição';
+
+                      return (
+                        <article key={vacancy.id} id={`career-vacancy-${vacancy.id}`} tabIndex={-1} className="min-w-0 scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm focus:outline-blue-600">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h4 className="break-words text-base font-extrabold text-slate-900">{vacancy.title}</h4>
+                              <p className="mt-0.5 text-xs text-slate-600">{vacancy.location || 'Local não informado'}{vacancy.mode && ` · ${vacancy.mode}`}</p>
+                            </div>
+                            <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${open ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                              {open ? 'Aberta para inscrição' : archived ? 'Arquivada' : published ? 'Prazo encerrado' : 'Encerrada'}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-xs font-semibold text-slate-600">{deadline}</p>
+                          {published && <p className="mt-1 text-xs text-slate-600">{canEdit ? `Edição até ${vacancyEditorDate.format(editDeadline)}` : 'Prazo de edição encerrado'}</p>}
+                          <details className="mt-3 text-xs text-slate-700">
+                            <summary className="cursor-pointer font-bold text-blue-800">Descrição e requisitos</summary>
+                            <p className="mt-3 whitespace-pre-wrap break-words">{vacancy.description}</p>
+                            <CareerVacancyPublishedDetails details={vacancy.details} />
+                            <p className="mt-3">Competências: {(vacancy.skills || []).join(', ') || 'Não especificadas'} · Quiz: {(vacancy.quiz || []).length} perguntas</p>
+                          </details>
+                          <CareerVacancyHistory key={activeCompany.id + vacancy.id} vacancyRef={doc(getTenantCollection('vacancies'), vacancy.id)} revision={vacancy.changeId || ''} />
+                          {editing && <form onSubmit={saveVacancyDeadline} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                            <label className="grid gap-1 text-xs font-semibold text-slate-700">Inscrições até (opcional)
+                              <input type="date" min={careerToday} value={vacancyDeadlineDraft.deadline} onChange={event => setVacancyDeadlineDraft(current => ({...current, deadline: event.target.value}))} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs" />
+                            </label>
+                            <button type="submit" disabled={savingVacancyDeadline} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{vacancyDeadlineDraft.reopen ? 'Salvar e reabrir' : 'Salvar prazo'}</button>
+                            <button type="button" disabled={savingVacancyDeadline} onClick={() => setVacancyDeadlineDraft(null)} className="px-2 py-2 text-xs font-bold text-slate-600">Cancelar</button>
+                          </form>}
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs">
+                            <button type="button" onClick={() => openCareerApplications(vacancy.id, '', {source: 'vacancy'})} className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-2 font-bold text-blue-800">
+                              Candidaturas ({careerVacancyCounts.get(vacancy.id) || 0}) <ChevronRight aria-hidden="true" className="h-4 w-4" />
+                            </button>
+                            <div className="flex flex-wrap gap-3">
+                              {canEdit && published && !editing && <button type="button" onClick={() => editPublishedVacancy(vacancy)} className="py-2 font-bold text-blue-800">Editar vaga</button>}
+                              {canEdit && vacancy.status === 'closed' && !editing && <button type="button" onClick={() => editVacancyDeadline(vacancy)} className="py-2 font-bold text-blue-800">Editar prazo</button>}
+                              <button type="button" onClick={() => handleCloseVacancy(vacancy)} className="py-2 font-bold text-blue-800">{published ? 'Encerrar vaga' : 'Reabrir vaga'}</button>
+                              {!published && <button type="button" onClick={() => handleArchiveVacancy(vacancy)} className="py-2 font-bold text-slate-600">{archived ? 'Desarquivar' : 'Arquivar'}</button>}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {!careerVisibleVacancies.length && <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">Nenhuma vaga encontrada.</p>}
+                </section>
+              )}
+              {careerWorkspace === 'triage' && <>
+                <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Filtros da triagem">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-1.5" aria-label="Origem da candidatura" role="group">
+                      {[['all', 'Todas as origens'], ['vacancy', 'Inscrições em vagas'], ['talent_pool', 'Futuras oportunidades']].map(([value, label]) => (
+                        <button key={value} type="button" aria-pressed={careerSourceFilter === value} onClick={() => {
+                          setCareerSourceFilter(value);
+                          setCareerVacancyFilter('all');
+                          setCareerCityFilter('all');
+                        }} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 aria-pressed:bg-blue-50 aria-pressed:text-blue-800">{label}</button>
+                      ))}
+                    </div>
+                    <div className="inline-flex rounded-lg bg-slate-100 p-1" aria-label="Visualização" role="group">
+                      {[['list', 'Lista'], ['pipeline', 'Quadro']].map(([value, label]) => (
+                        <button key={value} type="button" aria-pressed={careerViewMode === value} onClick={() => setCareerViewMode(value)}
+                          className="rounded-md px-3 py-1.5 text-xs font-bold text-slate-600 aria-pressed:bg-white aria-pressed:text-blue-800 aria-pressed:shadow-sm">{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="relative">
+                      <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input aria-label="Buscar candidato" value={careerCandidateSearch} onChange={event => setCareerCandidateSearch(event.target.value)} placeholder="Nome, e-mail, cidade ou oportunidade" className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm" />
+                    </label>
+                    <select aria-label="Filtrar oportunidade" value={careerVacancyFilter} onChange={event => { setCareerVacancyFilter(event.target.value); setCareerCityFilter('all'); }} className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <option value="all">{careerSourceFilter === 'talent_pool' ? 'Todos os cargos' : 'Todas as oportunidades'}</option>
+                      {careerVacancyOptions.map(vacancy => <option key={vacancy.id} value={vacancy.id}>{vacancy.title}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <select aria-label="Filtrar aderência" value={careerFitFilter} onChange={event => setCareerFitFilter(event.target.value)} className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-2">
+                      <option value="all">Toda aderência</option><option value="scored">Aderência calculada</option><option value="high">Alta (75% ou mais)</option>
+                      <option value="medium">Média (50% a menos de 75%)</option><option value="low">Baixa (abaixo de 50%)</option><option value="unscored">Sem cálculo</option>
+                    </select>
+                    <select aria-label="Filtrar cidade" value={careerCityFilter} onChange={event => setCareerCityFilter(event.target.value)} className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-2">
+                      <option value="all">Todas as cidades</option>{careerCities.map(city => <option key={city} value={city}>{city}</option>)}
+                    </select>
+                    <select aria-label="Filtrar pendências" value={careerQueueFilter} onChange={event => { setCareerQueueFilter(event.target.value); setCareerCityFilter('all'); }} className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-2">
+                      <option value="all">Qualquer pendência</option><option value="updated">Currículos atualizados</option><option value="retention">Vencidos ou a vencer em 15 dias</option>
+                    </select>
+                    <select aria-label="Ordenar candidaturas" value={careerSort} onChange={event => setCareerSort(event.target.value)} className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-2">
+                      <option value="recent">Mais recentes</option><option value="fit">Maior aderência</option><option value="name">Nome A–Z</option>
+                    </select>
+                    {careerSelectedVacancy && <button type="button" onClick={() => openCareerVacancy(careerSelectedVacancy)} className="px-2 py-2 font-bold text-blue-800">Ver vaga</button>}
+                    {(careerCandidateSearch || careerSourceFilter !== 'all' || careerVacancyFilter !== 'all' || careerStageFilter !== 'all' || careerFitFilter !== 'all' || careerCityFilter !== 'all' || careerQueueFilter !== 'all') &&
+                      <button type="button" onClick={() => {
+                        setCareerSourceFilter('all'); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerFitFilter('all');
+                        setCareerCityFilter('all'); setCareerQueueFilter('all'); setCareerCandidateSearch('');
+                      }} className="px-2 py-2 font-bold text-blue-800">Limpar filtros</button>}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-3" role="group" aria-label="Etapas da seleção">
+                    {[{id: 'all', label: 'Todas as etapas'}, ...CAREER_STAGES].map(stage => (
+                      <button key={stage.id} type="button" aria-pressed={careerStageFilter === stage.id} onClick={() => setCareerStageFilter(stage.id)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 aria-pressed:border-blue-300 aria-pressed:bg-blue-50 aria-pressed:text-blue-800">
+                        {stage.color && <span aria-hidden="true" className={`h-2 w-2 rounded-full ${stage.color}`} />}
+                        {stage.label} <span className="font-extrabold tabular-nums">{stage.id === 'all' ? careerFilteredScope.length : careerStageGroups[stage.id].length}</span>
                       </button>
                     ))}
                   </div>
                 </section>
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h4 className="text-sm font-extrabold text-slate-900">Qualidade da triagem</h4><p className="mt-1 text-xs text-slate-500">Indicadores de apoio, não de decisão automática.</p><div className="mt-5 flex items-center gap-5"><div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#2563eb ${(careerAverageFit || 0) * 3.6}deg, #e2e8f0 0deg)` }}><div className="grid h-16 w-16 place-items-center rounded-full bg-white text-center"><strong className="text-xl text-slate-900">{careerAverageFit === null ? '—' : `${careerAverageFit}%`}</strong><span className="text-[8px] font-bold uppercase text-slate-400">aderência</span></div></div><div className="space-y-2 text-xs"><button type="button" disabled={!careerFitValues.length} onClick={() => openCareerApplications('all', '', {fit: 'scored'})} className="inline-flex items-center gap-1 rounded text-left font-semibold text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-blue-700 disabled:text-slate-500"><span>{careerFitValues.length} {careerFitValues.length === 1 ? 'candidatura com aderência calculada' : 'candidaturas com aderência calculada'}</span><ChevronRight aria-hidden="true" className="h-3.5 w-3.5" /></button><p><strong className="text-slate-900">{careerRetentionSoon}</strong> currículo(s) vencem em até 15 dias</p><p className="text-slate-500">{careerAverageFit === null ? 'A média será exibida quando houver uma nota de aderência.' : 'Revise sempre currículo e respostas antes de avançar.'}</p></div></div></section>
-              </div>
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Candidaturas por vaga</h4><p className="mt-1 text-xs text-slate-500">As cinco vagas com maior volume de inscrições.</p></div><TrendingUp className="h-5 w-5 text-emerald-600" /></div>{careerApplicationsByVacancy.length ? <div className="mt-5 space-y-3">{careerApplicationsByVacancy.map(item => <button key={item.id} type="button" aria-pressed={careerVacancyFilter === item.id} aria-controls="career-application-results" onClick={() => openCareerApplications(item.id)} className={`group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border p-2 text-left transition focus-visible:outline-2 focus-visible:outline-blue-700 ${careerVacancyFilter === item.id ? 'border-blue-200 bg-blue-50' : 'border-transparent hover:bg-slate-50'}`}><span><span className="mb-1 flex justify-between gap-2 text-xs"><span className="truncate font-semibold text-slate-700">{item.title}</span><span className="shrink-0 text-slate-500">{item.count} inscrição(ões)</span></span><span className="block h-2 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400" style={{ width: `${Math.round(item.count / careerMaxApplications * 100)}%` }} /></span></span><ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-700 transition group-hover:translate-x-0.5" /></button>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-xs text-slate-500">Publique uma vaga para acompanhar a evolução das inscrições aqui.</p>}</section>
-              {careerApplications.some(item => applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000) && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-950"><strong>Prazo de retenção dos currículos</strong><p className="mt-1">{careerApplications.filter(item => applicationRetentionMs(item) > Date.now() && applicationRetentionMs(item) <= Date.now() + 15 * 24 * 60 * 60 * 1000).length} currículo(s) expiram nos próximos 15 dias e {careerApplications.filter(item => applicationRetentionMs(item) <= Date.now()).length} já venceram.</p><div className="mt-3 flex flex-wrap gap-2">{careerApplications.some(item => applicationRetentionMs(item) <= Date.now()) && !confirmCareerCleanup && <button type="button" onClick={() => setConfirmCareerCleanup(true)} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Remover vencidos</button>}{confirmCareerCleanup && <><span className="self-center font-semibold">Remover definitivamente candidaturas e arquivos vencidos?</span><button type="button" onClick={handlePurgeExpiredCareers} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Confirmar limpeza</button><button type="button" onClick={() => setConfirmCareerCleanup(false)} className="rounded-lg border border-amber-300 px-3 py-2 font-bold">Cancelar</button></>}</div></div>}
-              <div className="flex items-center justify-between gap-3"><h4 className="text-sm font-extrabold text-slate-800">Vagas do processo</h4><button type="button" onClick={() => setShowArchivedVacancies(previous => !previous)} className="text-xs font-bold text-slate-600">{showArchivedVacancies ? 'Ocultar arquivadas' : 'Ver arquivadas'}</button></div>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{[...vacanciesList].filter(vacancy => showArchivedVacancies || vacancy.status !== 'archived').sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).map(vacancy => {
-                const open = isCareerVacancyOpen(vacancy, careerToday);
-                const expired = vacancy.status === 'published' && !open;
-                const canEdit = canEditCareerVacancy(vacancy);
-                const editDeadline = careerVacancyEditDeadline(vacancy);
-                const editing = vacancyDeadlineDraft?.id === vacancy.id && vacancyDeadlineDraft.companyId === activeCompany?.id;
-                return <div key={vacancy.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-2"><div><h4 className="text-sm font-extrabold text-slate-900">{vacancy.title}</h4><span className="text-[10px] text-slate-500">{vacancy.location || 'Local não informado'} · {vacancy.mode}</span></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${open ? 'bg-emerald-50 text-emerald-700' : vacancy.status === 'archived' ? 'bg-slate-200 text-slate-600' : 'bg-amber-50 text-amber-700'}`}>{open ? 'Publicada no link' : expired ? 'Prazo encerrado' : vacancy.status === 'archived' ? 'Arquivada' : 'Encerrada'}</span></div><p className="mt-3 whitespace-pre-wrap text-xs text-slate-600">{vacancy.description}</p><CareerVacancyPublishedDetails details={vacancy.details} /><p className="mt-3 text-[10px] text-slate-500">Competências: {(vacancy.skills || []).join(', ') || 'Não especificadas'} · Quiz: {(vacancy.quiz || []).length} perguntas</p><p className="mt-2 text-xs font-semibold text-slate-600">{/^\d{4}-\d{2}-\d{2}$/.test(vacancy.closesAt || '') ? `Inscrições até ${vacancy.closesAt.split('-').reverse().join('/')}` : vacancy.closesAt ? 'Prazo inválido' : 'Sem prazo de inscrição'}</p>
-                  {editing && <form onSubmit={saveVacancyDeadline} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
-                    <label className="grid gap-1 text-xs font-semibold text-slate-700">Inscrições até (opcional)
-                      <input type="date" min={careerToday} value={vacancyDeadlineDraft.deadline} onChange={event => setVacancyDeadlineDraft(current => ({...current, deadline: event.target.value}))} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5" />
-                    </label>
-                    <button type="submit" disabled={savingVacancyDeadline} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{vacancyDeadlineDraft.reopen ? 'Salvar e reabrir' : 'Salvar prazo'}</button>
-                    <button type="button" disabled={savingVacancyDeadline} onClick={() => setVacancyDeadlineDraft(null)} className="px-2 py-2 text-xs font-bold text-slate-600">Cancelar</button>
-                  </form>}
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs"><span>{careerApplications.filter(item => item.vacancyId === vacancy.id).length} candidaturas</span><div className="flex flex-wrap gap-3">{canEdit && vacancy.status === 'published' && !editing && <button type="button" onClick={() => editPublishedVacancy(vacancy)} className="font-bold text-blue-800 hover:underline">Editar vaga</button>}{canEdit && vacancy.status !== 'archived' && !editing && <button type="button" onClick={() => editVacancyDeadline(vacancy)} className="font-bold text-blue-700">Editar prazo</button>}<button type="button" onClick={() => handleCloseVacancy(vacancy)} className="font-bold text-blue-700">{vacancy.status === 'published' ? 'Encerrar vaga' : 'Reabrir vaga'}</button>{vacancy.status !== 'published' && <button type="button" onClick={() => handleArchiveVacancy(vacancy)} className="font-bold text-slate-600">{vacancy.status === 'archived' ? 'Desarquivar' : 'Arquivar'}</button>}</div></div>{vacancy.status === 'published' && <p className="mt-2 text-xs text-slate-600">{canEdit ? `Edição até ${vacancyEditorDate.format(editDeadline)}` : 'Prazo de edição encerrado'}</p>}<CareerVacancyHistory key={activeCompany.id + vacancy.id} vacancyRef={doc(getTenantCollection('vacancies'), vacancy.id)} revision={vacancy.changeId || ''} /></div>;
-              })}</div>
-              {vacanciesList.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">Nenhuma vaga publicada ainda.</div>}
-              <section className="overflow-hidden rounded-[1.5rem] border border-violet-200 bg-gradient-to-br from-violet-950 via-indigo-950 to-blue-950 text-white shadow-lg shadow-indigo-950/10"><div className="grid gap-5 p-5 lg:grid-cols-[0.8fr_1.2fr]"><div><span className="inline-flex rounded-full border border-violet-200/20 bg-white/10 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-violet-100">Cadastro permanente</span><h4 className="mt-3 text-lg font-black">Banco de Talentos · Futuras oportunidades</h4><p className="mt-2 text-xs leading-5 text-indigo-100/75">Currículos enviados para cargos divulgados no Trabalhe Conosco, sem vínculo com uma vaga aberta. Esses perfis ficam separados dos processos seletivos ativos e seguem a retenção de 90 dias.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => { setCareerSourceFilter('talent_pool'); setCareerVacancyFilter('all'); setCareerViewMode('list'); }} className="rounded-xl bg-white px-4 py-2.5 text-xs font-extrabold text-indigo-950">Ver todos os currículos</button><button type="button" onClick={() => { setCareerSourceFilter('open'); setCareerVacancyFilter('all'); }} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white">Ver somente vagas abertas</button></div></div><div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur"><div className="flex items-center justify-between"><strong className="text-xs">Currículos por cargo</strong><span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold">{talentPoolApplications.length} no total</span></div>{talentPoolApplicationsByRole.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{talentPoolApplicationsByRole.map(role => <button key={role.id} type="button" onClick={() => { setCareerSourceFilter('talent_pool'); setCareerVacancyFilter(role.id); setCareerViewMode('list'); }} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/10 p-3 text-left transition hover:bg-white/15"><span className="min-w-0 truncate text-xs font-bold">{role.title}</span><span className="grid h-7 min-w-7 place-items-center rounded-full bg-violet-300 px-2 text-[10px] font-black text-violet-950">{role.count}</span></button>)}</div> : <div className="mt-3 rounded-xl border border-dashed border-white/20 p-5 text-center text-xs text-indigo-100/70">Ainda não há currículos cadastrados para futuras oportunidades.</div>}</div></div></section>
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><span className="mr-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Origem dos perfis</span>{[['all', 'Todos'], ['open', 'Vagas abertas'], ['talent_pool', 'Futuras oportunidades']].map(([value, label]) => <button key={value} type="button" onClick={() => { setCareerSourceFilter(value); setCareerVacancyFilter('all'); }} className={`rounded-full px-3 py-2 text-[10px] font-extrabold transition ${careerSourceFilter === value ? 'bg-indigo-700 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}</button>)}</div>
-              <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-5"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div><h4 className="text-base font-extrabold text-slate-950">Central de triagem</h4><p className="mt-1 text-xs text-slate-500">Encontre os melhores perfis e acompanhe o avanço em cada etapa.</p></div><div className="inline-flex w-max rounded-xl bg-slate-100 p-1"><button type="button" onClick={() => { setCareerViewMode('pipeline'); if (careerStageFilter === 'rejected' || careerStageFilter === 'closed') setCareerStageFilter('all'); }} className={`rounded-lg px-3 py-2 text-[10px] font-extrabold transition ${careerViewMode === 'pipeline' ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500'}`}>Funil</button><button type="button" onClick={() => setCareerViewMode('list')} className={`rounded-lg px-3 py-2 text-[10px] font-extrabold transition ${careerViewMode === 'list' ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500'}`}>Lista detalhada</button></div></div><div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-6"><label className="relative xl:col-span-2"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input aria-label="Buscar candidato" value={careerCandidateSearch} onChange={event => setCareerCandidateSearch(event.target.value)} placeholder="Buscar nome, cidade, e-mail ou vaga" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400" /></label><select aria-label="Filtrar vaga" value={careerVacancyFilter} onChange={event => setCareerVacancyFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Todas as vagas</option>{careerVacancyOptions.map(vacancy => <option key={vacancy.id} value={vacancy.id}>{vacancy.title}</option>)}</select><select aria-label="Filtrar etapa" value={careerStageFilter} onChange={event => { const stage = event.target.value; setCareerStageFilter(stage); if (stage === 'rejected' || stage === 'closed') setCareerViewMode('list'); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">{careerFitFilter === 'scored' ? 'Todas as etapas' : 'Etapas sem descarte'}</option>{careerStageDefinitions.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select><select aria-label="Filtrar aderência" value={careerFitFilter} onChange={event => setCareerFitFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Toda aderência</option><option value="scored">Aderência calculada</option><option value="high">Alta · 75% ou mais</option><option value="medium">Média · 50% a 74%</option><option value="low">Baixa ou não calculada</option></select><select aria-label="Filtrar cidade" value={careerCityFilter} onChange={event => setCareerCityFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="all">Todas as cidades</option>{careerCities.map(city => <option key={city} value={city}>{city}</option>)}</select></div><div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase text-slate-400">Ordenar:</span>{[['recent', 'Mais recentes'], ['fit', 'Maior aderência'], ['name', 'Nome A–Z']].map(([value, label]) => <button key={value} type="button" onClick={() => setCareerSort(value)} className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${careerSort === value ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{label}</button>)}{(careerCandidateSearch || careerVacancyFilter !== 'all' || careerStageFilter !== 'all' || careerFitFilter !== 'all' || careerCityFilter !== 'all') && <button type="button" onClick={() => { setCareerCandidateSearch(''); setCareerVacancyFilter('all'); setCareerStageFilter('all'); setCareerFitFilter('all'); setCareerCityFilter('all'); }} className="ml-auto text-[10px] font-bold text-rose-600">Limpar filtros</button>}<span className="text-[10px] text-slate-400">{careerFilteredApplications.length} perfil(is)</span></div></div>{careerComparisonApplications.length > 1 && <div className="overflow-x-auto border-t border-blue-100 bg-blue-50/40"><table className="w-full min-w-[620px] text-left text-xs"><thead className="text-blue-950"><tr><th className="p-3">Comparativo</th>{careerComparisonApplications.map(application => <th key={application.id} className="p-3">{application.name}</th>)}</tr></thead><tbody><tr className="border-t border-blue-100"><th className="p-3 text-slate-500">Aderência</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-3 font-bold">{application.fit?.percentage ?? '—'}{application.fit?.percentage != null ? '%' : ''}</td>)}</tr><tr className="border-t border-blue-100"><th className="p-3 text-slate-500">Competências identificadas</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-3">{(application.fit?.matched || []).join(', ') || '—'}</td>)}</tr><tr className="border-t border-blue-100"><th className="p-3 text-slate-500">Cidade</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-3">{application.city || '—'}</td>)}</tr></tbody></table><button type="button" onClick={() => setCareerComparisonIds([])} className="m-3 text-xs font-bold text-blue-700">Limpar comparação</button></div>}</section>
-              {careerViewMode === 'pipeline' && <div className="overflow-x-auto pb-2"><div className="grid min-w-[1120px] grid-cols-5 gap-3">{careerStageDefinitions.filter(stage => ['received', 'reviewing', 'preselected', 'interview', 'hired'].includes(stage.id)).map(stage => { const stageApplications = careerFilteredApplications.filter(application => (application.status || 'received') === stage.id); return <section key={stage.id} className="min-h-[240px] rounded-2xl border border-slate-200 bg-slate-100/70 p-3"><div className="mb-3 flex items-center justify-between"><span className="flex items-center gap-2 text-xs font-extrabold text-slate-800"><span className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />{stage.label}</span><span className="grid h-6 min-w-6 place-items-center rounded-full bg-white px-1.5 text-[10px] font-black text-slate-600 shadow-sm">{stageApplications.length}</span></div><div className="space-y-2.5">{stageApplications.map(application => <article key={application.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><strong className="block truncate text-xs text-slate-900">{application.name}</strong><span className="mt-0.5 block truncate text-[9px] text-slate-500">{application.vacancyTitle}</span></div><span className={`shrink-0 rounded-lg px-2 py-1 text-[9px] font-black ${Number(application.fit?.percentage) >= 75 ? 'bg-emerald-50 text-emerald-700' : Number(application.fit?.percentage) >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{application.fit?.percentage ?? '—'}{application.fit?.percentage != null ? '%' : ''}</span></div><div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2"><span className="truncate text-[9px] text-slate-400">{application.city || 'Cidade não informada'}</span><button type="button" onClick={() => { setCareerViewMode('list'); setCareerCandidateSearch(application.name || ''); }} className="text-[9px] font-extrabold text-blue-700">Ver perfil</button></div></article>)}{stageApplications.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-[10px] text-slate-400">Nenhum candidato nesta etapa</div>}</div></section>; })}</div></div>}
-              <section className="overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/50 shadow-sm"><div className="grid gap-5 p-5 lg:grid-cols-[0.8fr_1.2fr]"><div><span className="inline-flex rounded-full bg-indigo-100 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wide text-indigo-700">Análise assistida por IA</span><h4 className="mt-3 text-base font-extrabold text-slate-950">Parecer de aderência</h4><p className="mt-1 text-xs leading-relaxed text-slate-500">Compare currículo, requisitos e respostas para preparar uma triagem mais consistente. O parecer não substitui a decisão humana.</p><select value={careerAnalysisSelectedId} onChange={event => setCareerAnalysisSelectedId(event.target.value)} className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold"><option value="">Selecione um candidato</option>{careerFilteredApplications.filter(application => application.status !== 'rejected').map(application => <option key={application.id} value={application.id}>{application.name} · {application.vacancyTitle}</option>)}</select><button type="button" disabled={!careerAnalysisApplication || Boolean(careerAiAnalyzingId)} onClick={() => handleGenerateCareerAssessment(careerAnalysisApplication)} className="mt-2 w-full rounded-xl bg-gradient-to-r from-indigo-700 to-blue-700 px-4 py-3 text-xs font-extrabold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">{careerAiAnalyzingId ? 'Analisando currículo e vaga...' : careerAnalysisApplication?.aiAssessment ? 'Atualizar parecer' : 'Gerar parecer completo'}</button></div><div className="min-h-[190px] rounded-2xl border border-white bg-white/90 p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><strong className="text-xs text-slate-900">Análise para o recrutador</strong>{careerAnalysisApplication?.aiAssessmentAt && <span className="text-[9px] text-slate-400">Atualizada em {new Date(careerAnalysisApplication.aiAssessmentAt).toLocaleDateString('pt-BR')}</span>}</div>{careerAnalysisApplication?.aiAssessment ? <p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-slate-700">{careerAnalysisApplication.aiAssessment}</p> : <div className="grid min-h-[145px] place-items-center text-center"><div><Briefcase className="mx-auto h-7 w-7 text-indigo-200" /><p className="mt-2 text-xs font-semibold text-slate-500">Selecione um perfil e gere o parecer.</p><span className="mt-1 block text-[10px] text-slate-400">Serão destacados pontos fortes, lacunas e perguntas para entrevista.</span></div></div>}</div></div></section>
-              {careerViewMode === 'list' && <><h4 id="career-application-results" tabIndex={-1} className="scroll-mt-24 text-sm font-extrabold text-slate-800">{careerStageFilter !== 'all' ? careerStageDefinitions.find(stage => stage.id === careerStageFilter)?.label : careerFitFilter === 'scored' ? 'Candidaturas com aderência calculada' : 'Candidaturas'}</h4>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{careerFilteredApplications.map(application => <div key={application.id} id={`career-application-${application.id}`} tabIndex={-1} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm focus:outline-blue-600"><div className="flex items-start justify-between gap-3"><div><h5 className="text-sm font-extrabold text-slate-900">{application.name}</h5>{application.status === 'rejected' && <span className="mt-1 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-800">Não aderente</span>}<p className="mt-1 text-xs text-slate-500">{application.vacancyTitle} · {application.city || 'Cidade não informada'}</p></div><label className="flex items-center gap-1 text-[10px] font-bold text-blue-700"><input type="checkbox" checked={careerComparisonIds.includes(application.id)} onChange={event => setCareerComparisonIds(previous => event.target.checked ? [...previous, application.id].slice(-3) : previous.filter(id => id !== application.id))} /> Comparar</label></div><p className="mt-2 text-xs text-slate-600">{application.email} · {application.phone}</p><p className={`mt-2 text-xs font-semibold ${applicationRetentionMs(application) <= Date.now() ? 'text-rose-700' : applicationRetentionMs(application) <= Date.now() + 15 * 24 * 60 * 60 * 1000 ? 'text-amber-700' : 'text-slate-500'}`}>Currículo disponível até {formatCareerDate(applicationRetentionMs(application))}{application.retentionExtendedCount ? ' · prazo prorrogado' : ''}</p><div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-700"><strong>Compatibilidade indicativa: {application.fit?.percentage ?? '—'}{application.fit?.percentage != null ? '%' : ''}</strong><p className="mt-1">{application.fit?.version === 3 ? `${application.fit.matchedCount} de ${application.fit.criteriaCount} critérios identificados na comparação com a descrição, as experiências e os requisitos da vaga.` : 'Análise anterior. Recalcule para incluir a descrição e os requisitos da vaga.'}</p><p className="mt-1">Informadas pelo candidato: {(application.fit?.matchedDeclared || application.fit?.matched || []).join(', ') || 'Nenhuma'}</p><p>Encontradas no currículo ou resumo profissional: {(application.fit?.matchedFromCv || []).join(', ') || 'Nenhuma'}</p>{(application.fit?.evidenceFromCv || []).length > 0 && <div className="mt-2 space-y-1 border-l-2 border-emerald-200 pl-2">{application.fit.evidenceFromCv.map(item => <p key={item.skill}><strong>{item.skill}:</strong> “{item.excerpt}” <span className="text-slate-400">({item.source})</span></p>)}</div>}<p>Não identificadas: {(application.fit?.missing || []).join(', ') || 'Nenhuma'}</p>{application.resumeAnalysisPartial && <p className="mt-1 font-semibold text-amber-700">O currículo ultrapassou o limite de texto da análise automática. Confira o arquivo completo.</p>}{application.resumeReadable === false && <p className="mt-1 font-semibold text-amber-700">Não foi possível ler o texto do arquivo automaticamente. Abra o currículo para análise humana.</p>}<small className="mt-1 block text-slate-500">Indicador auxiliar; não é decisão de contratação.</small></div><details className="mt-3 text-xs text-slate-600"><summary className="cursor-pointer font-bold">Ver resumo do currículo e quiz</summary><p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap">{application.resumeText}</p>{(application.quizQuestions || []).map((question, index) => <p key={index} className="mt-2"><strong>{question.question}</strong><br />{question.options?.[application.quizAnswers?.[index]] || 'Sem resposta'}</p>)}</details><div className="mt-4 flex flex-wrap items-center gap-2"><button type="button" disabled={Boolean(careerFitRefreshingId)} onClick={() => handleRefreshCareerFit(application)} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">{careerFitRefreshingId === application.id ? 'Atualizando análise...' : 'Recalcular compatibilidade'}</button><button type="button" onClick={() => handleDownloadCareerResume(application)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white">Baixar currículo</button>{application.status !== 'rejected' && <><button type="button" onClick={() => setCareerDecisionDraft({ application, outcome: 'approved', message: `Parabéns! Você foi pré-selecionado(a) para continuar no processo da vaga ${application.vacancyTitle}.`, internalNote: '', openEmail: true })} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800">Pré-selecionar</button><button type="button" onClick={() => setCareerInterviewDraft({ application, date: '', time: '', format: 'Online', location: '', contact: '', notes: '', internalNote: '', message: '', openEmail: true })} className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-800">Agendar entrevista</button><button type="button" onClick={() => setCareerDecisionDraft({ application, outcome: 'rejected', message: `Agradecemos seu interesse na vaga ${application.vacancyTitle}. Após a análise, seu perfil não seguirá para a próxima etapa deste processo.`, internalNote: '', openEmail: true })} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800">Descartar</button>{applicationRetentionMs(application) <= Date.now() + 15 * 24 * 60 * 60 * 1000 && !application.retentionExtendedCount && <button type="button" onClick={() => handleExtendCareerRetention(application)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Prorrogar 90 dias</button>}<select aria-label={`Etapa de ${application.name}`} value={application.status || 'received'} onChange={event => updateDocField('applications', application.id, { status: event.target.value })} className="rounded-lg border border-slate-200 px-2 py-2 text-xs"><option value="received">Recebida</option><option value="reviewing">Em análise</option><option value="preselected">Pré-seleção</option><option value="interview">Entrevista</option><option value="rejected">Não aderente</option><option value="closed">Concluída</option></select></>}</div></div>)}</div>
-              {careerFilteredApplications.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">Nenhuma candidatura corresponde aos filtros selecionados.</div>}</>}
+                {(careerExpired > 0 || careerExpiring > 0) && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+                  <button type="button" onClick={() => openCareerApplications('all', '', {queue: 'retention'})} className="font-bold hover:underline">
+                    Prazos de retenção ({careerExpired} vencidos, {careerExpiring} a vencer)
+                  </button>
+                  {careerExpired > 0 && !confirmCareerCleanup && <button type="button" onClick={() => setConfirmCareerCleanup(true)} className="ml-auto font-bold text-rose-800">Remover vencidos</button>}
+                  {confirmCareerCleanup && <>
+                    <span>Remover definitivamente as candidaturas e os arquivos vencidos?</span>
+                    <button type="button" onClick={handlePurgeExpiredCareers} className="rounded-lg bg-rose-700 px-3 py-2 font-bold text-white">Confirmar limpeza</button>
+                    <button type="button" onClick={() => setConfirmCareerCleanup(false)} className="px-2 py-2 font-bold">Cancelar</button>
+                  </>}
+                </div>}
+                {careerComparisonApplications.length > 0 && <details open className="rounded-2xl border border-blue-100 bg-white p-4 text-xs shadow-sm">
+                  <summary className="cursor-pointer font-bold text-blue-800">Comparação ({careerComparisonApplications.length} de 3)</summary>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead><tr><th className="p-2">Candidatura</th>{careerComparisonApplications.map(application => <th key={application.id} scope="col" className="min-w-32 p-2">
+                        {application.name}<span className="block font-normal text-slate-600">{careerOpportunityTitle(application)}</span>
+                        <button type="button" onClick={() => setCareerComparisonIds(ids => ids.filter(id => id !== application.id))} className="mt-1 font-semibold text-blue-800">Remover da comparação</button>
+                      </th>)}</tr></thead>
+                      <tbody>
+                        <tr className="border-t border-slate-100"><th scope="row" className="p-2">Aderência</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-2">{careerFitScore(application.fit?.percentage) === null ? '—' : `${application.fit.percentage}%`}</td>)}</tr>
+                        <tr className="border-t border-slate-100"><th scope="row" className="p-2">Competências</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-2">{(application.fit?.matched || []).join(', ') || '—'}</td>)}</tr>
+                        <tr className="border-t border-slate-100"><th scope="row" className="p-2">Cidade</th>{careerComparisonApplications.map(application => <td key={application.id} className="p-2">{application.city || '—'}</td>)}</tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 id="career-application-results" tabIndex={-1} aria-live="polite" className="scroll-mt-24 text-sm font-bold text-slate-800">
+                    {careerFilteredApplications.length} {careerFilteredApplications.length === 1 ? 'candidatura' : 'candidaturas'} · {careerFilteredPeople} {careerFilteredPeople === 1 ? 'pessoa' : 'pessoas'}
+                  </h4>
+                  {careerAverageFit !== null && <button type="button" onClick={() => setCareerFitFilter('scored')} className="text-xs font-semibold text-blue-800 hover:underline">
+                    {careerAverageFit}% de aderência média
+                  </button>}
+                </div>
+                {careerFilteredApplications.length === 0 && <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">Nenhuma candidatura corresponde aos filtros.</p>}
+                {careerViewMode === 'pipeline' && careerFilteredApplications.length > 0 && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {CAREER_STAGES.filter(stage => (careerStageFilter === 'all' || stage.id === careerStageFilter) && careerStageGroups[stage.id].length > 0).map(stage => (
+                      <section key={stage.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <h5 className="mb-3 flex items-center gap-2 text-xs font-extrabold text-slate-800">
+                          <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${stage.color}`} />{stage.label} ({careerStageGroups[stage.id].length})
+                        </h5>
+                        <div className="space-y-2">{careerStageGroups[stage.id].map(application => (
+                          <button type="button" key={application.id} onClick={() => {
+                            setCareerViewMode('list'); setCareerScrollTarget({applicationId: application.id});
+                          }} className="block w-full rounded-lg border border-slate-200 bg-white p-3 text-left hover:border-blue-300">
+                            <span className="flex items-start justify-between gap-2 text-sm font-bold text-slate-900">{application.name}<ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-700" /></span>
+                            <span className="mt-1 block text-xs text-slate-600">{careerOpportunityTitle(application)} · {application.city || 'Cidade não informada'}</span>
+                          </button>
+                        ))}</div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+                {careerViewMode === 'list' && <div className="grid items-start gap-3 lg:grid-cols-2">
+                  {careerFilteredApplications.map(application => (
+                    <CareerCandidateCard key={`${activeCompany.id}-${application.id}`} application={application} title={careerOpportunityTitle(application)}
+                      retentionLabel={formatCareerDate(applicationRetentionMs(application))}
+                      expiring={applicationRetentionMs(application) <= careerRetentionLimit} expired={applicationRetentionMs(application) <= careerNow}
+                      comparisonSelected={careerComparisonIds.includes(application.id)} comparisonFull={careerComparisonApplications.length >= 3}
+                      onCompare={checked => setCareerComparisonIds(previous => checked ? [...previous.filter(id => careerApplications.some(item => item.id === id)), application.id].slice(0, 3) : previous.filter(id => id !== application.id))}
+                      refreshingFit={careerFitRefreshingId} analyzing={careerAiAnalyzingId} vacancy={careerVacanciesById.get(application.vacancyId)}
+                      onRefreshFit={() => handleRefreshCareerFit(application)} onDownload={() => handleDownloadCareerResume(application)}
+                      onAssessment={() => handleGenerateCareerAssessment(application)} onAcknowledge={() => acknowledgeCareerUpdate(application)}
+                      onExtend={() => handleExtendCareerRetention(application)}
+                      onStageChange={status => updateDocField('applications', application.id, {status})}
+                      onAdvance={() => setCareerDecisionDraft({ application, outcome: 'approved', message: `Parabéns! Você foi pré-selecionado(a) para continuar no processo da vaga ${careerOpportunityTitle(application)}.`, internalNote: '', openEmail: true })}
+                      onInterview={() => setCareerInterviewDraft({ application, date: '', time: '', format: 'Online', location: '', contact: '', notes: '', internalNote: '', message: '', openEmail: true })}
+                      onReject={() => setCareerDecisionDraft({ application, outcome: 'rejected', message: `Agradecemos seu interesse em ${careerOpportunityTitle(application)}. Após a análise, seu perfil não seguirá para a próxima etapa deste processo.`, internalNote: '', openEmail: true })}
+                    />
+                  ))}
+                </div>}
+              </>}
             </div>
           )}
 

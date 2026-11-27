@@ -106,9 +106,9 @@ export const PLATFORM_TUTORIALS = {
     steps: [
       { title: 'Conheça o Banco de Talentos', description: 'Esta área reúne vagas abertas, futuras oportunidades, currículos e etapas do processo seletivo.', target: '[data-tour="careers-overview"]' },
       { title: 'Crie e publique a vaga', description: 'Informe cargo, local, modalidade, descrição e competências. Acrescente um quiz comportamental somente quando ele ajudar na avaliação.', target: '[data-tour="careers"]' },
-      { title: 'Compartilhe o link', description: 'Copie o link exibido no topo da área. Qualquer pessoa pode se cadastrar, confirmar o e-mail e se candidatar à vaga publicada.', target: '[data-tour="careers"]' },
+      { title: 'Compartilhe o link', description: 'Abra o Portal de candidatos no cabeçalho e compartilhe o endereço. Qualquer pessoa pode se cadastrar, confirmar o e-mail e se candidatar à vaga publicada.', target: '[data-tour="careers"]' },
       { title: 'Receba o currículo', description: 'O candidato envia o arquivo em PDF ou Word e responde ao questionário. O limite atual é de 4 MB por arquivo.' },
-      { title: 'Faça a triagem humana', description: 'A compatibilidade de competências é um indicador auxiliar. Leia o currículo e as respostas antes de tomar qualquer decisão.' },
+      { title: 'Faça a triagem humana', description: 'Abra as candidaturas diretamente pela vaga. Na Triagem, filtre por etapa ou cargo e veja a compatibilidade, o currículo e o parecer no perfil correspondente.' },
       { title: 'Atualize a etapa', description: 'Classifique a candidatura como recebida, em análise, entrevista ou concluída para manter o processo organizado.' },
       { title: 'Controle a retenção', description: 'Currículos ficam disponíveis por 90 dias. A plataforma avisa 15 dias antes; RH ou administrador pode prorrogar uma vez por mais 90 dias.' },
       { title: 'Finalize com segurança', description: 'Remova registros vencidos quando não houver necessidade de prorrogação. O candidato também pode retirar a candidatura ou excluir a própria conta.' },

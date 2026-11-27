@@ -13,15 +13,6 @@
     },
     "no-useless-assignment": {
       "count": 2
-    },
-    "react-hooks/immutability": {
-      "count": 4
-    },
-    "react-hooks/purity": {
-      "count": 86
-    },
-    "react-hooks/refs": {
-      "count": 5
     }
   },
   "src/Careers.jsx": {

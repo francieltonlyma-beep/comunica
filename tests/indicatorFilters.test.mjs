@@ -15,8 +15,8 @@ test('dashboard templates expose consistent clickable indicator filters', () => 
   assert.match(source, /setServiceStatusFilter\(metric\.id\)/);
   assert.match(source, /setConversationAuditStatus\(previous => previous === metric\.id/);
   assert.match(source, /pollViewFilter === 'Pendentes'/);
-  assert.match(source, /setCareerStageFilter\(previous => previous === 'reviewing'/);
-  assert.match(source, /setCareerStageFilter\(previous => previous === 'interview'/);
+  assert.match(source, /onClick=\{\(\) => setCareerStageFilter\(stage\.id\)\}/);
+  assert.match(source, /careerStageFilter === 'all' \? careerFilteredScope : careerStageGroups\[careerStageFilter\]/);
 });
 
 test('audit counters remain stable while the selected card filters results', () => {

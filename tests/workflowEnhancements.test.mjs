@@ -44,8 +44,8 @@ test('public careers always derives talent pool opportunities from company roles
 
 test('recruiting separates permanent talent pool profiles from open vacancies', () => {
   assert.match(app, /careerSourceFilter/);
-  assert.match(app, /Banco de Talentos · Futuras oportunidades/);
-  assert.match(app, /Currículos por cargo/);
+  assert.match(app, /\['talent_pool', 'Futuras oportunidades'\]/);
+  assert.match(app, /careerSourceFilter === 'talent_pool' \? 'Todos os cargos'/);
 });
 
 test('service flow separates configured SLA from assignee promise and progress', () => {
