@@ -2,6 +2,7 @@ import { adjustSalaryBand, bandNames, salaryBands } from './careerReview.js';
 import { roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import PlrSimulator from './PlrSimulator.jsx';
+import SalaryHierarchy from './SalaryHierarchy.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { Managers, TeamCharts } from './TeamInsights.jsx';
 import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -113,7 +114,7 @@ function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markD
 
     <div className="grid gap-3 sm:grid-cols-3">
       <label>Situação<select className={field} value={String(draft.active)} onChange={event => change('active', event.target.value === 'true')}><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
-      <label>Cargo que supervisiona<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id && item.id !== standard.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Superior direto deste cargo<select className={field} value={draft.supervisor} onChange={event => change('supervisor', event.target.value)}><option value="">Sem cargo superior</option>{roles.filter(item => item.id !== role.id && item.id !== standard.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Vigência<input required className={field} type="date" value={draft.effective} onChange={event => change('effective', event.target.value)} /></label>
       {fields.map(([key, label]) => <label key={key}>{label}<input className={field} type="number" min="0" max={key === 'score' ? 100 : 10000000} step={key === 'months' ? 1 : 0.01} value={draft[key]} onChange={event => change(key, event.target.value)} /></label>)}
     </div>
@@ -361,6 +362,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     </section>
     {view === 'management' && <Managers {...{db,company,departments,active,today}} />}
     <section className={view === 'salary' ? 'space-y-3' : 'hidden'}>
+      {records && view === 'salary' && <SalaryHierarchy roles={ordered} records={records} initialRoleId={roleId} openEditor={openSalaryEditor} />}
       {records && <div className={panel}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><h3 className="text-lg font-bold">Tabela geral de cargos e salários</h3><p className="text-slate-600">Clique no cargo para editar o plano, ou em um valor para ajustar a faixa.</p></div>
