@@ -10855,7 +10855,15 @@ const handleDownload = async (fileUrl, fileName) => {
             <div className="space-y-3">
               <button type="button" onClick={() => setActiveTab('dashboard')} className="rounded-lg border bg-white px-4 py-2 text-xs font-semibold text-blue-800">Voltar ao início</button>
               <Suspense fallback={<p>Carregando desenvolvimento…</p>}>
-                <DevelopmentWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid} />
+                <DevelopmentWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id} uid={dbUser.uid}
+                  requestConversation={title => {
+                    const managerId = currentUser.managerId || '';
+                    if (!managerId || !getAllowedMessageRecipients().some(person => person.id === managerId)) {
+                      triggerNotification('Peça ao RH para verificar o gestor vinculado ao seu cadastro.', 'error');
+                      return;
+                    }
+                    openPrivateDraft(managerId, `Conversa sobre PDI — ${title}`.slice(0, 150));
+                  }} />
               </Suspense>
             </div>
           )}

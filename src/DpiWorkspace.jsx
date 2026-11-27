@@ -119,6 +119,17 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
   useEffect(() => onSnapshot(collection(db,'artifacts','comunica-salvador','public','data','companies',company,'salaryChanges'),
     snapshot => setEntries(snapshot.docs.map(item => item.data()).sort((a,b) => b.effective.localeCompare(a.effective))),
     () => setStatus('Falha ao consultar os salários individuais.')), [company,db]);
+  const selectedEmployee = employees.find(employee => employee.id === person);
+  const sameName = roles.filter(role => !role.mergedIntoRoleId && selectedEmployee?.role && roleNameKey(role.name) === roleNameKey(selectedEmployee.role));
+  const selectedRole = roles.find(role => !role.mergedIntoRoleId && role.id === selectedEmployee?.roleId)
+    || (sameName.length === 1 ? sameName[0] : undefined);
+  const selectedPlan = records[selectedRole?.id]?.plan;
+  const proposedBands = selectedPlan?.active !== false && selectedPlan?.effective <= effective ? salaryBands(selectedPlan) : [];
+  const currentPay = entries.find(entry => entry.person === person && entry.effective <= today);
+  const proposedAmount = Number(amount);
+  const difference = currentPay && proposedAmount > 0 ? Math.round((proposedAmount - Number(currentPay.amount)) * 100) / 100 : null;
+  const percent = difference === null || !currentPay.amount ? null : difference / currentPay.amount * 100;
+  const matchingBands = proposedBands.filter(band => Math.round(band.value * 100) === Math.round(proposedAmount * 100));
   async function save(event) {
     event.preventDefault();
     if (!window.confirm(`Registrar ${money.format(Number(amount))} para ${employees.find(p => p.id === person)?.name} com vigência em ${effective.split('-').reverse().join('/')}?`)) return;
@@ -134,7 +145,26 @@ function Compensation({ db, company, uid, employees, roles, records, today }) {
     const values = plan && salaryBands(plan).map(b => b.value);
     const label = !pay ? 'Salário pendente' : !values ? 'Plano pendente' : pay.amount < Math.min(...values) ? 'Abaixo da matriz' : pay.amount > Math.max(...values) ? 'Acima da matriz' : 'Dentro da matriz';
     return <tr key={p.id} className="border-t"><td className="py-2">{p.name}</td><td>{role?.name || p.role}</td><td>{pay ? money.format(pay.amount) : '—'}</td><td>{label}</td></tr>;
-  })}</tbody></table></div><form onSubmit={save} className="grid items-end gap-2 sm:grid-cols-4"><label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={setPerson} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label><button className="rounded-xl bg-blue-800 p-2 text-white">Confirmar reajuste</button></form>
+  })}</tbody></table></div><form onSubmit={save} className="space-y-3"><div className="grid items-end gap-2 sm:grid-cols-3"><label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={id => { setPerson(id); setAmount(''); }} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label><label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}/></label><label>Início da vigência<input required className={field} type="date" value={effective} onChange={e => setEffective(e.target.value)}/></label></div>
+    {person && <section className="space-y-3 rounded-xl border border-slate-200 p-3">
+      <div><h4 className="font-bold">Simulação de reajuste</h4><p className="text-xs text-slate-600">Impacto mensal no salário bruto individual, com vigência em {effective ? effective.split('-').reverse().join('/') : 'data a definir'}.</p></div>
+      {proposedBands.length > 0 && <label>Simular com uma faixa da matriz
+        <select className={field} value="" onChange={event => { if (event.target.value) setAmount(event.target.value); }}>
+          <option value="">Escolha uma faixa ou informe o valor manualmente</option>
+          {proposedBands.map(band => <option key={band.label} value={band.value.toFixed(2)}>{band.label} · {money.format(band.value)}</option>)}
+        </select>
+      </label>}
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          ['Salário vigente', currentPay ? money.format(currentPay.amount) : 'Sem registro'],
+          ['Valor proposto', proposedAmount > 0 ? money.format(proposedAmount) : 'A informar'],
+          ['Faixa proposta', matchingBands.length ? matchingBands.map(band => band.label).join(', ') : '—'],
+          ['Diferença mensal', difference === null ? '—' : money.format(difference) + (percent === null ? '' : ` · ${percent.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`)],
+        ].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-600">{label}</dt><dd className="font-semibold">{value}</dd></div>)}
+      </dl>
+    </section>}
+    <button type="submit" disabled={!person || !effective || !(proposedAmount > 0)} className="rounded-xl bg-blue-800 px-4 py-2 font-semibold text-white disabled:opacity-50">Confirmar reajuste</button>
+    </form>
     {person && <ul>{entries.filter(e => e.person === person).map(e => <li key={e.effective}>{e.effective.split('-').reverse().join('/')} · {money.format(e.amount)}</li>)}</ul>}<p role="status">{status}</p></section>;
 }
 

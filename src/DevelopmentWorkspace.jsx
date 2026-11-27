@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import PurchaseSelect from './PurchaseSelect.jsx';
 
 const card = 'space-y-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5';
@@ -7,8 +7,54 @@ const field = 'mt-1 block w-full rounded-lg border border-slate-300 bg-white px-
 const emptyGoal = { title: '', nextStep: '', due: '', feedback: '', status: 'active' };
 const formatDate = value => value ? value.split('-').reverse().join('/') : 'Sem prazo';
 
-function Goals({ db, company, person, editable }) {
+function GoalProgress({ saved, editable, onSave, onRequest }) {
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      await onSave({ progress: draft.progress.trim(), difficulty: draft.difficulty.trim() });
+      setDraft(null);
+      setMessage('Atualização registrada.');
+    } catch {
+      setMessage('Não foi possível registrar a atualização. Tente novamente.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="space-y-2 border-t border-slate-100 pt-3 text-sm">
+    {saved?.progress && <p className="whitespace-pre-wrap break-words"><strong>Avanço do colaborador</strong><br />{saved.progress}</p>}
+    {saved?.difficulty && <p className="whitespace-pre-wrap break-words"><strong>Dificuldade sinalizada</strong><br />{saved.difficulty}</p>}
+    {!editable && !draft && <div className="flex flex-wrap gap-2">
+      <button type="button" className="rounded-lg border px-3 py-2 font-semibold"
+        onClick={() => { setDraft({ progress: saved?.progress || '', difficulty: saved?.difficulty || '' }); setMessage(''); }}>
+        Registrar avanço ou dificuldade
+      </button>
+      {onRequest && <button type="button" className="rounded-lg border px-3 py-2 font-semibold" onClick={onRequest}>Solicitar conversa com gestor</button>}
+    </div>}
+    {draft && <form onSubmit={submit} className="space-y-2">
+      <fieldset disabled={busy} className="space-y-2">
+        <label>Avanço<textarea className={field} rows={2} maxLength={1500} value={draft.progress} onChange={e => setDraft({ ...draft, progress: e.target.value })} /></label>
+        <label>Dificuldade<textarea className={field} rows={2} maxLength={1500} value={draft.difficulty} onChange={e => setDraft({ ...draft, difficulty: e.target.value })} /></label>
+        <p className="text-xs text-slate-600">O RH autorizado pode consultar estas informações.</p>
+        <button type="submit" className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white">{busy ? 'Salvando…' : 'Salvar atualização'}</button>
+        <button type="button" className="ml-3 underline" onClick={() => setDraft(null)}>Cancelar</button>
+      </fieldset>
+    </form>}
+    {message && <p role="status">{message}</p>}
+  </div>;
+}
+
+function Goals({ db, company, person, editable, requestConversation }) {
   const [goals, setGoals] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [progressError, setProgressError] = useState(false);
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -19,6 +65,10 @@ function Goals({ db, company, person, editable }) {
       setGoals(snapshot.docs.map(record => ({ id: record.id, ...record.data() })));
       setError('');
     }, () => setError('Não foi possível consultar as metas.')), [db, company, person]);
+
+  useEffect(() => onSnapshot(collection(db, 'artifacts', 'comunica-salvador', 'public', 'data', 'companies', company, 'development', person, 'progress'),
+    snapshot => { setProgress(Object.fromEntries(snapshot.docs.map(item => [item.id, item.data()]))); setProgressError(false); },
+    () => setProgressError(true)), [db, company, person]);
 
   async function save(event) {
     event.preventDefault();
@@ -76,6 +126,7 @@ function Goals({ db, company, person, editable }) {
       <p className="text-xs text-slate-600">{latest.title}</p>
       <p className="whitespace-pre-wrap break-words text-sm">{latest.feedback}</p>
     </section>}
+    {progressError && <p role="alert" className="text-sm">Não foi possível consultar os avanços do PDI.</p>}
     {goals === null && !error && <p role="status">Consultando metas…</p>}
     {goals?.length === 0 && <p className={card}>Nenhuma meta registrada.</p>}
     {list.map(goal => <article className={card} key={goal.id}>
@@ -88,11 +139,15 @@ function Goals({ db, company, person, editable }) {
       </div>
       {goal.nextStep && <p className="whitespace-pre-wrap break-words text-sm"><strong>Próximo passo</strong><br />{goal.nextStep}</p>}
       {goal.feedback && (editable || latest?.id !== goal.id) && <p className="whitespace-pre-wrap break-words text-sm"><strong>Feedback</strong><br />{goal.feedback}</p>}
+      {progress && (goal.status !== 'archived' || editable) && <GoalProgress
+        saved={progress[goal.id]} editable={editable}
+        onSave={data => setDoc(doc(db, ...path.slice(0, -1), 'progress', goal.id), { ...data, updatedAt: serverTimestamp() })}
+        onRequest={requestConversation && (() => requestConversation(goal.title))} />}
     </article>)}
   </>;
 }
 
-export default function DevelopmentWorkspace({ db, company, uid, employees = [], editable = false }) {
+export default function DevelopmentWorkspace({ db, company, uid, employees = [], editable = false, requestConversation }) {
   const [employee, setEmployee] = useState('');
   const person = editable ? employee : uid;
   return <section className="space-y-4">
@@ -101,6 +156,6 @@ export default function DevelopmentWorkspace({ db, company, uid, employees = [],
       {editable && <PurchaseSelect label="Colaborador" searchPlaceholder="Buscar por nome" value={employee} onChange={setEmployee}
         placeholder="Selecione o colaborador" options={employees.map(p => [p.id, p.name])} />}
     </header>
-    {person && <Goals key={person} db={db} company={company} person={person} editable={editable} />}
+    {person && <Goals key={person} db={db} company={company} person={person} editable={editable} requestConversation={requestConversation} />}
   </section>;
 }

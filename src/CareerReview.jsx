@@ -1,3 +1,4 @@
+import { CareerReviewDecision } from './CareerReviewWorkflow.jsx';
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { completeMonths, salaryPosition, timelyDeliveries } from './careerReview.js';
@@ -9,7 +10,7 @@ const root = company => ['artifacts', 'comunica-salvador', 'public', 'data', 'co
 const unknown = 'A confirmar';
 const threshold = value => value !== '' && value != null && Number.isFinite(Number(value)) ? Number(value) : null;
 
-export default function CareerReview({ db, company, person, roles, activities, today }) {
+export default function CareerReview({ db, company, uid, person, roles, activities, today }) {
   const catalog = roles.filter(role => !role.mergedIntoRoleId);
   const candidates = catalog.filter(role => person.role && roleNameKey(role.name) === roleNameKey(person.role));
   const role = catalog.find(item => item.id === person.roleId) || (candidates.length === 1 ? candidates[0] : null);
@@ -61,7 +62,8 @@ export default function CareerReview({ db, company, person, roles, activities, t
   const meetsScore = minimumScore !== null && delivery && 100 * delivery.onTime >= minimumScore * delivery.total;
   const inactive = isInactiveEmployee(person, today);
 
-  return <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+  return <>
+  <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
     <h3 className="text-lg font-bold">Revisão de carreira</h3>
     <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {[
@@ -91,5 +93,8 @@ export default function CareerReview({ db, company, person, roles, activities, t
       <div><h4 className="text-sm font-semibold">Próximo passo do PDI</h4><p className="whitespace-pre-wrap break-words text-sm">{next ? `${next.title} · ${next.nextStep}${next.due ? ' · ' + displayDay(next.due) : ''}` : 'Nenhum passo registrado'}</p></div>
       <div className="sm:col-span-2"><h4 className="text-sm font-semibold">Último feedback</h4><p className="whitespace-pre-wrap break-words text-sm">{feedback?.feedback || 'Nenhum feedback registrado'}</p></div>
     </div>
-  </section>;
+  </section>
+  {!inactive && <CareerReviewDecision db={db} company={company} uid={uid} person={person} today={today}
+    ready={!pending && !error && !missing.length && meetsTime && meetsScore} />}
+  </>;
 }

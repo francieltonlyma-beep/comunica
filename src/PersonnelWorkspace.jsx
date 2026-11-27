@@ -1,3 +1,4 @@
+import { CareerReviewQueue } from './CareerReviewWorkflow.jsx';
 import CareerReview from './CareerReview.jsx';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import { useEffect, useRef, useState } from 'react';
@@ -430,6 +431,7 @@ export default function PersonnelWorkspace({
   const restricted = usePersonnelRows(db, company, confidential ? 'hrConfidential' : '');
   const [draft, setDraft] = useState(null);
   const [history, setHistory] = useState('');
+  const [showReviewQueue, setShowReviewQueue] = useState(false);
   const [kind, setKind] = useState('');
   const [period, setPeriod] = useState('all');
   const [message, setMessage] = useState('');
@@ -517,7 +519,13 @@ export default function PersonnelWorkspace({
         />
       ) : (
         <>
-          {view === 'file' ? (
+          {view !== 'file' && confidential && <div className="flex flex-wrap gap-2">
+            <button type="button" aria-pressed={!showReviewQueue} className={!showReviewQueue ? primary : button} onClick={() => setShowReviewQueue(false)}>Acompanhamentos</button>
+            <button type="button" aria-pressed={showReviewQueue} className={showReviewQueue ? primary : button} onClick={() => setShowReviewQueue(true)}>Avaliações de carreira</button>
+          </div>}
+          {view !== 'file' && confidential && showReviewQueue ? (
+            <CareerReviewQueue db={db} company={company} employees={employees} today={today} openFile={openFile} />
+          ) : view === 'file' ? (
             <>
             <div className={panel}>
               <Field label="Colaborador">
@@ -541,7 +549,7 @@ export default function PersonnelWorkspace({
               )}
             </div>
             {person && confidential && <CareerReview key={JSON.stringify([company, person.id])}
-              db={db} company={company} person={person} roles={roles} activities={reviewActivities} today={today} />}
+              db={db} company={company} uid={uid} person={person} roles={roles} activities={reviewActivities} today={today} />}
             </>
           ) : (
             <div className={panel}>
@@ -573,14 +581,14 @@ export default function PersonnelWorkspace({
           )}
           {(common.error || restricted.error) && <p role="alert">{common.error || restricted.error}</p>}
           {loading && <p role="status">Consultando registros…</p>}
-          {!loading && !common.error && !restricted.error && !visible.length && (
+          {(view === 'file' || !confidential || !showReviewQueue) && !loading && !common.error && !restricted.error && !visible.length && (
             <p className={panel}>
               {view === 'file' && !person
                 ? 'Selecione uma pessoa para consultar a ficha.'
                 : 'Nenhum acompanhamento nesta seleção.'}
             </p>
           )}
-          {visible.map((row) => (
+          {(view === 'file' || !confidential || !showReviewQueue) && visible.map((row) => (
             <article className={panel} key={row.id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>

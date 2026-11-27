@@ -117,6 +117,40 @@ try {
     feedback: 'Bom progresso', feedbackAt: serverTimestamp(), revision: 2, updatedAt: serverTimestamp(),
   }));
   assert.equal((await getDoc(ref(client('person'), goalPath))).data().feedback, 'Bom progresso');
+  const progressPath = 'development/person/progress/goal1';
+  const progress = () => ({ progress: 'Treinamento concluído', difficulty: '', updatedAt: serverTimestamp() });
+  await assertFails(setDoc(ref(client('manager'), progressPath), progress()));
+  await assertFails(setDoc(ref(client('hr'), progressPath), progress()));
+  await assertFails(setDoc(ref(client('person'), 'development/person/progress/missing'), progress()));
+  await assertFails(setDoc(ref(client('person'), progressPath), { ...progress(), status: 'done' }));
+  await assertSucceeds(setDoc(ref(client('person'), progressPath), progress()));
+  await assertSucceeds(getDoc(ref(client('hr'), progressPath)));
+  await assertFails(getDoc(ref(client('manager'), progressPath)));
+
+  const reviewPath = 'careerReviews/person';
+  const reviewData = uid => ({
+    employeeName: 'Colaborador', nextDate: '', revision: 1, status: 'closed',
+    decision: 'maintain', note: 'Revisado', updatedAt: serverTimestamp(), updatedBy: uid,
+  });
+  function saveReview(uid, revision = 1, data = {}, action = 'decide') {
+    const db = client(uid);
+    const batch = writeBatch(db);
+    const review = { ...reviewData(uid), revision, ...data };
+    batch.set(ref(db, reviewPath), review);
+    batch.set(ref(db, reviewPath + '/history/' + revision), { ...review, action });
+    return batch.commit();
+  }
+  await assertFails(setDoc(ref(client('hr'), reviewPath), reviewData('hr')));
+  await assertFails(saveReview('person'));
+  await assertSucceeds(saveReview('hr'));
+  await assertSucceeds(getDocs(collection(client('hr'), base + '/careerReviews')));
+  await assertFails(getDoc(ref(client('person'), reviewPath)));
+  await assertFails(getDoc(ref(client('hr', 'other'), reviewPath)));
+  await assertFails(saveReview('hr'));
+  await assertSucceeds(saveReview('admin', 2, { nextDate: '2026-12-29', status: 'scheduled', decision: 'raise' }));
+  await assertSucceeds(saveReview('hr', 3, { status: 'ready', decision: 'raise', note: 'Revisado' }, 'ready'));
+  await assertSucceeds(saveReview('hr', 4, { nextDate: '2026-12-30', status: 'scheduled', decision: 'raise' }, 'schedule'));
+  await assertFails(updateDoc(ref(client('hr'), reviewPath + '/history/1'), { note: 'Editar histórico' }));
   console.log('Acesso por empresa e permissão, histórico, PDFs, concorrência e delegação validados.');
 } finally {
   await env.cleanup();

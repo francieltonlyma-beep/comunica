@@ -1010,6 +1010,47 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time
           && request.resource.data.revision == (resource == null ? 1 : resource.data.revision + 1);
       }
+      match /development/{employee}/progress/{goal} {
+        allow read: if app == 'comunica-salvador' && member(company)
+          && (request.auth.uid == employee || personnelAccess(true));
+        allow create, update: if app == 'comunica-salvador' && member(company) && request.auth.uid == employee
+          && get(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/development/$(employee)/goals/$(goal)).data.status in ['active','done']
+          && request.resource.data.keys().hasOnly(['progress','difficulty','updatedAt'])
+          && request.resource.data.progress is string && request.resource.data.progress.size() <= 1500
+          && request.resource.data.difficulty is string && request.resource.data.difficulty.size() <= 1500
+          && request.resource.data.updatedAt == request.time;
+      }
+      function careerReviewPath(employee) {
+        return /databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/careerReviews/$(employee);
+      }
+      function validCareerReview(d) {
+        return d.keys().hasOnly(['employeeName','nextDate','revision','status','decision','note','updatedAt','updatedBy'])
+          && d.employeeName is string && d.employeeName.size() > 0 && d.employeeName.size() <= 200
+          && d.nextDate is string && hrDate(d.nextDate)
+          && (d.nextDate == '' ? d.status in ['ready','closed'] : d.status == 'scheduled')
+          && d.decision in ['', 'promotion','raise','maintain']
+          && d.note is string && d.note.size() <= 1500
+          && (d.decision == '' ? d.note == '' : d.note.size() > 0)
+          && d.updatedAt == request.time && d.updatedBy == request.auth.uid
+          && d.revision is int && d.revision == (resource == null ? 1 : resource.data.revision + 1);
+      }
+      match /careerReviews/{employee} {
+        allow read: if personnelAccess(true);
+        allow create, update: if personnelAccess(true)
+          && exists(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/users/$(employee))
+          && validCareerReview(request.resource.data)
+          && getAfter(/databases/$(database)/documents/artifacts/$(app)/public/data/companies/$(company)/careerReviews/$(employee)/history/$(string(request.resource.data.revision))).data.updatedAt == request.time;
+        match /history/{revision} {
+          allow read: if personnelAccess(true);
+          allow create: if personnelAccess(true)
+            && revision == string(request.resource.data.revision)
+            && request.resource.data.updatedAt == request.time
+            && request.resource.data.diff(getAfter(careerReviewPath(employee)).data).affectedKeys().hasOnly(['action'])
+            && (request.resource.data.action == 'decide' ? request.resource.data.decision != '' && request.resource.data.status != 'ready' :
+              request.resource.data.action == 'ready' ? request.resource.data.status == 'ready' :
+              request.resource.data.action == 'schedule' && request.resource.data.status == 'scheduled');
+        }
+      }
       match /salaryChanges/{changeId} {
         allow read: if personnelAccess(true);
         allow create: if personnelAccess(true)
