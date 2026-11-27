@@ -2,7 +2,7 @@ import {getFirestore, FieldPath, FieldValue, Timestamp} from 'firebase-admin/fir
 import {getStorage} from 'firebase-admin/storage';
 import {getAuth} from 'firebase-admin/auth';
 import {HttpsError} from 'firebase-functions/v2/https';
-import {extractResumeText} from './resumeExtraction';
+import {extractResumeText, RESUME_EXTRACTION_VERSION} from './resumeExtraction';
 import {careerDateInBrazil, isCareerVacancyOpen} from './careerVacancyAvailability.mjs';
 import {SUPPORT_UID} from './platformSupport';
 
@@ -10,7 +10,7 @@ const APP_ID = 'comunica-salvador';
 const tenant = (companyId: string) => getFirestore().doc(`artifacts/${APP_ID}/public/data/companies/${companyId}`);
 
 type CandidateIdentity = {uid: string; email?: string; email_verified?: boolean};
-type Vacancy = {title?: string; status?: string; skills?: string[]; quiz?: {question: string; options: string[]}[]; closesAt?: string; source?: string; roleId?: string; description?: string};
+type Vacancy = {title?: string; status?: string; skills?: string[]; quiz?: {question: string; options: string[]}[]; closesAt?: string; source?: string; roleId?: string; description?: string; details?: {experience?: string; requirements?: string}};
 const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 const CAREER_PRIVACY_VERSION = '2026-10-12';
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -38,15 +38,71 @@ const containsPhrase = (text: string, phrase: string) => text.includes(` ${phras
 
 type SkillEvidence = {skill: string; source: string; excerpt: string};
 
-function evidenceFor(skill: string, sources: {label: string; text: string}[]): SkillEvidence | null {
-  const canonical = searchableText(skill).trim();
-  const aliases = competencyAliases[canonical] || [];
+const filler = new Set('a as o os de da das do dos e ou em no na nos nas com para por ao aos um uma experiencia conhecimento habilidade atividades atribuicoes responsavel desejavel obrigatorio necessario requisitos requisito desejado'.split(' '));
+const criterionWords = (text: string) => searchableText(text).trim().split(' ')
+  .filter(word => word && !filler.has(word))
+  .map(word => word.length > 4 ? word.replace(/s$/, '') : word);
+
+type FitCriterion = {label: string; text: string; origin: string};
+type FitSource = {label: string; lines: {original: string; searchable: string; words: Set<string>}[]};
+
+function vacancyCriteria(required: string[], vacancy?: Vacancy): FitCriterion[] {
+  const criteria = new Map<string, FitCriterion>();
+  function add(label: string, origin: string) {
+    const key = criterionWords(label).join(' ') || searchableText(label).trim();
+    if (key && !criteria.has(key)) criteria.set(key, {label: label.slice(0, 240), text: label, origin});
+  }
+  required.forEach(label => add(label, 'Competências da vaga'));
+  const fields = [
+    [vacancy?.details?.requirements, 'Formação e requisitos'],
+    [vacancy?.details?.experience, 'Experiências esperadas'],
+    [vacancy?.description, 'Descrição da vaga'],
+  ] as const;
+  for (const [value, origin] of fields) {
+    let skipSection = false;
+    for (const line of String(value || '').split(/[\r\n]+/)) {
+      const plain = searchableText(line).trim();
+      if (/^(beneficios|remuneracao|salario|jornada|horario|local de trabalho|como se candidatar)( |$)/.test(plain)) skipSection = true;
+      if (/^(requisitos|atividades|atribuicoes|responsabilidades|experiencias|formacao|diferenciais|competencias)( |$)/.test(plain)) skipSection = false;
+      if (skipSection) continue;
+      for (const clause of line.split(/[;!?•]|\.(?=\s|$)|,(?!\d)/)) {
+        const label = clause.replace(/^\s*[-–—*]+\s*/, '').replace(/^[^:]{1,35}:\s*/, '').trim();
+        if (!label || /^(buscamos|estamos contratando|sobre a empresa|oferecemos|candidate se|vem fazer parte)( |$)/.test(searchableText(label).trim())) continue;
+        if (origin !== 'Descrição da vaga' || criterionWords(label).length >= 2) add(label, origin);
+      }
+    }
+  }
+  return [...criteria.values()];
+}
+
+function fitSource(label: string, text: string): FitSource {
+  const lines = text.replace(/(\p{L})-\r?\n(?=\p{L})/gu, '$1')
+    .replace(/(\p{L})[ \t]*\r?\n[ \t]*(?=\p{Ll})/gu, '$1 ')
+    .split(/[.!?;]+(?=\s|$)|[\r\n]+/)
+    .map(line => line.trim()).filter(Boolean)
+    .filter(line => !/^(?:eu )?(?:sem |nao )(?:experiencia|conhecimento|tenho|possuo|trabalhei|domino|fiz|conclui|sou|sei)\b/.test(searchableText(line).trim()));
+  return {label, lines: lines.map(original => ({
+    original,
+    searchable: searchableText(original),
+    words: new Set(criterionWords(original)),
+  }))};
+}
+
+function evidenceFor(criterion: FitCriterion, sources: FitSource[]): SkillEvidence | null {
+  const {label: skill, origin} = criterion;
+  const canonical = searchableText(criterion.text).trim();
+  const aliases = [canonical, ...(competencyAliases[canonical] || [])];
+  const words = [...new Set(criterionWords(criterion.text))];
   for (const source of sources) {
-    const lines = source.text.split(/[\n.!?;]+/).map(line => line.trim()).filter(Boolean);
-    for (const line of lines) {
-      const searchableLine = searchableText(line);
-      const matchedTerm = [canonical, ...aliases].find(alias => containsPhrase(searchableLine, alias));
-      if (matchedTerm) return {skill, source: source.label, excerpt: line.slice(0, 220)};
+    for (const line of source.lines) {
+      const exact = aliases.some(alias => containsPhrase(line.searchable, alias));
+      const allTerms = origin !== 'Competências da vaga' && words.length >= 2 && words.every(word => line.words.has(word));
+      if (exact || allTerms) {
+        const normalizedExcerpt = searchableText(line.original).trim();
+        const anchor = aliases.map(alias => normalizedExcerpt.indexOf(alias)).find(index => index >= 0) ?? 0;
+        const start = Math.max(0, anchor - 50);
+        return {skill, source: source.label, excerpt: line.original.slice(start, start + 220)};
+      }
     }
   }
   return null;
@@ -79,19 +135,22 @@ async function verifyCompanyRecruiter(identity: CandidateIdentity | undefined, c
   return identity;
 }
 
-export function matchCandidateSkills(required: string[], declared: string[], resumeText = '', profileSummary = '') {
-  const candidate = new Set(declared.map(normalized));
-  const sources = [
-    {label: 'Currículo anexado', text: resumeText},
-    {label: 'Resumo profissional', text: profileSummary},
-  ].filter(source => source.text.trim());
-  const matchedDeclared = required.filter(skill => candidate.has(normalized(skill)));
-  const evidenceFromCv = required.map(skill => evidenceFor(skill, sources))
+export function matchCandidateSkills(required: string[], declared: string[], resumeText = '', profileSummary = '', vacancy?: Vacancy) {
+  const criteria = vacancyCriteria(required, vacancy);
+  const declaredSource = fitSource('Competências declaradas', declared.join('\n'));
+  const sources = [fitSource('Currículo anexado', resumeText), fitSource('Resumo profissional', profileSummary)];
+  const matchedDeclared = criteria.filter(item => evidenceFor(item, [declaredSource])).map(item => item.label);
+  const evidenceFromCv = criteria.map(item => evidenceFor(item, sources))
     .filter((item): item is SkillEvidence => item !== null);
   const matchedFromCv = evidenceFromCv.map(item => item.skill);
-  const matched = required.filter(skill => matchedDeclared.includes(skill) || matchedFromCv.includes(skill));
-  const missing = required.filter(skill => !matched.includes(skill));
-  return {version: 2, matched, matchedDeclared, matchedFromCv, evidenceFromCv, missing, percentage: required.length ? Math.round(matched.length / required.length * 100) : null};
+  const matchedLabels = new Set([...matchedDeclared, ...matchedFromCv]);
+  const matched = criteria.filter(item => matchedLabels.has(item.label)).map(item => item.label);
+  const missing = criteria.filter(item => !matchedLabels.has(item.label)).map(item => item.label);
+  const evidenceLimit = 60;
+  return {version: 3, matched: matched.slice(0, evidenceLimit), matchedDeclared: matchedDeclared.slice(0, evidenceLimit),
+    matchedFromCv: matchedFromCv.slice(0, evidenceLimit), evidenceFromCv: evidenceFromCv.slice(0, evidenceLimit),
+    missing: missing.slice(0, evidenceLimit), criteriaCount: criteria.length, matchedCount: matched.length,
+    percentage: criteria.length ? Math.round(matched.length / criteria.length * 100) : null};
 }
 
 async function listOpenVacancies(companyId: string) {
@@ -138,7 +197,7 @@ async function publicOpportunity(companyId: string, vacancyId: string) {
     const role = await tenant(companyId).collection('roles').doc(roleId).get();
     if (!role.exists) return null;
     const data = role.data() || {};
-    return {title: cleanText(data.name, 120), status: 'published', skills: [], quiz: [], source: 'talent_pool', roleId, description: cleanText(data.description, 2000)} as Vacancy;
+    return {title: cleanText(data.name, 120), status: 'published', skills: [], quiz: [], source: 'talent_pool', roleId, description: String(data.description || '')} as Vacancy;
   }
   const vacancy = await tenant(companyId).collection('vacancies').doc(vacancyId).get();
   return vacancy.exists ? vacancy.data() as Vacancy : null;
@@ -348,6 +407,8 @@ export async function uploadCandidateResume(identity: CandidateIdentity | undefi
   await getFirestore().collection('_candidateResumeAnalyses').doc(`${companyId}_${vacancyId}_${candidate.uid}`).set({
     text: extracted.text,
     readable: extracted.readable,
+    truncated: extracted.truncated,
+    version: RESUME_EXTRACTION_VERSION,
     updatedAt: FieldValue.serverTimestamp(),
   });
   return {uploaded: true, fileName};
@@ -394,15 +455,36 @@ export async function refreshCandidateFit(identity: CandidateIdentity | undefine
     getFirestore().collection('_candidateResumeAnalyses').doc(`${companyId}_${vacancyId}_${candidateUid}`).get(),
   ]);
   if (!vacancy) throw new HttpsError('not-found', 'A vaga desta candidatura não foi encontrada.');
-  const analysis = analysisSnapshot.data() || {};
+  let analysis = analysisSnapshot.data() || {};
+  if (analysis.version !== RESUME_EXTRACTION_VERSION) {
+    const path = `career-resumes/${companyId}/${vacancyId}/${candidateUid}/resume`;
+    if (application.resumePath === path) {
+      const file = getStorage().bucket().file(path);
+      try {
+        const [metadata] = await file.getMetadata();
+        if (metadata.metadata?.ownerUid === candidateUid && metadata.metadata?.vacancyId === vacancyId
+          && Number(metadata.size) > 0 && Number(metadata.size) <= MAX_RESUME_BYTES) {
+          const [bytes] = await file.download();
+          if (bytes.length <= MAX_RESUME_BYTES) {
+            analysis = await extractResumeText(bytes, resumeFormat(String(application.resumeFileName || metadata.metadata?.fileName || ''), bytes));
+          }
+        }
+      } catch (error) {
+        if ((error as {code?: number}).code !== 404 && !(error instanceof HttpsError && error.code === 'invalid-argument')) throw error;
+        analysis = {};
+      }
+    }
+  }
   const fit = matchCandidateSkills(
     Array.isArray(vacancy.skills) ? vacancy.skills : [],
-    Array.isArray(application.skills) ? application.skills : [],
+    Array.isArray(application.declaredSkills) ? application.declaredSkills : Array.isArray(application.skills) ? application.skills : [],
     String(analysis.text || ''),
     String(application.resumeText || ''),
+    vacancy,
   );
-  await applicationRef.update({fit, resumeReadable: analysis.readable === true});
-  return {fit};
+  const payload = {fit, resumeReadable: analysis.readable === true, resumeAnalysisPartial: analysis.truncated === true};
+  await applicationRef.update(payload, {lastUpdateTime: applicationSnapshot.updateTime!});
+  return payload;
 }
 
 export async function submitApplication(identity: CandidateIdentity | undefined, input: Record<string, unknown>) {
@@ -442,6 +524,7 @@ export async function submitApplication(identity: CandidateIdentity | undefined,
       Array.isArray(profile.skills) ? profile.skills : [],
       extracted?.text || '',
       profile.resumeText || '',
+      vacancy,
     );
     const applicationData = {
       id: applicationRef.id,
@@ -463,6 +546,7 @@ export async function submitApplication(identity: CandidateIdentity | undefined,
       quizQuestions: quiz,
       fit,
       resumeReadable: extracted?.readable === true,
+      resumeAnalysisPartial: extracted?.truncated === true,
       privacyVersion: CAREER_PRIVACY_VERSION,
       consentAt: FieldValue.serverTimestamp(),
     };
