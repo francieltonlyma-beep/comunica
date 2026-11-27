@@ -188,9 +188,15 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     return { record, status, day };
   }).filter(({day}) => (!from || day >= from) && (!to || (day && day <= to)));
   const metrics = [['all', 'Atividades'], ['ontime', 'No prazo'], ['late', 'Concluídas com atraso'], ['overdue', 'Abertas vencidas']];
-  const selectedRows = rows.filter(row => (metric === 'all' || row.status === metric) && (!slice || (slice.kind === 'month' ? row.day.startsWith(slice.id) && ['ontime','late'].includes(row.status) : slice.kind === 'manager' ? row.record.manager === slice.id : inUnit(row.record,slice.id))));
-  const evaluated = rows.filter(row => row.status === 'ontime' || row.status === 'late').length;
-  const onTime = rows.filter(row => row.status === 'ontime').length;
+  const chartRows = rows.filter(row => {
+    if (!slice) return true;
+    if (slice.kind === 'month') return row.day.startsWith(slice.id) && ['ontime', 'late'].includes(row.status);
+    if (slice.kind === 'manager') return row.record.manager === slice.id;
+    return inUnit(row.record, slice.id);
+  });
+  const selectedRows = chartRows.filter(row => metric === 'all' || row.status === metric);
+  const evaluated = chartRows.filter(row => row.status === 'ontime' || row.status === 'late').length;
+  const onTime = chartRows.filter(row => row.status === 'ontime').length;
   return <section className="space-y-4 text-sm text-slate-900">
     <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-950 p-6 text-white">
       <div><h2 className="text-2xl font-bold">Desempenho e carreira</h2><p className="mt-1 text-slate-200">Indicadores da equipe e plano de cargos e salários</p></div>
@@ -199,7 +205,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
       </nav>
     </header>
     <section className={view === 'performance' ? panel : 'hidden'}>
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Selecione uma barra para consultar as atividades.</p></div>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-bold">Atividades por situação</h3><p className="text-slate-600">Use os filtros e os gráficos para explorar as atividades.</p></div>
         <label>Colaborador<select className={field} value={employee} onChange={event => { setEmployee(event.target.value); setSlice(null); }}><option value="">Toda a equipe · {active.length} ativos</option>{active.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
       </div>
       <div className="grid gap-3 sm:grid-cols-4" onChange={() => setSlice(null)}>
@@ -208,8 +214,10 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
         <label>Gerente designado<select className={field} value={manager} onChange={e => setManager(e.target.value)}><option value="">Todos</option>{[...new Set(activities.map(a => a.manager).filter(Boolean))].map(id => <option key={id} value={id}>{employees.find(p => p.id === id)?.name || id}</option>)}</select></label>
         <label>De<input className={field} type="date" max={to} value={from} onChange={e => setFrom(e.target.value)} /></label><label>Até<input className={field} type="date" min={from} value={to} onChange={e => setTo(e.target.value)} /></label>
       </div>
-      <TeamCharts employees={employees} rows={rows} departments={departments.filter(d => !unit || unit === d.id)} inUnit={inUnit} select={value => { setSlice(value); setMetric('all'); }} />
-      {slice && <button type="button" onClick={() => setSlice(null)}>Limpar seleção do gráfico · {slice.label}</button>}
+      {slice && <div className="flex flex-wrap items-center gap-3 rounded-xl bg-blue-50 p-3 text-blue-950">
+        <span>Recorte do gráfico · <strong>{slice.kind === 'month' ? slice.id.split('-').reverse().join('/') : slice.label}</strong></span>
+        <button type="button" className="font-semibold underline" onClick={() => { setSlice(null); setMetric('all'); }}>Limpar recorte</button>
+      </div>}
       {employee && <p>Admissão · {active.find(person => person.id === employee)?.hireDate?.split('-').reverse().join('/') || 'Data pendente no cadastro'}</p>}
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <div className="flex flex-col justify-center rounded-2xl bg-blue-50 p-5">
@@ -218,14 +226,15 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
           <span className="mt-1 text-slate-700">{onTime} de {evaluated} conclusões com prazo e data de entrega</span>
         </div>
         <div className="space-y-2" role="group" aria-label="Gráfico de atividades por situação">{metrics.map(([key, label], index) => {
-          const count = key === 'all' ? rows.length : rows.filter(row => row.status === key).length;
+          const count = key === 'all' ? chartRows.length : chartRows.filter(row => row.status === key).length;
           const colors = ['bg-blue-700', 'bg-emerald-600', 'bg-amber-500', 'bg-rose-600'];
-          return <button key={key} type="button" aria-pressed={metric === key} onClick={() => { setMetric(key); setSlice(null); }} className="block w-full rounded-xl border border-slate-200 p-2.5 text-left aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
+          return <button key={key} type="button" aria-pressed={metric === key} onClick={() => setMetric(key)} className="block w-full rounded-xl border border-slate-200 p-2.5 text-left aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
             <span className="flex justify-between gap-2"><span>{label}</span><strong className="tabular-nums">{count}</strong></span>
-            <span aria-hidden="true" className="mt-1 block h-2 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${colors[index]}`} style={{ width: `${rows.length ? count / rows.length * 100 : 0}%` }} /></span>
+            <span aria-hidden="true" className="mt-1 block h-2 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${colors[index]}`} style={{ width: `${chartRows.length ? count / chartRows.length * 100 : 0}%` }} /></span>
           </button>;
         })}</div>
       </div>
+      <TeamCharts employees={employees} rows={rows} departments={departments.filter(d => !unit || unit === d.id)} inUnit={inUnit} select={value => { setSlice(value); setMetric('all'); }} />
       <details open><summary className="cursor-pointer font-semibold">{metrics.find(([key]) => key === metric)?.[1]} · {selectedRows.length} registros</summary>
         {selectedRows.length ? <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">{selectedRows.map(({ record }) => <li key={record.id}><button type="button" onClick={() => openActivity(record.id)} className="w-full rounded-lg border p-2 text-left hover:bg-blue-50">{record.title} · {record.dueDate || 'Sem prazo'}</button></li>)}</ul> : <p className="mt-2 text-slate-600">Nenhuma atividade neste recorte.</p>}
       </details>
