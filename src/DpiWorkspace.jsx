@@ -4,6 +4,7 @@ import { resolveEmployeeRole, roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
 import PlrSimulator from './PlrSimulator.jsx';
 import SalaryHierarchy from './SalaryHierarchy.jsx';
+import SalaryExcelExport from './SalaryExcelExport.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { Managers, TeamCharts } from './TeamInsights.jsx';
 import { collection, doc, onSnapshot, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -470,6 +471,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
     {view === 'management' && <Managers {...{db,company,departments,today}} active={sortedEmployees} />}
     {view === 'salary' && <section className="space-y-3">
       {error ? <p role="alert">Não foi possível carregar os planos salariais.</p> : records === null ? <p role="status">Consultando os planos…</p> : <>
+      <SalaryExcelExport {...{ db, company, employees, standard, today }} roles={ordered} initialScope={salaryView} />
       <div hidden={salaryView !== 'hierarchy'}>
         <SalaryHierarchy key={roleId} roles={ordered} records={records} initialRoleId={roleId} openEditor={openSalaryEditor} saveReports={saveReports} />
       </div>
