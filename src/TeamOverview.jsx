@@ -53,7 +53,7 @@ export default function TeamOverview({
                 className="block w-full rounded-lg px-2 py-2 text-left hover:bg-slate-50">
                 <span className="flex justify-between gap-2 text-xs font-semibold text-slate-700"><span>{sector.name}</span><span>{sector.count}</span></span>
                 <span aria-hidden="true" className="mt-1.5 block h-2 overflow-hidden rounded-full bg-slate-100">
-                  <span className="block h-full rounded-full bg-blue-600" style={{width: `${peopleOverview.active ? Math.round(sector.count / peopleOverview.active * 100) : 0}%`}} />
+                  <span className="block h-full rounded-full bg-[var(--comunica-chart-series)]" style={{width: `${peopleOverview.active ? Math.round(sector.count / peopleOverview.active * 100) : 0}%`}} />
                 </span>
               </button>
             ))}

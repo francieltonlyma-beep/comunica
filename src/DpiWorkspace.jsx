@@ -448,7 +448,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
         </div>
         <div className="space-y-2" role="group" aria-label="Gráfico de atividades por situação">{metrics.map(([key, label], index) => {
           const count = key === 'all' ? chartRows.length : chartRows.filter(row => row.status === key).length;
-          const colors = ['bg-blue-700', 'bg-emerald-600', 'bg-amber-500', 'bg-rose-600'];
+          const colors = ['bg-[var(--comunica-chart-series)]', 'bg-emerald-600', 'bg-amber-500', 'bg-rose-600'];
           return <button key={key} type="button" aria-pressed={metric === key} onClick={() => setMetric(key)} className="block w-full rounded-xl border border-slate-200 p-2.5 text-left aria-pressed:border-blue-600 aria-pressed:bg-blue-50">
             <span className="flex justify-between gap-2"><span>{label}</span><strong className="tabular-nums">{count}</strong></span>
             <span aria-hidden="true" className="mt-1 block h-2 overflow-hidden rounded-full bg-slate-200"><span className={`block h-full rounded-full ${colors[index]}`} style={{ width: `${chartRows.length ? count / chartRows.length * 100 : 0}%` }} /></span>
