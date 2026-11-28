@@ -4,7 +4,7 @@ import { getRoleDepts, resolveEmployeeRole } from './roleCatalog.js';
 export function teamHeadcount({ activeEmployees, departmentsList, rolesList, vacanciesList, getUserDepts, employeeStatusDay, mgmtSectorFilter }) {
   const headcountKey = (roleId, departmentId) => `${roleId}:${departmentId}`;
   const occupantsByRoleAndSector = new Map();
-  const openVacanciesByRole = new Map();
+  const openVacanciesByPlacement = new Map();
   for (const employee of activeEmployees) {
     const role = resolveEmployeeRole(employee, rolesList);
     if (!role) continue;
@@ -17,7 +17,9 @@ export function teamHeadcount({ activeEmployees, departmentsList, rolesList, vac
   }
   for (const vacancy of vacanciesList) {
     if (vacancy.roleId && isCareerVacancyOpen(vacancy, employeeStatusDay)) {
-      openVacanciesByRole.set(vacancy.roleId, (openVacanciesByRole.get(vacancy.roleId) || 0) + 1);
+      const key = headcountKey(vacancy.roleId, vacancy.sectorId || '');
+      const positions = Number.isInteger(vacancy.positions) && vacancy.positions > 0 ? vacancy.positions : 1;
+      openVacanciesByPlacement.set(key, (openVacanciesByPlacement.get(key) || 0) + positions);
     }
   }
   const headcountRows = departmentsList
@@ -32,7 +34,8 @@ export function teamHeadcount({ activeEmployees, departmentsList, rolesList, vac
         const planned = plannedValue === '' || plannedValue === undefined || plannedValue === null ? null : Math.max(0, Number(plannedValue) || 0);
         return {
           key, role, department, current, occupants, planned,
-          activeRecruitment: openVacanciesByRole.get(role.id) || 0,
+          activeRecruitment: openVacanciesByPlacement.get(key) || 0,
+          unassignedRecruitment: openVacanciesByPlacement.get(headcountKey(role.id, '')) || 0,
           vacancies: planned === null ? 0 : Math.max(planned - current, 0),
           excess: planned === null ? 0 : Math.max(current - planned, 0),
           configured: planned !== null,

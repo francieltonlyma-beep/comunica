@@ -10,7 +10,7 @@ const root = company => ['artifacts', 'comunica-salvador', 'public', 'data', 'co
 const unknown = 'A confirmar';
 const threshold = value => value !== '' && value != null && Number.isFinite(Number(value)) ? Number(value) : null;
 
-export default function CareerReview({ db, company, uid, person, roles, activities, today }) {
+export default function CareerReview({ db, company, uid, person, roles, activities, today, simulateRaise }) {
   const role = resolveEmployeeRole(person, roles);
   const roleId = role?.id;
   const [matrix, setMatrix] = useState(null);
@@ -92,6 +92,6 @@ export default function CareerReview({ db, company, uid, person, roles, activiti
     </div>
   </section>
   {!inactive && <CareerReviewDecision db={db} company={company} uid={uid} person={person} today={today}
-    ready={!pending && !error && !missing.length && meetsTime && meetsScore} />}
+    simulateRaise={simulateRaise} ready={!pending && !error && !missing.length && meetsTime && meetsScore} />}
   </>;
 }

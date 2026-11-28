@@ -44,6 +44,10 @@ try {
     await Promise.all([
       setDoc(doc(db, base), {}),
       setDoc(ref(db, path), before),
+      setDoc(ref(db, 'departments/north'), {name:'Loja Norte'}),
+      setDoc(ref(db, 'roles/cashier'), {name:'Caixa', depts:['north']}),
+      setDoc(ref(db, 'roles/stock'), {name:'Estoque', depts:['south']}),
+      setDoc(ref(db, 'applications/app-1'), {status:'received'}),
       setDoc(ref(db, expiredPath), oldVacancy),
       setDoc(ref(db, 'users/recruiter'), { role: 'RH', name: 'Recrutador' }),
       setDoc(ref(db, 'users/employee'), { role: 'Estoquista' }),
@@ -57,6 +61,15 @@ try {
   await assertFails(setDoc(ref(rh, path + '/history/rev1'), entry('recruiter')));
   await assertFails(change(employee, 'employee'));
   await assertSucceeds(setDoc(ref(rh, 'vacancies/new'), { ...before, publishedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(ref(rh, 'vacancies/north'), {...before, roleId:'cashier', sectorId:'north', positions:2, publishedAt:serverTimestamp()}));
+  await assertFails(setDoc(ref(rh, 'vacancies/wrong-role-sector'), {...before, roleId:'stock', sectorId:'north', publishedAt:serverTimestamp()}));
+  await assertFails(setDoc(ref(rh, 'vacancies/bad-sector'), {...before, sectorId:'missing', publishedAt:serverTimestamp()}));
+  await assertFails(setDoc(ref(rh, 'vacancies/bad-amount'), {...before, positions:0, publishedAt:serverTimestamp()}));
+  const stageChange = {status:'reviewing', stageStart:{status:'reviewing', at:serverTimestamp(), actorName:'RH'}};
+  await assertFails(updateDoc(ref(employee, 'applications/app-1'), stageChange));
+  await assertFails(updateDoc(ref(rh, 'applications/app-1'), {...stageChange, stageStart:{status:'interview', at:serverTimestamp()}}));
+  await assertSucceeds(updateDoc(ref(rh, 'applications/app-1'), stageChange));
+  await assertFails(updateDoc(ref(rh, 'applications/app-1'), {stageStart:{status:'reviewing', at:serverTimestamp()}}));
   await assertFails(changeExpired(rh, { title: 'Prazo encerrado' }));
   await assertFails(changeExpired(rh, { closesAt: '2027-01-20' }));
   await assertFails(changeExpired(rh, { createdAt: Date.now() }));

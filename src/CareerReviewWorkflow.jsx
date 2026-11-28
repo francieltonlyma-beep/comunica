@@ -48,7 +48,7 @@ export function CareerReviewQueue({ db, company, employees, today, openFile }) {
   </section>;
 }
 
-export function CareerReviewDecision({ db, company, uid, person, today, ready }) {
+export function CareerReviewDecision({ db, company, uid, person, today, ready, simulateRaise }) {
   const [record, setRecord] = useState(undefined);
   const [history, setHistory] = useState([]);
   const [form, setForm] = useState(null);
@@ -109,6 +109,7 @@ export function CareerReviewDecision({ db, company, uid, person, today, ready })
       <button type="button" className={button} onClick={() => start('schedule')}>Agendar avaliação</button>
       {ready && record?.status !== 'ready' && <button type="button" className={button} onClick={() => start('ready')}>Enviar para análise</button>}
       <button type="button" className={button} onClick={() => start('decide')}>Registrar decisão</button>
+      {record?.decision === 'raise' && simulateRaise && <button type="button" className={button} onClick={simulateRaise}>Simular reajuste aprovado</button>}
     </div>}
     {form && <form onSubmit={save} className="space-y-3 rounded-xl border p-3">
       <fieldset disabled={busy} className="space-y-3">
@@ -117,7 +118,7 @@ export function CareerReviewDecision({ db, company, uid, person, today, ready })
           <label>Decisão<select className={field} value={form.decision} onChange={e => setForm({ ...form, decision: e.target.value })}>
             {Object.entries(decisions).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
           <label>Justificativa<textarea required maxLength={1500} className={field} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></label>
-          <p className="text-xs text-slate-600">Registre a decisão aqui. Alterações no cadastro e no salário são feitas nos controles próprios.</p>
+          <p className="text-xs text-slate-600">Após aprovar um reajuste, abra a simulação para revisar valor e vigência.</p>
         </>}
         {form.action !== 'ready' && <label>{form.action === 'schedule' ? 'Data da avaliação' : 'Próxima revisão (opcional)'}
           <input type="date" className={field} required={form.action === 'schedule'} value={form.nextDate}

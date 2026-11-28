@@ -8,7 +8,7 @@ export default function TeamOverview({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-extrabold text-slate-900">Visão da equipe</h3>
         <div className="flex flex-wrap gap-2 text-xs font-semibold">
-          {openPersonnel && <button type="button" className="rounded-lg border bg-white px-3 py-2 text-blue-800" onClick={openPersonnel}>Pendências do RH</button>}
+          {openPersonnel && <button type="button" className="rounded-lg border bg-white px-3 py-2 text-blue-800" onClick={openPersonnel}>Fila de ação do RH</button>}
           {openPerformance && <button type="button" className="rounded-lg border bg-white px-3 py-2 text-blue-800" onClick={openPerformance}>Indicadores de atividades</button>}
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { nextSalaryBand } from './hrWorkflow.js';
 import { adjustSalaryBand, bandNames, effectiveSalaryPlan, salaryBands, salaryPosition } from './careerReview.js';
 import { resolveEmployeeRole, roleNameKey } from './roleCatalog.js';
 import PurchaseSelect from './PurchaseSelect.jsx';
@@ -173,10 +174,10 @@ function SalaryPlan({ plans, role, roles, save, requestedBand, selectBand, markD
   </form>;
 }
 
-function Compensation({ db, company, uid, employees, roles, records, today, employeeId, selectEmployee, openEmployee, openPlan, visible }) {
+function Compensation({ db, company, uid, employees, roles, records, today, employeeId, selectEmployee, openEmployee, openPlan, visible, suggestRaise }) {
   const [entries,setEntries] = useState([]);
   const person = employees.some(employee => employee.id === employeeId) ? employeeId : '';
-  const [amount,setAmount] = useState('');
+  const [amount,setAmount] = useState(null);
   const [effective,setEffective] = useState(today);
   const [status,setStatus] = useState('');
   const [search, setSearch] = useState('');
@@ -197,16 +198,18 @@ function Compensation({ db, company, uid, employees, roles, records, today, empl
     setEffective(today);
     setStatus('');
   }
-  const currentPay = entries.find(entry => entry.person === person && entry.effective <= today);
-  const proposedAmount = Number(amount);
+  const currentPay = entries.find(entry => entry.person === person && entry.effective <= effective);
+  const suggested = suggestRaise && nextSalaryBand(currentPay, proposedPlan, effective);
+  const displayedAmount = amount ?? (suggested ? suggested.value.toFixed(2) : '');
+  const proposedAmount = Number(displayedAmount);
   const difference = currentPay && proposedAmount > 0 ? Math.round((proposedAmount - Number(currentPay.amount)) * 100) / 100 : null;
   const percent = difference === null || !currentPay.amount ? null : difference / currentPay.amount * 100;
   const matchingBands = proposedBands.filter(band => Math.round(band.value * 100) === Math.round(proposedAmount * 100));
   async function save(event) {
     event.preventDefault();
-    if (!window.confirm(`Registrar ${money.format(Number(amount))} para ${employees.find(p => p.id === person)?.name} com vigência em ${effective.split('-').reverse().join('/')}?`)) return;
+    if (!window.confirm(`Registrar ${money.format(proposedAmount)} para ${employees.find(p => p.id === person)?.name} com vigência em ${effective.split('-').reverse().join('/')}?`)) return;
     try {
-      await setDoc(doc(db,'artifacts','comunica-salvador','public','data','companies',company,'salaryChanges',person+'_'+effective),{person,amount:Number(amount),effective,updatedBy:uid,updatedAt:serverTimestamp()});
+      await setDoc(doc(db,'artifacts','comunica-salvador','public','data','companies',company,'salaryChanges',person+'_'+effective),{person,amount:proposedAmount,effective,updatedBy:uid,updatedAt:serverTimestamp()});
       setStatus('Salário registrado.'); setAmount('');
     } catch { setStatus('Falha ao registrar. Verifique a conexão, a permissão ou se já há registro nesta data.'); }
   }
@@ -235,11 +238,11 @@ function Compensation({ db, company, uid, employees, roles, records, today, empl
     <form onSubmit={save} className="space-y-3">
       <div className="grid items-end gap-2 sm:grid-cols-3">
         <label>Colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Colaborador para enquadramento" value={person} onChange={openReajuste} required placeholder="Escolha" options={employees.map(p => [p.id, p.name])} /></label>
-        <label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={amount} onChange={event => setAmount(event.target.value)} /></label>
+        <label>Novo salário<input className={field} required type="number" min="0.01" step="0.01" value={displayedAmount} onChange={event => setAmount(event.target.value)} /></label>
         <label>Início da vigência<input required className={field} type="date" value={effective} onChange={event => setEffective(event.target.value)} /></label>
       </div>
     {person && <section className="space-y-3 rounded-xl border border-slate-200 p-3">
-      <div><h4 className="font-bold">Simulação de reajuste</h4><p className="text-xs text-slate-600">Impacto mensal no salário bruto individual, com vigência em {effective ? effective.split('-').reverse().join('/') : 'data a definir'}.</p></div>
+      <div><h4 className="font-bold">Simulação de reajuste</h4>{suggested && <p className="mt-1 text-xs font-semibold text-blue-800">Faixa sugerida: {suggested.label}</p>}<p className="text-xs text-slate-600">Impacto mensal no salário bruto individual, com vigência em {effective ? effective.split('-').reverse().join('/') : 'data a definir'}.</p></div>
       {proposedBands.length > 0 && <label>Simular com uma faixa da matriz
         <select className={field} value="" onChange={event => { if (event.target.value) setAmount(event.target.value); }}>
           <option value="">Escolha uma faixa ou informe o valor manualmente</option>
@@ -248,7 +251,7 @@ function Compensation({ db, company, uid, employees, roles, records, today, empl
       </label>}
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ['Salário vigente', currentPay ? money.format(currentPay.amount) : 'Sem registro'],
+          ['Salário na data proposta', currentPay ? money.format(currentPay.amount) : 'Sem registro'],
           ['Valor proposto', proposedAmount > 0 ? money.format(proposedAmount) : 'A informar'],
           ['Faixa proposta', matchingBands.length ? matchingBands.map(band => band.label).join(', ') : '—'],
           ['Diferença mensal', difference === null ? '—' : money.format(difference) + (percent === null ? '' : ` · ${percent.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`)],
@@ -264,7 +267,7 @@ function Compensation({ db, company, uid, employees, roles, records, today, empl
     {person && <ul>{entries.filter(e => e.person === person).map(e => <li key={e.effective}>{e.effective.split('-').reverse().join('/')} · {money.format(e.amount)}</li>)}</ul>}<p role="status">{status}</p></section>;
 }
 
-export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity, view, initialRoleId = '', salaryView, setSalaryView, employeeId = '', selectEmployee, openEmployee, activeEmployees, today }) {
+export default function DpiWorkspace({ db, company, uid, roles, employees, activities, departments, getDepartments, openActivity, view, initialRoleId = '', salaryView, setSalaryView, employeeId = '', selectEmployee, openEmployee, activeEmployees, today, suggestRaise }) {
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(false);
   const [roleId, setRoleId] = useState(initialRoleId);
@@ -502,7 +505,7 @@ export default function DpiWorkspace({ db, company, uid, roles, employees, activ
       </div>
       <div hidden={salaryView !== 'compensation'}>
         <Compensation {...{db, company, uid, roles, records, today, employeeId, selectEmployee, openEmployee}}
-          employees={sortedEmployees} openPlan={openSalaryEditor} visible={salaryView === 'compensation'} />
+          employees={sortedEmployees} openPlan={openSalaryEditor} visible={salaryView === 'compensation'} suggestRaise={suggestRaise === employeeId} />
       </div>
       </>}
     </section>}

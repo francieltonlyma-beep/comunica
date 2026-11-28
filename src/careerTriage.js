@@ -41,3 +41,34 @@ export function countCareerCandidates(applications) {
     ? `uid:${candidateUid}`
     : email?.trim() ? `email:${email.trim().toLowerCase()}` : `application:${id}`)).size;
 }
+
+export const CAREER_STALLED_DAYS = 7;
+const dayMs = 86_400_000;
+
+function careerStageSince(application) {
+  const stage = application.status || 'received';
+  const recorded = application.stageStart?.status === stage && careerDateMs(application.stageStart.at);
+  const type = application.recruitmentUpdate?.type;
+  const hasDecisionDate = (stage === 'preselected' && type === 'approved') || (stage === 'rejected' && type === 'rejected');
+  const fallback = stage === 'received' ? application.createdAt
+    : stage === 'interview' ? application.interviewScheduledAt
+    : hasDecisionDate ? application.decisionAt : null;
+  return recorded || careerDateMs(fallback);
+}
+
+export function careerStageAge(application, now) {
+  const since = careerStageSince(application);
+  return since > 0 && now >= since ? Math.floor((now - since) / dayMs) : null;
+}
+
+const brazilDay = new Intl.DateTimeFormat('sv-SE', {timeZone:'America/Sao_Paulo'});
+
+export function careerStageDue(application) {
+  const since = careerStageSince(application);
+  return since > 0 ? brazilDay.format(new Date(since + CAREER_STALLED_DAYS * dayMs)) : '';
+}
+
+export function careerIsStalled(application, now) {
+  if (!['received', 'reviewing', 'preselected', 'interview'].includes(application.status || 'received')) return false;
+  return (careerStageAge(application, now) ?? -1) >= CAREER_STALLED_DAYS;
+}

@@ -3,7 +3,7 @@ import { Users } from 'lucide-react';
 const sections = [
   { id: 'dpi', label: 'PDI e desempenho', views: ['dpi', 'development'] },
   { id: 'roles', label: 'Cargos e salários', views: ['roles', 'salary'] },
-  { id: 'hr-pending', label: 'Rotinas do RH', views: ['hr-pending', 'hr-file'] },
+  { id: 'hr-pending', label: 'Rotinas do RH', views: ['hr-pending', 'hr-action', 'hr-file'] },
 ];
 
 const menu = [

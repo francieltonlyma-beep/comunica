@@ -1,3 +1,4 @@
+import HrActionQueue from './HrActionQueue.jsx';
 import { CareerReviewQueue } from './CareerReviewWorkflow.jsx';
 import CareerReview from './CareerReview.jsx';
 import PurchaseSelect from './PurchaseSelect.jsx';
@@ -127,7 +128,7 @@ function CaseEditor({ db, company, uid, employees, confidential, record, close, 
       const bytes = file ? new Uint8Array(await file.arrayBuffer()) : null;
       if (bytes && String.fromCharCode(...bytes.slice(0, 5)) !== '%PDF-')
         throw Error('Selecione um arquivo PDF válido.');
-      const ref = doc(db, ...root(company), source(draft.kind), record.id || identity.current);
+      const ref = doc(db, ...root(company), source(draft.kind), record.id || record.caseId || identity.current);
       const history = doc(collection(ref, 'history'));
       const entry = {
         employeeId: draft.employeeId,
@@ -426,13 +427,19 @@ export default function PersonnelWorkspace({
   selectEmployee,
   roles = [],
   reviewActivities,
-  careerActions,
+  careerActions, admissionDraft, clearAdmissionDraft, simulateRaise, applications, now, openApplication, openGoal, activeEmployees, initialQueueView = 'cases',
 }) {
   const common = usePersonnelRows(db, company, 'hrCases');
   const restricted = usePersonnelRows(db, company, confidential ? 'hrConfidential' : '');
-  const [draft, setDraft] = useState(null);
+  const [draft, setDraft] = useState(() => admissionDraft ? {
+    ...newCase(admissionDraft.employeeId, uid),
+    caseId: admissionDraft.caseId,
+    title: `Admissão · ${admissionDraft.name}`.slice(0, 160),
+    planned: admissionDraft.hireDate || '',
+    note: [admissionDraft.role, admissionDraft.sector].filter(Boolean).join(' · '),
+  } : null);
   const [history, setHistory] = useState('');
-  const [showReviewQueue, setShowReviewQueue] = useState(false);
+  const [queueView, setQueueView] = useState(initialQueueView);
   const [kind, setKind] = useState('');
   const [period, setPeriod] = useState('all');
   const [message, setMessage] = useState('');
@@ -463,6 +470,10 @@ export default function PersonnelWorkspace({
           .filter(filters.find(([key]) => key === period)?.[2] || (() => true))
           .sort((a, b) => (pendingDate(a) || '9999').localeCompare(pendingDate(b) || '9999'));
   const loading = common.loading || restricted.loading;
+  function closeDraft() {
+    if (admissionDraft) clearAdmissionDraft();
+    setDraft(null);
+  }
   function openFile(id) {
     selectEmployee(id);
     setHistory('');
@@ -480,7 +491,7 @@ export default function PersonnelWorkspace({
           <button
             className={button}
             onClick={() => {
-              setDraft(null);
+              closeDraft();
               go(view === 'file' ? 'pending' : 'file');
             }}
           >
@@ -490,6 +501,7 @@ export default function PersonnelWorkspace({
             className={primary}
             onClick={() => {
               setMessage('');
+              closeDraft();
               setDraft(newCase(view === 'file' ? employeeId : '', uid));
             }}
           >
@@ -510,20 +522,25 @@ export default function PersonnelWorkspace({
           employees={employees}
           confidential={confidential}
           record={draft}
-          close={() => setDraft(null)}
+          close={closeDraft}
           saved={(id) => {
-            setDraft(null);
+            closeDraft();
             setMessage('Acompanhamento salvo.');
             openFile(id);
           }}
         />
       ) : (
         <>
-          {view !== 'file' && confidential && <div className="flex flex-wrap gap-2">
-            <button type="button" aria-pressed={!showReviewQueue} className={!showReviewQueue ? primary : button} onClick={() => setShowReviewQueue(false)}>Acompanhamentos</button>
-            <button type="button" aria-pressed={showReviewQueue} className={showReviewQueue ? primary : button} onClick={() => setShowReviewQueue(true)}>Avaliações de carreira</button>
+          {view !== 'file' && (confidential || applications) && <div className="flex flex-wrap gap-2">
+            {[['cases', 'Acompanhamentos'], ['action', 'Fila de ação'], ...(confidential ? [['reviews', 'Avaliações de carreira']] : [])].map(([id, label]) => (
+              <button key={id} type="button" aria-pressed={queueView === id} className={queueView === id ? primary : button}
+                onClick={() => setQueueView(id)}>{label}</button>
+            ))}
           </div>}
-          {view !== 'file' && confidential && showReviewQueue ? (
+          {view !== 'file' && queueView === 'action' && (confidential || applications) ? (
+            <HrActionQueue db={db} company={company} confidential={confidential} employees={activeEmployees} applications={applications}
+              today={today} now={now} openFile={openFile} openApplication={openApplication} openGoal={openGoal} />
+          ) : view !== 'file' && confidential && queueView === 'reviews' ? (
             <CareerReviewQueue db={db} company={company} employees={employees} today={today} openFile={openFile} />
           ) : view === 'file' ? (
             <>
@@ -556,7 +573,7 @@ export default function PersonnelWorkspace({
               )}
             </div>
             {person && confidential && <CareerReview key={JSON.stringify([company, person.id])}
-              db={db} company={company} uid={uid} person={person} roles={roles} activities={reviewActivities} today={today} />}
+              db={db} company={company} uid={uid} person={person} roles={roles} activities={reviewActivities} today={today} simulateRaise={simulateRaise ? () => simulateRaise(person) : undefined} />}
             </>
           ) : (
             <div className={panel}>
@@ -586,16 +603,16 @@ export default function PersonnelWorkspace({
               </Field>
             </div>
           )}
-          {(common.error || restricted.error) && <p role="alert">{common.error || restricted.error}</p>}
-          {loading && <p role="status">Consultando registros…</p>}
-          {(view === 'file' || !confidential || !showReviewQueue) && !loading && !common.error && !restricted.error && !visible.length && (
+          {(view === 'file' || queueView === 'cases') && (common.error || restricted.error) && <p role="alert">{common.error || restricted.error}</p>}
+          {(view === 'file' || queueView === 'cases') && loading && <p role="status">Consultando registros…</p>}
+          {(view === 'file' || queueView === 'cases') && !loading && !common.error && !restricted.error && !visible.length && (
             <p className={panel}>
               {view === 'file' && !person
                 ? 'Selecione uma pessoa para consultar a ficha.'
                 : 'Nenhum acompanhamento nesta seleção.'}
             </p>
           )}
-          {(view === 'file' || !confidential || !showReviewQueue) && visible.map((row) => (
+          {(view === 'file' || queueView === 'cases') && visible.map((row) => (
             <article className={panel} key={row.id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>

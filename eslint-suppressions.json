@@ -15,13 +15,13 @@
       "count": 2
     },
     "react-hooks/immutability": {
-      "count": 4
+      "count": 2
     },
     "react-hooks/purity": {
-      "count": 77
+      "count": 73
     },
     "react-hooks/refs": {
-      "count": 5
+      "count": 4
     }
   },
   "src/Careers.jsx": {

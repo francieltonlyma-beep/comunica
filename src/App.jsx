@@ -62,8 +62,10 @@ import { normalizeCoverageRequirements, validateCoverageRequirements } from './s
 import { newDayRule, normalizeRuleGroups, validateRuleGroups, buildRuleSchedule, rebalanceConsecutiveRest, scheduleRuleIssues, validateHolidayAssignments, holidayWorkTemplate, previousScheduleForDate } from './scheduleDayRules';
 const WhistleblowingAdmin = lazy(() => import('./WhistleblowingAdmin.jsx'));
 const PlatformUpdates = lazy(() => import('./PlatformUpdates.jsx'));
-import { CAREER_STAGES, careerDateMs, careerFitScore, countCareerCandidates, groupCareerApplications, matchesCareerOpportunity } from './careerTriage.js';
+import { CAREER_STAGES, careerDateMs, careerFitScore, careerIsStalled, careerStageAge, countCareerCandidates, groupCareerApplications, matchesCareerOpportunity } from './careerTriage.js';
 import { CareerVacancyDetailEditor, CareerVacancyLibrary, CareerVacancyPublishedDetails } from './CareerVacancyDetails.jsx';
+import CareerStageTiming from './CareerStageTiming.jsx';
+import { employeeTransferImpact, hiredEmployeeId, roleChangeImpact } from './hrWorkflow.js';
 import CareerCandidateCard from './CareerCandidateCard.jsx';
 import CareerVacancyHistory from './CareerVacancyHistory.jsx';
 import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
@@ -115,7 +117,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove, FieldPath, serverTimestamp, runTransaction, getDocsFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, collection, query, where, or, orderBy, getDocs, addDoc, deleteDoc, updateDoc,setDoc, onSnapshot, writeBatch, arrayUnion, arrayRemove, FieldPath, serverTimestamp, runTransaction, getDocsFromServer, getDocFromServer } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, getBlob, deleteObject } from 'firebase/storage';
 import { deleteToken, getMessaging, getToken, isSupported as isMessagingSupported, onMessage } from 'firebase/messaging';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -406,7 +408,7 @@ const createPollQuestion = (type = 'single') => ({ type, question: '', options: 
 const hashSurveyRespondent = async value => { const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value))); return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''); };
 const vacancyEditorDate = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
 const vacancyEditExpiredMessage = 'O prazo de 7 dias corridos para editar esta vaga terminou.';
-const EMPTY_VACANCY = { companyId: '', roleId: '', title: '', description: '', location: '', mode: 'Presencial', skills: '', quiz: [], closesAt: '', details: {} };
+const EMPTY_VACANCY = { companyId: '', roleId: '', sectorId: '', positions: 1, title: '', description: '', location: '', mode: 'Presencial', skills: '', quiz: [], closesAt: '', details: {} };
 const EMPTY_CAREER_LIBRARY = { status: 'loading', items: [] };
 const CAREER_LIBRARY_COLLECTION = 'careerVacancyLibrary';
 const createVacancyQuestion = (type = 'single') => ({ type, question: '', options: [...(VACANCY_QUESTION_TYPES[type]?.options || VACANCY_QUESTION_TYPES.single.options)] });
@@ -852,6 +854,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [careerApplications, setCareerApplications] = useState([]);
   const [careerWorkspace, setCareerWorkspace] = useState('vacancies');
   const [careerVacancyFocusId, setCareerVacancyFocusId] = useState('');
+  const [careerSectorFilter, setCareerSectorFilter] = useState('');
   const [careerRoleFilter, setCareerRoleFilter] = useState('');
   const [careerVacancySearch, setCareerVacancySearch] = useState('');
   const [careerQueueFilter, setCareerQueueFilter] = useState('all');
@@ -904,6 +907,10 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('comunica-dark'));
   const [teamEmployeeSelection, setTeamEmployeeSelection] = useState(null);
   const [mgmtSubTab, setMgmtSubTab] = useState('overview');
+  const [admissionSource, setAdmissionSource] = useState(null);
+  const [admissionDraft, setAdmissionDraft] = useState(null);
+  const [raiseSelection, setRaiseSelection] = useState(null);
+  const [developmentLink, setDevelopmentLink] = useState(null);
   const [teamSalaryView, setTeamSalaryView] = useState('matrix');
   const [salaryRoleId, setSalaryRoleId] = useState('');
   const [employeeAttention, setEmployeeAttention] = useState('');
@@ -3521,9 +3528,14 @@ const getStatusEmTempoReal = (colaborador) => {
     triggerNotification('Voto registrado. Obrigado por participar!');
   };
 
-  const openVacancyForm = () => {
+  const openVacancyForm = (role, department) => {
     if (!activeCompany?.id) return;
-    setNewVacancy(previous => previous.companyId === activeCompany.id && !previous.editId ? previous : { ...EMPTY_VACANCY, companyId: activeCompany.id });
+    const companyId = activeCompany.id;
+    if (role && department) {
+      setNewVacancy({ ...EMPTY_VACANCY, companyId, roleId: role.id, sectorId: department.id, title: role.name, description: role.description || '' });
+    } else {
+      setNewVacancy(previous => previous.companyId === companyId && !previous.editId ? previous : { ...EMPTY_VACANCY, companyId });
+    }
     setShowVacancyModal(true);
   };
 
@@ -3534,7 +3546,7 @@ const getStatusEmTempoReal = (colaborador) => {
       return;
     }
     setNewVacancy({
-      ...EMPTY_VACANCY, ...vacancy, companyId: activeCompany.id, editId: vacancy.id,
+      ...EMPTY_VACANCY, ...vacancy, companyId: activeCompany.id, editId: vacancy.id, originalSectorId: vacancy.sectorId || '', originalRoleId: vacancy.roleId || '',
       skills: (vacancy.skills || []).join(', '), details: vacancy.details || {}, originalDeadline: vacancy.closesAt || '', closesAt: vacancy.closesAt || '',
       quiz: (vacancy.quiz || []).map(question => ({ ...question, type: VACANCY_QUESTION_TYPES[question.type] ? question.type : 'single' })),
     });
@@ -3590,11 +3602,25 @@ const getStatusEmTempoReal = (colaborador) => {
       triggerNotification('Escolha um prazo a partir de hoje ou deixe a vaga sem prazo.', 'error');
       return;
     }
+    const selectedRole = rolesList.find(role => role.id === newVacancy.roleId);
+    const changedPlacement = !newVacancy.editId || newVacancy.sectorId !== newVacancy.originalSectorId || newVacancy.roleId !== newVacancy.originalRoleId;
+    if (changedPlacement && newVacancy.sectorId && (!departmentsList.some(department => department.id === newVacancy.sectorId)
+      || (newVacancy.roleId && !getRoleDepts(selectedRole).includes(newVacancy.sectorId)))) {
+      triggerNotification('Selecione um setor vinculado ao cargo para esta vaga.', 'error');
+      return;
+    }
+    const positions = Number(newVacancy.positions);
+    if (!Number.isInteger(positions) || positions < 1 || positions > 1000) {
+      triggerNotification('Informe entre 1 e 1.000 posições para esta vaga.', 'error');
+      return;
+    }
     const id = `vacancy-${Date.now()}`;
     const vacancy = {
       id,
       roleId: newVacancy.roleId || '',
-      roleName: rolesList.find(role => role.id === newVacancy.roleId)?.name || newVacancy.title.trim(),
+      roleName: selectedRole?.name || newVacancy.title.trim(),
+      sectorId: newVacancy.sectorId || '',
+      positions,
       title: newVacancy.title.trim(),
       description: newVacancy.description.trim(),
       location: newVacancy.location.trim(),
@@ -3717,6 +3743,27 @@ const getStatusEmTempoReal = (colaborador) => {
 
   const careerEmailUrl = (application, subject, message) => `mailto:${encodeURIComponent(application.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
 
+  const saveCareerStage = async (application, payload) => {
+    if (!dbUser || !isCareerManagerUser(currentUser) ||
+      (!currentUser.isAdmin && !currentUser.isDeveloper && effectiveAccessProfile.canEdit === false)) return false;
+    try {
+      const target = doc(getTenantCollection('applications'), application.id);
+      await runTransaction(db, async transaction => {
+        const record = (await transaction.get(target)).data();
+        const previous = record?.status || 'received';
+        if (!record || previous !== (application.status || 'received')) throw new Error('stage-changed');
+        transaction.update(target, {
+          ...payload,
+          ...(payload.status === previous ? {} : {stageStart: {status: payload.status, at: serverTimestamp(), actorName: (currentUser.name || 'Equipe de recrutamento').slice(0, 200)}}),
+        });
+      });
+      return true;
+    } catch (error) {
+      triggerNotification(error.message === 'stage-changed' ? 'A etapa mudou. Abra a candidatura atualizada.' : 'Não foi possível salvar a etapa.', 'error');
+      return false;
+    }
+  };
+
   const saveCareerDecision = async (event) => {
     event.preventDefault();
     const draft = careerDecisionDraft;
@@ -3731,7 +3778,7 @@ const getStatusEmTempoReal = (colaborador) => {
       decisionAt: Date.now(), decisionBy: currentUser.name,
       discardReason: draft.outcome === 'rejected' ? draft.internalNote.trim() : '',
     };
-    if (!await updateDocField('applications', application.id, payload)) return;
+    if (!await saveCareerStage(application, payload)) return;
     setCareerDecisionDraft(null);
     triggerNotification(draft.outcome === 'approved' ? 'Candidato pré-selecionado e avisado no portal.' : 'Candidatura descartada e retorno registrado no portal.');
     if (draft.openEmail) window.location.href = careerEmailUrl(application, `${title} — ${application.vacancyTitle}`, `Olá, ${application.name}.\n\n${draft.message.trim()}\n\nAtenciosamente,\n${activeCompany?.name || 'Equipe de recrutamento'}`);
@@ -3745,7 +3792,7 @@ const getStatusEmTempoReal = (colaborador) => {
     const interview = { date: draft.date, time: draft.time, format: draft.format, location: draft.location.trim(), contact: draft.contact.trim(), notes: draft.notes.trim() };
     const message = draft.message.trim() || `Você foi pré-selecionado(a) para entrevista em ${formatDate(draft.date)} às ${draft.time}. ${draft.format}${draft.location.trim() ? `: ${draft.location.trim()}` : ''}. Para confirmar ou tirar dúvidas, entre em contato por ${draft.contact.trim()}.`;
     const payload = { status: 'interview', reviewNotes: draft.internalNote.trim(), interview, recruitmentUpdate: { type: 'interview', title: 'Convite para entrevista', message, createdAt: Date.now(), createdBy: currentUser.name }, interviewScheduledAt: Date.now(), interviewScheduledBy: currentUser.name };
-    if (!await updateDocField('applications', application.id, payload)) return;
+    if (!await saveCareerStage(application, payload)) return;
     setCareerInterviewDraft(null);
     triggerNotification('Entrevista agendada e convite disponível no portal do candidato.');
     if (draft.openEmail) window.location.href = careerEmailUrl(application, `Convite para entrevista — ${application.vacancyTitle}`, `Olá, ${application.name}.\n\n${message}\n\nAtenciosamente,\n${activeCompany?.name || 'Equipe de recrutamento'}`);
@@ -5169,6 +5216,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       triggerNotification('Permissão insuficiente. Contate a Diretoria do RH.', 'error');
       return;
     }
+    setAdmissionSource(null);
     setEditingUser(user);
     setUserForm({
       name: user.name,
@@ -5295,17 +5343,34 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
           ? `Registrar a demissão de ${editingUser.name} em ${displayDay(terminationDate)} e marcar o perfil como inativo?`
           : `Remover a data de demissão de ${editingUser.name} e marcar o perfil como ativo?`
         : `Salvar as alterações no cadastro de ${editingUser.name}?`;
-      if (!window.confirm(confirmation)) return;
+      const impact = employeeTransferImpact({employee: editingUser, draft: formProfile, roles: rolesList,
+        departments: departmentsList, getDepartments: getUserDepts});
+      if (!window.confirm([confirmation, ...impact].join('\n\n'))) return;
       if (!await saveDoc('users', editingUser.id, updatedData)) return;
       setUsersList(prev => prev.map(user => user.id === editingUser.id ? { ...user, ...updatedData } : user));
       triggerNotification(terminationChanged && terminationDate ? 'Demissão registrada. Perfil inativo.' : 'Ficha de cadastro atualizada.');
     } else {
-      const uId = `u-${Date.now()}`;
+      const hire = admissionSource?.companyId === activeCompany?.id && admissionSource?.uid === dbUser?.uid ? admissionSource : null;
+      const uId = hire?.employeeId || `u-${Date.now()}`;
+      if (hire && !userForm.role.trim()) {
+        triggerNotification('Defina o cargo antes de confirmar a admissão.', 'error');
+        return;
+      }
+      if (hire) {
+        const sectors = userForm.depts.map(id => departmentsList.find(dept => dept.id === id)?.name || id).join(', ');
+        const nameTaken = employeesList.some(person => person.id !== uId && normalizedText(person.name) === normalizedText(userForm.name));
+        const note = nameTaken ? '\n\nJá existe um cadastro com esse nome. Confirme se é outra pessoa antes de continuar.' : '';
+        if (!window.confirm(`Criar o cadastro de ${userForm.name} como ${userForm.role} em ${sectors}?${note}`)) return;
+      }
       if (!isFirebaseAvailable || !dbUser || !functionsClient) {
         triggerNotification('Conecte-se para cadastrar com segurança.', 'error');
         return;
       }
       try {
+        if (hire && (await getDocFromServer(doc(getTenantCollection('applications'), hire.applicationId))).data()?.status !== 'hired') {
+          triggerNotification('A candidatura precisa estar como contratada para iniciar a admissão.', 'error');
+          return;
+        }
         const {pin, ...profile} = userForm;
         delete profile.terminationDate;
         const response = await httpsCallable(functionsClient, 'createEmployee')({appId, userId: uId, profile: { ...profile, avatar: profile.avatar || DEFAULT_AVATAR }, pin});
@@ -5313,11 +5378,13 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
         if (!created?.id || !defaultPresence?.id) throw new Error('Cadastro não confirmado');
         setUsersList(prev => [...prev.filter(user => user.id !== created.id), created]);
         setPresenceList(prev => [...prev.filter(presence => presence.id !== defaultPresence.id), defaultPresence]);
+        if (hire) void openAdmissionDraft(created);
       } catch {
         triggerNotification('Não foi possível cadastrar. Confira sua conexão, permissão e os dados informados.', 'error');
         return;
       }
-      triggerNotification('Novo funcionário cadastrado no sistema.');
+      if (!hire) triggerNotification('Novo funcionário cadastrado no sistema.');
+      setAdmissionSource(null);
     }
     setEditingUser(null);
     setShowUserModal(false);
@@ -5476,11 +5543,18 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     roleSaveInFlight.current = true;
     setSavingRole(true);
     try {
+      const placementChanged = getRoleDepts(targetRole).some(id => !editingRoleDepts.includes(id))
+        || editingRoleDepts.some(id => !getRoleDepts(targetRole).includes(id));
+      const changesName = trimmed !== oldRoleName;
       let affectedUsers = [];
-      if (trimmed !== oldRoleName) {
+      if (changesName || placementChanged) {
         const snapshot = await getDocsFromServer(getTenantCollection('users'));
         const matchingUsers = snapshot.docs.map(record => ({ ...record.data(), id: record.id }));
-        affectedUsers = getRoleUsers(targetRole, rolesList, matchingUsers, getUserDepts);
+        const linkedPeople = getRoleUsers(targetRole, rolesList, matchingUsers, getUserDepts);
+        const impact = roleChangeImpact({role: targetRole, name: trimmed, sectors: editingRoleDepts, people: linkedPeople,
+          vacancies: vacanciesList, departments: departmentsList, getDepartments: getUserDepts});
+        if (!window.confirm(['Confirmar ajustes no cargo?', ...impact].join('\n\n'))) return;
+        if (changesName) affectedUsers = linkedPeople;
       }
       if (!await saveRelatedRecords([
         { collection: 'roles', id: targetRole.id, data: roleChanges, operation: 'update' },
@@ -5621,13 +5695,21 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
       return;
     }
 
+    const sector = departmentsList.find(department => department.id === id);
+    if (sector && trimmed !== sector.name) {
+      const people = employeesList.filter(person => getUserDepts(person).includes(id)).length;
+      const roles = rolesList.filter(role => !role.mergedIntoRoleId && getRoleDepts(role).includes(id)).length;
+      const recruiting = vacanciesList.filter(vacancy => vacancy.sectorId === id && isCareerVacancyOpen(vacancy)).length;
+      if (!window.confirm(`Renomear ${sector.name} para ${trimmed}?\n\nO novo nome aparecerá no quadro, em ${people} cadastro(s), ${roles} cargo(s) e ${recruiting} vaga(s) aberta(s). Revise o gestor na aba Setores se houver mudança de responsabilidade.`)) return;
+    }
+
     if (isFirebaseAvailable && dbUser) {
       if (!await updateDocField('departments', id, { name: trimmed, color: editingSectorColor })) return;
     } else {
       setDepartmentsList(departmentsList.map(d => d.id === id ? { ...d, name: trimmed, color: editingSectorColor } : d));
     }
     setEditingSectorId(null);
-    triggerNotification(`Setor "${trimmed}" updated com sucesso!`);
+    triggerNotification(`Setor "${trimmed}" atualizado com sucesso!`);
   };
 
   const handleDeleteSector = async (id) => {
@@ -5636,6 +5718,10 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     const isUsedByRoles = rolesList.some(r => getRoleDepts(r).includes(id));
     const isUsedByPosts = sectorPosts.some(p => p.dept === id);
 
+    if (vacanciesList.some(vacancy => vacancy.sectorId === id && isCareerVacancyOpen(vacancy))) {
+      triggerNotification('Este setor possui vagas abertas. Confira os vínculos no Banco de Talentos.', 'error');
+      return;
+    }
     if (isUsedByUsers || isUsedByRoles || isUsedByPosts) {
       triggerNotification('Não é possível excluir o setor pois há funcionários, cargos ou posts vinculados a ele.', 'error');
       return;
@@ -7514,7 +7600,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
   };
   const canUsePersonnel = Boolean(!currentUser?.isDeveloper && (currentUser?.isAdmin || currentUser?.permissions?.personnel === true));
   const confidentialPersonnel = Boolean(canUsePersonnel && (currentUser?.isAdmin || currentUser?.permissions?.personnelPrivate === true));
-  const managementView = !currentUser?.isAdmin && !(['hr-pending', 'hr-file'].includes(mgmtSubTab)
+  const managementView = !currentUser?.isAdmin && !(['hr-pending', 'hr-action', 'hr-file'].includes(mgmtSubTab)
     || (confidentialPersonnel && ['dpi', 'development', 'salary', 'managers'].includes(mgmtSubTab))) ? 'hr-pending' : mgmtSubTab;
   const personnelEmployee = teamEmployeeSelection?.companyId === activeCompany?.id && teamEmployeeSelection?.uid === dbUser?.uid
     ? teamEmployeeSelection?.employeeId || '' : '';
@@ -7574,19 +7660,22 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setHeadcountEmployeeIds(occupants);
     setMgmtSubTab('employees');
   };
-  const openTeamSalary = (roleId = '', view = 'matrix') => {
+  const openTeamSalary = (roleId = '', view = 'matrix', raiseEmployeeId = '') => {
+    setRaiseSelection(raiseEmployeeId ? {companyId:activeCompany?.id, uid:dbUser?.uid, employeeId:raiseEmployeeId} : null);
     setSalaryRoleId(roleId);
     setTeamSalaryView(view);
     setMgmtSubTab('salary');
   };
   const openTeamEmployeeView = (view, id) => {
+    if (view === 'development') setDevelopmentLink(null);
     setPersonnelEmployee(id);
     setMgmtSubTab(view);
   };
-  const openRoleRecruitment = role => {
+  const openRoleRecruitment = (role, department) => {
     setCareerWorkspace('vacancies');
     setCareerVacancySearch('');
     setCareerRoleFilter(role.id);
+    setCareerSectorFilter(department.id);
     setCareerVacancyStatus('open');
     setActiveTab('careers');
   };
@@ -7678,6 +7767,64 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     ? isCareerManagerUser(currentUser) && (currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false)
     : currentUser?.isAdmin || currentUser?.isDeveloper || effectiveAccessProfile.tabs[moduleId] !== false);
   const canOpenCareers = canOpenModule('careers');
+  const canPrepareAdmission = canOpenCareers && canUsePersonnel && canOpenModule('management') && currentUser?.isAdmin && authScope.companyId === activeCompany?.id;
+  const localAdmissionDraft = admissionDraft?.companyId === activeCompany?.id && admissionDraft?.uid === dbUser?.uid ? admissionDraft : null;
+  const localDevelopmentLink = developmentLink?.companyId === activeCompany?.id && developmentLink?.uid === dbUser?.uid ? developmentLink : null;
+  const suggestedRaisePerson = raiseSelection?.companyId === activeCompany?.id && raiseSelection?.uid === dbUser?.uid ? raiseSelection?.employeeId : '';
+  const openAdmissionDraft = async employee => {
+    const companyId = activeCompany.id;
+    const uid = dbUser.uid;
+    const caseId = `admission-${employee.id}`;
+    const sectorLabel = getUserDepts(employee).map(id => departmentsList.find(department => department.id === id)?.name || id).join(', ');
+    openTeamEmployeeView('hr-file', employee.id);
+    setActiveTab('management');
+    try {
+      const prior = await getDocFromServer(doc(getTenantCollection('hrCases'), caseId));
+      if (prior.exists()) {
+        triggerNotification('A admissão já consta na ficha do colaborador.');
+        return;
+      }
+      setAdmissionDraft({companyId, uid, caseId, employeeId: employee.id, name: employee.name,
+        role: employee.role, sector: sectorLabel, hireDate: employee.hireDate});
+    } catch {
+      triggerNotification('Cadastro localizado. Reabra a candidatura para recuperar o rascunho de admissão.', 'error');
+    }
+  };
+  const prepareHiredAdmission = async application => {
+    if (!canPrepareAdmission || !dbUser || application.status !== 'hired') return;
+    try {
+      const employeeId = await hiredEmployeeId(activeCompany.id, application);
+      const stored = await getDocFromServer(doc(getTenantCollection('users'), employeeId));
+      const vacancy = vacanciesList.find(item => item.id === application.vacancyId);
+      const role = rolesList.find(item => item.id === (vacancy?.roleId || application.roleId));
+      const sector = departmentsList.find(item => item.id === vacancy?.sectorId);
+      if (stored.exists()) {
+        void openAdmissionDraft({...stored.data(), id: employeeId});
+        return;
+      }
+      setAdmissionSource({companyId:activeCompany.id, uid:dbUser.uid, applicationId:application.id, employeeId});
+      setEditingUser(null);
+      setUserForm({name: application.name, role: role?.name || '', depts: sector ? [sector.id] : [],
+        managerId: sector?.managerId || '', avatar: DEFAULT_AVATAR, isAdmin: false, pin: '', birthDate: '', hireDate: '',
+        terminationDate: '', emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: ''});
+      setShowUserModal(true);
+    } catch {
+      triggerNotification('Não foi possível preparar a admissão. Confira a conexão e tente novamente.', 'error');
+    }
+  };
+  const openDevelopmentGoal = (employeeId, goalId) => {
+    openTeamEmployeeView('development', employeeId);
+    setDevelopmentLink({companyId:activeCompany.id, uid:dbUser.uid, goalId});
+  };
+  const startDevelopmentFromActivity = row => {
+    const assigneeIds = row.activity.assigneeIds.filter(id => activeEmployeeIds.has(id));
+    if (!confidentialPersonnel || !assigneeIds.length) return;
+    openTeamEmployeeView('development', assigneeIds.includes(personnelEmployee) ? personnelEmployee : assigneeIds[0]);
+    setDevelopmentLink({companyId:activeCompany.id, uid:dbUser.uid,
+      activity: {key:row.key, title:row.subject, due:row.activity.dueDate, assigneeIds}});
+    setSelectedServiceActivityKey('');
+    setActiveTab('management');
+  };
   const careerLibraryCompany = activeCompany?.id;
   const careerLibraryUid = dbUser?.uid;
   const careerLibraryScope = activeTab === 'careers' && canOpenCareers && isFirebaseAvailable && authReady && careerLibraryUid
@@ -7766,6 +7913,7 @@ date: new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTime
     setCareerVacancyStatus(vacancy.status === 'archived' ? 'archived' : 'current');
     setCareerVacancySearch('');
     setCareerRoleFilter('');
+    setCareerSectorFilter('');
     setCareerVacancyFocusId(vacancy.id);
   };
 
@@ -8379,6 +8527,9 @@ const notificationsToShow = [...notificationItems]
     fuchsia: 'text-fuchsia-800',
   };
   const dashboardQuickActions = [
+    canUsePersonnel && (confidentialPersonnel || canOpenCareers) && canOpenModule('management')
+      ? {id: 'hr-actions', label: 'Fila de ação do RH', detail: 'Entrevistas, metas e avaliações', icon: Users,
+        action: () => { setActiveTab('management'); setMgmtSubTab('hr-action'); }} : null,
     dbUser && activeCompany?.id && !currentUser?.isDeveloper && tabReleased('management') ? {
       id: 'my-development', label: 'Meu desenvolvimento', detail: 'Metas e feedback',
       icon: Activity, action: () => setActiveTab('my-development'),
@@ -8403,7 +8554,8 @@ const notificationsToShow = [...notificationItems]
     const open = isCareerVacancyOpen(vacancy, careerToday);
     const status = vacancy.status === 'archived' ? 'archived' : open ? 'open' : 'closed';
     const matchesStatus = careerVacancyStatus === 'current' ? status !== 'archived' : status === careerVacancyStatus;
-    return matchesStatus && (!careerRoleFilter || vacancy.roleId === careerRoleFilter) && normalizedText(`${vacancy.title || ''} ${vacancy.location || ''}`).includes(normalizedText(careerVacancySearch));
+    return matchesStatus && (!careerRoleFilter || vacancy.roleId === careerRoleFilter)
+      && (!careerSectorFilter || vacancy.sectorId === careerSectorFilter) && normalizedText(`${vacancy.title || ''} ${vacancy.location || ''}`).includes(normalizedText(careerVacancySearch));
   }).sort((a, b) => careerDateMs(b.createdAt) - careerDateMs(a.createdAt));
   const careerOpportunityTitle = application => careerVacanciesById.get(application.vacancyId)?.title
     || careerPoolRoles.get(application.vacancyId) || application.vacancyTitle || 'Oportunidade sem título';
@@ -8423,7 +8575,7 @@ const notificationsToShow = [...notificationItems]
         : careerFitFilter === 'low' ? fit !== null && fit < 50 : fit === null);
     const matchesCity = careerCityFilter === 'all' || (application.city || '').trim() === careerCityFilter;
     const matchesQueue = careerQueueFilter === 'all' || (careerQueueFilter === 'updated'
-      ? application.candidateUpdatePending === true : applicationRetentionMs(application) <= careerRetentionLimit);
+      ? application.candidateUpdatePending === true : careerQueueFilter === 'stalled' ? careerIsStalled(application, careerNow) : applicationRetentionMs(application) <= careerRetentionLimit);
     return matchesFit && matchesCity && matchesQueue && (!careerSearch || normalizedText(
       `${application.name || ''} ${application.email || ''} ${application.city || ''} ${careerOpportunityTitle(application)}`
     ).includes(careerSearch));
@@ -8440,6 +8592,13 @@ const notificationsToShow = [...notificationItems]
     ? Math.round(careerFilteredScores.reduce((sum, score) => sum + score, 0) / careerFilteredScores.length)
     : null;
   const careerSelectedVacancy = careerVacanciesById.get(careerVacancyFilter);
+  const careerTimingGroups = careerSelectedVacancy
+    ? groupCareerApplications(careerApplications.filter(item => item.vacancyId === careerSelectedVacancy.id && item.source !== 'talent_pool'))
+    : null;
+  const openHrApplication = application => {
+    setActiveTab('careers');
+    openCareerApplications(application.vacancyId, application.id);
+  };
   const careerComparisonApplications = careerApplications.filter(application => careerComparisonIds.includes(application.id));
   const handleSalesContact = async lead => {
     if (!functionsClient) throw new Error('Serviço de contato indisponível.');
@@ -10311,7 +10470,8 @@ const notificationsToShow = [...notificationItems]
             const assigneeCandidates = row.source === 'standalone' ? employeesList : employeesList.filter(user => row.participantIds.includes(user.id));
             const dependencyCandidates = serviceActivityRows.filter(candidate => candidate.key !== row.key);
             const blockingDependencies = unresolvedActivityDependencies(activity, serviceActivityRows);
-            return <div className="fixed inset-0 z-[10025] flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && activityAttachmentProgress === null && setSelectedServiceActivityKey('')}><section className="flex max-h-[96dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[1.75rem]" role="dialog" aria-modal="true" aria-labelledby="activity-detail-title"><header className="flex items-start justify-between gap-4 bg-gradient-to-r from-slate-950 via-violet-950 to-indigo-900 px-5 py-5 text-white sm:px-7"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-bold">{row.source === 'standalone' ? 'Atividade avulsa' : 'Atividade da conversa'}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span></div><h3 id="activity-detail-title" className="mt-2 break-words text-xl font-black">{row.subject}</h3><p className="mt-1 max-w-3xl text-xs leading-5 text-violet-100/75">{row.preview}</p></div><button type="button" disabled={activityAttachmentProgress !== null} onClick={() => setSelectedServiceActivityKey('')} className="rounded-xl p-2 text-violet-100 hover:bg-white/10 disabled:opacity-50" aria-label="Fechar detalhes da atividade"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6"><div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,.95fr)]"><div className="space-y-4"><section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2"><label className="text-[9px] font-black uppercase text-slate-400">Situação<select disabled={!canEditRow} value={activity.status} onChange={event => handleUpdateServiceActivity(row, {status:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60"><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="resolved">Resolvida</option></select></label><label className="text-[9px] font-black uppercase text-slate-400">Prioridade<select disabled={!canEditRow} value={activity.priority} onChange={event => handleUpdateServiceActivity(row, {priority:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60">{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-[9px] font-black uppercase text-slate-400">Prazo<input disabled={!canEditRow} type="date" value={activity.dueDate} onChange={event => handleUpdateServiceActivity(row, {dueDate:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60" /></label><label className="text-[9px] font-black uppercase text-slate-400">Responsável<PurchaseSelect searchPlaceholder="Buscar por nome" label="Responsável pela atividade" value={activity.assigneeIds[0] || ''} onChange={selectedId => handleUpdateServiceActivity(row, {
+            return <div className="fixed inset-0 z-[10025] flex items-end justify-center bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={event => event.target === event.currentTarget && activityAttachmentProgress === null && setSelectedServiceActivityKey('')}><section className="flex max-h-[96dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-[1.75rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[1.75rem]" role="dialog" aria-modal="true" aria-labelledby="activity-detail-title"><header className="flex items-start justify-between gap-4 bg-gradient-to-r from-slate-950 via-violet-950 to-indigo-900 px-5 py-5 text-white sm:px-7"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-bold">{row.source === 'standalone' ? 'Atividade avulsa' : 'Atividade da conversa'}</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold ${MESSAGE_ACTIVITY_STATUS_CLASSES[row.status]}`}>{MESSAGE_ACTIVITY_STATUS_LABELS[row.status]}</span></div><h3 id="activity-detail-title" className="mt-2 break-words text-xl font-black">{row.subject}</h3><p className="mt-1 max-w-3xl text-xs leading-5 text-violet-100/75">{row.preview}</p></div>{confidentialPersonnel && canOpenModule('management') && activity.assigneeIds.some(id => activeEmployeeIds.has(id)) &&
+              <button type="button" onClick={() => startDevelopmentFromActivity(row)} className="shrink-0 rounded-lg border border-white/30 px-3 py-2 text-xs font-bold text-white">Criar meta de PDI</button>}<button type="button" disabled={activityAttachmentProgress !== null} onClick={() => setSelectedServiceActivityKey('')} className="rounded-xl p-2 text-violet-100 hover:bg-white/10 disabled:opacity-50" aria-label="Fechar detalhes da atividade"><X className="h-5 w-5" /></button></header><div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6"><div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,.95fr)]"><div className="space-y-4"><section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2"><label className="text-[9px] font-black uppercase text-slate-400">Situação<select disabled={!canEditRow} value={activity.status} onChange={event => handleUpdateServiceActivity(row, {status:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60"><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="resolved">Resolvida</option></select></label><label className="text-[9px] font-black uppercase text-slate-400">Prioridade<select disabled={!canEditRow} value={activity.priority} onChange={event => handleUpdateServiceActivity(row, {priority:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60">{Object.entries(MESSAGE_ACTIVITY_PRIORITY_LABELS).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-[9px] font-black uppercase text-slate-400">Prazo<input disabled={!canEditRow} type="date" value={activity.dueDate} onChange={event => handleUpdateServiceActivity(row, {dueDate:event.target.value})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60" /></label><label className="text-[9px] font-black uppercase text-slate-400">Responsável<PurchaseSelect searchPlaceholder="Buscar por nome" label="Responsável pela atividade" value={activity.assigneeIds[0] || ''} onChange={selectedId => handleUpdateServiceActivity(row, {
   assigneeIds: selectedId ? [selectedId] : []
 })} disabled={!canEditRow} placeholder="Sem responsável" options={[...assigneeCandidates.map(user => [user.id, user.name])]} /></label><label className="text-[9px] font-black uppercase text-slate-400 sm:col-span-2">Depende de<select disabled={!canEditRow} value={activity.dependencyIds[0] || ''} onChange={event => handleUpdateServiceActivity(row, {dependencyIds:event.target.value ? [event.target.value] : []})} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold normal-case text-slate-700 disabled:opacity-60"><option value="">Nenhuma atividade anterior</option>{dependencyCandidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.subject} · {MESSAGE_ACTIVITY_STATUS_LABELS[candidate.status]}</option>)}</select></label></div>{blockingDependencies.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-5 text-amber-900"><strong>Atividade bloqueada.</strong> Conclua primeiro: {blockingDependencies.map(item => item.subject).join(', ')}.</div>}<div className="mt-4"><div className="mb-1.5 flex items-center justify-between text-[9px] font-bold text-slate-500"><span>Progresso geral</span><span>{row.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${row.status === 'resolved' ? 'bg-emerald-500' : row.status === 'overdue' ? 'bg-rose-500' : 'bg-violet-600'}`} style={{width:`${row.progress}%`}} /></div></div>{row.source === 'conversation' && <button type="button" onClick={() => { setSelectedServiceActivityKey(''); openActivityConversation(row.message); }} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2.5 text-[10px] font-bold text-white"><MessageSquare className="h-4 w-4" /> Abrir mensagem original</button>}</section>{row.source === 'standalone' && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h4 className="text-sm font-extrabold text-slate-900">Colaboradores da atividade</h4><div className="mt-2 flex flex-wrap gap-2">{Object.entries(activity.collaborators).map(([id, collaborator]) => <span key={id} className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold text-violet-800">{collaborator.name} · {{ invited: 'Aguardando aceite', accepted: 'Participando', declined: 'Recusou' }[collaborator.status]}</span>)}{Object.keys(activity.collaborators).length === 0 && <span className="text-xs text-slate-400">Nenhum colaborador convidado.</span>}</div>{canEditRow && <label className="mt-3 block text-[10px] font-bold text-slate-500">Convidar colaborador<PurchaseSelect searchPlaceholder="Buscar por nome" label="Convidar colaborador" clearable={false} value="" onChange={selectedId => { handleInviteActivityCollaborator(row, selectedId); }} placeholder="Escolher colaborador..." options={employeesList.filter(user => user.id !== currentUser.id && user.id !== activity.createdBy && !activity.assigneeIds.includes(user.id) && !['invited', 'accepted'].includes(activity.collaborators[user.id]?.status)).map(user => [user.id, user.name])} /></label>}{activity.collaborators[currentUser.id]?.status === 'invited' && <div className="mt-3 flex gap-2"><button type="button" onClick={() => handleRespondActivityInvitation(row, true)} className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white">Aceitar convite</button><button type="button" onClick={() => handleRespondActivityInvitation(row, false)} className="rounded-lg border px-3 py-2 text-[10px] font-bold">Recusar</button></div>}</section>}<section className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div><span className="text-[9px] font-black uppercase tracking-wide text-violet-600">Execução</span><h4 className="mt-0.5 text-sm font-extrabold text-slate-900">Checklist</h4></div><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[9px] font-bold text-violet-700">{row.checklistCompleted}/{row.checklistTotal}</span></div>{activity.checklist.length > 0 ? <div className="mt-3 space-y-2">{activity.checklist.map(item => <label key={item.id} className={`flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-xs text-slate-700 ${item.completed ? 'line-through opacity-60' : ''}`}><input disabled={!canEditRow} type="checkbox" checked={item.completed} onChange={() => handleToggleServiceChecklistItem(row,item.id)} className="mt-0.5" /><span className="break-words">{item.text}</span></label>)}</div> : <p className="mt-3 rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-400">Nenhum item adicionado.</p>}{canEditRow && <div className="mt-3 flex gap-2"><input value={checklistDrafts[row.id] || ''} onChange={event => setChecklistDrafts(previous => ({...previous,[row.id]:event.target.value}))} onKeyDown={event => {if(event.key === 'Enter'){event.preventDefault();handleAddServiceChecklistItem(row);}}} placeholder="Adicionar item ao checklist" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-xs outline-none focus:border-violet-300" /><button type="button" onClick={() => handleAddServiceChecklistItem(row)} className="rounded-xl bg-violet-700 px-4 py-2.5 text-[10px] font-bold text-white">Adicionar</button></div>}</section></div><section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><nav className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 p-1.5" aria-label="Conteúdo da atividade">{[{id:'comments',label:`Comentários (${activity.comments.length})`,icon:MessageSquare},{id:'attachments',label:`Anexos (${activity.attachments.length})`,icon:Paperclip},{id:'history',label:`Histórico (${activity.history.length})`,icon:Clock}].map(item => {const Icon=item.icon;return <button key={item.id} type="button" onClick={() => setActivityDetailTab(item.id)} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-[9px] font-bold ${activityDetailTab === item.id ? 'bg-white text-violet-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}><Icon className="h-3.5 w-3.5" />{item.label}</button>;})}</nav><div className="min-h-80 p-4 sm:p-5">{activityDetailTab === 'comments' && <div><label className="mb-3 flex items-center gap-2 text-[10px] font-bold text-slate-500">Ordenar comentários<select value={activityCommentSort} onChange={event => setActivityCommentSort(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-700"><option value="newest">Mais recentes</option><option value="oldest">Mais antigos</option><option value="author">Colaborador (A–Z)</option></select></label><div className="max-h-[42vh] space-y-3 overflow-y-auto pr-1">{[...activity.comments].sort((a, b) => activityCommentSort === 'author' ? a.authorName.localeCompare(b.authorName, 'pt-BR') || b.createdAt - a.createdAt : activityCommentSort === 'oldest' ? a.createdAt - b.createdAt : b.createdAt - a.createdAt).map(comment => <article key={comment.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><div className="flex items-center justify-between gap-3"><strong className="text-[10px] text-slate-800">{comment.authorName}</strong><span className="text-[8px] text-slate-400">{new Date(comment.createdAt).toLocaleString('pt-BR')}{comment.editedAt ? ` · editado em ${new Date(comment.editedAt).toLocaleString('pt-BR')}` : ''}</span></div>{editingActivityCommentId === comment.id ? <div className="mt-2"><textarea rows="3" maxLength="1000" value={editingActivityCommentText} onChange={event => setEditingActivityCommentText(event.target.value)} className="w-full rounded-xl border border-slate-200 p-2 text-xs" /><div className="mt-2 flex gap-2"><button type="button" disabled={!editingActivityCommentText.trim()} onClick={() => handleEditActivityComment(row, comment)} className="rounded-lg bg-violet-700 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50">Salvar</button><button type="button" onClick={() => setEditingActivityCommentId('')} className="text-[10px] text-slate-500">Cancelar</button></div></div> : <><p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">{comment.text}</p>{canEditRow && comment.authorId === currentUser.id && <button type="button" onClick={() => { setEditingActivityCommentId(comment.id); setEditingActivityCommentText(comment.text); }} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-violet-700"><Edit2 className="h-3 w-3" /> Editar</button>}</>}</article>)}{activity.comments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center"><MessageSquare className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-xs text-slate-400">Nenhum comentário ainda.</p></div>}</div>{canEditRow && <div className="mt-4 border-t border-slate-100 pt-4"><textarea rows="3" maxLength="1000" value={activityCommentDraft} onChange={event => setActivityCommentDraft(event.target.value)} placeholder="Escreva uma atualização, orientação ou observação..." className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-xs leading-5 outline-none focus:border-violet-300" /><div className="mt-2 flex items-center justify-between"><span className="text-[8px] text-slate-400">{activityCommentDraft.length}/1000</span><button type="button" disabled={!activityCommentDraft.trim()} onClick={() => handleAddActivityComment(row)} className="inline-flex items-center gap-1.5 rounded-xl bg-violet-700 px-4 py-2.5 text-[10px] font-bold text-white disabled:opacity-50"><Send className="h-3.5 w-3.5" /> Comentar</button></div></div>}</div>}{activityDetailTab === 'attachments' && <div><div className="flex items-center justify-between gap-3"><div><h4 className="text-sm font-extrabold text-slate-900">Arquivos da atividade</h4><p className="mt-1 text-[9px] text-slate-500">PDF, imagens, planilhas, textos, áudio ou vídeo de até 50 MB.</p></div>{canEditRow && <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-violet-700 px-3 py-2.5 text-[10px] font-bold text-white ${activityAttachmentProgress !== null ? 'pointer-events-none opacity-60' : ''}`}><Upload className="h-3.5 w-3.5" /> Anexar<input type="file" accept={DOCUMENT_FILE_ACCEPT} onChange={event => handleActivityAttachmentUpload(row,event)} className="hidden" /></label>}</div>{activityAttachmentProgress !== null && <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 p-3"><div className="flex justify-between text-[9px] font-bold text-violet-800"><span>Enviando arquivo...</span><span>{activityAttachmentProgress}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-violet-600 transition-all" style={{width:`${activityAttachmentProgress}%`}} /></div></div>}<div className="mt-4 space-y-2">{activity.attachments.map(file => {const canRemove=currentUser.isAdmin||currentUser.isDeveloper||file.uploadedBy===currentUser.id;return <article key={file.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-700"><File className="h-4 w-4" /></span><div className="min-w-0 flex-1"><strong className="block truncate text-[10px] text-slate-800">{file.name}</strong><span className="mt-0.5 block text-[8px] text-slate-400">{file.uploadedByName} · {file.size >= 1048576 ? `${(file.size/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(file.size/1024))} KB`}</span></div><button type="button" onClick={() => handleDownload(file,file.name)} className="rounded-lg p-2 text-blue-700 hover:bg-blue-50" aria-label={`Abrir ${file.name}`}><Download className="h-4 w-4" /></button>{canRemove && canEditRow && <button type="button" onClick={() => handleRemoveActivityAttachment(row,file)} className="rounded-lg p-2 text-rose-600 hover:bg-rose-50" aria-label={`Remover ${file.name}`}><Trash2 className="h-4 w-4" /></button>}</article>;})}{activity.attachments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center"><Paperclip className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-xs text-slate-400">Nenhum arquivo anexado.</p></div>}</div></div>}{activityDetailTab === 'history' && <div className="space-y-3">{[...activity.history].reverse().map(entry => <article key={entry.id} className="relative border-l-2 border-violet-200 pl-4"><span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-violet-600" /><strong className="block text-[10px] text-slate-800">{entry.text}</strong><span className="mt-1 block text-[8px] text-slate-400">{entry.actorName} · {new Date(entry.timestamp).toLocaleString('pt-BR')}</span></article>)}{activity.history.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center"><Clock className="mx-auto h-7 w-7 text-slate-300" /><p className="mt-2 text-xs leading-5 text-slate-400">Esta atividade é anterior ao histórico detalhado. As próximas alterações serão registradas aqui.</p></div>}</div>}</div></section></div></div></section></div>;
           })()}
@@ -10698,7 +10858,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     <a href={`/carreiras?empresa=${encodeURIComponent(activeCompany?.id || '')}`} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-2 text-blue-800">Portal de candidatos</a>
                     <button type="button" onClick={() => setActiveTutorial('careers')} className="rounded-lg border border-slate-200 px-3 py-2 text-slate-700">Como usar</button>
                     <button type="button" onClick={() => setCareerLibraryCompanyId(activeCompany?.id)} className="rounded-lg border border-slate-200 px-3 py-2 text-slate-700">Pré-cadastros de vagas</button>
-                    <button type="button" onClick={openVacancyForm} className="rounded-lg bg-blue-700 px-3 py-2 text-white">Nova vaga</button>
+                    <button type="button" onClick={() => openVacancyForm()} className="rounded-lg bg-blue-700 px-3 py-2 text-white">Nova vaga</button>
                   </div>
                 </div>
                 <nav aria-label="Banco de Talentos" className="mt-4 flex gap-2 border-t border-slate-100 pt-3">
@@ -10724,6 +10884,11 @@ const handleDownload = async (fileUrl, fileName) => {
                     {careerRoleFilter && <button type="button" className="px-2 py-2 text-xs font-bold text-blue-800" onClick={() => setCareerRoleFilter('')}>
                       Limpar cargo: {careerRoleNames.get(careerRoleFilter) || 'Selecionado'}
                     </button>}
+                    <select aria-label="Setor da vaga" value={careerSectorFilter} onChange={event => setCareerSectorFilter(event.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <option value="">Todos os setores</option>
+                      {departmentsList.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+                    </select>
                     <span className="text-xs text-slate-600">{careerVisibleVacancies.length} {careerVisibleVacancies.length === 1 ? 'vaga' : 'vagas'}</span>
                   </div>
                   <div className="grid items-start gap-3 lg:grid-cols-2">
@@ -10744,6 +10909,8 @@ const handleDownload = async (fileUrl, fileName) => {
                             <div className="min-w-0">
                               <h4 className="break-words text-base font-extrabold text-slate-900">{vacancy.title}</h4>
                               <p className="mt-0.5 text-xs text-slate-600">{vacancy.location || 'Local não informado'}{vacancy.mode && ` · ${vacancy.mode}`}</p>
+                              {vacancy.positions > 1 && <p className="mt-1 text-xs text-slate-600">{vacancy.positions} posições</p>}
+                              {vacancy.sectorId && <p className="mt-1 text-xs font-semibold text-blue-800">{departmentsList.find(department => department.id === vacancy.sectorId)?.name || 'Setor indisponível'}</p>}
                             </div>
                             <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${open ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
                               {open ? 'Aberta para inscrição' : archived ? 'Arquivada' : published ? 'Prazo encerrado' : 'Encerrada'}
@@ -10821,7 +10988,7 @@ const handleDownload = async (fileUrl, fileName) => {
                       <option value="all">Todas as cidades</option>{careerCities.map(city => <option key={city} value={city}>{city}</option>)}
                     </select>
                     <select aria-label="Filtrar pendências" value={careerQueueFilter} onChange={event => { setCareerQueueFilter(event.target.value); setCareerCityFilter('all'); }} className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-2">
-                      <option value="all">Qualquer pendência</option><option value="updated">Currículos atualizados</option><option value="retention">Vencidos ou a vencer em 15 dias</option>
+                      <option value="all">Qualquer pendência</option><option value="updated">Currículos atualizados</option><option value="stalled">Candidaturas paradas</option><option value="retention">Vencidos ou a vencer em 15 dias</option>
                     </select>
                     <select aria-label="Ordenar candidaturas" value={careerSort} onChange={event => setCareerSort(event.target.value)} className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-2">
                       <option value="recent">Mais recentes</option><option value="fit">Maior aderência</option><option value="name">Nome A–Z</option>
@@ -10843,6 +11010,9 @@ const handleDownload = async (fileUrl, fileName) => {
                     ))}
                   </div>
                 </section>
+                {careerTimingGroups && <CareerStageTiming rows={careerTimingGroups} stage={careerStageFilter} now={careerNow}
+                  selectStage={stage => openCareerApplications(careerSelectedVacancy.id, '', {source:'vacancy', stage})}
+                  selectStalled={stage => openCareerApplications(careerSelectedVacancy.id, '', {source:'vacancy', stage, queue:'stalled'})} />}
                 {(careerExpired > 0 || careerExpiring > 0) && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
                   <button type="button" onClick={() => openCareerApplications('all', '', {queue: 'retention'})} className="font-bold hover:underline">
                     Prazos de retenção ({careerExpired} vencidos, {careerExpiring} a vencer)
@@ -10892,6 +11062,7 @@ const handleDownload = async (fileUrl, fileName) => {
                           }} className="block w-full rounded-lg border border-slate-200 bg-white p-3 text-left hover:border-blue-300">
                             <span className="flex items-start justify-between gap-2 text-sm font-bold text-slate-900">{application.name}<ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-700" /></span>
                             <span className="mt-1 block text-xs text-slate-600">{careerOpportunityTitle(application)} · {application.city || 'Cidade não informada'}</span>
+                            {careerStageAge(application, careerNow) !== null && <span className="mt-1 block text-xs text-slate-600">{careerStageAge(application, careerNow)} dia(s) na etapa</span>}
                           </button>
                         ))}</div>
                       </section>
@@ -10909,7 +11080,8 @@ const handleDownload = async (fileUrl, fileName) => {
                       onRefreshFit={() => handleRefreshCareerFit(application)} onDownload={() => handleDownloadCareerResume(application)}
                       onAssessment={() => handleGenerateCareerAssessment(application)} onAcknowledge={() => acknowledgeCareerUpdate(application)}
                       onExtend={() => handleExtendCareerRetention(application)}
-                      onStageChange={status => updateDocField('applications', application.id, {status})}
+                      stageAge={careerStageAge(application, careerNow)} onStageChange={status => saveCareerStage(application, {status})}
+                      onAdmission={canPrepareAdmission ? () => prepareHiredAdmission(application) : undefined}
                       onAdvance={() => setCareerDecisionDraft({ application, outcome: 'approved', message: `Parabéns! Você foi pré-selecionado(a) para continuar no processo da vaga ${careerOpportunityTitle(application)}.`, internalNote: '', openEmail: true })}
                       onInterview={() => setCareerInterviewDraft({ application, date: '', time: '', format: 'Online', location: '', contact: '', notes: '', internalNote: '', message: '', openEmail: true })}
                       onReject={() => setCareerDecisionDraft({ application, outcome: 'rejected', message: `Agradecemos seu interesse em ${careerOpportunityTitle(application)}. Após a análise, seu perfil não seguirá para a próxima etapa deste processo.`, internalNote: '', openEmail: true })}
@@ -11121,15 +11293,30 @@ const handleDownload = async (fileUrl, fileName) => {
           {activeTab === 'management' && managementView === 'development' && confidentialPersonnel && dbUser && activeCompany?.id && (
             <Suspense fallback={<p>Carregando metas do PDI…</p>}>
               <DevelopmentWorkspace key={activeCompany.id + dbUser.uid} db={db} company={activeCompany.id}
-                uid={dbUser.uid} employees={activeEmployees} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee} editable />
+                uid={dbUser.uid} employees={activeEmployees} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee} editable
+                activityDraft={localDevelopmentLink?.activity} clearActivityDraft={() => setDevelopmentLink(null)} goalFocusId={localDevelopmentLink?.goalId}
+                openActivity={id => {
+                  if (!canOpenModule('services') || !serviceActivityRows.some(row => row.key === id)) {
+                    triggerNotification('Atividade de origem indisponível para este acesso.', 'error');
+                    return;
+                  }
+                  setActiveTab('services'); setServiceWorkspace('activities'); setSelectedServiceActivityKey(id);
+                }} />
             </Suspense>
           )}
-          {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && ['hr-pending', 'hr-file'].includes(managementView) && (
+          {activeTab === 'management' && canUsePersonnel && dbUser && activeCompany?.id && ['hr-pending', 'hr-action', 'hr-file'].includes(managementView) && (
             <Suspense fallback={<p>Carregando rotinas do RH…</p>}>
-              <PersonnelWorkspace key={JSON.stringify([activeCompany.id, dbUser.uid, confidentialPersonnel])}
+              <PersonnelWorkspace key={JSON.stringify([activeCompany.id, dbUser.uid, confidentialPersonnel, localAdmissionDraft?.caseId, managementView === 'hr-action'])}
                 db={db} company={activeCompany.id} uid={dbUser.uid} employees={employeesList} departments={departmentsList}
                 confidential={confidentialPersonnel} employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee}
                 roles={rolesList} reviewActivities={currentUser.isAdmin ? serviceActivityRows.map(row => row.activity) : undefined}
+                admissionDraft={localAdmissionDraft} clearAdmissionDraft={() => setAdmissionDraft(null)}
+                activeEmployees={activeEmployees} applications={canOpenCareers ? careerIndicatorApplications : undefined}
+                now={careerNow} openApplication={openHrApplication} openGoal={openDevelopmentGoal}
+                simulateRaise={confidentialPersonnel ? person => {
+                  setPersonnelEmployee(person.id);
+                  openTeamSalary(resolveEmployeeRole(person, rolesList)?.id, 'compensation', person.id);
+                } : undefined}
                 careerActions={confidentialPersonnel ? (view, person) => {
                   if (view === 'development' && !activeEmployeeIds.has(person.id)) {
                     triggerNotification('O cadastro precisa estar ativo para editar as metas do PDI.', 'error');
@@ -11140,7 +11327,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     openTeamSalary(resolveEmployeeRole(person, rolesList)?.id, activeEmployeeIds.has(person.id) ? 'compensation' : 'matrix');
                   } else openTeamEmployeeView(view, person.id);
                 } : undefined}
-                view={managementView === 'hr-file' ? 'file' : 'pending'} go={view => setMgmtSubTab(view === 'file' ? 'hr-file' : 'hr-pending')} />
+                initialQueueView={managementView === 'hr-action' ? 'action' : 'cases'} view={managementView === 'hr-file' ? 'file' : 'pending'} go={view => setMgmtSubTab(view === 'file' ? 'hr-file' : 'hr-pending')} />
             </Suspense>
           )}
           {activeTab === 'management' && ['dpi', 'salary', 'managers'].includes(managementView) && confidentialPersonnel && dbUser && activeCompany?.id && (
@@ -11148,7 +11335,7 @@ const handleDownload = async (fileUrl, fileName) => {
               <DpiWorkspace key={JSON.stringify([activeCompany.id, dbUser.uid, managementView, salaryRoleId])}
                 db={db} company={activeCompany.id} uid={dbUser.uid}
                 view={managementView === 'salary' ? 'salary' : managementView === 'managers' ? 'management' : 'performance'}
-                initialRoleId={managementView === 'salary' ? salaryRoleId : ''} salaryView={teamSalaryView} setSalaryView={setTeamSalaryView}
+                initialRoleId={managementView === 'salary' ? salaryRoleId : ''} salaryView={teamSalaryView} setSalaryView={setTeamSalaryView} suggestRaise={suggestedRaisePerson}
                 roles={rolesList} employees={employeesList} activeEmployees={activeEmployees} today={employeeStatusDay}
                 employeeId={personnelEmployee} selectEmployee={setPersonnelEmployee} openEmployee={openTeamEmployeeView}
                 departments={departmentsList} getDepartments={getUserDepts}
@@ -11162,13 +11349,13 @@ const handleDownload = async (fileUrl, fileName) => {
 
               {mgmtSubTab === 'overview' && <TeamOverview {...{employeeViews, peopleOverview, peopleAttentionList, activeSectorCounts,
                 openEmployeeList, employeeAccessLabel, getUserDepts, handleEditUser}}
-                openPersonnel={canUsePersonnel ? () => setMgmtSubTab('hr-pending') : undefined}
+                openPersonnel={canUsePersonnel && (confidentialPersonnel || canOpenCareers) ? () => setMgmtSubTab('hr-action') : undefined}
                 openPerformance={confidentialPersonnel ? () => setMgmtSubTab('dpi') : undefined} />}
 
               {mgmtSubTab === 'headcount' && <TeamHeadcount {...{employment, headcountMetrics, headcountRows,
                 headcountVisibleEmployees, departmentsList, mgmtSectorFilter, setMgmtSectorFilter, headcountDrafts,
                 setHeadcountDrafts, savingHeadcountKey, handleSaveHeadcount, canOpenCareers, openRoleRecruitment, openEmployeeList}}
-                openRoleCatalog={() => setMgmtSubTab('roles')} />}
+                openRoleCatalog={() => setMgmtSubTab('roles')} createRecruitment={openVacancyForm} />}
 
               {mgmtSubTab === 'employees' && (
                 <div className="bg-white p-4 sm:p-6 rounded-[26px] border border-slate-200 shadow-[0_18px_50px_-36px_rgba(15,23,42,.55)] flex flex-col gap-5">
@@ -11180,7 +11367,7 @@ const handleDownload = async (fileUrl, fileName) => {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {activeCompany?.code === '082026' && <button type="button" onClick={handleMigrateLegacyUsers} className="bg-white/10 hover:bg-white/15 text-white font-bold text-xs py-2.5 px-4 rounded-xl border border-white/15">Migrar dados anteriores</button>}
-                      <button type="button" onClick={() => { setEditingUser(null); setUserForm({ name: '', role: '', depts: [], avatar: DEFAULT_AVATAR, isAdmin: false, pin: '1234', emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', managerId: '', birthDate: '', hireDate: '', terminationDate: '' }); setShowUserModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow-lg transition-all flex-shrink-0"><Plus className="h-4 w-4" /> Novo colaborador</button>
+                      <button type="button" onClick={() => { setAdmissionSource(null); setEditingUser(null); setUserForm({ name: '', role: '', depts: [], avatar: DEFAULT_AVATAR, isAdmin: false, pin: '1234', emergencyName: '', emergencyPhone: '', emergencyRelationship: '', prodGroup: '', managerId: '', birthDate: '', hireDate: '', terminationDate: '' }); setShowUserModal(true); }} className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center gap-1.5 shadow-lg transition-all flex-shrink-0"><Plus className="h-4 w-4" /> Novo colaborador</button>
                     </div>
                   </div>
 
@@ -12836,7 +13023,7 @@ const handleDownload = async (fileUrl, fileName) => {
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="font-extrabold flex items-center gap-2 text-sm">
-                <Users className="h-5 w-5 text-slate-300" /> {editingUser ? 'Atualizar Perfil de Funcionário' : 'Cadastrar Novo Integrante na Empresa'}
+                <Users className="h-5 w-5 text-slate-300" /> {editingUser ? 'Atualizar perfil do colaborador' : admissionSource ? 'Conferir cadastro para admissão' : 'Cadastrar novo integrante'}
               </h3>
               <button type="button" disabled={linkingEmployeeRole} onClick={() => setShowUserModal(false)} className="p-1 hover:bg-slate-800 rounded">
                 <X className="h-5 w-5" />
@@ -12844,6 +13031,9 @@ const handleDownload = async (fileUrl, fileName) => {
             </div>
 
             <form onSubmit={submitUserForm} className="p-6 flex flex-col gap-4">
+              {admissionSource && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Confira nome, cargo e setor. Depois de confirmar o cadastro, o Comunica abre o rascunho de admissão.
+              </p>}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nome Completo</label>
                 <input
@@ -13089,7 +13279,16 @@ const handleDownload = async (fileUrl, fileName) => {
         />
       )}
       {showVacancyModal && canOpenCareers && newVacancy.companyId === activeCompany?.id && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white"><div><h3 className="text-sm font-extrabold">{newVacancy.editId ? 'Editar vaga publicada' : 'Publicar vaga'}</h3><p className="mt-0.5 text-[10px] text-slate-300">{newVacancy.editId ? 'As mudanças serão exibidas no mesmo link e registradas no histórico.' : 'Preencha os dados e monte um questionário de forma visual.'}</p></div><button type="button" onClick={() => setShowVacancyModal(false)} aria-label="Fechar" className="rounded p-1 hover:bg-slate-800"><X className="h-5 w-5" /></button></div><form onSubmit={handleSaveVacancy} className="flex flex-col gap-5 p-6"><section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">1</span><h4 className="text-sm font-extrabold text-slate-800">Sobre a vaga</h4></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700 sm:col-span-2">Cargo já cadastrado<select value={newVacancy.roleId} onChange={event => { const roleId = event.target.value; const selectedRole = rolesList.find(role => role.id === roleId); setNewVacancy(previous => ({ ...previous, roleId, title: selectedRole?.name || previous.title, description: selectedRole?.description || previous.description })); }} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option value="">Criar uma vaga personalizada</option>{rolesList.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select><span className="mt-1 block text-[10px] font-medium text-slate-400">Ao selecionar, o título e o descritivo das atividades serão preenchidos automaticamente e poderão ser ajustados.</span></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Título da vaga<input required maxLength={120} value={newVacancy.title} onChange={event => setNewVacancy(previous => ({ ...previous, title: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Auxiliar de produção" /></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Descrição da vaga<textarea required rows={5} maxLength={4000} value={newVacancy.description} onChange={event => setNewVacancy(previous => ({ ...previous, description: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Descreva as atividades e responsabilidades da vaga." /></label><label className="text-xs font-bold text-slate-700">Local<input required maxLength={120} value={newVacancy.location} onChange={event => setNewVacancy(previous => ({ ...previous, location: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Salvador, BA" /></label><label className="text-xs font-bold text-slate-700">Modalidade<select value={newVacancy.mode} onChange={event => setNewVacancy(previous => ({ ...previous, mode: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select></label></div></section>
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="flex items-center justify-between bg-slate-900 px-6 py-4 text-white"><div><h3 className="text-sm font-extrabold">{newVacancy.editId ? 'Editar vaga publicada' : 'Publicar vaga'}</h3><p className="mt-0.5 text-[10px] text-slate-300">{newVacancy.editId ? 'As mudanças serão exibidas no mesmo link e registradas no histórico.' : 'Preencha os dados e monte um questionário de forma visual.'}</p></div><button type="button" onClick={() => setShowVacancyModal(false)} aria-label="Fechar" className="rounded p-1 hover:bg-slate-800"><X className="h-5 w-5" /></button></div><form onSubmit={handleSaveVacancy} className="flex flex-col gap-5 p-6"><section><div className="mb-3 flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-700 text-[10px] font-extrabold text-white">1</span><h4 className="text-sm font-extrabold text-slate-800">Sobre a vaga</h4></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700 sm:col-span-2">Cargo já cadastrado<select value={newVacancy.roleId} onChange={event => { const roleId = event.target.value; const selectedRole = rolesList.find(role => role.id === roleId); setNewVacancy(previous => ({ ...previous, roleId, sectorId: selectedRole && !getRoleDepts(selectedRole).includes(previous.sectorId) ? '' : previous.sectorId, title: selectedRole?.name || previous.title, description: selectedRole?.description || previous.description })); }} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option value="">Criar uma vaga personalizada</option>{rolesList.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map(role => <option key={role.id} value={role.id}>{role.name}</option>)}</select><span className="mt-1 block text-[10px] font-medium text-slate-400">Ao selecionar, o título e o descritivo das atividades serão preenchidos automaticamente e poderão ser ajustados.</span></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Título da vaga<input required maxLength={120} value={newVacancy.title} onChange={event => setNewVacancy(previous => ({ ...previous, title: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Auxiliar de produção" /></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Descrição da vaga<textarea required rows={5} maxLength={4000} value={newVacancy.description} onChange={event => setNewVacancy(previous => ({ ...previous, description: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Descreva as atividades e responsabilidades da vaga." /></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Setor deste processo<select value={newVacancy.sectorId}
+          onChange={event => setNewVacancy(previous => ({...previous, sectorId: event.target.value}))}
+          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">
+          <option value="">Sem setor específico</option>
+          {departmentsList.filter(department => department.id === newVacancy.sectorId || !newVacancy.roleId ||
+            getRoleDepts(rolesList.find(role => role.id === newVacancy.roleId)).includes(department.id))
+            .map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+        </select></label><label className="text-xs font-bold text-slate-700 sm:col-span-2">Posições nesta vaga<input type="number" min={1} max={1000} step={1}
+          value={newVacancy.positions} onChange={event => setNewVacancy(previous => ({...previous, positions: event.target.value}))}
+          required className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs" /></label><label className="text-xs font-bold text-slate-700">Local<input required maxLength={120} value={newVacancy.location} onChange={event => setNewVacancy(previous => ({ ...previous, location: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs" placeholder="Ex.: Salvador, BA" /></label><label className="text-xs font-bold text-slate-700">Modalidade<select value={newVacancy.mode} onChange={event => setNewVacancy(previous => ({ ...previous, mode: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs"><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select></label></div></section>
         <CareerVacancyDetailEditor
           library={careerLibrary}
           details={newVacancy.details}

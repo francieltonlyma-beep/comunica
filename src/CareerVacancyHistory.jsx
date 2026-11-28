@@ -3,7 +3,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { CAREER_DETAIL_FIELDS } from './careerVacancyDetails.js';
 
 const labels = {
-  roleName: 'Cargo', title: 'Título', description: 'Descrição', location: 'Local', mode: 'Modalidade',
+  roleName: 'Cargo', sectorId: 'Setor', positions: 'Posições', title: 'Título', description: 'Descrição', location: 'Local', mode: 'Modalidade',
   skills: 'Competências', quiz: 'Questionário', closesAt: 'Prazo', status: 'Situação',
 };
 const statuses = { published: 'Publicada', closed: 'Encerrada', archived: 'Arquivada' };

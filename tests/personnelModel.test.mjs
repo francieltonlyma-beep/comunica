@@ -47,6 +47,7 @@ test('quadro usa o vínculo com o cargo atualizado e conta somente vagas com ins
     departmentsList: [{id: 'norte'}, {id: 'sul'}],
     rolesList: [role, {id: 'old', name: 'Atendimento antigo', depts: ['sul'], mergedIntoRoleId: role.id}],
     vacanciesList: [
+      {roleId: role.id, status: 'published', closesAt: '2026-11-27', sectorId: 'norte', positions: 2},
       {roleId: role.id, status: 'published', closesAt: '2026-11-27'},
       {roleId: role.id, status: 'published', closesAt: '2026-11-26'},
       {roleId: role.id, status: 'closed'},
@@ -55,6 +56,6 @@ test('quadro usa o vínculo com o cargo atualizado e conta somente vagas com ins
     employeeStatusDay: '2026-11-27',
     mgmtSectorFilter: 'all',
   });
-  assert.deepEqual(headcountRows.map(row => [row.current, row.activeRecruitment]), [[1, 1], [1, 1]]);
+  assert.deepEqual(headcountRows.map(row => [row.current, row.activeRecruitment, row.unassignedRecruitment]), [[1, 2, 1], [1, 0, 1]]);
   assert.deepEqual(headcountMetrics, {planned: 2, vacancies: 1, excess: 1, configuredRoles: 2});
 });

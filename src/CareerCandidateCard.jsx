@@ -5,7 +5,7 @@ const actionClass = 'rounded-lg border border-slate-200 px-3 py-2 text-xs font-b
 export default function CareerCandidateCard({
   application, title, retentionLabel, expiring, expired, comparisonSelected, comparisonFull, onCompare,
   refreshingFit, analyzing, vacancy, onRefreshFit, onDownload, onAssessment, onAcknowledge,
-  onExtend, onStageChange, onAdvance, onInterview, onReject,
+  onExtend, onStageChange, onAdvance, onInterview, onReject, onAdmission, stageAge,
 }) {
   const stage = CAREER_STAGES.find(item => item.id === application.status) || CAREER_STAGES[0];
   const fit = careerFitScore(application.fit?.percentage);
@@ -29,7 +29,7 @@ export default function CareerCandidateCard({
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2 py-1 font-semibold text-slate-700">
-          <span aria-hidden="true" className={`h-2 w-2 rounded-full ${stage.color}`} />{stage.label}
+          <span aria-hidden="true" className={`h-2 w-2 rounded-full ${stage.color}`} />{stage.label}{Number.isInteger(stageAge) && ' · ' + stageAge + ' d'}
         </span>
         <span className="rounded-lg bg-blue-50 px-2 py-1 font-semibold text-blue-800">{fit === null ? 'Aderência sem cálculo' : `Aderência ${fit}%`}</span>
         {application.candidateUpdatePending && <span className="rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-900">Currículo atualizado pelo candidato</span>}
@@ -39,6 +39,7 @@ export default function CareerCandidateCard({
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={onDownload} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white">Baixar currículo</button>
+        {onAdmission && stage.id === 'hired' && <button type="button" onClick={onAdmission} className={actionClass}>Preparar admissão</button>}
         {application.candidateUpdatePending && <button type="button" onClick={onAcknowledge} className={actionClass}>Marcar atualização como revisada</button>}
         {!isRejected && expiring && !application.retentionExtendedCount &&
           <button type="button" onClick={onExtend} className={actionClass}>Prorrogar 90 dias</button>}

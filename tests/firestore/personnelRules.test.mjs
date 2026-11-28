@@ -117,6 +117,13 @@ try {
     feedback: 'Bom progresso', feedbackAt: serverTimestamp(), revision: 2, updatedAt: serverTimestamp(),
   }));
   assert.equal((await getDoc(ref(client('person'), goalPath))).data().feedback, 'Bom progresso');
+  const linkedGoal = 'development/person/goals/linked-goal';
+  await assertFails(setDoc(ref(client('general'), linkedGoal), {...goal(), sourceActivityKey:'standalone:activity1'}));
+  await assertSucceeds(setDoc(ref(client('hr'), linkedGoal), {...goal(), sourceActivityKey:'standalone:activity1'}));
+  await assertFails(updateDoc(ref(client('hr'), linkedGoal), {
+    sourceActivityKey:'standalone:activity2', revision:2, updatedAt:serverTimestamp(),
+  }));
+  await assertFails(setDoc(ref(client('hr'), 'development/person/goals/malformed'), {...goal(), sourceActivityKey:'unexpected/path'}));
   const progressPath = 'development/person/progress/goal1';
   const progress = () => ({ progress: 'Treinamento concluído', difficulty: '', updatedAt: serverTimestamp() });
   await assertFails(setDoc(ref(client('manager'), progressPath), progress()));

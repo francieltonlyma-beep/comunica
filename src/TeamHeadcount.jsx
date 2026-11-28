@@ -1,7 +1,7 @@
 export default function TeamHeadcount({
   employment, headcountMetrics, headcountRows, headcountVisibleEmployees, departmentsList, mgmtSectorFilter, setMgmtSectorFilter,
   headcountDrafts, setHeadcountDrafts, savingHeadcountKey, handleSaveHeadcount, canOpenCareers, openRoleRecruitment,
-  openEmployeeList, openRoleCatalog,
+  openEmployeeList, openRoleCatalog, createRecruitment,
 }) {
   if (employment.error || employment.loading) return <p role="status">{employment.error || 'Consultando vínculos efetivos…'}</p>;
   return (
@@ -28,7 +28,7 @@ export default function TeamHeadcount({
         <div className="border-b border-slate-100 px-5 py-4"><h4 className="text-sm font-extrabold text-slate-800">Quadro previsto e composição atual</h4><p className="mt-1 text-[10px] text-slate-500">Cadastre o número previsto para cada combinação de cargo e setor. Use 0 para indicar que não há posição prevista.</p></div>
         <div className="overflow-x-auto">
           <table className="team-headcount-table w-full text-left text-xs lg:min-w-[880px]">
-            <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Setor</th><th className="px-4 py-3">Cargo</th><th className="px-4 py-3 text-center">Atual</th><th className="px-4 py-3 text-center">Previsto</th><th className="px-4 py-3 text-center">Vagas do quadro</th><th className="px-4 py-3 text-center">Excedente</th><th className="px-4 py-3 text-center">Vagas abertas do cargo</th><th className="px-5 py-3 text-right">Ação</th></tr></thead>
+            <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Setor</th><th className="px-4 py-3">Cargo</th><th className="px-4 py-3 text-center">Atual</th><th className="px-4 py-3 text-center">Previsto</th><th className="px-4 py-3 text-center">Vagas do quadro</th><th className="px-4 py-3 text-center">Excedente</th><th className="px-4 py-3 text-center">Posições em seleção</th><th className="px-5 py-3 text-right">Ação</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {headcountRows.map(row => {
                 const value = headcountDrafts[row.key] ?? (row.planned === null ? '' : String(row.planned));
@@ -44,10 +44,13 @@ export default function TeamHeadcount({
                   <td data-label="Previsto" className="px-4 py-3 text-center"><input aria-label={`Quadro previsto para ${row.role.name} em ${row.department.name}`} type="number" min="0" max="10000" step="1" value={value} onChange={event => setHeadcountDrafts(previous => ({ ...previous, [row.key]: event.target.value }))} placeholder="Definir" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-xs font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" /></td>
                   <td data-label="Vagas" className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.vacancies ? 'text-amber-700' : 'text-slate-400'}`}>{row.vacancies}</span> : <span className="text-slate-300">—</span>}</td>
                   <td data-label="Excedente" className="px-4 py-3 text-center">{row.configured ? <span className={`font-black ${row.excess ? 'text-rose-700' : 'text-slate-400'}`}>{row.excess}</span> : <span className="text-slate-300">—</span>}</td>
-                  <td data-label="Vagas abertas do cargo" className="px-4 py-3 text-center">
+                  <td data-label="Posições em seleção" className="px-4 py-3 text-center">
                     {canOpenCareers && row.activeRecruitment > 0
-                      ? <button type="button" onClick={() => openRoleRecruitment(row.role)} className="font-bold text-blue-800 underline" aria-label={`Ver vagas abertas de ${row.role.name} na empresa`}>{row.activeRecruitment}</button>
+                      ? <button type="button" onClick={() => openRoleRecruitment(row.role, row.department)} className="font-bold text-blue-800 underline" aria-label={`Ver vagas abertas de ${row.role.name} em ${row.department.name}`}>{row.activeRecruitment}</button>
                       : row.activeRecruitment}
+                    {row.unassignedRecruitment > 0 && <p className="mt-1 text-[10px] text-slate-600">{row.unassignedRecruitment} posições do cargo sem setor</p>}
+                    {canOpenCareers && <button type="button" onClick={() => createRecruitment(row.role, row.department)}
+                      className="ml-2 rounded-md border px-2 py-1 text-[10px] font-bold text-blue-800">Criar vaga</button>}
                   </td>
                   <td data-label="Ações" className="px-5 py-3 text-right"><button type="button" disabled={!isDirty || savingHeadcountKey === row.key} onClick={() => handleSaveHeadcount(row)} className="rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">{savingHeadcountKey === row.key ? 'Salvando…' : 'Salvar'}</button></td>
                 </tr>;
