@@ -124,6 +124,8 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { appHistoryState, appNavigationKey, readAppNavigation } from './appNavigationHistory.js';
 import { observeSessionStartup } from './sessionStartup.js';
 import { clearLegacyCompanyCache, readSessionIdentity, sessionIdentity } from './sessionPrivacy.js';
+import { accountKey, clearSavedAccounts, employeeAccount, readSavedAccounts, rememberAccounts, signInToSavedAccount } from './savedAccounts.js';
+import SwitchUserDialog from './SwitchUserDialog.jsx';
 import { publicDirectoryProfile, directoryFields } from './userDirectory.js';
 import { employeeAccessLabel, employeeAccessMillis } from './employeeAccess.js';
 import { sortCollectionRecords } from './companyCollections.js';
@@ -651,6 +653,12 @@ function handleMainNavigationKeys(event) {
 }
 
 export default function App() {
+  const [workspace, setWorkspace] = useState({ version: 0 });
+  const restartWorkspace = useCallback(options => setWorkspace(previous => ({ ...options, version: previous.version + 1 })), []);
+  return <Workspace key={workspace.version} workspace={workspace} restartWorkspace={restartWorkspace} />;
+}
+
+function Workspace({ workspace, restartWorkspace }) {
   const getRelativeDate = (dateString) => {
   return dateString;
 };
@@ -898,7 +906,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [conversationAuditPerson, setConversationAuditPerson] = useState('all');
 
   // Sessão de usuário com persistência local
-  const [currentUser, setCurrentUser] = useState(() => readSessionIdentity(localStorage));
+  const [currentUser, setCurrentUser] = useState(() => workspace.version ? null : readSessionIdentity(localStorage));
   const [anonymousSurveyHash, setAnonymousSurveyHash] = useState('');
   useEffect(() => { let active = true; if (!currentUser?.id) { setAnonymousSurveyHash(''); return () => { active = false; }; } hashSurveyRespondent(currentUser.id).then(hash => { if (active) setAnonymousSurveyHash(hash); }).catch(() => { if (active) setAnonymousSurveyHash(''); }); return () => { active = false; }; }, [currentUser?.id]);
 
@@ -921,10 +929,7 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   const [savingHeadcountKey, setSavingHeadcountKey] = useState('');
   const [dashboardDetail, setDashboardDetail] = useState(null);
   const [companies, setCompanies] = useState([]);
-  const [activeCompany, setActiveCompany] = useState(() => {
-    const saved = localStorage.getItem('comunica_active_company');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [activeCompany, setActiveCompany] = useState(() => workspace.version ? null : getLocalStorageItem('comunica_active_company', null));
   const [dbUser, setDbUser] = useState(null);
   const companyTabAccess = useCompanyTabAccess(db, appId, activeCompany?.id, dbUser?.uid);
   const supportSession = currentUser?.isDeveloper && dbUser?.uid === PLATFORM_SUPPORT.id;
@@ -933,10 +938,13 @@ const handleDownload = async (fileOrUrl, fallbackName = "anexo") => {
   );
   const activeTab = tabReleased(requestedTab) ? requestedTab : 'tab-unavailable';
   const [publicComputer, setPublicComputer] = useState(() => {
+    if (typeof workspace.publicComputer === 'boolean') return workspace.publicComputer;
     const preference = localStorage.getItem('comunica_public_computer');
     return preference === 'true' || (preference === null && !currentUser && window.matchMedia('(min-width: 640px)').matches);
   });
-  const [switchCompanyCode] = useState(() => sessionStorage.getItem('comunica_switch_company') || '');
+  const [showSwitchUser, setShowSwitchUser] = useState(false);
+  const committingAccountSwitch = useRef(false);
+  const validatedAccountUid = useRef(null);
   const [companyCode, setCompanyCode] = useState('');
   const [loginDirectory, setLoginDirectory] = useState(null);
   // Impede que uma consulta antiga (por exemplo, "082") apague o resultado
@@ -2097,7 +2105,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
 
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        if (!workspace.version && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
         }
       } catch (err) {
@@ -2129,6 +2137,12 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
         return { usr, scope, profile, company, clearIdentity };
       },
       onReady: ({ usr, scope, profile, company, clearIdentity, anonymous }) => {
+        if (committingAccountSwitch.current) return;
+        if (usr && !scope?.isDeveloper && validatedAccountUid.current && validatedAccountUid.current !== usr.uid) {
+          restartWorkspace();
+          return;
+        }
+        validatedAccountUid.current = usr?.uid || null;
         if (clearIdentity) {
           localStorage.removeItem('comunica_current_user');
           localStorage.removeItem('comunica_active_company');
@@ -2136,6 +2150,10 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
           setActiveCompany(null);
         }
         if (profile !== undefined) setCurrentUser(profile);
+        if (profile?.mustChangePin === true) {
+          setShowChangePinModal(true);
+          setForcePinChange(true);
+        }
         if (!scope?.isDeveloper && scope?.companyId) setActiveCompany(company || null);
         setAuthScope(scope || { companyId: '', isDeveloper: false });
         setDbUser(usr);
@@ -2154,7 +2172,7 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [restartWorkspace, workspace.version]);
 
   useEffect(() => {
     if (!isFirebaseAvailable || !dbUser || !currentUser?.isDeveloper) return;
@@ -2248,6 +2266,18 @@ const [newGoal, setNewGoal] = useState({ group: 'Máquina 1', startDate: todaySt
     if (activeCompany && !publicComputer) localStorage.setItem('comunica_active_company', JSON.stringify(activeCompany));
     else localStorage.removeItem('comunica_active_company');
   }, [activeCompany, publicComputer]);
+
+  useEffect(() => {
+    if (publicComputer || !authReady || !dbUser || dbUser.uid !== currentUser?.id || authScope.companyId !== activeCompany?.id) return;
+    const account = employeeAccount(activeCompany, currentUser);
+    if (account) {
+      try {
+        rememberAccounts(localStorage, account);
+      } catch (error) {
+        console.warn('Não foi possível lembrar a conta neste navegador.', error);
+      }
+    }
+  }, [activeCompany, authReady, authScope.companyId, currentUser, dbUser, publicComputer]);
 
   useEffect(() => {
     const isMatchingSession = dbUser && currentUser?.id === dbUser.uid && activeCompany && (authScope.isDeveloper || authScope.companyId === activeCompany.id);
@@ -3064,7 +3094,6 @@ const getStatusEmTempoReal = (colaborador) => {
       await authPersistenceReady;
       await setPersistence(auth, publicComputer ? inMemoryPersistence : browserLocalPersistence);
       await signInWithCustomToken(auth, session.token);
-      sessionStorage.removeItem('comunica_switch_company');
       if (!publicComputer) localStorage.setItem('comunica_login_hint', JSON.stringify({ companyCode: company.code, name: session.user.name }));
       setActiveCompany(session.company);
       setCurrentUser({ ...session.user, mustChangePin: session.requiresPinChange === true });
@@ -3100,7 +3129,6 @@ const getStatusEmTempoReal = (colaborador) => {
       await authPersistenceReady;
       await setPersistence(auth, publicComputer ? inMemoryPersistence : browserLocalPersistence);
       await signInWithCustomToken(auth, session.token);
-      sessionStorage.removeItem('comunica_switch_company');
       setActiveCompany(session.company);
       setCurrentUser(session.user);
       setActiveTab('support');
@@ -3136,17 +3164,62 @@ const getStatusEmTempoReal = (colaborador) => {
     }
   };
 
-  const handleSwitchUser = async () => {
-    const code = activeCompany?.code;
+  const activeEmployeeAccount = employeeAccount(activeCompany, currentUser);
+  const canSwitchUser = Boolean(activeCompany?.code && !forcePinChange && authReady && dbUser?.uid === currentUser?.id &&
+    (supportSession || (activeEmployeeAccount && authScope.companyId === activeCompany.id)));
+
+  const handleSwitchUser = async (account, pin, remember) => {
+    const previousUser = auth.currentUser;
+    if (!canSwitchUser || previousUser?.uid !== currentUser.id) throw new Error('Sessão indisponível.');
+    const authenticate = httpsCallable(functionsClient, 'authenticateWithPin');
     try {
-      await signOut(auth);
-      localStorage.removeItem('comunica_current_user');
-      localStorage.removeItem('comunica_active_company');
-      if (code && !publicComputer) sessionStorage.setItem('comunica_switch_company', code);
-      else sessionStorage.removeItem('comunica_switch_company');
-      window.location.reload();
-    } catch {
-      triggerNotification('Não foi possível trocar de usuário. Tente novamente.', 'error');
+      const session = await signInToSavedAccount({
+        account, pin,
+        authenticate: credentials => authenticate({ appId, ...credentials }),
+        prepareDevice: async () => {
+          if (auth.currentUser !== previousUser) throw new Error('A sessão mudou durante a troca.');
+          if (!navigator.serviceWorker) return;
+          try {
+            const registration = await navigator.serviceWorker.getRegistration();
+            const subscription = await registration?.pushManager?.getSubscription();
+            if (subscription && !await subscription.unsubscribe()) throw new Error('Inscrição de notificações ativa.');
+            const notifications = await registration?.getNotifications?.();
+            notifications?.forEach(notification => notification.close());
+          } catch (error) {
+            throw Object.assign(new Error('Não foi possível desvincular as notificações da conta atual. Tente novamente.', { cause: error }), { code: 'switch/browser-push' });
+          }
+        },
+        signIn: async token => {
+          if (auth.currentUser !== previousUser) throw new Error('A sessão mudou durante a troca.');
+          committingAccountSwitch.current = true;
+          await signInWithCustomToken(auth, token);
+        },
+      });
+      let keepPublicMode = publicComputer;
+      try {
+        if (remember) {
+          rememberAccounts(localStorage, activeEmployeeAccount, employeeAccount(session.company, session.user));
+          if (publicComputer) {
+            await setPersistence(auth, browserLocalPersistence);
+            localStorage.setItem('comunica_public_computer', 'false');
+            keepPublicMode = false;
+          }
+        }
+      } catch (error) {
+        console.warn('Não foi possível lembrar as contas neste navegador.', error);
+        if (keepPublicMode) {
+          try {
+            await setPersistence(auth, inMemoryPersistence);
+            clearSavedAccounts(localStorage);
+          } catch (cleanupError) {
+            console.warn('Não foi possível concluir a limpeza das contas lembradas.', cleanupError);
+          }
+        }
+      }
+      restartWorkspace({ publicComputer: keepPublicMode });
+    } catch (error) {
+      committingAccountSwitch.current = false;
+      throw error;
     }
   };
 
@@ -8711,14 +8784,13 @@ const notificationsToShow = [...notificationItems]
         const enabled = event.target.checked;
         localStorage.setItem('comunica_public_computer', String(enabled));
         if (enabled) {
-          sessionStorage.removeItem('comunica_switch_company');
+          clearSavedAccounts(localStorage);
           localStorage.removeItem('comunica_login_hint');
         }
         setPublicComputer(enabled);
       }} />
       Computador público · não manter minha conta conectada
     </label>
-    {!publicComputer && switchCompanyCode && !companyCode && <button type="button" className="rounded-lg border border-cyan-300/40 p-2 text-sm font-bold text-cyan-100" onClick={() => handleCompanyCodeChange(switchCompanyCode)}>Trocar usuário na mesma empresa</button>}
     {loginHint?.name && loginHint.companyCode === companyCode && loginCompanyIdentified && !loginSearchText && (
       <button type="button" className="text-left text-xs font-bold text-cyan-100 underline" onClick={() => {
         setLoginSearchText(loginHint.name);
@@ -9574,6 +9646,15 @@ const notificationsToShow = [...notificationItems]
 
       <NotificationToast notification={customNotification} />
       <CloudActivityIndicator activity={cloudActivity} />
+      {showSwitchUser && canSwitchUser && <SwitchUserDialog
+        accounts={publicComputer ? [] : readSavedAccounts(localStorage).filter(account => !activeEmployeeAccount || accountKey(account) !== accountKey(activeEmployeeAccount))}
+        currentUserId={currentUser.id}
+        company={activeCompany}
+        publicComputer={publicComputer}
+        loadDirectory={async companyCode => (await httpsCallable(functionsClient, 'getLoginDirectory')({ appId, companyCode })).data}
+        onClose={() => setShowSwitchUser(false)}
+        onSwitch={handleSwitchUser}
+      />}
       <InstallAppDialog open={showInstallHelp} standalone={isStandaloneApp} onClose={() => setShowInstallHelp(false)} />
       {currentUser && activeCompany?.platformLab === true && <div role="status" className="flex flex-wrap items-center justify-between gap-2 bg-violet-950 px-4 py-3 text-xs font-semibold text-white">
         <span>Laboratório · Empresa fictícia · Use os botões Gestão e Integra para testar</span>
@@ -9770,9 +9851,9 @@ const notificationsToShow = [...notificationItems]
                 <Lock className="h-4 w-4" />
               </button>}
 
-              <button type="button" onClick={handleSwitchUser} title="Trocar usuário" aria-label="Trocar usuário" className="hidden items-center gap-1 rounded-lg p-2 text-xs font-semibold text-slate-600 hover:bg-blue-50 sm:flex">
+              {canSwitchUser && <button type="button" onClick={() => setShowSwitchUser(true)} title="Trocar usuário" aria-label="Trocar usuário" className="hidden items-center gap-1 rounded-lg p-2 text-xs font-semibold text-slate-600 hover:bg-blue-50 sm:flex">
                 <Users className="h-4 w-4 shrink-0" /> <span className="hidden 2xl:inline">Trocar usuário</span>
-              </button>
+              </button>}
               <button
                 onClick={handleUserLogout}
                 title="Encerrar Sessão"
